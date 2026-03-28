@@ -215,7 +215,7 @@ export class TriageProcessor {
   private wasEnginePaused = false;
   /** Active agent sessions per task, used to terminate on pause. */
   private activeSessions = new Map<string, { dispose: () => void }>();
-  /** Tasks aborted due to globalPause or enginePaused (to avoid reporting as errors). */
+  /** Tasks aborted due to globalPause (to avoid reporting as errors). */
   private pauseAborted = new Set<string>();
 
   /**
@@ -223,9 +223,10 @@ export class TriageProcessor {
    * @param rootDir — Project root directory
    * @param options — Processor configuration
    *
-   * Listens for `settings:updated` events: when `globalPause` or `enginePaused`
-   * transitions from `false` to `true`, all active triage specification sessions
-   * are immediately terminated so the engine stops all AI activity.
+   * Listens for `settings:updated` events: when `globalPause` transitions from
+   * `false` to `true`, all active triage specification sessions are immediately
+   * terminated. When `enginePaused` transitions, only new work dispatch is
+   * affected — running sessions continue to completion.
    */
   constructor(
     private store: TaskStore,
@@ -238,20 +239,6 @@ export class TriageProcessor {
         for (const [taskId, session] of this.activeSessions) {
           triageLog.log(
             `Global pause — terminating triage session for ${taskId}`,
-          );
-          this.pauseAborted.add(taskId);
-          session.dispose();
-        }
-      }
-    });
-
-    // When enginePaused transitions from false → true, terminate all active triage sessions.
-    // Same pattern as globalPause: agents are killed, status cleared (not reported as error).
-    store.on("settings:updated", ({ settings, previous }) => {
-      if (settings.enginePaused && !previous.enginePaused) {
-        for (const [taskId, session] of this.activeSessions) {
-          triageLog.log(
-            `Engine pause — terminating triage session for ${taskId}`,
           );
           this.pauseAborted.add(taskId);
           session.dispose();

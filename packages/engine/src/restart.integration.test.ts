@@ -923,21 +923,21 @@ describe("Edge case: worktree deleted between scan and acquire", () => {
 // ── Engine pause/unpause cycle integration tests ──────────────────────────
 
 describe("Engine pause/unpause cycle", () => {
-  it("executor: agents terminated on pause, tasks moved to todo, resume picks them up", async () => {
+  it("executor: agents continue running on enginePaused (soft pause), complete normally", async () => {
     const store = createMockStore();
     const task = makeTask("KB-EP1", "in-progress");
     store.getTask.mockResolvedValue(makeTaskDetail("KB-EP1", "in-progress"));
 
-    // Agent waits for engine pause, then throws (simulating session termination)
+    // Agent triggers engine pause mid-flight but continues normally (soft pause)
     mockedCreateHaiAgent.mockImplementation(async () => ({
       session: {
         prompt: vi.fn().mockImplementation(async () => {
-          // Trigger engine pause
+          // Trigger engine pause — session should NOT be terminated
           store._trigger("settings:updated", {
             settings: { enginePaused: true },
             previous: { enginePaused: false },
           });
-          throw new Error("Session terminated");
+          // Session continues normally
         }),
         dispose: vi.fn(),
       },
@@ -946,36 +946,18 @@ describe("Engine pause/unpause cycle", () => {
     const executor = new TaskExecutor(store, "/tmp/test");
     await executor.execute(task);
 
-    // Task should be moved to todo (not failed)
-    expect(store.moveTask).toHaveBeenCalledWith("KB-EP1", "todo");
+    // Task should complete normally (in-review), NOT moved to todo
+    expect(store.moveTask).toHaveBeenCalledWith("KB-EP1", "in-review");
+    expect(store.moveTask).not.toHaveBeenCalledWith("KB-EP1", "todo");
     expect(store.updateTask).not.toHaveBeenCalledWith("KB-EP1", { status: "failed" });
-
-    // Now simulate unpause: resumeOrphaned picks up in-progress tasks
-    store.moveTask.mockClear();
-    mockedCreateHaiAgent.mockClear();
-
-    // After unpause, the task would be in todo; scheduler would move it to in-progress
-    // Here we test that resumeOrphaned can pick up orphaned in-progress tasks
-    const resumeTask = makeTask("KB-EP1", "in-progress");
-    store.listTasks.mockResolvedValue([resumeTask]);
-    mockedCreateHaiAgent.mockResolvedValue({
-      session: {
-        prompt: vi.fn().mockResolvedValue(undefined),
-        dispose: vi.fn(),
-      },
-    } as any);
-
-    await executor.resumeOrphaned();
-    await new Promise((r) => setTimeout(r, 50));
-
-    // Agent should be created again for the resumed task
-    expect(mockedCreateHaiAgent).toHaveBeenCalled();
   });
 
-  it("triage: agents terminated on pause, status cleared, resume picks up tasks", async () => {
+  it("triage: agents NOT terminated on enginePaused (soft pause), session continues", async () => {
     const store = createMockStore();
+    const disposeFn = vi.fn();
+    let sessionContinued = false;
 
-    // Agent waits for engine pause, then throws
+    // Agent triggers engine pause mid-flight; session should NOT be disposed
     mockedCreateHaiAgent.mockImplementation(async () => ({
       session: {
         prompt: vi.fn().mockImplementation(async () => {
@@ -983,41 +965,24 @@ describe("Engine pause/unpause cycle", () => {
             settings: { enginePaused: true },
             previous: { enginePaused: false },
           });
-          throw new Error("Session terminated");
+          // If the session was disposed by the listener, we'd get an error.
+          // Instead, the session continues normally (soft pause).
+          sessionContinued = true;
+          // Throw to exit without needing file system (PROMPT.md read).
+          // The key assertion is that dispose was NOT called by the listener.
+          throw new Error("simulated completion");
         }),
-        dispose: vi.fn(),
+        dispose: disposeFn,
       },
     } as any));
 
     const triage = new TriageProcessor(store, "/tmp/test");
-
     await triage.specifyTask(makeTask("KB-EP2", "triage"));
 
-    // Status should be cleared (not reported as error)
-    expect(store.updateTask).toHaveBeenCalledWith("KB-EP2", { status: null });
-
-    // Now simulate unpause: triage poll picks up unspecified tasks
-    store.updateTask.mockClear();
-    mockedCreateHaiAgent.mockClear();
-
-    const triageTask = makeTask("KB-EP2", "triage");
-    store.listTasks.mockResolvedValue([triageTask]);
-    store.getSettings.mockResolvedValue({ ...DEFAULT_SETTINGS, enginePaused: false });
-
-    mockedCreateHaiAgent.mockResolvedValue({
-      session: {
-        prompt: vi.fn().mockResolvedValue(undefined),
-        dispose: vi.fn(),
-      },
-    } as any);
-
-    // Trigger a poll — triage should process the task again
-    (triage as any).running = true;
-    await (triage as any).poll();
-    await new Promise((r) => setTimeout(r, 50));
-
-    // Task should be picked up for specification
-    expect(store.updateTask).toHaveBeenCalledWith("KB-EP2", { status: "specifying" });
+    // Session should have continued past the enginePaused event
+    expect(sessionContinued).toBe(true);
+    // dispose should only be called once in the finally block, not by the engine pause listener
+    expect(disposeFn).toHaveBeenCalledTimes(1);
   });
 
   it("scheduler resumes on unpause: schedule() runs when enginePaused goes true→false", async () => {
@@ -1065,7 +1030,7 @@ describe("Engine pause/unpause cycle", () => {
     expect(store.moveTask).toHaveBeenCalledWith("KB-EP4", "in-progress");
   });
 
-  it("concurrency slots freed on pause: semaphore released when agents are terminated", async () => {
+  it("concurrency slots freed after agent completes during enginePaused (soft pause)", async () => {
     const sem = new AgentSemaphore(1); // Only 1 concurrent slot
     const store = createMockStore();
     store.getTask.mockResolvedValue(makeTaskDetail("KB-EP5", "in-progress"));
@@ -1078,7 +1043,7 @@ describe("Engine pause/unpause cycle", () => {
             settings: { enginePaused: true },
             previous: { enginePaused: false },
           });
-          throw new Error("Session terminated");
+          // Agent continues and finishes normally (soft pause)
         }),
         dispose: vi.fn(),
       },
@@ -1086,10 +1051,10 @@ describe("Engine pause/unpause cycle", () => {
 
     const executor = new TaskExecutor(store, "/tmp/test", { semaphore: sem });
 
-    // Execute — this acquires the semaphore slot, runs the agent, then releases on termination
+    // Execute — agent runs to completion despite engine pause
     await executor.execute(makeTask("KB-EP5", "in-progress"));
 
-    // After termination, the semaphore slot should be freed.
+    // After completion, the semaphore slot should be freed.
     // Verify by running a new task through the semaphore — it should not block.
     let secondSlotAcquired = false;
     const runPromise = sem.run(async () => {

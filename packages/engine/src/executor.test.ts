@@ -1316,61 +1316,47 @@ describe("TaskExecutor global pause behavior", () => {
   });
 });
 
-describe("TaskExecutor enginePaused agent termination", () => {
+describe("TaskExecutor enginePaused soft pause (no agent termination)", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockedExistsSync.mockReturnValue(true);
   });
 
-  it("disposes all active sessions when enginePaused transitions false→true", async () => {
+  it("does NOT dispose active sessions when enginePaused transitions false→true", async () => {
     const store = createMockStore();
-    const disposeFn1 = vi.fn();
-    const disposeFn2 = vi.fn();
-    let callCount = 0;
+    const disposeFn = vi.fn();
 
-    mockedCreateHaiAgent.mockImplementation(async () => {
-      callCount++;
-      const dispose = callCount === 1 ? disposeFn1 : disposeFn2;
-      return {
-        session: {
-          prompt: vi.fn().mockImplementation(async () => {
-            // Fire engine pause when the second task starts
-            if (callCount === 2) {
-              store._trigger("settings:updated", {
-                settings: { enginePaused: true },
-                previous: { enginePaused: false },
-              });
-            }
-            throw new Error("Session terminated");
-          }),
-          dispose,
-        },
-      } as any;
-    });
+    mockedCreateHaiAgent.mockImplementation(async () => ({
+      session: {
+        prompt: vi.fn().mockImplementation(async () => {
+          // Trigger engine pause while the session is active
+          store._trigger("settings:updated", {
+            settings: { enginePaused: true },
+            previous: { enginePaused: false },
+          });
+          // Session continues normally — no error thrown
+        }),
+        dispose: disposeFn,
+      },
+    } as any));
 
     const executor = new TaskExecutor(store, "/tmp/test");
+    await executor.execute({
+      id: "KB-001", title: "Test", description: "T", column: "in-progress",
+      dependencies: [], steps: [], currentStep: 0, log: [],
+      createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
+    });
 
-    await Promise.all([
-      executor.execute({
-        id: "KB-001", title: "T1", description: "T", column: "in-progress",
-        dependencies: [], steps: [], currentStep: 0, log: [],
-        createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
-      }),
-      executor.execute({
-        id: "KB-002", title: "T2", description: "T", column: "in-progress",
-        dependencies: [], steps: [], currentStep: 0, log: [],
-        createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
-      }),
-    ]);
-
-    // Both tasks should be moved to todo (not marked as failed)
-    expect(store.moveTask).toHaveBeenCalledWith("KB-001", "todo");
-    expect(store.moveTask).toHaveBeenCalledWith("KB-002", "todo");
+    // dispose should only be called once in the finally block (normal cleanup),
+    // NOT by an engine pause listener
+    expect(disposeFn).toHaveBeenCalledTimes(1);
+    // Task should complete normally and move to in-review, not todo
+    expect(store.moveTask).toHaveBeenCalledWith("KB-001", "in-review");
+    expect(store.moveTask).not.toHaveBeenCalledWith("KB-001", "todo");
     expect(store.updateTask).not.toHaveBeenCalledWith("KB-001", { status: "failed" });
-    expect(store.updateTask).not.toHaveBeenCalledWith("KB-002", { status: "failed" });
   });
 
-  it("moves terminated tasks to todo (not failed)", async () => {
+  it("does NOT move tasks to todo when enginePaused transitions false→true", async () => {
     const store = createMockStore();
 
     mockedCreateHaiAgent.mockImplementation(async () => ({
@@ -1380,7 +1366,7 @@ describe("TaskExecutor enginePaused agent termination", () => {
             settings: { enginePaused: true },
             previous: { enginePaused: false },
           });
-          throw new Error("Session terminated");
+          // Session continues normally
         }),
         dispose: vi.fn(),
       },
@@ -1393,8 +1379,9 @@ describe("TaskExecutor enginePaused agent termination", () => {
       createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
     });
 
-    expect(store.moveTask).toHaveBeenCalledWith("KB-001", "todo");
-    expect(store.updateTask).not.toHaveBeenCalledWith("KB-001", { status: "failed" });
+    // Task should complete normally (in-review), not be moved to todo
+    expect(store.moveTask).toHaveBeenCalledWith("KB-001", "in-review");
+    expect(store.moveTask).not.toHaveBeenCalledWith("KB-001", "todo");
   });
 
   it("takes no action when enginePaused stays false (false→false)", async () => {

@@ -101,17 +101,15 @@ export interface Settings {
    *  global emergency stop for the entire AI engine.
    *  Individual per-task pause flags are unaffected. */
   globalPause?: boolean;
-  /** Engine pause: when true, the scheduler and triage processor stop
-   *  dispatching **new** work (scheduling, triage specification, and
-   *  auto-merge), and all active agent sessions (executor and triage) are
-   *  terminated — matching the {@link globalPause} behavior for agent
-   *  lifecycle. Terminated tasks are moved back to `todo` (executor) or
-   *  have their `specifying` status cleared (triage) so they can resume
-   *  cleanly when the engine is unpaused. Remains independent from
-   *  `globalPause` for scheduling control: `globalPause` is the emergency
-   *  stop, while `enginePaused` is the normal on/off toggle for the AI
-   *  engine. Has no additional effect when {@link globalPause} is also
-   *  true (hard stop already covers agent termination). */
+  /** Engine pause (soft pause): when true, the scheduler and triage
+   *  processor stop dispatching **new** work (scheduling, triage
+   *  specification, and auto-merge), but currently running agent sessions
+   *  are allowed to finish naturally — no sessions are terminated.
+   *  This is the normal on/off toggle for the AI engine.
+   *  Contrast with {@link globalPause}, which is a hard stop that
+   *  immediately terminates all active agent sessions. Has no additional
+   *  effect when {@link globalPause} is also true (hard stop already
+   *  covers everything). */
   enginePaused?: boolean;
   /** Maximum number of concurrent AI agents across all activity types
    *  (triage specification, task execution, and merge operations). */

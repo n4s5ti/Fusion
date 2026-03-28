@@ -172,7 +172,8 @@ export class TaskExecutor {
    * Listens for `task:moved` to auto-execute tasks moved to `in-progress`,
    * `task:updated` to terminate agent sessions when individual tasks are paused,
    * and `settings:updated` to terminate **all** active agent sessions when
-   * `globalPause` or `enginePaused` transitions from `false` to `true`.
+   * `globalPause` transitions from `false` to `true`. `enginePaused` only
+   * prevents new work dispatch — running sessions continue to completion.
    * Paused tasks are moved back to `todo` rather than marked as `failed`.
    */
   constructor(
@@ -209,17 +210,6 @@ export class TaskExecutor {
       }
     });
 
-    // When enginePaused transitions from false → true, terminate all active agent sessions.
-    // Same pattern as globalPause: agents are killed, tasks moved to todo (not failed).
-    store.on("settings:updated", ({ settings, previous }) => {
-      if (settings.enginePaused && !previous.enginePaused) {
-        for (const [taskId, session] of this.activeSessions) {
-          executorLog.log(`Engine pause — terminating agent session for ${taskId}`);
-          this.pausedAborted.add(taskId);
-          session.dispose();
-        }
-      }
-    });
   }
 
   /**

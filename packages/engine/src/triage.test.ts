@@ -1821,12 +1821,12 @@ describe("TriageProcessor global pause agent kill", () => {
   });
 });
 
-describe("TriageProcessor enginePaused agent termination", () => {
+describe("TriageProcessor enginePaused soft pause (no agent termination)", () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
 
-  it("terminates active triage sessions when enginePaused transitions false→true", async () => {
+  it("does NOT terminate active triage sessions when enginePaused transitions false→true", async () => {
     const store = createMockStore();
     const disposeFn = vi.fn();
 
@@ -1838,7 +1838,7 @@ describe("TriageProcessor enginePaused agent termination", () => {
             settings: { enginePaused: true },
             previous: { enginePaused: false },
           });
-          throw new Error("Session terminated");
+          // Session continues normally — no error thrown
         }),
         dispose: disposeFn,
       },
@@ -1859,11 +1859,14 @@ describe("TriageProcessor enginePaused agent termination", () => {
       updatedAt: new Date().toISOString(),
     });
 
-    // dispose is called by the engine pause listener and again in finally
-    expect(disposeFn).toHaveBeenCalled();
+    // dispose should only be called once in the finally block (normal cleanup),
+    // NOT by an engine pause listener
+    expect(disposeFn).toHaveBeenCalledTimes(1);
+    // Task should proceed to todo (normal completion), not be aborted
+    expect(store.moveTask).toHaveBeenCalledWith("KB-001", "todo");
   });
 
-  it("clears specifying status on terminated tasks", async () => {
+  it("does NOT clear specifying status when enginePaused transitions false→true", async () => {
     const store = createMockStore();
 
     mockedCreateHaiAgent.mockImplementation(async () => ({
@@ -1873,7 +1876,7 @@ describe("TriageProcessor enginePaused agent termination", () => {
             settings: { enginePaused: true },
             previous: { enginePaused: false },
           });
-          throw new Error("Session terminated");
+          // Session continues normally
         }),
         dispose: vi.fn(),
       },
@@ -1894,46 +1897,8 @@ describe("TriageProcessor enginePaused agent termination", () => {
       updatedAt: new Date().toISOString(),
     });
 
-    // Status should be cleared (not reported as error)
-    expect(store.updateTask).toHaveBeenCalledWith("KB-001", { status: null });
-  });
-
-  it("does not report errors for engine-pause-aborted tasks", async () => {
-    const store = createMockStore();
-    const onError = vi.fn();
-
-    mockedCreateHaiAgent.mockImplementation(async () => ({
-      session: {
-        prompt: vi.fn().mockImplementation(async () => {
-          store._trigger("settings:updated", {
-            settings: { enginePaused: true },
-            previous: { enginePaused: false },
-          });
-          throw new Error("Session terminated");
-        }),
-        dispose: vi.fn(),
-      },
-    } as any));
-
-    const triage = new TriageProcessor(store, "/tmp/test", { onSpecifyError: onError });
-
-    await triage.specifyTask({
-      id: "KB-001",
-      title: "Test",
-      description: "Test",
-      column: "triage",
-      dependencies: [],
-      steps: [],
-      currentStep: 0,
-      log: [],
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    });
-
-    // onSpecifyError should NOT be called for engine-pause aborted tasks
-    expect(onError).not.toHaveBeenCalled();
-    // Status should be cleared
-    expect(store.updateTask).toHaveBeenCalledWith("KB-001", { status: null });
+    // Task should complete normally and move to todo
+    expect(store.moveTask).toHaveBeenCalledWith("KB-001", "todo");
   });
 });
 
