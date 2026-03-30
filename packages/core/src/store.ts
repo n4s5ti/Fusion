@@ -2,7 +2,7 @@ import { EventEmitter } from "node:events";
 import { execSync } from "node:child_process";
 import { appendFile, mkdir, readFile, writeFile, readdir, rename, unlink } from "node:fs/promises";
 import { join, sep } from "node:path";
-import { existsSync, watch, type FSWatcher } from "node:fs";
+import { existsSync, watch, type FSWatcher, readFileSync } from "node:fs";
 import type { Task, TaskDetail, TaskCreateInput, TaskAttachment, AgentLogEntry, BoardConfig, Column, MergeResult, Settings } from "./types.js";
 import { VALID_TRANSITIONS, DEFAULT_SETTINGS } from "./types.js";
 
@@ -1174,6 +1174,13 @@ export class TaskStore extends EventEmitter<TaskStoreEvents> {
         ? task.dependencies.map((d) => `- **Task:** ${d}`).join("\n")
         : "- **None**";
 
+    // Get current settings to check for ntfy configuration
+    const settings = this.getSettingsSync();
+    const notificationsSection =
+      settings.ntfyEnabled && settings.ntfyTopic
+        ? `\n## Notifications\n\nntfy topic: \`${settings.ntfyTopic}\`\n`
+        : "";
+
     const heading = task.title ? `${task.id}: ${task.title}` : task.id;
     return `# ${heading}
 
@@ -1209,6 +1216,23 @@ ${deps}
 
 - [ ] All steps complete
 - [ ] All tests passing
-`;
+${notificationsSection}`;
+  }
+
+  /**
+   * Synchronous version of getSettings for internal use.
+   * Returns cached settings or default settings if not loaded.
+   */
+  private getSettingsSync(): Settings {
+    // Since we can't easily make generateSpecifiedPrompt async,
+    // we read settings synchronously from the file.
+    // The settings file is read during init and on each update,
+    // so this should be reasonably up-to-date for prompt generation.
+    try {
+      const config = JSON.parse(readFileSync(this.configPath, "utf-8"));
+      return { ...DEFAULT_SETTINGS, ...config.settings };
+    } catch {
+      return DEFAULT_SETTINGS;
+    }
   }
 }

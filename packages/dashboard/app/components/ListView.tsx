@@ -1,8 +1,9 @@
 import { useState, useCallback, useMemo, Fragment, useEffect, useRef } from "react";
-import { LayoutGrid, List as ListIcon, ArrowUpDown, ArrowUp, ArrowDown, Search, Link, Columns3, ChevronRight } from "lucide-react";
+import { LayoutGrid, List as ListIcon, ArrowUpDown, ArrowUp, ArrowDown, Search, Link, Columns3, EyeOff, Eye } from "lucide-react";
 import type { Task, TaskDetail, Column, TaskStep } from "@kb/core";
 import { COLUMN_LABELS, COLUMNS } from "@kb/core";
 import { fetchTaskDetail } from "../api";
+import { InlineCreateCard } from "./InlineCreateCard";
 import type { ToastType } from "../hooks/useToast";
 
 const COLUMN_COLOR_MAP: Record<Column, string> = {
@@ -58,12 +59,16 @@ export function ListView({
   addToast,
   globalPaused,
   onNewTask,
+  isCreating,
+  onCancelCreate,
+  onCreateTask,
 }: ListViewProps) {
   const [sortField, setSortField] = useState<SortField>("createdAt");
   const [sortDirection, setSortDirection] = useState<SortDirection>("desc");
   const [filter, setFilter] = useState("");
   const [draggingTaskId, setDraggingTaskId] = useState<string | null>(null);
   const [dragOverColumn, setDragOverColumn] = useState<Column | null>(null);
+  const [selectedColumn, setSelectedColumn] = useState<Column | null>(null);
 
   // Column visibility state - initialize from localStorage or default to all columns
   const [visibleColumns, setVisibleColumns] = useState<Set<ListColumn>>(() => {
@@ -87,6 +92,21 @@ export function ListView({
     return new Set(ALL_LIST_COLUMNS);
   });
 
+  // Hide done tasks state - initialize from localStorage
+  const [hideDoneTasks, setHideDoneTasks] = useState<boolean>(() => {
+    if (typeof window !== "undefined") {
+      try {
+        const saved = localStorage.getItem("kb-dashboard-hide-done");
+        if (saved !== null) {
+          return saved === "true";
+        }
+      } catch {
+        // Invalid localStorage data - fall through to default
+      }
+    }
+    return false; // Default: show done tasks
+  });
+
   // Persist column visibility changes to localStorage
   useEffect(() => {
     if (typeof window !== "undefined") {
@@ -94,61 +114,12 @@ export function ListView({
     }
   }, [visibleColumns]);
 
-  /**
-   * Section expansion state - tracks which column sections are expanded/collapsed.
-   * Initialized from localStorage with key "kb-dashboard-list-sections".
-   * Defaults to all sections expanded if no saved state exists.
-   * Persists changes to localStorage whenever sections are expanded/collapsed.
-   */
-  const [expandedSections, setExpandedSections] = useState<Set<Column>>(() => {
-    if (typeof window !== "undefined") {
-      try {
-        const saved = localStorage.getItem("kb-dashboard-list-sections");
-        if (saved) {
-          const parsed = JSON.parse(saved) as Column[];
-          // Validate that all saved values are valid Column values
-          const validColumns = parsed.filter((col): col is Column =>
-            COLUMNS.includes(col as Column)
-          );
-          return new Set(validColumns);
-        }
-      } catch {
-        // Invalid localStorage data - fall through to default
-      }
-    }
-    // Default: all sections expanded
-    return new Set<Column>(COLUMNS);
-  });
-
-  // Persist section expansion state to localStorage
+  // Persist hide done tasks state to localStorage
   useEffect(() => {
     if (typeof window !== "undefined") {
-      localStorage.setItem("kb-dashboard-list-sections", JSON.stringify([...expandedSections]));
+      localStorage.setItem("kb-dashboard-hide-done", hideDoneTasks.toString());
     }
-  }, [expandedSections]);
-
-  // Toggle a section's expansion state
-  const toggleSection = useCallback((column: Column) => {
-    setExpandedSections((prev) => {
-      const next = new Set(prev);
-      if (next.has(column)) {
-        next.delete(column);
-      } else {
-        next.add(column);
-      }
-      return next;
-    });
-  }, []);
-
-  // Expand all sections
-  const expandAll = useCallback(() => {
-    setExpandedSections(new Set<Column>(COLUMNS));
-  }, []);
-
-  // Collapse all sections
-  const collapseAll = useCallback(() => {
-    setExpandedSections(new Set<Column>());
-  }, []);
+  }, [hideDoneTasks]);
 
   // Column dropdown state
   const [columnDropdownOpen, setColumnDropdownOpen] = useState(false);
@@ -216,17 +187,36 @@ export function ListView({
     }
   }, [sortField]);
 
+  const handleColumnFilter = useCallback((column: Column) => {
+    setSelectedColumn((prev) => (prev === column ? null : column));
+  }, []);
+
+  const clearColumnFilter = useCallback(() => {
+    setSelectedColumn(null);
+  }, []);
+
   const groupedTasks = useMemo(() => {
-    const filtered = filter
+    // First apply text filter
+    let filtered = filter
       ? tasks.filter(
           (t) =>
             t.id.toLowerCase().includes(filter.toLowerCase()) ||
             (t.title && t.title.toLowerCase().includes(filter.toLowerCase())) ||
             t.description.toLowerCase().includes(filter.toLowerCase())
         )
-      : tasks;
+      : [...tasks];
 
-    const sorted = [...filtered].sort((a, b) => {
+    // Then filter out done tasks if hideDoneTasks is enabled
+    if (hideDoneTasks) {
+      filtered = filtered.filter((t) => t.column !== "done");
+    }
+
+    // Then apply column filter if selected
+    const columnFiltered = selectedColumn
+      ? filtered.filter((t) => t.column === selectedColumn)
+      : filtered;
+
+    const sorted = [...columnFiltered].sort((a, b) => {
       let comparison = 0;
       switch (sortField) {
         case "id":
@@ -261,12 +251,23 @@ export function ListView({
     };
     sorted.forEach(task => groups[task.column].push(task));
     return groups;
-  }, [tasks, filter, sortField, sortDirection]);
+  }, [tasks, filter, sortField, sortDirection, hideDoneTasks, selectedColumn]);
 
   // Calculate total filtered count from groups
   const filteredCount = useMemo(() => {
     return Object.values(groupedTasks).reduce((sum, group) => sum + group.length, 0);
   }, [groupedTasks]);
+
+  // Calculate done task counts for stats display
+  const doneTaskCount = useMemo(() => {
+    return tasks.filter((t) => t.column === "done").length;
+  }, [tasks]);
+
+  // Calculate hidden done tasks count
+  const hiddenDoneCount = useMemo(() => {
+    if (!hideDoneTasks) return 0;
+    return doneTaskCount;
+  }, [hideDoneTasks, doneTaskCount]);
   const handleRowClick = useCallback(
     async (task: Task) => {
       try {
@@ -353,14 +354,6 @@ export function ListView({
             </button>
           )}
         </div>
-        <div className="list-section-controls">
-          <button className="btn btn-sm" onClick={expandAll} title="Expand all sections">
-            Expand All
-          </button>
-          <button className="btn btn-sm" onClick={collapseAll} title="Collapse all sections">
-            Collapse All
-          </button>
-        </div>
         <div className="list-column-toggle" ref={columnDropdownRef}>
           <button
             className="btn btn-sm"
@@ -396,8 +389,32 @@ export function ListView({
             </div>
           )}
         </div>
+        <button
+          className="btn btn-sm list-hide-done-toggle"
+          onClick={() => setHideDoneTasks((prev) => !prev)}
+          aria-pressed={hideDoneTasks}
+          title={hideDoneTasks ? "Show done tasks" : "Hide done tasks"}
+        >
+          {hideDoneTasks ? <Eye size={14} /> : <EyeOff size={14} />}
+          {hideDoneTasks ? "Show Done" : "Hide Done"}
+        </button>
         <div className="list-stats">
-          {filteredCount} of {tasks.length} tasks
+          {selectedColumn
+            ? `${filteredCount} of ${tasks.length} tasks in ${COLUMN_LABELS[selectedColumn]}`
+            : `${filteredCount} of ${tasks.length} tasks`}
+          {hiddenDoneCount > 0 && !selectedColumn && (
+            <span className="list-stats-hidden"> ({hiddenDoneCount} done hidden)</span>
+          )}
+          {selectedColumn && (
+            <button
+              className="btn btn-sm"
+              onClick={clearColumnFilter}
+              aria-label="Clear column filter"
+              style={{ marginLeft: "8px" }}
+            >
+              Clear
+            </button>
+          )}
         </div>
         {onNewTask && (
           <button className="btn btn-primary btn-sm" onClick={onNewTask}>
@@ -407,26 +424,33 @@ export function ListView({
       </div>
 
       <div className="list-drop-zones">
-        {COLUMNS.map((column) => (
-          <div
-            key={column}
-            className={`list-drop-zone${dragOverColumn === column ? " drag-over" : ""}`}
-            onDragOver={(e) => handleColumnDragOver(e, column)}
-            onDragLeave={handleColumnDragLeave}
-            onDrop={(e) => handleColumnDrop(e, column)}
-            data-column={column}
-          >
-            <span className="drop-zone-dot" style={{ background: COLUMN_COLOR_MAP[column] }} />
-            <span className="drop-zone-label">{COLUMN_LABELS[column]}</span>
-            <span className="drop-zone-count">
-              {tasks.filter((t) => t.column === column).length}
-            </span>
-          </div>
-        ))}
+        {COLUMNS.map((column) => {
+          const totalCount = tasks.filter((t) => t.column === column).length;
+          const visibleCount = hideDoneTasks && column === "done" ? 0 : totalCount;
+          const showPartial = hideDoneTasks && column === "done" && totalCount > 0;
+
+          return (
+            <div
+              key={column}
+              className={`list-drop-zone${dragOverColumn === column ? " drag-over" : ""}${selectedColumn === column ? " active" : ""}`}
+              onClick={() => handleColumnFilter(column)}
+              onDragOver={(e) => handleColumnDragOver(e, column)}
+              onDragLeave={handleColumnDragLeave}
+              onDrop={(e) => handleColumnDrop(e, column)}
+              data-column={column}
+            >
+              <span className="drop-zone-dot" style={{ background: COLUMN_COLOR_MAP[column] }} />
+              <span className="drop-zone-label">{COLUMN_LABELS[column]}</span>
+              <span className="drop-zone-count">
+                {showPartial ? `${visibleCount} of ${totalCount}` : totalCount}
+              </span>
+            </div>
+          );
+        })}
       </div>
 
       <div className="list-table-container">
-        {filteredCount === 0 ? (
+        {filteredCount === 0 && !isCreating ? (
           <div className="list-empty">
             {filter ? "No tasks match your filter" : "No tasks yet"}
           </div>
@@ -474,139 +498,149 @@ export function ListView({
             </thead>
             <tbody>
               {COLUMNS.map((column) => {
+                // When column filter is active, only show the selected column
+                if (selectedColumn && column !== selectedColumn) return null;
+                
+                // Skip done column section when hideDoneTasks is enabled (unless it's the selected column)
+                if (hideDoneTasks && column === "done" && !selectedColumn) return null;
+
                 const columnTasks = groupedTasks[column];
                 const isEmpty = columnTasks.length === 0;
 
-                // When filtering, hide empty sections entirely
-                if (filter && isEmpty) return null;
+                // When text filtering, hide empty sections entirely (except triage when creating)
+                if (filter && isEmpty && !(column === "triage" && isCreating)) return null;
 
                 return (
                   <Fragment key={column}>
                     {/* Section Header */}
-                    <tr
-                      className={`list-section-header${expandedSections.has(column) ? "" : " list-section-header--collapsed"}`}
-                      onClick={() => toggleSection(column)}
-                    >
+                    <tr className="list-section-header">
                       <th colSpan={visibleColumns.size} className="list-section-cell">
-                        <span className={`list-section-chevron${expandedSections.has(column) ? " list-section-chevron--expanded" : ""}`}>
-                          <ChevronRight size={16} />
-                        </span>
                         <span className={`list-section-dot dot-${column}`} />
                         <span className="list-section-title">{COLUMN_LABELS[column]}</span>
-                        <span className="list-section-count">{columnTasks.length} {columnTasks.length === 1 ? "task" : "tasks"}</span>
+                        <span className="list-section-count">{columnTasks.length}</span>
                       </th>
                     </tr>
 
-                    {/* Task Rows - only render if section is expanded */}
-                    {expandedSections.has(column) && (
-                      <>
-                        {isEmpty ? (
-                          <tr className="list-section-empty">
-                            <td colSpan={visibleColumns.size} className="list-empty-cell">
-                              No tasks
-                            </td>
-                          </tr>
-                        ) : (
-                          columnTasks.map((task) => {
-                            const isFailed = task.status === "failed";
-                            const isPaused = task.paused === true;
-                            const isAgentActive =
-                              !globalPaused &&
-                              !isFailed &&
-                              !isPaused &&
-                              (task.column === "in-progress" || ACTIVE_STATUSES.has(task.status as string));
-                            const isDragging = draggingTaskId === task.id;
+                    {/* Inline Create Card for Triage column */}
+                    {column === "triage" && isCreating && onCancelCreate && onCreateTask && (
+                      <tr className="list-inline-create-row">
+                        <td colSpan={visibleColumns.size} className="list-inline-create-cell">
+                          <InlineCreateCard
+                            tasks={tasks}
+                            onSubmit={onCreateTask}
+                            onCancel={onCancelCreate}
+                            addToast={addToast}
+                          />
+                        </td>
+                      </tr>
+                    )}
 
-                            return (
-                              <tr
-                                key={task.id}
-                                className={`list-row${isFailed ? " failed" : ""}${isPaused ? " paused" : ""}${
-                                  isAgentActive ? " agent-active" : ""
-                                }${isDragging ? " dragging" : ""}`}
-                                onClick={() => handleRowClick(task)}
-                                draggable={!isPaused}
-                                onDragStart={(e) => handleDragStart(e, task)}
-                                onDragEnd={handleDragEnd}
-                                data-id={task.id}
-                              >
-                                {visibleColumns.has("id") && (
-                                  <td className="list-cell list-cell-id">{task.id}</td>
+                    {/* Task Rows */}
+                    {isEmpty ? (
+                      <tr className="list-section-empty">
+                        <td colSpan={visibleColumns.size} className="list-empty-cell">
+                          No tasks
+                        </td>
+                      </tr>
+                    ) : (
+                      columnTasks.map((task) => {
+                        const isFailed = task.status === "failed";
+                        const isPaused = task.paused === true;
+                        const isAgentActive =
+                          !globalPaused &&
+                          !isFailed &&
+                          !isPaused &&
+                          (task.column === "in-progress" || ACTIVE_STATUSES.has(task.status as string));
+                        const isDragging = draggingTaskId === task.id;
+
+                        return (
+                          <tr
+                            key={task.id}
+                            className={`list-row${isFailed ? " failed" : ""}${isPaused ? " paused" : ""}${
+                              isAgentActive ? " agent-active" : ""
+                            }${isDragging ? " dragging" : ""}`}
+                            onClick={() => handleRowClick(task)}
+                            draggable={!isPaused}
+                            onDragStart={(e) => handleDragStart(e, task)}
+                            onDragEnd={handleDragEnd}
+                            data-id={task.id}
+                          >
+                            {visibleColumns.has("id") && (
+                              <td className="list-cell list-cell-id">{task.id}</td>
+                            )}
+                            {visibleColumns.has("title") && (
+                              <td className="list-cell list-cell-title">
+                                {task.title || task.description.slice(0, 60) + (task.description.length > 60 ? "…" : "")}
+                              </td>
+                            )}
+                            {visibleColumns.has("status") && (
+                              <td className="list-cell">
+                                {task.status ? (
+                                  <span
+                                    className={`list-status-badge${isFailed ? " failed" : ""}${
+                                      isAgentActive ? " pulsing" : ""
+                                    }`}
+                                  >
+                                    {task.status}
+                                  </span>
+                                ) : (
+                                  <span className="list-status-badge">-</span>
                                 )}
-                                {visibleColumns.has("title") && (
-                                  <td className="list-cell list-cell-title">
-                                    {task.title || task.description.slice(0, 60) + (task.description.length > 60 ? "…" : "")}
-                                  </td>
+                              </td>
+                            )}
+                            {visibleColumns.has("column") && (
+                              <td className="list-cell">
+                                <span
+                                  className="list-column-badge"
+                                  style={{
+                                    background: `${COLUMN_COLOR_MAP[task.column]}20`,
+                                    color: COLUMN_COLOR_MAP[task.column],
+                                  }}
+                                >
+                                  {COLUMN_LABELS[task.column]}
+                                </span>
+                              </td>
+                            )}
+                            {visibleColumns.has("createdAt") && (
+                              <td className="list-cell list-cell-date">{formatDate(task.createdAt)}</td>
+                            )}
+                            {visibleColumns.has("updatedAt") && (
+                              <td className="list-cell list-cell-date">{formatDate(task.updatedAt)}</td>
+                            )}
+                            {visibleColumns.has("dependencies") && (
+                              <td className="list-cell list-cell-deps">
+                                {task.dependencies && task.dependencies.length > 0 ? (
+                                  <span className="list-dep-badge" title={task.dependencies.join(", ")}>
+                                    <Link size={12} /> {task.dependencies.length}
+                                  </span>
+                                ) : (
+                                  "-"
                                 )}
-                                {visibleColumns.has("status") && (
-                                  <td className="list-cell">
-                                    {task.status ? (
-                                      <span
-                                        className={`list-status-badge${isFailed ? " failed" : ""}${
-                                          isAgentActive ? " pulsing" : ""
-                                        }`}
-                                      >
-                                        {task.status}
-                                      </span>
-                                    ) : (
-                                      <span className="list-status-badge">-</span>
-                                    )}
-                                  </td>
+                              </td>
+                            )}
+                            {visibleColumns.has("progress") && (
+                              <td className="list-cell list-cell-progress">
+                                {task.steps.length > 0 ? (
+                                  <div className="list-progress">
+                                    <div className="list-progress-bar">
+                                      <div
+                                        className="list-progress-fill"
+                                        style={{
+                                          width: `${getStepProgressPercent(task.steps)}%`,
+                                          backgroundColor: COLUMN_COLOR_MAP[task.column],
+                                        }}
+                                      />
+                                    </div>
+                                    <span className="list-progress-label">{getStepProgress(task.steps)}</span>
+                                  </div>
+                                ) : (
+                                  "-"
                                 )}
-                                {visibleColumns.has("column") && (
-                                  <td className="list-cell">
-                                    <span
-                                      className="list-column-badge"
-                                      style={{
-                                        background: `${COLUMN_COLOR_MAP[task.column]}20`,
-                                        color: COLUMN_COLOR_MAP[task.column],
-                                      }}
-                                    >
-                                      {COLUMN_LABELS[task.column]}
-                                    </span>
-                                  </td>
-                                )}
-                                {visibleColumns.has("createdAt") && (
-                                  <td className="list-cell list-cell-date">{formatDate(task.createdAt)}</td>
-                                )}
-                                {visibleColumns.has("updatedAt") && (
-                                  <td className="list-cell list-cell-date">{formatDate(task.updatedAt)}</td>
-                                )}
-                                {visibleColumns.has("dependencies") && (
-                                  <td className="list-cell list-cell-deps">
-                                    {task.dependencies && task.dependencies.length > 0 ? (
-                                      <span className="list-dep-badge" title={task.dependencies.join(", ")}>
-                                        <Link size={12} /> {task.dependencies.length}
-                                      </span>
-                                    ) : (
-                                      "-"
-                                    )}
-                                  </td>
-                                )}
-                                {visibleColumns.has("progress") && (
-                                  <td className="list-cell list-cell-progress">
-                                    {task.steps.length > 0 ? (
-                                      <div className="list-progress">
-                                        <div className="list-progress-bar">
-                                          <div
-                                            className="list-progress-fill"
-                                            style={{
-                                              width: `${getStepProgressPercent(task.steps)}%`,
-                                              backgroundColor: COLUMN_COLOR_MAP[task.column],
-                                            }}
-                                          />
-                                        </div>
-                                        <span className="list-progress-label">{getStepProgress(task.steps)}</span>
-                                      </div>
-                                    ) : (
-                                      "-"
-                                    )}
-                                  </td>
-                                )}
-                              </tr>
-                            );
-                          })
-                        )}
-                      </>
+                              </td>
+                            )}
+                          </tr>
+                        );
+                      })
                     )}
                   </Fragment>
                 );

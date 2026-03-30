@@ -667,6 +667,185 @@ describe("ListView", () => {
   });
 });
 
+describe("ListView Column Filtering", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("filters tasks by column when drop zone is clicked", () => {
+    const tasks = [
+      createMockTask({ id: "KB-001", column: "triage", title: "Triage Task" }),
+      createMockTask({ id: "KB-002", column: "todo", title: "Todo Task" }),
+      createMockTask({ id: "KB-003", column: "in-progress", title: "In Progress Task" }),
+    ];
+
+    renderListView({ tasks });
+
+    // Click on the triage drop zone
+    const triageZone = document.querySelector('[data-column="triage"].list-drop-zone')!;
+    fireEvent.click(triageZone);
+
+    // Only triage task should be visible
+    expect(screen.getByText("KB-001")).toBeDefined();
+    expect(screen.queryByText("KB-002")).toBeNull();
+    expect(screen.queryByText("KB-003")).toBeNull();
+
+    // Only triage section header should be visible
+    const sectionHeaders = screen.getAllByRole("row").filter(r => r.className.includes("list-section-header"));
+    expect(sectionHeaders.length).toBe(1);
+    expect(sectionHeaders[0].textContent).toContain("Triage");
+  });
+
+  it("clears column filter when same drop zone is clicked again", () => {
+    const tasks = [
+      createMockTask({ id: "KB-001", column: "triage", title: "Triage Task" }),
+      createMockTask({ id: "KB-002", column: "todo", title: "Todo Task" }),
+    ];
+
+    renderListView({ tasks });
+
+    // Click on the triage drop zone to filter
+    const triageZone = document.querySelector('[data-column="triage"].list-drop-zone')!;
+    fireEvent.click(triageZone);
+
+    // Verify filter is active - only triage task visible
+    expect(screen.getByText("KB-001")).toBeDefined();
+    expect(screen.queryByText("KB-002")).toBeNull();
+
+    // Click the same drop zone again to clear filter
+    fireEvent.click(triageZone);
+
+    // All tasks should be visible again
+    expect(screen.getByText("KB-001")).toBeDefined();
+    expect(screen.getByText("KB-002")).toBeDefined();
+
+    // All 5 section headers should be visible
+    const sectionHeaders = screen.getAllByRole("row").filter(r => r.className.includes("list-section-header"));
+    expect(sectionHeaders.length).toBe(5);
+  });
+
+  it("switches column filter when different drop zone is clicked", () => {
+    const tasks = [
+      createMockTask({ id: "KB-001", column: "triage", title: "Triage Task" }),
+      createMockTask({ id: "KB-002", column: "todo", title: "Todo Task" }),
+    ];
+
+    renderListView({ tasks });
+
+    // Click on the triage drop zone to filter
+    const triageZone = document.querySelector('[data-column="triage"].list-drop-zone')!;
+    fireEvent.click(triageZone);
+
+    // Verify only triage task visible
+    expect(screen.getByText("KB-001")).toBeDefined();
+    expect(screen.queryByText("KB-002")).toBeNull();
+
+    // Click on the todo drop zone to switch filter
+    const todoZone = document.querySelector('[data-column="todo"].list-drop-zone')!;
+    fireEvent.click(todoZone);
+
+    // Only todo task should be visible now
+    expect(screen.queryByText("KB-001")).toBeNull();
+    expect(screen.getByText("KB-002")).toBeDefined();
+
+    // Only todo section header should be visible
+    const sectionHeaders = screen.getAllByRole("row").filter(r => r.className.includes("list-section-header"));
+    expect(sectionHeaders.length).toBe(1);
+    expect(sectionHeaders[0].textContent).toContain("Todo");
+  });
+
+  it("clears column filter when clear button is clicked", () => {
+    const tasks = [
+      createMockTask({ id: "KB-001", column: "triage", title: "Triage Task" }),
+      createMockTask({ id: "KB-002", column: "todo", title: "Todo Task" }),
+    ];
+
+    renderListView({ tasks });
+
+    // Click on the triage drop zone to filter
+    const triageZone = document.querySelector('[data-column="triage"].list-drop-zone')!;
+    fireEvent.click(triageZone);
+
+    // Verify filter is active
+    expect(screen.queryByText("KB-002")).toBeNull();
+
+    // Click the clear button
+    const clearButton = screen.getByRole("button", { name: /clear column filter/i });
+    fireEvent.click(clearButton);
+
+    // All tasks should be visible again
+    expect(screen.getByText("KB-001")).toBeDefined();
+    expect(screen.getByText("KB-002")).toBeDefined();
+  });
+
+  it("shows correct filtered stats when column filter is active", () => {
+    const tasks = [
+      createMockTask({ id: "KB-001", column: "triage", title: "Triage Task" }),
+      createMockTask({ id: "KB-002", column: "triage", title: "Triage Task 2" }),
+      createMockTask({ id: "KB-003", column: "todo", title: "Todo Task" }),
+    ];
+
+    renderListView({ tasks });
+
+    // Click on the triage drop zone to filter
+    const triageZone = document.querySelector('[data-column="triage"].list-drop-zone')!;
+    fireEvent.click(triageZone);
+
+    // Stats should show filtered count with column name
+    expect(screen.getByText("2 of 3 tasks in Triage")).toBeDefined();
+  });
+
+  it("applies text filter within column filter", () => {
+    const tasks = [
+      createMockTask({ id: "KB-001", column: "triage", title: "Alpha Triage Task" }),
+      createMockTask({ id: "KB-002", column: "triage", title: "Beta Triage Task" }),
+      createMockTask({ id: "KB-003", column: "todo", title: "Alpha Todo Task" }),
+    ];
+
+    renderListView({ tasks });
+
+    // Click on the triage drop zone to filter by column
+    const triageZone = document.querySelector('[data-column="triage"].list-drop-zone')!;
+    fireEvent.click(triageZone);
+
+    // Both triage tasks should be visible
+    expect(screen.getByText("KB-001")).toBeDefined();
+    expect(screen.getByText("KB-002")).toBeDefined();
+    expect(screen.queryByText("KB-003")).toBeNull();
+
+    // Apply text filter within the triage column
+    const filterInput = screen.getByPlaceholderText("Filter by ID or title...");
+    fireEvent.change(filterInput, { target: { value: "Alpha" } });
+
+    // Only Alpha triage task should be visible
+    expect(screen.getByText("KB-001")).toBeDefined();
+    expect(screen.queryByText("KB-002")).toBeNull();
+    expect(screen.queryByText("KB-003")).toBeNull();
+
+    // Stats should reflect combined filtering
+    expect(screen.getByText("1 of 3 tasks in Triage")).toBeDefined();
+  });
+
+  it("applies active class to selected column drop zone", () => {
+    const tasks = [
+      createMockTask({ id: "KB-001", column: "triage", title: "Triage Task" }),
+    ];
+
+    renderListView({ tasks });
+
+    // Click on the triage drop zone
+    const triageZone = document.querySelector('[data-column="triage"].list-drop-zone')!;
+    fireEvent.click(triageZone);
+
+    // Should have active class
+    expect(triageZone.classList.contains("active")).toBe(true);
+
+    // Other drop zones should not have active class
+    const todoZone = document.querySelector('[data-column="todo"].list-drop-zone')!;
+    expect(todoZone.classList.contains("active")).toBe(false);
+  });
+});
+
 describe("ListView Column Visibility", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -854,264 +1033,259 @@ describe("ListView Column Visibility", () => {
   });
 });
 
-describe("ListView Collapsible Sections", () => {
+
+describe("ListView Hide Done Tasks", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    // Clear localStorage before each test
     localStorage.clear();
   });
 
-  it("collapses and expands section when header is clicked", () => {
+  it("renders hide done tasks toggle button", () => {
+    renderListView();
+
+    const hideDoneButton = screen.getByRole("button", { name: /hide done/i });
+    expect(hideDoneButton).toBeDefined();
+  });
+
+  it("hides done tasks when toggle is activated", () => {
     const tasks = [
-      createMockTask({ id: "KB-001", title: "Task 1", column: "triage" }),
-      createMockTask({ id: "KB-002", title: "Task 2", column: "triage" }),
+      createMockTask({ id: "KB-001", column: "done" }),
+      createMockTask({ id: "KB-002", column: "triage" }),
     ];
 
     renderListView({ tasks });
 
-    // Initially, task should be visible
+    // Both tasks should be visible initially
     expect(screen.getByText("KB-001")).toBeDefined();
     expect(screen.getByText("KB-002")).toBeDefined();
 
-    // Find and click the triage section header
-    const sectionHeaders = screen.getAllByRole("row").filter(r => r.className.includes("list-section-header"));
-    const triageHeader = sectionHeaders.find(h => h.textContent?.includes("Triage"));
-    expect(triageHeader).toBeDefined();
-    fireEvent.click(triageHeader!);
+    // Click hide done button
+    const hideDoneButton = screen.getByRole("button", { name: /hide done/i });
+    fireEvent.click(hideDoneButton);
 
-    // After collapse, tasks should be hidden but header still visible
+    // Done task should be hidden, triage task should still be visible
     expect(screen.queryByText("KB-001")).toBeNull();
-    expect(screen.queryByText("KB-002")).toBeNull();
-    expect(triageHeader).toBeDefined();
+    expect(screen.getByText("KB-002")).toBeDefined();
+  });
 
-    // Click header again to expand
-    fireEvent.click(triageHeader!);
+  it("shows done tasks when toggle is deactivated", () => {
+    const tasks = [
+      createMockTask({ id: "KB-001", column: "done" }),
+      createMockTask({ id: "KB-002", column: "triage" }),
+    ];
 
-    // Tasks should be visible again
+    renderListView({ tasks });
+
+    // Click hide done button to hide done tasks
+    const hideDoneButton = screen.getByRole("button", { name: /hide done/i });
+    fireEvent.click(hideDoneButton);
+
+    // Done task should be hidden
+    expect(screen.queryByText("KB-001")).toBeNull();
+
+    // Click again to show done tasks
+    fireEvent.click(hideDoneButton);
+
+    // Both tasks should be visible again
     expect(screen.getByText("KB-001")).toBeDefined();
     expect(screen.getByText("KB-002")).toBeDefined();
   });
 
-  it("persists section expansion state to localStorage", () => {
-    const tasks = [
-      createMockTask({ id: "KB-001", title: "Task 1", column: "triage" }),
-    ];
-
+  it("persists hide done preference to localStorage", () => {
+    const tasks = [createMockTask({ id: "KB-001", column: "done" })];
     renderListView({ tasks });
 
-    // Collapse the triage section
-    const sectionHeaders = screen.getAllByRole("row").filter(r => r.className.includes("list-section-header"));
-    const triageHeader = sectionHeaders.find(h => h.textContent?.includes("Triage"));
-    fireEvent.click(triageHeader!);
+    // Click hide done button
+    const hideDoneButton = screen.getByRole("button", { name: /hide done/i });
+    fireEvent.click(hideDoneButton);
 
-    // Verify localStorage was updated with only expanded columns
-    const saved = localStorage.getItem("kb-dashboard-list-sections");
-    expect(saved).toBeTruthy();
-    const parsed = JSON.parse(saved!) as string[];
-    expect(parsed).not.toContain("triage");
-    // Other columns should still be expanded
-    expect(parsed).toContain("todo");
-    expect(parsed).toContain("in-progress");
-    expect(parsed).toContain("in-review");
-    expect(parsed).toContain("done");
+    // Verify localStorage was updated
+    expect(localStorage.getItem("kb-dashboard-hide-done")).toBe("true");
   });
 
-  it("restores section expansion state from localStorage on mount", () => {
-    // Set up localStorage with only todo expanded (triage collapsed)
-    localStorage.setItem("kb-dashboard-list-sections", JSON.stringify(["todo", "in-progress", "in-review", "done"]));
+  it("initializes hide done state from localStorage", () => {
+    // Set up localStorage with hide done enabled
+    localStorage.setItem("kb-dashboard-hide-done", "true");
 
     const tasks = [
-      createMockTask({ id: "KB-001", title: "Triage Task", column: "triage" }),
-      createMockTask({ id: "KB-002", title: "Todo Task", column: "todo" }),
+      createMockTask({ id: "KB-001", column: "done" }),
+      createMockTask({ id: "KB-002", column: "triage" }),
     ];
-
     renderListView({ tasks });
 
-    // Triage task should be hidden (collapsed)
-    expect(screen.queryByText("KB-001")).toBeNull();
+    // Button should show "Show Done" text since done tasks are hidden
+    expect(screen.getByRole("button", { name: /show done/i })).toBeDefined();
 
-    // Todo task should be visible (expanded)
+    // Done task should be hidden initially
+    expect(screen.queryByText("KB-001")).toBeNull();
     expect(screen.getByText("KB-002")).toBeDefined();
-
-    // Triage header should still be visible with collapsed styling
-    const triageHeader = screen.getAllByRole("row")
-      .find(r => r.className.includes("list-section-header") && r.textContent?.includes("Triage"));
-    expect(triageHeader).toBeDefined();
-    expect(triageHeader?.className).toContain("list-section-header--collapsed");
   });
 
-  it("expand all button expands all collapsed sections", () => {
+  it("updates stats text when done tasks are hidden", () => {
     const tasks = [
-      createMockTask({ id: "KB-001", title: "Triage Task", column: "triage" }),
-      createMockTask({ id: "KB-002", title: "Todo Task", column: "todo" }),
+      createMockTask({ id: "KB-001", column: "done" }),
+      createMockTask({ id: "KB-002", column: "triage" }),
+      createMockTask({ id: "KB-003", column: "done" }),
     ];
 
     renderListView({ tasks });
 
-    // Collapse triage section
-    const sectionHeaders = screen.getAllByRole("row").filter(r => r.className.includes("list-section-header"));
-    const triageHeader = sectionHeaders.find(h => h.textContent?.includes("Triage"));
-    fireEvent.click(triageHeader!);
+    // Initial stats should show all tasks
+    expect(screen.getByText("3 of 3 tasks")).toBeDefined();
 
-    // Verify triage task is hidden
+    // Click hide done button
+    const hideDoneButton = screen.getByRole("button", { name: /hide done/i });
+    fireEvent.click(hideDoneButton);
+
+    // Stats should show filtered count with hidden indicator
+    expect(screen.getByText("1 of 3 tasks")).toBeDefined();
+    expect(screen.getByText(/2 done hidden/)).toBeDefined();
+  });
+
+  it("hides done column section header when hide done is active", () => {
+    const tasks = [
+      createMockTask({ id: "KB-001", column: "done" }),
+      createMockTask({ id: "KB-002", column: "triage" }),
+    ];
+
+    renderListView({ tasks });
+
+    // All section headers should be visible initially
+    const sectionHeadersBefore = screen.getAllByRole("row").filter(r => r.className.includes("list-section-header"));
+    expect(sectionHeadersBefore.length).toBe(5); // All 5 columns
+
+    // Click hide done button
+    const hideDoneButton = screen.getByRole("button", { name: /hide done/i });
+    fireEvent.click(hideDoneButton);
+
+    // Done section should be hidden - find section headers and verify done is not present
+    const doneSection = screen.getAllByRole("row").find(r => 
+      r.className.includes("list-section-header") && r.textContent?.includes("Done")
+    );
+    expect(doneSection).toBeUndefined();
+  });
+
+  it("shows done drop zone with count when hide done is active", () => {
+    const tasks = [
+      createMockTask({ id: "KB-001", column: "done" }),
+      createMockTask({ id: "KB-002", column: "done" }),
+    ];
+
+    renderListView({ tasks });
+
+    // Click hide done button
+    const hideDoneButton = screen.getByRole("button", { name: /hide done/i });
+    fireEvent.click(hideDoneButton);
+
+    // Done drop zone should still be visible with "X of Y" format
+    const doneZone = document.querySelector('[data-column="done"].list-drop-zone');
+    expect(doneZone).toBeDefined();
+    expect(doneZone?.textContent).toContain("0 of 2");
+  });
+
+  it("preserves hide done state through filter changes", () => {
+    const tasks = [
+      createMockTask({ id: "KB-001", column: "done", title: "Alpha" }),
+      createMockTask({ id: "KB-002", column: "triage", title: "Beta" }),
+    ];
+
+    renderListView({ tasks });
+
+    // Hide done tasks
+    const hideDoneButton = screen.getByRole("button", { name: /hide done/i });
+    fireEvent.click(hideDoneButton);
+
+    // Apply filter
+    const filterInput = screen.getByPlaceholderText("Filter by ID or title...");
+    fireEvent.change(filterInput, { target: { value: "Beta" } });
+
+    // Done task should remain hidden
     expect(screen.queryByText("KB-001")).toBeNull();
-
-    // Click Expand All button
-    const expandAllButton = screen.getByText("Expand All");
-    fireEvent.click(expandAllButton);
-
-    // All tasks should be visible now
-    expect(screen.getByText("KB-001")).toBeDefined();
+    // Filtered task should be visible
     expect(screen.getByText("KB-002")).toBeDefined();
+  });
+});
 
-    // Verify localStorage has all columns
-    const saved = localStorage.getItem("kb-dashboard-list-sections");
-    const parsed = JSON.parse(saved!) as string[];
-    expect(parsed).toContain("triage");
-    expect(parsed).toContain("todo");
+describe("ListView Inline Create Card", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
   });
 
-  it("collapse all button collapses all expanded sections", () => {
-    const tasks = [
-      createMockTask({ id: "KB-001", title: "Triage Task", column: "triage" }),
-      createMockTask({ id: "KB-002", title: "Todo Task", column: "todo" }),
-    ];
+  it("shows InlineCreateCard when isCreating is true", () => {
+    renderListView({ isCreating: true, onCancelCreate: vi.fn(), onCreateTask: vi.fn() });
 
-    renderListView({ tasks });
-
-    // Initially tasks should be visible
-    expect(screen.getByText("KB-001")).toBeDefined();
-    expect(screen.getByText("KB-002")).toBeDefined();
-
-    // Click Collapse All button
-    const collapseAllButton = screen.getByText("Collapse All");
-    fireEvent.click(collapseAllButton);
-
-    // All tasks should be hidden now
-    expect(screen.queryByText("KB-001")).toBeNull();
-    expect(screen.queryByText("KB-002")).toBeNull();
-
-    // Section headers should still be visible
-    const sectionHeaders = screen.getAllByRole("row").filter(r => r.className.includes("list-section-header"));
-    expect(sectionHeaders.length).toBe(5); // All 5 columns
-
-    // Verify localStorage is empty (no expanded sections)
-    const saved = localStorage.getItem("kb-dashboard-list-sections");
-    const parsed = JSON.parse(saved!) as string[];
-    expect(parsed.length).toBe(0);
+    // The inline creation card should be visible with its textarea
+    expect(screen.getByPlaceholderText("What needs to be done?")).toBeDefined();
   });
 
-  it("collapsed sections hide task rows but keep header visible", () => {
-    const tasks = [
-      createMockTask({ id: "KB-001", title: "Task 1", column: "triage" }),
-    ];
+  it("does not show InlineCreateCard when isCreating is false", () => {
+    renderListView({ isCreating: false, onCancelCreate: vi.fn(), onCreateTask: vi.fn() });
 
-    renderListView({ tasks });
-
-    // Get the triage section header
-    const sectionHeaders = screen.getAllByRole("row").filter(r => r.className.includes("list-section-header"));
-    const triageHeader = sectionHeaders.find(h => h.textContent?.includes("Triage"));
-    expect(triageHeader).toBeDefined();
-
-    // Verify task is visible before collapse
-    expect(screen.getByText("KB-001")).toBeDefined();
-
-    // Collapse the section
-    fireEvent.click(triageHeader!);
-
-    // Header should still be visible
-    expect(triageHeader).toBeDefined();
-    // But with collapsed class
-    expect(triageHeader?.className).toContain("list-section-header--collapsed");
-
-    // Task should be hidden
-    expect(screen.queryByText("KB-001")).toBeNull();
-
-    // Count badge should still show "1 task"
-    expect(triageHeader?.textContent).toContain("1 task");
+    // The inline creation card should not be visible
+    expect(screen.queryByPlaceholderText("What needs to be done?")).toBeNull();
   });
 
-  it("drag and drop still works in expanded sections", () => {
-    const tasks = [createMockTask({ id: "KB-001", column: "triage" })];
-    const mockOnMoveTask = vi.fn(() => Promise.resolve(tasks[0]));
+  it("does not show InlineCreateCard when onCancelCreate is not provided", () => {
+    renderListView({ isCreating: true, onCreateTask: vi.fn() });
 
-    renderListView({ tasks, onMoveTask: mockOnMoveTask });
+    // The inline creation card should not be visible without onCancelCreate
+    expect(screen.queryByPlaceholderText("What needs to be done?")).toBeNull();
+  });
 
-    // Find the task row
-    const row = screen.getByText("KB-001").closest("tr")!;
+  it("does not show InlineCreateCard when onCreateTask is not provided", () => {
+    renderListView({ isCreating: true, onCancelCreate: vi.fn() });
 
-    // Simulate drag start
-    fireEvent.dragStart(row, {
-      dataTransfer: {
-        setData: vi.fn(),
-        effectAllowed: "move",
-      },
+    // The inline creation card should not be visible without onCreateTask
+    expect(screen.queryByPlaceholderText("What needs to be done?")).toBeNull();
+  });
+
+  it("calls onCreateTask with triage column when task is submitted from inline card", async () => {
+    const mockOnCreateTask = vi.fn().mockResolvedValue(createMockTask({ id: "KB-002" }));
+    renderListView({ isCreating: true, onCancelCreate: vi.fn(), onCreateTask: mockOnCreateTask });
+
+    const textarea = screen.getByPlaceholderText("What needs to be done?");
+    fireEvent.change(textarea, { target: { value: "New task description" } });
+    fireEvent.keyDown(textarea, { key: "Enter" });
+
+    await waitFor(() => {
+      expect(mockOnCreateTask).toHaveBeenCalledWith({
+        description: "New task description",
+        column: "triage",
+      });
     });
-
-    // Simulate drop on todo column drop zone
-    const todoZone = document.querySelector('[data-column="todo"].list-drop-zone')!;
-    fireEvent.drop(todoZone, {
-      preventDefault: vi.fn(),
-      dataTransfer: {
-        getData: vi.fn(() => "KB-001"),
-      },
-    });
-
-    // Verify onMoveTask was called
-    expect(mockOnMoveTask).toHaveBeenCalledWith("KB-001", "todo");
   });
 
-  it("shows No tasks placeholder for empty expanded sections", () => {
-    // Create tasks only in triage, so other columns show "No tasks" placeholders
-    const tasks = [createMockTask({ id: "KB-001", column: "triage" })];
+  it("calls onCancelCreate when inline card is cancelled via blur", () => {
+    const mockOnCancelCreate = vi.fn();
+    renderListView({ isCreating: true, onCancelCreate: mockOnCancelCreate, onCreateTask: vi.fn() });
 
-    renderListView({ tasks });
+    const textarea = screen.getByPlaceholderText("What needs to be done?");
+    textarea.focus();
+    fireEvent.focusOut(textarea, { relatedTarget: null });
 
-    // Should see 4 "No tasks" placeholders for empty columns (todo, in-progress, in-review, done)
-    const noTasksCells = screen.getAllByText("No tasks");
-    expect(noTasksCells.length).toBe(4);
+    expect(mockOnCancelCreate).toHaveBeenCalledTimes(1);
   });
 
-  it("hides No tasks placeholder when section is collapsed", () => {
-    // Create tasks only in triage
-    const tasks = [createMockTask({ id: "KB-001", column: "triage" })];
+  it("calls onCancelCreate when inline card is cancelled via Escape key", () => {
+    const mockOnCancelCreate = vi.fn();
+    renderListView({ isCreating: true, onCancelCreate: mockOnCancelCreate, onCreateTask: vi.fn() });
 
-    renderListView({ tasks });
+    const textarea = screen.getByPlaceholderText("What needs to be done?");
+    fireEvent.keyDown(textarea, { key: "Escape" });
 
-    // Initially 4 sections show "No tasks" (todo, in-progress, in-review, done)
-    let noTasksCells = screen.getAllByText("No tasks");
-    expect(noTasksCells.length).toBe(4);
-
-    // Collapse the todo section (which has "No tasks" placeholder)
-    const sectionHeaders = screen.getAllByRole("row").filter(r => r.className.includes("list-section-header"));
-    const todoHeader = sectionHeaders.find(h => h.textContent?.includes("Todo"));
-    fireEvent.click(todoHeader!);
-
-    // Now should only show 3 "No tasks" placeholders (todo is collapsed)
-    noTasksCells = screen.getAllByText("No tasks");
-    expect(noTasksCells.length).toBe(3);
+    expect(mockOnCancelCreate).toHaveBeenCalledTimes(1);
   });
 
-  it("all sections expanded by default when no localStorage", () => {
-    const tasks = [
-      createMockTask({ id: "KB-001", column: "triage" }),
-      createMockTask({ id: "KB-002", column: "todo" }),
-    ];
+  it("renders InlineCreateCard in triage section with correct colSpan", () => {
+    renderListView({ isCreating: true, onCancelCreate: vi.fn(), onCreateTask: vi.fn() });
 
-    renderListView({ tasks });
+    // Find the inline create row
+    const inlineCreateRow = document.querySelector(".list-inline-create-row");
+    expect(inlineCreateRow).toBeTruthy();
 
-    // All tasks should be visible by default
-    expect(screen.getByText("KB-001")).toBeDefined();
-    expect(screen.getByText("KB-002")).toBeDefined();
-
-    // Verify localStorage was initialized with all columns
-    const saved = localStorage.getItem("kb-dashboard-list-sections");
-    expect(saved).toBeTruthy();
-    const parsed = JSON.parse(saved!) as string[];
-    expect(parsed).toContain("triage");
-    expect(parsed).toContain("todo");
-    expect(parsed).toContain("in-progress");
-    expect(parsed).toContain("in-review");
-    expect(parsed).toContain("done");
+    // Check that the cell has the correct colSpan (8 columns by default)
+    const inlineCreateCell = document.querySelector(".list-inline-create-cell");
+    expect(inlineCreateCell).toBeTruthy();
+    expect(inlineCreateCell?.getAttribute("colspan")).toBe("8");
   });
 });

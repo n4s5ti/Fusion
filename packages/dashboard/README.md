@@ -7,7 +7,7 @@ Web-based dashboard for managing kb tasks. Provides a visual kanban board, list 
 ### Task Management
 - **Kanban Board**: Drag-and-drop task management across columns (Triage, Todo, In Progress, In Review, Done)
 - **Inline Editing**: Quick-edit task title and description directly on the board for Triage and Todo columns. Double-click a card or use the pencil icon that appears on hover.
-- **List View**: Alternative tabular view for tasks with sorting, filtering, and collapsible column sections. Click section headers to expand/collapse each column group. Section expansion state is persisted to localStorage.
+- **List View**: Alternative tabular view for tasks with sorting and filtering
 - **Task Details**: View full task specifications, agent logs, and attachments
 - **GitHub Import**: Import issues directly from GitHub repositories
 - **PR Management**: Create and track pull requests for in-review tasks
@@ -44,7 +44,8 @@ The Git Manager provides comprehensive repository visualization and management d
 - View operation results and error states
 
 ### Configuration
-- **Settings Modal**: Configure scheduling, worktrees, build commands, merge preferences
+- **Settings Modal**: Configure scheduling, worktrees, build commands, merge preferences, and notifications
+- **Notifications**: ntfy.sh integration for push notifications when tasks complete or fail
 - **Authentication**: OAuth provider management for AI model access
 - **Pause Controls**: Soft pause (stop new work) and hard stop (kill all agents)
 

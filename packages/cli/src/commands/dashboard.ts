@@ -2,7 +2,7 @@ import { exec } from "node:child_process";
 import type { AddressInfo } from "node:net";
 import { TaskStore } from "@kb/core";
 import { createServer } from "@kb/dashboard";
-import { TriageProcessor, TaskExecutor, Scheduler, AgentSemaphore, WorktreePool, aiMergeTask, UsageLimitPauser, PRIORITY_MERGE, scanIdleWorktrees, cleanupOrphanedWorktrees } from "@kb/engine";
+import { TriageProcessor, TaskExecutor, Scheduler, AgentSemaphore, WorktreePool, aiMergeTask, UsageLimitPauser, PRIORITY_MERGE, scanIdleWorktrees, cleanupOrphanedWorktrees, NtfyNotifier } from "@kb/engine";
 import { AuthStorage, ModelRegistry } from "@mariozechner/pi-coding-agent";
 
 function openBrowser(url: string): void {
@@ -18,6 +18,10 @@ export async function runDashboard(port: number, opts: { open?: boolean; paused?
   const store = new TaskStore(cwd);
   await store.init();
   await store.watch();
+
+  // ── NtfyNotifier: push notifications for task completion and failures ─
+  const notifier = new NtfyNotifier(store);
+  notifier.start();
 
   // Set enginePaused if starting in paused mode
   if (opts.paused) {
@@ -375,6 +379,7 @@ export async function runDashboard(port: number, opts: { open?: boolean; paused?
     process.on("SIGINT", () => {
       triage.stop();
       scheduler.stop();
+      notifier.stop();
       if (mergeRetryTimer) clearTimeout(mergeRetryTimer);
       store.stopWatching();
       process.exit(0);
@@ -384,6 +389,7 @@ export async function runDashboard(port: number, opts: { open?: boolean; paused?
   // Dev mode: simplified SIGINT handler (no engine components)
   if (opts.dev) {
     process.on("SIGINT", () => {
+      notifier.stop();
       store.stopWatching();
       process.exit(0);
     });

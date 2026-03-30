@@ -121,6 +121,35 @@ To enable manual plan approval:
 }
 ```
 
+### `ntfyEnabled` (default: `false`)
+
+When true, enables ntfy.sh push notifications for task completion and failures.
+
+**Notification events:**
+- Task moves to "in-review" — "Task completed — ready for review"
+- Task moves to "done" — "Task merged to main"
+- Task status becomes "failed" — "Task failed" (high priority)
+
+**Configuration:**
+1. Go to https://ntfy.sh and pick a unique topic name (or self-host ntfy)
+2. Open dashboard Settings → Notifications
+3. Enable notifications and enter your topic name
+4. Install the ntfy app on your phone/desktop and subscribe to your topic
+
+```json
+{
+  "settings": {
+    "ntfyEnabled": true,
+    "ntfyTopic": "my-kb-notifications"
+  }
+}
+```
+
+**Notes:**
+- No authentication required for public topics (keep it simple)
+- Topic must be 1–64 alphanumeric/hyphen/underscore characters
+- Notifications are best-effort: failures are logged but don't block task execution
+
 ## Per-Task Model Overrides
 
 The kb dashboard allows overriding the global AI model selection on a per-task basis. This enables using different models for different types of work without changing global settings.

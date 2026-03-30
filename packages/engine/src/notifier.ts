@@ -1,0 +1,238 @@
+import type { TaskStore, Task, Column, Settings, MergeResult } from "@kb/core";
+import { schedulerLog } from "./logger.js";
+
+export interface NtfyNotifierOptions {
+  /** Base URL for ntfy.sh. Default: https://ntfy.sh */
+  ntfyBaseUrl?: string;
+}
+
+interface NtfyConfig {
+  enabled: boolean;
+  topic: string | undefined;
+}
+
+/**
+ * NtfyNotifier sends push notifications via ntfy.sh when tasks complete
+ * or fail. It listens to TaskStore events and sends HTTP POST requests
+ * to the configured ntfy topic.
+ *
+ * Features:
+ * - Runtime reconfiguration via settings:updated events
+ * - Best-effort delivery (errors are logged but never thrown)
+ * - Duplicate prevention for rapid column transitions
+ * - Configurable notification events (hardcoded defaults)
+ */
+export class NtfyNotifier {
+  private config: NtfyConfig = { enabled: false, topic: undefined };
+  private ntfyBaseUrl: string;
+  /** Tracks last notification time per task to prevent duplicates */
+  private lastNotificationTime: Map<string, number> = new Map();
+  /** Minimum interval between notifications for the same task (ms) */
+  private debounceMs = 5000;
+  /** AbortController for in-flight requests during shutdown */
+  private abortController: AbortController | null = null;
+
+  constructor(
+    private store: TaskStore,
+    options: NtfyNotifierOptions = {},
+  ) {
+    this.ntfyBaseUrl = options.ntfyBaseUrl ?? "https://ntfy.sh";
+  }
+
+  /**
+   * Start listening to store events.
+   * Must be called after store is initialized.
+   * Returns a promise that resolves when initial config is loaded.
+   */
+  async start(): Promise<void> {
+    this.abortController = new AbortController();
+
+    // Load initial config
+    const settings = await this.store.getSettings();
+    this.loadConfig(settings);
+
+    // Listen for task movements
+    this.store.on("task:moved", this.handleTaskMoved);
+
+    // Listen for task updates (status changes)
+    this.store.on("task:updated", this.handleTaskUpdated);
+
+    // Listen for merge events
+    this.store.on("task:merged", this.handleTaskMerged);
+
+    // Listen for settings changes for runtime reconfiguration
+    this.store.on("settings:updated", this.handleSettingsUpdated);
+
+    schedulerLog.log("NtfyNotifier started");
+  }
+
+  /**
+   * Stop listening to store events and abort in-flight requests.
+   */
+  stop(): void {
+    this.store.off("task:moved", this.handleTaskMoved);
+    this.store.off("task:updated", this.handleTaskUpdated);
+    this.store.off("task:merged", this.handleTaskMerged);
+    this.store.off("settings:updated", this.handleSettingsUpdated);
+
+    // Abort any in-flight requests
+    if (this.abortController) {
+      this.abortController.abort();
+      this.abortController = null;
+    }
+
+    schedulerLog.log("NtfyNotifier stopped");
+  }
+
+  private handleTaskMoved = (data: { task: Task; from: Column; to: Column }): void => {
+    if (!this.config.enabled || !this.config.topic) return;
+
+    const { task, to } = data;
+
+    // Notify when task moves to in-review (completed work, ready for review)
+    if (to === "in-review") {
+      this.maybeNotify(task.id, () =>
+        this.sendNotification(
+          this.config.topic!,
+          `Task ${task.id} completed`,
+          `Task "${task.title ?? task.id}" is ready for review`,
+          "default",
+        ),
+      );
+    }
+
+    // Notify when task moves to done (merged to main)
+    if (to === "done") {
+      this.maybeNotify(task.id, () =>
+        this.sendNotification(
+          this.config.topic!,
+          `Task ${task.id} merged`,
+          `Task "${task.title ?? task.id}" has been merged to main`,
+          "default",
+        ),
+      );
+    }
+  };
+
+  private handleTaskUpdated = (task: Task): void => {
+    if (!this.config.enabled || !this.config.topic) return;
+
+    // Notify when task fails
+    if (task.status === "failed") {
+      this.maybeNotify(task.id, () =>
+        this.sendNotification(
+          this.config.topic!,
+          `Task ${task.id} failed`,
+          `Task "${task.title ?? task.id}" has failed and needs attention`,
+          "high",
+        ),
+      );
+    }
+  };
+
+  private handleTaskMerged = (result: MergeResult): void => {
+    if (!this.config.enabled || !this.config.topic) return;
+
+    // Only notify on successful merges
+    if (result.merged) {
+      this.maybeNotify(result.task.id, () =>
+        this.sendNotification(
+          this.config.topic!,
+          `Task ${result.task.id} merged`,
+          `Task "${result.task.title ?? result.task.id}" has been merged to main`,
+          "default",
+        ),
+      );
+    }
+  };
+
+  private handleSettingsUpdated = (data: { settings: Settings; previous: Settings }): void => {
+    const { settings, previous } = data;
+
+    // Check if ntfy settings changed
+    if (settings.ntfyEnabled !== previous.ntfyEnabled ||
+        settings.ntfyTopic !== previous.ntfyTopic) {
+      const wasEnabled = this.config.enabled;
+      this.loadConfig(settings);
+
+      if (this.config.enabled && !wasEnabled) {
+        schedulerLog.log("NtfyNotifier enabled");
+      } else if (!this.config.enabled && wasEnabled) {
+        schedulerLog.log("NtfyNotifier disabled");
+      } else if (this.config.topic !== previous.ntfyTopic) {
+        schedulerLog.log("NtfyNotifier topic updated");
+      }
+    }
+  };
+
+  private loadConfig(settings: Settings): void {
+    this.config = {
+      enabled: settings.ntfyEnabled ?? false,
+      topic: settings.ntfyTopic,
+    };
+  }
+
+  /**
+   * Send notification if enough time has passed since last notification for this task.
+   * This prevents duplicate notifications during rapid column transitions.
+   */
+  private maybeNotify(taskId: string, notifyFn: () => Promise<void>): void {
+    const now = Date.now();
+    const lastTime = this.lastNotificationTime.get(taskId);
+
+    if (lastTime && now - lastTime < this.debounceMs) {
+      // Too soon, skip this notification
+      return;
+    }
+
+    this.lastNotificationTime.set(taskId, now);
+    notifyFn().catch(() => {
+      // Errors are logged in sendNotification, just need to catch here
+    });
+  }
+
+  /**
+   * Send a notification to ntfy.sh.
+   * Errors are caught and logged, never thrown.
+   */
+  private async sendNotification(
+    topic: string,
+    title: string,
+    message: string,
+    priority: "low" | "default" | "high" | "urgent" = "default",
+  ): Promise<void> {
+    const url = `${this.ntfyBaseUrl}/${topic}`;
+    const signal = this.abortController?.signal;
+
+    try {
+      const response = await fetch(url, {
+        method: "POST",
+        headers: {
+          "Title": title,
+          "Priority": priority,
+          "Content-Type": "text/plain",
+        },
+        body: message,
+        signal,
+      });
+
+      if (!response.ok) {
+        schedulerLog.log(`Ntfy notification failed: ${response.status} ${response.statusText}`);
+      }
+    } catch (err) {
+      // Don't throw - notifications are best-effort
+      if (err instanceof Error && err.name === "AbortError") {
+        // Expected during shutdown
+        return;
+      }
+      schedulerLog.log(`Failed to send ntfy notification: ${err}`);
+    }
+  }
+
+  /**
+   * Get current config (for testing purposes).
+   */
+  getConfig(): NtfyConfig {
+    return { ...this.config };
+  }
+}

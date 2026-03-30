@@ -15,6 +15,8 @@ const defaultSettings: Settings = {
   buildCommand: "",
   autoResolveConflicts: true,
   smartConflictResolution: true,
+  ntfyEnabled: false,
+  ntfyTopic: undefined,
 };
 
 vi.mock("../../api", () => ({
@@ -681,17 +683,17 @@ describe("SettingsModal", () => {
     expect(layout!.querySelector(".settings-content")).toBeTruthy();
   });
 
-  it("has .settings-sidebar with 7 .settings-nav-item buttons for all sections", async () => {
+  it("has .settings-sidebar with 8 .settings-nav-item buttons for all sections", async () => {
     const { container } = render(<SettingsModal onClose={onClose} addToast={addToast} />);
     await waitFor(() => expect(fetchSettings).toHaveBeenCalled());
 
     const sidebar = container.querySelector(".settings-sidebar");
     expect(sidebar).toBeTruthy();
     const navItems = sidebar!.querySelectorAll(".settings-nav-item");
-    expect(navItems.length).toBe(7);
+    expect(navItems.length).toBe(8);
 
     const labels = Array.from(navItems).map((el) => el.textContent);
-    expect(labels).toEqual(["General", "Model", "Scheduling", "Worktrees", "Commands", "Merge", "Authentication"]);
+    expect(labels).toEqual(["General", "Model", "Scheduling", "Worktrees", "Commands", "Merge", "Notifications", "Authentication"]);
   });
 
   it("has .settings-content as sibling of .settings-sidebar", async () => {
@@ -743,5 +745,137 @@ describe("SettingsModal", () => {
       expect(row.querySelector(".auth-provider-info")).toBeTruthy();
       expect(row.querySelector("button")).toBeTruthy();
     }
+  });
+
+  // --- Notifications section tests ---
+
+  it("shows Notifications in sidebar", async () => {
+    render(<SettingsModal onClose={onClose} addToast={addToast} />);
+    await waitFor(() => expect(fetchSettings).toHaveBeenCalled());
+
+    expect(screen.getAllByText("Notifications").length).toBeGreaterThanOrEqual(1);
+  });
+
+  it("shows ntfy enable checkbox in Notifications section", async () => {
+    render(<SettingsModal onClose={onClose} addToast={addToast} />);
+    await waitFor(() => expect(fetchSettings).toHaveBeenCalled());
+
+    fireEvent.click(screen.getByText("Notifications"));
+    const checkbox = screen.getByLabelText("Enable ntfy.sh notifications");
+    expect(checkbox).toBeTruthy();
+    expect(checkbox.getAttribute("type")).toBe("checkbox");
+  });
+
+  it("ntfy topic input is hidden when ntfy is disabled", async () => {
+    render(<SettingsModal onClose={onClose} addToast={addToast} />);
+    await waitFor(() => expect(fetchSettings).toHaveBeenCalled());
+
+    fireEvent.click(screen.getByText("Notifications"));
+    expect(screen.queryByLabelText("ntfy Topic")).toBeNull();
+  });
+
+  it("ntfy topic input is visible when ntfy is enabled", async () => {
+    render(<SettingsModal onClose={onClose} addToast={addToast} />);
+    await waitFor(() => expect(fetchSettings).toHaveBeenCalled());
+
+    fireEvent.click(screen.getByText("Notifications"));
+    const checkbox = screen.getByLabelText("Enable ntfy.sh notifications");
+    fireEvent.click(checkbox);
+
+    expect(screen.getByLabelText("ntfy Topic")).toBeTruthy();
+  });
+
+  it("toggling ntfyEnabled checkbox sends true in save payload", async () => {
+    render(<SettingsModal onClose={onClose} addToast={addToast} />);
+    await waitFor(() => expect(fetchSettings).toHaveBeenCalled());
+
+    fireEvent.click(screen.getByText("Notifications"));
+    const checkbox = screen.getByLabelText("Enable ntfy.sh notifications");
+    fireEvent.click(checkbox);
+
+    fireEvent.click(screen.getByText("Save"));
+    await waitFor(() => expect(updateSettings).toHaveBeenCalledTimes(1));
+
+    const payload = (updateSettings as ReturnType<typeof vi.fn>).mock.calls[0][0];
+    expect(payload.ntfyEnabled).toBe(true);
+  });
+
+  it("ntfy topic field saves correctly when set", async () => {
+    render(<SettingsModal onClose={onClose} addToast={addToast} />);
+    await waitFor(() => expect(fetchSettings).toHaveBeenCalled());
+
+    fireEvent.click(screen.getByText("Notifications"));
+    const checkbox = screen.getByLabelText("Enable ntfy.sh notifications");
+    fireEvent.click(checkbox);
+
+    const input = screen.getByLabelText("ntfy Topic") as HTMLInputElement;
+    fireEvent.change(input, { target: { value: "my-topic" } });
+    expect(input.value).toBe("my-topic");
+
+    fireEvent.click(screen.getByText("Save"));
+    await waitFor(() => expect(updateSettings).toHaveBeenCalledTimes(1));
+
+    const payload = (updateSettings as ReturnType<typeof vi.fn>).mock.calls[0][0];
+    expect(payload.ntfyTopic).toBe("my-topic");
+  });
+
+  it("ntfy topic field submits undefined when empty", async () => {
+    (fetchSettings as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      ...defaultSettings,
+      ntfyEnabled: true,
+      ntfyTopic: "existing-topic",
+    });
+
+    render(<SettingsModal onClose={onClose} addToast={addToast} />);
+    await waitFor(() => expect(fetchSettings).toHaveBeenCalled());
+
+    fireEvent.click(screen.getByText("Notifications"));
+    const input = screen.getByLabelText("ntfy Topic") as HTMLInputElement;
+    fireEvent.change(input, { target: { value: "" } });
+
+    fireEvent.click(screen.getByText("Save"));
+    await waitFor(() => expect(updateSettings).toHaveBeenCalledTimes(1));
+
+    const payload = (updateSettings as ReturnType<typeof vi.fn>).mock.calls[0][0];
+    expect(payload.ntfyTopic).toBeUndefined();
+  });
+
+  it("ntfy topic shows validation error for invalid input", async () => {
+    render(<SettingsModal onClose={onClose} addToast={addToast} />);
+    await waitFor(() => expect(fetchSettings).toHaveBeenCalled());
+
+    fireEvent.click(screen.getByText("Notifications"));
+    const checkbox = screen.getByLabelText("Enable ntfy.sh notifications");
+    fireEvent.click(checkbox);
+
+    const input = screen.getByLabelText("ntfy Topic") as HTMLInputElement;
+    fireEvent.change(input, { target: { value: "invalid topic with spaces!" } });
+
+    expect(screen.getByText("Topic must be 1–64 alphanumeric, hyphen, or underscore characters")).toBeTruthy();
+  });
+
+  it("ntfyEnabled defaults to false when setting is undefined", async () => {
+    render(<SettingsModal onClose={onClose} addToast={addToast} />);
+    await waitFor(() => expect(fetchSettings).toHaveBeenCalled());
+
+    fireEvent.click(screen.getByText("Notifications"));
+    const checkbox = screen.getByLabelText("Enable ntfy.sh notifications") as HTMLInputElement;
+    expect(checkbox.checked).toBe(false);
+  });
+
+  it("ntfyEnabled shows correct state when enabled in settings", async () => {
+    (fetchSettings as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      ...defaultSettings,
+      ntfyEnabled: true,
+      ntfyTopic: "my-topic",
+    });
+
+    render(<SettingsModal onClose={onClose} addToast={addToast} />);
+    await waitFor(() => expect(fetchSettings).toHaveBeenCalled());
+
+    fireEvent.click(screen.getByText("Notifications"));
+    const checkbox = screen.getByLabelText("Enable ntfy.sh notifications") as HTMLInputElement;
+    expect(checkbox.checked).toBe(true);
+    expect(screen.getByLabelText("ntfy Topic")).toBeTruthy();
   });
 });

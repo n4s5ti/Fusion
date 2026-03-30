@@ -29,6 +29,7 @@ const SETTINGS_SECTIONS = [
   { id: "worktrees", label: "Worktrees" },
   { id: "commands", label: "Commands" },
   { id: "merge", label: "Merge" },
+  { id: "notifications", label: "Notifications" },
   { id: "authentication", label: "Authentication" },
 ] as const;
 
@@ -486,6 +487,52 @@ export function SettingsModal({ onClose, addToast, initialSection }: SettingsMod
               </label>
               <small>When enabled, lock files (package-lock.json, pnpm-lock.yaml, etc.) are resolved using 'ours' strategy, generated files (dist/*, *.gen.ts) using 'theirs' strategy, and trivial whitespace conflicts are auto-resolved without spawning an AI agent. Complex code conflicts still require AI review.</small>
             </div>
+          </>
+        );
+      case "notifications":
+        return (
+          <>
+            <h4 className="settings-section-heading">Notifications</h4>
+            <div className="form-group">
+              <label htmlFor="ntfyEnabled" className="checkbox-label">
+                <input
+                  id="ntfyEnabled"
+                  type="checkbox"
+                  checked={form.ntfyEnabled || false}
+                  onChange={(e) =>
+                    setForm((f) => ({ ...f, ntfyEnabled: e.target.checked }))
+                  }
+                />
+                Enable ntfy.sh notifications
+              </label>
+              <small>Receive push notifications when tasks complete or fail via ntfy.sh</small>
+            </div>
+            {form.ntfyEnabled && (
+              <div className="form-group">
+                <label htmlFor="ntfyTopic">ntfy Topic</label>
+                <input
+                  id="ntfyTopic"
+                  type="text"
+                  placeholder="my-topic-name"
+                  value={form.ntfyTopic || ""}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    setForm((f) => ({ ...f, ntfyTopic: val || undefined }));
+                  }}
+                />
+                <small>
+                  Your ntfy.sh topic name (1–64 alphanumeric/hyphen/underscore characters).{" "}
+                  <a href="https://ntfy.sh" target="_blank" rel="noopener noreferrer">
+                    Learn more about ntfy.sh
+                  </a>
+                </small>
+                {form.ntfyTopic && !/^[a-zA-Z0-9_-]{1,64}$/.test(form.ntfyTopic) && (
+                  <small className="field-error">
+                    Topic must be 1–64 alphanumeric, hyphen, or underscore characters
+                  </small>
+                )}
+              </div>
+            )}
           </>
         );
       case "authentication":

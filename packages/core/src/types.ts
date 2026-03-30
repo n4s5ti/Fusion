@@ -209,6 +209,12 @@ export interface Settings {
    *  remain in triage with status "awaiting-approval" until a user approves
    *  or rejects the plan. Default: false. */
   requirePlanApproval?: boolean;
+  /** ntfy.sh topic name for push notifications. When set along with ntfyEnabled,
+   *  notifications are sent to https://ntfy.sh/{topic} when tasks complete or fail. */
+  ntfyTopic?: string;
+  /** When true, enables ntfy.sh push notifications for task completion and failures.
+   *  Requires ntfyTopic to be set. Default: false. */
+  ntfyEnabled?: boolean;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -229,6 +235,8 @@ export const DEFAULT_SETTINGS: Settings = {
   autoResolveConflicts: true,
   smartConflictResolution: true,
   requirePlanApproval: false,
+  ntfyEnabled: false,
+  ntfyTopic: undefined,
 };
 
 export interface BoardConfig {
