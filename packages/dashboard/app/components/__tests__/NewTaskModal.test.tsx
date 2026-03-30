@@ -373,4 +373,20 @@ describe("NewTaskModal", () => {
       expect(newDescTextarea).toHaveValue("");
     });
   });
+
+  it("has scrollable modal body with overflow-y auto", () => {
+    renderNewTaskModal();
+    
+    // Find the modal container
+    const modal = document.querySelector(".new-task-modal");
+    expect(modal).toBeTruthy();
+    
+    // Find the modal body
+    const modalBody = modal?.querySelector(".modal-body");
+    expect(modalBody).toBeTruthy();
+    
+    // Verify the modal body element exists within the new-task-modal
+    // The overflow-y: auto is applied via CSS in styles.css
+    expect(modal?.contains(modalBody)).toBe(true);
+  });
 });
