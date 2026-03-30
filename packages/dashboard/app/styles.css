@@ -2421,6 +2421,13 @@ body {
    column gets a fixed min-width and snap-scrolling for a polished swipe feel.
    The modal also goes full-screen with reduced spacing. */
 @media (max-width: 768px) {
+  /* Mobile task-entry font sizing: prevent Safari zoom-on-focus by ensuring
+     task entry inputs are at least 16px on mobile viewports */
+  .quick-entry-input,
+  #new-task-description {
+    font-size: 16px;
+  }
+
   /* Prevent ancestor elements from producing a second horizontal scrollbar */
   html,
   body {

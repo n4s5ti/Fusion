@@ -55,6 +55,9 @@ The dashboard header adapts to small screens to remain usable without wrapping o
 - **Always-Visible Controls**: View toggle (Board/List), Terminal, Pause, and Stop buttons remain inline on mobile for immediate access.
 - **Keyboard Accessible**: All mobile controls expose proper ARIA attributes (aria-expanded, aria-haspopup, aria-label) and support keyboard navigation.
 
+### Mobile Task Entry
+Task entry inputs (the quick entry box in the Triage column and the New Task modal's description field) are sized to prevent browser zoom-on-focus on iOS Safari. On mobile viewports (≤768px), these inputs use a minimum 16px font size, which keeps the viewport stable when users focus the fields.
+
 ### Interactive Terminal
 Access a fully functional PTY (pseudo-terminal) shell directly from the dashboard. Click the terminal icon in the header to open the interactive terminal modal.
 
