@@ -1,11 +1,12 @@
 import { useState, useCallback, useEffect, useRef, useMemo } from "react";
 import type { Task, TaskCreateInput, ModelPreset, Settings, WorkflowStep } from "@kb/core";
 import type { ToastType } from "../hooks/useToast";
-import { uploadAttachment, fetchModels, fetchSettings, fetchWorkflowSteps } from "../api";
+import { uploadAttachment, fetchModels, fetchSettings, fetchWorkflowSteps, refineText, getRefineErrorMessage, type RefinementType } from "../api";
 import type { ModelInfo } from "../api";
 import { filterModels } from "../utils/modelFilter";
 import { applyPresetToSelection, getRecommendedPresetForSize } from "../utils/modelPresets";
 import { ProviderIcon } from "./ProviderIcon";
+import { Sparkles } from "lucide-react";
 
 const ALLOWED_IMAGE_TYPES = ["image/png", "image/jpeg", "image/gif", "image/webp"];
 
@@ -320,6 +321,11 @@ export function NewTaskModal({ isOpen, onClose, tasks, onCreateTask, addToast, o
   const [workflowSteps, setWorkflowSteps] = useState<WorkflowStep[]>([]);
   const [selectedWorkflowSteps, setSelectedWorkflowSteps] = useState<string[]>([]);
 
+  // AI Refinement state
+  const [isRefineMenuOpen, setIsRefineMenuOpen] = useState(false);
+  const [isRefining, setIsRefining] = useState(false);
+  const refineMenuRef = useRef<HTMLDivElement>(null);
+
   const depDropdownRef = useRef<HTMLDivElement>(null);
   const descTextareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -392,6 +398,18 @@ export function NewTaskModal({ isOpen, onClose, tasks, onCreateTask, addToast, o
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, [showDepDropdown]);
 
+  // Close refine menu when clicking outside
+  useEffect(() => {
+    if (!isRefineMenuOpen) return;
+    const handleClickOutside = (e: MouseEvent) => {
+      if (refineMenuRef.current && !refineMenuRef.current.contains(e.target as Node)) {
+        setIsRefineMenuOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [isRefineMenuOpen]);
+
   // Handle paste for images
   const handlePaste = useCallback((e: React.ClipboardEvent) => {
     const items = e.clipboardData?.items;
@@ -462,6 +480,8 @@ export function NewTaskModal({ isOpen, onClose, tasks, onCreateTask, addToast, o
     setPresetMode("default");
     setEnablePlanningMode(false);
     setSelectedWorkflowSteps([]);
+    setIsRefineMenuOpen(false);
+    setIsRefining(false);
     setHasDirtyState(false);
     onClose();
   }, [hasDirtyState, onClose, pendingImages]);
@@ -568,6 +588,30 @@ export function NewTaskModal({ isOpen, onClose, tasks, onCreateTask, addToast, o
     el.style.height = el.scrollHeight + "px";
   }, []);
 
+  // AI Refinement handler
+  const handleRefine = useCallback(async (type: RefinementType) => {
+    const trimmed = description.trim();
+    if (!trimmed || isRefining) return;
+
+    setIsRefining(true);
+    try {
+      const refined = await refineText(trimmed, type);
+      setDescription(refined);
+      setIsRefineMenuOpen(false);
+      addToast("Description refined with AI", "success");
+      // Auto-resize textarea after content update
+      if (descTextareaRef.current) {
+        descTextareaRef.current.style.height = "auto";
+        descTextareaRef.current.style.height = descTextareaRef.current.scrollHeight + "px";
+      }
+    } catch (err: any) {
+      const errorMessage = getRefineErrorMessage(err);
+      addToast(errorMessage, "error");
+    } finally {
+      setIsRefining(false);
+    }
+  }, [description, isRefining, addToast]);
+
   if (!isOpen) return null;
 
   const availableDeps = tasks
@@ -608,15 +652,69 @@ export function NewTaskModal({ isOpen, onClose, tasks, onCreateTask, addToast, o
           {/* Description field */}
           <div className="form-group">
             <label htmlFor="new-task-description">Description</label>
-            <textarea
-              ref={descTextareaRef}
-              id="new-task-description"
-              value={description}
-              onChange={handleDescriptionChange}
-              placeholder="What needs to be done?"
-              rows={3}
-              disabled={isSubmitting}
-            />
+            <div className="description-with-refine" ref={refineMenuRef}>
+              <textarea
+                ref={descTextareaRef}
+                id="new-task-description"
+                value={description}
+                onChange={handleDescriptionChange}
+                placeholder="What needs to be done?"
+                rows={3}
+                disabled={isSubmitting || isRefining}
+              />
+              {description.trim() && !isSubmitting && (
+                <button
+                  type="button"
+                  className={`btn btn-sm refine-button ${isRefining ? "refine-button--loading" : ""}`}
+                  onClick={() => setIsRefineMenuOpen((prev) => !prev)}
+                  disabled={isRefining}
+                  data-testid="refine-button"
+                  title="Refine description with AI"
+                >
+                  <Sparkles size={12} style={{ verticalAlign: "middle" }} />
+                  {isRefining ? "Refining..." : "Refine"}
+                </button>
+              )}
+              {isRefineMenuOpen && (
+                <div
+                  className="refine-menu refine-menu--modal"
+                  onMouseDown={(e) => e.preventDefault()}
+                >
+                  <div
+                    className="refine-menu-item"
+                    onClick={() => handleRefine("clarify")}
+                    data-testid="refine-clarify"
+                  >
+                    <div className="refine-menu-item-title">Clarify</div>
+                    <div className="refine-menu-item-desc">Make the description clearer and more specific</div>
+                  </div>
+                  <div
+                    className="refine-menu-item"
+                    onClick={() => handleRefine("add-details")}
+                    data-testid="refine-add-details"
+                  >
+                    <div className="refine-menu-item-title">Add details</div>
+                    <div className="refine-menu-item-desc">Add implementation details and context</div>
+                  </div>
+                  <div
+                    className="refine-menu-item"
+                    onClick={() => handleRefine("expand")}
+                    data-testid="refine-expand"
+                  >
+                    <div className="refine-menu-item-title">Expand</div>
+                    <div className="refine-menu-item-desc">Expand into a more comprehensive description</div>
+                  </div>
+                  <div
+                    className="refine-menu-item"
+                    onClick={() => handleRefine("simplify")}
+                    data-testid="refine-simplify"
+                  >
+                    <div className="refine-menu-item-title">Simplify</div>
+                    <div className="refine-menu-item-desc">Simplify and make more concise</div>
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
 
           {/* Dependencies */}

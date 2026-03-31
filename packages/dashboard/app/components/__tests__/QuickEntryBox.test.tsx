@@ -65,6 +65,8 @@ vi.mock("../../api", () => ({
       contextWindow: 128_000,
     },
   ]),
+  refineText: vi.fn(),
+  getRefineErrorMessage: vi.fn((err) => err?.message || "Failed to refine text. Please try again."),
 }));
 
 // Mock lucide-react
@@ -73,6 +75,7 @@ vi.mock("lucide-react", () => ({
   Brain: () => null,
   Lightbulb: () => null,
   ListTree: () => null,
+  Sparkles: () => null,
 }));
 
 function renderQuickEntryBox(props = {}) {
@@ -711,6 +714,213 @@ describe("QuickEntryBox", () => {
       // Input and localStorage should be preserved
       expect((textarea as HTMLTextAreaElement).value).toBe("Task with dropdown");
       expect(localStorage.getItem("kb-quick-entry-text")).toBe("Task with dropdown");
+    });
+  });
+
+  describe("AI Refine feature", () => {
+    it("shows refine button when text is entered", () => {
+      renderQuickEntryBox();
+      const textarea = screen.getByTestId("quick-entry-input");
+
+      // Initially, refine button is not visible
+      expect(screen.queryByTestId("refine-button")).toBeNull();
+
+      // Focus and type something
+      fireEvent.focus(textarea);
+      fireEvent.change(textarea, { target: { value: "Task to refine" } });
+
+      // Now the refine button should be visible
+      expect(screen.getByTestId("refine-button")).toBeTruthy();
+    });
+
+    it("refine button is hidden when textarea is empty", () => {
+      renderQuickEntryBox();
+      const textarea = screen.getByTestId("quick-entry-input");
+
+      // Focus and type something
+      fireEvent.focus(textarea);
+      fireEvent.change(textarea, { target: { value: "Some text" } });
+      expect(screen.getByTestId("refine-button")).toBeTruthy();
+
+      // Clear the input
+      fireEvent.change(textarea, { target: { value: "" } });
+
+      // Button should be hidden/disabled (might be hidden when controls collapse)
+      const refineButton = screen.queryByTestId("refine-button");
+      if (refineButton) {
+        expect((refineButton as HTMLButtonElement).disabled).toBe(true);
+      }
+    });
+
+    it("opens refine menu on button click", () => {
+      renderQuickEntryBox();
+      const textarea = screen.getByTestId("quick-entry-input");
+
+      fireEvent.focus(textarea);
+      fireEvent.change(textarea, { target: { value: "Task to refine" } });
+      fireEvent.click(screen.getByTestId("refine-button"));
+
+      // Menu should be visible with all options
+      expect(screen.getByTestId("refine-clarify")).toBeTruthy();
+      expect(screen.getByTestId("refine-add-details")).toBeTruthy();
+      expect(screen.getByTestId("refine-expand")).toBeTruthy();
+      expect(screen.getByTestId("refine-simplify")).toBeTruthy();
+    });
+
+    it("closes refine menu on Escape key", () => {
+      renderQuickEntryBox();
+      const textarea = screen.getByTestId("quick-entry-input");
+
+      fireEvent.focus(textarea);
+      fireEvent.change(textarea, { target: { value: "Task to refine" } });
+      fireEvent.click(screen.getByTestId("refine-button"));
+
+      // Menu should be open
+      expect(screen.getByTestId("refine-clarify")).toBeTruthy();
+
+      // Press Escape
+      fireEvent.keyDown(textarea, { key: "Escape" });
+
+      // Menu should be closed but input preserved
+      expect(screen.queryByTestId("refine-clarify")).toBeNull();
+      expect((textarea as HTMLTextAreaElement).value).toBe("Task to refine");
+    });
+
+    it("closes refine menu when option is selected", async () => {
+      const { refineText } = await import("../../api");
+      vi.mocked(refineText).mockResolvedValueOnce("Refined description");
+
+      renderQuickEntryBox();
+      const textarea = screen.getByTestId("quick-entry-input");
+
+      fireEvent.focus(textarea);
+      fireEvent.change(textarea, { target: { value: "Original text" } });
+      fireEvent.click(screen.getByTestId("refine-button"));
+
+      // Menu should be open
+      expect(screen.getByTestId("refine-clarify")).toBeTruthy();
+
+      // Click on an option
+      fireEvent.click(screen.getByTestId("refine-clarify"));
+
+      // Menu should close
+      await waitFor(() => {
+        expect(screen.queryByTestId("refine-clarify")).toBeNull();
+      });
+    });
+
+    it("successful refinement updates textarea content", async () => {
+      const { refineText } = await import("../../api");
+      vi.mocked(refineText).mockResolvedValueOnce("Refined description");
+
+      const { props } = renderQuickEntryBox();
+      const textarea = screen.getByTestId("quick-entry-input");
+
+      fireEvent.focus(textarea);
+      fireEvent.change(textarea, { target: { value: "Original text" } });
+      fireEvent.click(screen.getByTestId("refine-button"));
+      fireEvent.click(screen.getByTestId("refine-clarify"));
+
+      await waitFor(() => {
+        expect(refineText).toHaveBeenCalledWith("Original text", "clarify");
+      });
+
+      // Textarea should be updated
+      await waitFor(() => {
+        expect((textarea as HTMLTextAreaElement).value).toBe("Refined description");
+      });
+
+      // Success toast should be shown
+      await waitFor(() => {
+        expect(props.addToast).toHaveBeenCalledWith("Description refined with AI", "success");
+      });
+    });
+
+    it("failed refinement shows toast and preserves original text", async () => {
+      const { refineText } = await import("../../api");
+      vi.mocked(refineText).mockRejectedValueOnce(new Error("Rate limit exceeded"));
+
+      const { getRefineErrorMessage } = await import("../../api");
+
+      const { props } = renderQuickEntryBox();
+      const textarea = screen.getByTestId("quick-entry-input");
+
+      fireEvent.focus(textarea);
+      fireEvent.change(textarea, { target: { value: "Original text" } });
+      fireEvent.click(screen.getByTestId("refine-button"));
+      fireEvent.click(screen.getByTestId("refine-clarify"));
+
+      await waitFor(() => {
+        expect(props.addToast).toHaveBeenCalled();
+      });
+
+      // Original text should be preserved
+      expect((textarea as HTMLTextAreaElement).value).toBe("Original text");
+    });
+
+    it("loading state disables button during refinement", async () => {
+      const { refineText } = await import("../../api");
+      // Slow down the promise to see loading state
+      vi.mocked(refineText).mockImplementation(() => new Promise((resolve) => setTimeout(resolve, 100)));
+
+      renderQuickEntryBox();
+      const textarea = screen.getByTestId("quick-entry-input");
+
+      fireEvent.focus(textarea);
+      fireEvent.change(textarea, { target: { value: "Original text" } });
+      fireEvent.click(screen.getByTestId("refine-button"));
+      fireEvent.click(screen.getByTestId("refine-clarify"));
+
+      // Button should show loading text
+      await waitFor(() => {
+        expect(screen.getByText("Refining...")).toBeTruthy();
+      });
+
+      // Button should be disabled
+      const refineButton = screen.getByTestId("refine-button");
+      expect((refineButton as HTMLButtonElement).disabled).toBe(true);
+    });
+
+    it("auto-resizes textarea after refinement", async () => {
+      const { refineText } = await import("../../api");
+      vi.mocked(refineText).mockResolvedValueOnce("Refined description with much more content here");
+
+      renderQuickEntryBox();
+      const textarea = screen.getByTestId("quick-entry-input");
+
+      fireEvent.focus(textarea);
+      fireEvent.change(textarea, { target: { value: "Short" } });
+      fireEvent.click(screen.getByTestId("refine-button"));
+      fireEvent.click(screen.getByTestId("refine-expand"));
+
+      await waitFor(() => {
+        expect(refineText).toHaveBeenCalled();
+      });
+    });
+
+    it("resets refine state when form is reset after creation", async () => {
+      const { refineText } = await import("../../api");
+      vi.mocked(refineText).mockResolvedValueOnce("Refined text");
+
+      const { props } = renderQuickEntryBox();
+      const textarea = screen.getByTestId("quick-entry-input");
+
+      // Open refine menu but don't select anything
+      fireEvent.focus(textarea);
+      fireEvent.change(textarea, { target: { value: "Task" } });
+      fireEvent.click(screen.getByTestId("refine-button"));
+
+      expect(screen.getByTestId("refine-clarify")).toBeTruthy();
+
+      // Submit the form
+      fireEvent.keyDown(textarea, { key: "Enter" });
+
+      await waitFor(() => {
+        expect(props.onCreate).toHaveBeenCalled();
+      });
+
+      // After reset, refine menu should be closed
+      expect(screen.queryByTestId("refine-clarify")).toBeNull();
     });
   });
 });

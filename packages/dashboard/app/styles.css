@@ -2355,6 +2355,86 @@ body {
   white-space: nowrap;
 }
 
+/* === AI Refine Menu === */
+.refine-trigger-wrap {
+  position: relative;
+}
+
+.refine-menu {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  margin-top: 4px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  min-width: 200px;
+  max-width: 280px;
+  z-index: 100;
+  overflow: hidden;
+}
+
+.refine-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.refine-button--loading {
+  opacity: 0.7;
+  cursor: not-allowed;
+}
+
+.refine-menu-item {
+  padding: 10px 14px;
+  cursor: pointer;
+  transition: background 0.1s ease;
+  border-bottom: 1px solid var(--border);
+}
+
+.refine-menu-item:last-child {
+  border-bottom: none;
+}
+
+.refine-menu-item:hover {
+  background: var(--card-hover);
+}
+
+.refine-menu-item-title {
+  font-weight: 500;
+  font-size: 13px;
+  color: var(--text);
+  margin-bottom: 2px;
+}
+
+.refine-menu-item-desc {
+  font-size: 12px;
+  color: var(--text-muted);
+  line-height: 1.4;
+}
+
+/* NewTaskModal description with refine button */
+.description-with-refine {
+  position: relative;
+}
+
+.description-with-refine .refine-button {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+}
+
+.description-with-refine textarea {
+  padding-right: 70px; /* Make room for the refine button */
+}
+
+.refine-menu--modal {
+  right: 0;
+  left: auto;
+  top: calc(100% + 4px);
+}
+
 .inline-create-model-dropdown {
   position: absolute;
   top: 100%;

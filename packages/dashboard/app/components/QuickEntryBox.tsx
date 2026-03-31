@@ -1,9 +1,9 @@
 import { useState, useCallback, useRef, useEffect } from "react";
 import type { ToastType } from "../hooks/useToast";
 import type { Task, TaskCreateInput } from "@kb/core";
-import type { ModelInfo } from "../api";
-import { fetchModels } from "../api";
-import { Link, Brain, Lightbulb, ListTree } from "lucide-react";
+import type { ModelInfo, RefinementType } from "../api";
+import { fetchModels, refineText, getRefineErrorMessage } from "../api";
+import { Link, Brain, Lightbulb, ListTree, Sparkles } from "lucide-react";
 import { CustomModelDropdown } from "./CustomModelDropdown";
 
 const STORAGE_KEY = "kb-quick-entry-text";
@@ -68,6 +68,11 @@ export function QuickEntryBox({ onCreate, addToast, tasks = [], availableModels,
   const [modelsLoading, setModelsLoading] = useState(false);
   const [modelsError, setModelsError] = useState<string | null>(null);
   const [loadedModels, setLoadedModels] = useState<ModelInfo[]>(availableModels ?? []);
+
+  // AI Refinement state
+  const [isRefineMenuOpen, setIsRefineMenuOpen] = useState(false);
+  const [isRefining, setIsRefining] = useState(false);
+  const refineMenuRef = useRef<HTMLDivElement>(null);
 
   // If onCreate is not provided, the component is disabled
   const isDisabled = !onCreate;
@@ -173,6 +178,20 @@ export function QuickEntryBox({ onCreate, addToast, tasks = [], availableModels,
     if (!showDeps) setDepSearch("");
   }, [showDeps]);
 
+  // Close refine menu when clicking outside
+  useEffect(() => {
+    if (!isRefineMenuOpen) return;
+
+    const handleClickOutside = (e: MouseEvent) => {
+      if (refineMenuRef.current && !refineMenuRef.current.contains(e.target as Node)) {
+        setIsRefineMenuOpen(false);
+      }
+    };
+
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [isRefineMenuOpen]);
+
   const resetForm = useCallback(() => {
     setDescription("");
     setDependencies([]);
@@ -182,6 +201,8 @@ export function QuickEntryBox({ onCreate, addToast, tasks = [], availableModels,
     setValidatorModelId(undefined);
     setShowDeps(false);
     setShowModels(false);
+    setIsRefineMenuOpen(false);
+    setIsRefining(false);
     setIsExpanded(false);
     justResetRef.current = true;
     if (textareaRef.current) {
@@ -246,9 +267,10 @@ export function QuickEntryBox({ onCreate, addToast, tasks = [], availableModels,
       } else if (e.key === "Escape") {
         e.preventDefault();
         // Close dropdowns first if open
-        if (showDeps || showModels) {
+        if (showDeps || showModels || isRefineMenuOpen) {
           setShowDeps(false);
           setShowModels(false);
+          setIsRefineMenuOpen(false);
           return;
         }
         // Clear non-empty input on Escape and clear localStorage
@@ -273,7 +295,7 @@ export function QuickEntryBox({ onCreate, addToast, tasks = [], availableModels,
         textareaRef.current?.blur();
       }
     },
-    [handleSubmit, description, isExpanded, showDeps, showModels, resetForm],
+    [handleSubmit, description, isExpanded, showDeps, showModels, isRefineMenuOpen, resetForm],
   );
 
   const handleFocus = useCallback(() => {
@@ -294,7 +316,7 @@ export function QuickEntryBox({ onCreate, addToast, tasks = [], availableModels,
     // Collapse after a short delay to allow click events on dropdowns
     // Collapse regardless of content - only check if dropdowns are open
     blurTimeoutRef.current = setTimeout(() => {
-      if (!showDeps && !showModels) {
+      if (!showDeps && !showModels && !isRefineMenuOpen) {
         setIsExpanded(false);
         // Reset height when collapsing
         if (textareaRef.current) {
@@ -303,7 +325,7 @@ export function QuickEntryBox({ onCreate, addToast, tasks = [], availableModels,
       }
       blurTimeoutRef.current = null;
     }, 200);
-  }, [showDeps, showModels]);
+  }, [showDeps, showModels, isRefineMenuOpen]);
 
   const toggleDep = useCallback((id: string) => {
     setDependencies((prev) =>
@@ -371,6 +393,29 @@ export function QuickEntryBox({ onCreate, addToast, tasks = [], availableModels,
     // Clear the form after triggering subtask breakdown
     resetForm();
   }, [description, onSubtaskBreakdown, addToast, resetForm]);
+
+  const handleRefine = useCallback(async (type: RefinementType) => {
+    const trimmed = description.trim();
+    if (!trimmed || isRefining) return;
+
+    setIsRefining(true);
+    try {
+      const refined = await refineText(trimmed, type);
+      setDescription(refined);
+      setIsRefineMenuOpen(false);
+      addToast("Description refined with AI", "success");
+      // Auto-resize textarea after content update
+      if (textareaRef.current) {
+        textareaRef.current.style.height = "auto";
+        textareaRef.current.style.height = `${Math.min(textareaRef.current.scrollHeight, 200)}px`;
+      }
+    } catch (err: any) {
+      const errorMessage = getRefineErrorMessage(err);
+      addToast(errorMessage, "error");
+    } finally {
+      setIsRefining(false);
+    }
+  }, [description, isRefining, addToast]);
 
   const truncate = (s: string, len: number) =>
     s.length > len ? s.slice(0, len) + "…" : s;
@@ -574,6 +619,58 @@ export function QuickEntryBox({ onCreate, addToast, tasks = [], availableModels,
                   <ListTree size={12} style={{ verticalAlign: "middle" }} />
                   Subtask
                 </button>
+                <div className="refine-trigger-wrap" ref={refineMenuRef}>
+                  <button
+                    type="button"
+                    className={`btn btn-sm refine-button ${isRefining ? "refine-button--loading" : ""}`}
+                    onClick={() => setIsRefineMenuOpen((prev) => !prev)}
+                    disabled={!description.trim() || isRefining}
+                    data-testid="refine-button"
+                    title="Refine description with AI"
+                  >
+                    <Sparkles size={12} style={{ verticalAlign: "middle" }} />
+                    {isRefining ? "Refining..." : "Refine"}
+                  </button>
+                  {isRefineMenuOpen && (
+                    <div
+                      className="refine-menu"
+                      onMouseDown={(e) => e.preventDefault()}
+                    >
+                      <div
+                        className="refine-menu-item"
+                        onClick={() => handleRefine("clarify")}
+                        data-testid="refine-clarify"
+                      >
+                        <div className="refine-menu-item-title">Clarify</div>
+                        <div className="refine-menu-item-desc">Make the description clearer and more specific</div>
+                      </div>
+                      <div
+                        className="refine-menu-item"
+                        onClick={() => handleRefine("add-details")}
+                        data-testid="refine-add-details"
+                      >
+                        <div className="refine-menu-item-title">Add details</div>
+                        <div className="refine-menu-item-desc">Add implementation details and context</div>
+                      </div>
+                      <div
+                        className="refine-menu-item"
+                        onClick={() => handleRefine("expand")}
+                        data-testid="refine-expand"
+                      >
+                        <div className="refine-menu-item-title">Expand</div>
+                        <div className="refine-menu-item-desc">Expand into a more comprehensive description</div>
+                      </div>
+                      <div
+                        className="refine-menu-item"
+                        onClick={() => handleRefine("simplify")}
+                        data-testid="refine-simplify"
+                      >
+                        <div className="refine-menu-item-title">Simplify</div>
+                        <div className="refine-menu-item-desc">Simplify and make more concise</div>
+                      </div>
+                    </div>
+                  )}
+                </div>
               </>
             )}
           </div>

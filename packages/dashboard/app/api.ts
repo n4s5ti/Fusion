@@ -1180,3 +1180,76 @@ export function refineWorkflowStepPrompt(id: string): Promise<{ prompt: string; 
     method: "POST",
   });
 }
+
+// ── AI Text Refinement API ────────────────────────────────────────────
+
+/** Refinement types for AI text refinement */
+export type RefinementType = "clarify" | "add-details" | "expand" | "simplify";
+
+/** Response from text refinement endpoint */
+export interface RefineTextResponse {
+  refined: string;
+}
+
+/**
+ * Refine task description text using AI.
+ * @param text - The text to refine (1-2000 characters)
+ * @param type - The refinement type: clarify, add-details, expand, or simplify
+ * @returns The refined text
+ * @throws Error with message for rate limit (429), invalid type (422), validation (400), or server errors
+ */
+export async function refineText(text: string, type: RefinementType): Promise<string> {
+  const response = await api<RefineTextResponse>("/ai/refine-text", {
+    method: "POST",
+    body: JSON.stringify({ text, type }),
+  });
+  return response.refined;
+}
+
+/**
+ * Error messages for refineText failures (to use with toast notifications).
+ */
+export const REFINE_ERROR_MESSAGES = {
+  /** Rate limit exceeded (429) */
+  RATE_LIMIT: "Too many refinement requests. Please wait an hour.",
+  /** Invalid refinement type (422) */
+  INVALID_TYPE: "Invalid refinement option selected.",
+  /** Network or server errors */
+  NETWORK: "Failed to refine text. Please try again.",
+} as const;
+
+/**
+ * Get user-friendly error message for a refineText error.
+ * @param error - The error thrown by refineText
+ * @returns A user-friendly error message suitable for toast display
+ */
+export function getRefineErrorMessage(error: unknown): string {
+  if (!(error instanceof Error)) {
+    return REFINE_ERROR_MESSAGES.NETWORK;
+  }
+
+  const message = error.message.toLowerCase();
+
+  // Rate limit errors (429)
+  if (message.includes("rate limit") || message.includes("429")) {
+    return REFINE_ERROR_MESSAGES.RATE_LIMIT;
+  }
+
+  // Invalid type errors (422)
+  if (message.includes("invalid") && message.includes("type")) {
+    return REFINE_ERROR_MESSAGES.INVALID_TYPE;
+  }
+
+  // Text validation errors (400) - pass through from backend
+  if (
+    message.startsWith("text must") ||
+    message.includes("text is required") ||
+    message.includes("type is required")
+  ) {
+    return error.message;
+  }
+
+  // Default network/server error
+  return REFINE_ERROR_MESSAGES.NETWORK;
+}
+

@@ -3801,6 +3801,72 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
   });
 
   /**
+   * POST /api/ai/refine-text
+   * AI-powered text refinement for task descriptions.
+   * Body: { text: string, type: string }
+   * Returns: { refined: string }
+   *
+   * Refinement types: clarify, add-details, expand, simplify
+   * Rate limited: 10 requests per hour per IP
+   */
+  router.post("/ai/refine-text", async (req, res) => {
+    try {
+      const { text, type } = req.body;
+      const ip = req.ip || req.socket.remoteAddress || "unknown";
+      const rootDir = store.getRootDir();
+
+      const {
+        validateRefineRequest,
+        checkRateLimit,
+        getRateLimitResetTime,
+        refineText,
+        RateLimitError,
+        ValidationError,
+        InvalidTypeError,
+        AiServiceError,
+      } = await import("./ai-refine.js");
+
+      // Check rate limit first
+      if (!checkRateLimit(ip)) {
+        const resetTime = getRateLimitResetTime(ip);
+        res.status(429).json({
+          error: `Rate limit exceeded. Maximum 10 refinement requests per hour. Reset at ${resetTime?.toISOString() || "unknown"}`,
+        });
+        return;
+      }
+
+      // Validate request body
+      let validated;
+      try {
+        validated = validateRefineRequest(text, type);
+      } catch (err) {
+        if (err instanceof ValidationError) {
+          res.status(400).json({ error: err.message });
+          return;
+        }
+        if (err instanceof InvalidTypeError) {
+          res.status(422).json({ error: err.message });
+          return;
+        }
+        throw err;
+      }
+
+      // Process refinement
+      const refined = await refineText(validated.text, validated.type, rootDir);
+      res.json({ refined });
+    } catch (err: any) {
+      // Check error by name since error classes are from dynamic import
+      if (err?.name === "RateLimitError") {
+        res.status(429).json({ error: err.message });
+      } else if (err?.name === "AiServiceError") {
+        res.status(500).json({ error: err.message || "AI service error" });
+      } else {
+        res.status(500).json({ error: err?.message || "Failed to refine text" });
+      }
+    }
+  });
+
+  /**
    * GET /api/usage
    * Fetch AI provider subscription usage (Claude, Codex, Gemini).
    * Returns: { providers: ProviderUsage[] }

@@ -17,6 +17,8 @@ vi.mock("../../api", () => ({
     defaultPresetBySize: {},
   }),
   fetchWorkflowSteps: vi.fn().mockResolvedValue([]),
+  refineText: vi.fn(),
+  getRefineErrorMessage: vi.fn((err) => err?.message || "Failed to refine text. Please try again."),
 }));
 
 function makeTask(id: string): Task {
@@ -535,6 +537,135 @@ describe("NewTaskModal", () => {
           enabledWorkflowSteps: ["WS-001"],
         })
       );
+    });
+  });
+
+  describe("AI Refine feature", () => {
+    it("shows refine button when description has content", async () => {
+      renderNewTaskModal();
+      const textarea = screen.getByLabelText(/Description/i);
+
+      // Initially, refine button is not visible
+      expect(screen.queryByTestId("refine-button")).toBeNull();
+
+      // Type something
+      fireEvent.change(textarea, { target: { value: "Task to refine" } });
+
+      // Now the refine button should be visible
+      await waitFor(() => {
+        expect(screen.getByTestId("refine-button")).toBeTruthy();
+      });
+    });
+
+    it("hides refine button when description is empty", async () => {
+      renderNewTaskModal();
+      const textarea = screen.getByLabelText(/Description/i);
+
+      // Type something first
+      fireEvent.change(textarea, { target: { value: "Some text" } });
+      await waitFor(() => {
+        expect(screen.getByTestId("refine-button")).toBeTruthy();
+      });
+
+      // Clear the input
+      fireEvent.change(textarea, { target: { value: "" } });
+
+      // Button should be hidden
+      expect(screen.queryByTestId("refine-button")).toBeNull();
+    });
+
+    it("opens refine menu on button click", async () => {
+      renderNewTaskModal();
+      const textarea = screen.getByLabelText(/Description/i);
+
+      fireEvent.change(textarea, { target: { value: "Task to refine" } });
+      await waitFor(() => {
+        expect(screen.getByTestId("refine-button")).toBeTruthy();
+      });
+
+      fireEvent.click(screen.getByTestId("refine-button"));
+
+      // Menu should be visible with all options
+      expect(screen.getByTestId("refine-clarify")).toBeTruthy();
+      expect(screen.getByTestId("refine-add-details")).toBeTruthy();
+      expect(screen.getByTestId("refine-expand")).toBeTruthy();
+      expect(screen.getByTestId("refine-simplify")).toBeTruthy();
+    });
+
+    it("successful refinement updates description and shows toast", async () => {
+      const { refineText } = await import("../../api");
+      vi.mocked(refineText).mockResolvedValueOnce("Refined description");
+
+      const { props } = renderNewTaskModal();
+      const textarea = screen.getByLabelText(/Description/i);
+
+      fireEvent.change(textarea, { target: { value: "Original text" } });
+      await waitFor(() => {
+        expect(screen.getByTestId("refine-button")).toBeTruthy();
+      });
+
+      fireEvent.click(screen.getByTestId("refine-button"));
+      fireEvent.click(screen.getByTestId("refine-clarify"));
+
+      await waitFor(() => {
+        expect(refineText).toHaveBeenCalledWith("Original text", "clarify");
+      });
+
+      // Textarea should be updated
+      await waitFor(() => {
+        expect(textarea).toHaveValue("Refined description");
+      });
+
+      // Success toast should be shown
+      await waitFor(() => {
+        expect(props.addToast).toHaveBeenCalledWith("Description refined with AI", "success");
+      });
+    });
+
+    it("shows error toast on refinement failure and preserves original text", async () => {
+      const { refineText, getRefineErrorMessage } = await import("../../api");
+      vi.mocked(refineText).mockRejectedValueOnce(new Error("Rate limit exceeded"));
+      vi.mocked(getRefineErrorMessage).mockReturnValue("Too many refinement requests. Please wait an hour.");
+
+      const { props } = renderNewTaskModal();
+      const textarea = screen.getByLabelText(/Description/i);
+
+      fireEvent.change(textarea, { target: { value: "Original text" } });
+      await waitFor(() => {
+        expect(screen.getByTestId("refine-button")).toBeTruthy();
+      });
+
+      fireEvent.click(screen.getByTestId("refine-button"));
+      fireEvent.click(screen.getByTestId("refine-clarify"));
+
+      await waitFor(() => {
+        expect(props.addToast).toHaveBeenCalledWith("Too many refinement requests. Please wait an hour.", "error");
+      });
+
+      // Original text should be preserved
+      expect(textarea).toHaveValue("Original text");
+    });
+
+    it("shows loading state during refinement", async () => {
+      const { refineText } = await import("../../api");
+      // Slow down the promise to see loading state
+      vi.mocked(refineText).mockImplementation(() => new Promise((resolve) => setTimeout(() => resolve("Refined"), 100)));
+
+      renderNewTaskModal();
+      const textarea = screen.getByLabelText(/Description/i);
+
+      fireEvent.change(textarea, { target: { value: "Original text" } });
+      await waitFor(() => {
+        expect(screen.getByTestId("refine-button")).toBeTruthy();
+      });
+
+      fireEvent.click(screen.getByTestId("refine-button"));
+      fireEvent.click(screen.getByTestId("refine-expand"));
+
+      // Button should show loading text
+      await waitFor(() => {
+        expect(screen.getByText("Refining...")).toBeTruthy();
+      });
     });
   });
 });

@@ -1172,3 +1172,127 @@ describe("API Error Handling", () => {
     });
   });
 });
+
+// ── AI Text Refinement API Tests ───────────────────────────────────────────
+
+import { refineText, getRefineErrorMessage, REFINE_ERROR_MESSAGES, type RefinementType } from "./api";
+
+describe("refineText", () => {
+  const originalFetch = globalThis.fetch;
+
+  afterEach(() => {
+    globalThis.fetch = originalFetch;
+  });
+
+  it("sends POST with text and type, returns refined text", async () => {
+    globalThis.fetch = vi.fn().mockReturnValue(
+      mockFetchResponse(true, { refined: "Refined task description" })
+    );
+
+    const result = await refineText("Original text", "clarify");
+
+    expect(result).toBe("Refined task description");
+    expect(globalThis.fetch).toHaveBeenCalledWith("/api/ai/refine-text", {
+      headers: { "Content-Type": "application/json" },
+      method: "POST",
+      body: JSON.stringify({ text: "Original text", type: "clarify" }),
+    });
+  });
+
+  it("works with all four refinement types", async () => {
+    globalThis.fetch = vi.fn().mockReturnValue(
+      mockFetchResponse(true, { refined: "Refined" })
+    );
+
+    const types: RefinementType[] = ["clarify", "add-details", "expand", "simplify"];
+
+    for (const type of types) {
+      const result = await refineText("Test text", type);
+      expect(result).toBe("Refined");
+    }
+  });
+
+  it("throws on rate limit error (429)", async () => {
+    globalThis.fetch = vi.fn().mockReturnValue(
+      mockFetchResponse(false, { error: "Rate limit exceeded. Maximum 10 refinement requests per hour." }, 429)
+    );
+
+    await expect(refineText("Test", "clarify")).rejects.toThrow("Rate limit exceeded");
+  });
+
+  it("throws on invalid type error (422)", async () => {
+    globalThis.fetch = vi.fn().mockReturnValue(
+      mockFetchResponse(false, { error: "type must be one of: clarify, add-details, expand, simplify" }, 422)
+    );
+
+    await expect(refineText("Test", "invalid" as RefinementType)).rejects.toThrow("type must be one of");
+  });
+
+  it("throws on validation error (400)", async () => {
+    globalThis.fetch = vi.fn().mockReturnValue(
+      mockFetchResponse(false, { error: "text must be at least 1 character" }, 400)
+    );
+
+    await expect(refineText("", "clarify")).rejects.toThrow("text must be at least 1 character");
+  });
+
+  it("throws on server error (500)", async () => {
+    globalThis.fetch = vi.fn().mockReturnValue(
+      mockFetchResponse(false, { error: "AI service error" }, 500)
+    );
+
+    await expect(refineText("Test", "clarify")).rejects.toThrow("AI service error");
+  });
+});
+
+describe("getRefineErrorMessage", () => {
+  it("returns rate limit message for rate limit errors", () => {
+    const error = new Error("Rate limit exceeded");
+    expect(getRefineErrorMessage(error)).toBe(REFINE_ERROR_MESSAGES.RATE_LIMIT);
+  });
+
+  it("returns rate limit message for 429 status", () => {
+    const error = new Error("429 Too Many Requests");
+    expect(getRefineErrorMessage(error)).toBe(REFINE_ERROR_MESSAGES.RATE_LIMIT);
+  });
+
+  it("returns invalid type message for invalid type errors", () => {
+    const error = new Error("Invalid type selected");
+    expect(getRefineErrorMessage(error)).toBe(REFINE_ERROR_MESSAGES.INVALID_TYPE);
+  });
+
+  it("passes through text validation errors", () => {
+    const error = new Error("text must be at least 1 character");
+    expect(getRefineErrorMessage(error)).toBe("text must be at least 1 character");
+  });
+
+  it("passes through text length errors", () => {
+    const error = new Error("text must not exceed 2000 characters");
+    expect(getRefineErrorMessage(error)).toBe("text must not exceed 2000 characters");
+  });
+
+  it("passes through type required errors", () => {
+    const error = new Error("type is required");
+    expect(getRefineErrorMessage(error)).toBe("type is required");
+  });
+
+  it("returns network message for unknown errors", () => {
+    const error = new Error("Network failure");
+    expect(getRefineErrorMessage(error)).toBe(REFINE_ERROR_MESSAGES.NETWORK);
+  });
+
+  it("returns network message for non-Error values", () => {
+    expect(getRefineErrorMessage("string error")).toBe(REFINE_ERROR_MESSAGES.NETWORK);
+    expect(getRefineErrorMessage(null)).toBe(REFINE_ERROR_MESSAGES.NETWORK);
+    expect(getRefineErrorMessage(undefined)).toBe(REFINE_ERROR_MESSAGES.NETWORK);
+  });
+});
+
+describe("REFINE_ERROR_MESSAGES", () => {
+  it("has the expected error messages", () => {
+    expect(REFINE_ERROR_MESSAGES.RATE_LIMIT).toBe("Too many refinement requests. Please wait an hour.");
+    expect(REFINE_ERROR_MESSAGES.INVALID_TYPE).toBe("Invalid refinement option selected.");
+    expect(REFINE_ERROR_MESSAGES.NETWORK).toBe("Failed to refine text. Please try again.");
+  });
+});
+
