@@ -1,20 +1,112 @@
 import { useState, useCallback, useRef, useEffect } from "react";
 import type { ToastType } from "../hooks/useToast";
+import type { Task, TaskCreateInput } from "@kb/core";
+import type { ModelInfo } from "../api";
+import { fetchModels } from "../api";
+import { Link, Brain } from "lucide-react";
+import { CustomModelDropdown } from "./CustomModelDropdown";
 
 interface QuickEntryBoxProps {
-  onCreate?: (description: string) => Promise<void>;
+  onCreate?: (input: TaskCreateInput) => Promise<void>;
   addToast: (message: string, type?: ToastType) => void;
+  tasks?: Task[];
+  availableModels?: ModelInfo[];
 }
 
-export function QuickEntryBox({ onCreate, addToast }: QuickEntryBoxProps) {
+function getModelSelectionValue(provider?: string, modelId?: string): string {
+  return provider && modelId ? `${provider}/${modelId}` : "";
+}
+
+function parseModelSelection(value: string): { provider?: string; modelId?: string } {
+  if (!value) {
+    return { provider: undefined, modelId: undefined };
+  }
+
+  const slashIndex = value.indexOf("/");
+  if (slashIndex === -1) {
+    return { provider: undefined, modelId: undefined };
+  }
+
+  return {
+    provider: value.slice(0, slashIndex),
+    modelId: value.slice(slashIndex + 1),
+  };
+}
+
+export function QuickEntryBox({ onCreate, addToast, tasks = [], availableModels }: QuickEntryBoxProps) {
   const [description, setDescription] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isExpanded, setIsExpanded] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const blurTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const justResetRef = useRef(false);
+
+  // Rich creation state (mirrors InlineCreateCard)
+  const [dependencies, setDependencies] = useState<string[]>([]);
+  const [showDeps, setShowDeps] = useState(false);
+  const [depSearch, setDepSearch] = useState("");
+  const [showModels, setShowModels] = useState(false);
+  const [executorProvider, setExecutorProvider] = useState<string | undefined>(undefined);
+  const [executorModelId, setExecutorModelId] = useState<string | undefined>(undefined);
+  const [validatorProvider, setValidatorProvider] = useState<string | undefined>(undefined);
+  const [validatorModelId, setValidatorModelId] = useState<string | undefined>(undefined);
+  const [modelsLoading, setModelsLoading] = useState(false);
+  const [modelsError, setModelsError] = useState<string | null>(null);
+  const [loadedModels, setLoadedModels] = useState<ModelInfo[]>(availableModels ?? []);
+  const [breakIntoSubtasks, setBreakIntoSubtasks] = useState(false);
 
   // If onCreate is not provided, the component is disabled
   const isDisabled = !onCreate;
+
+  // Fetch models if not provided by parent
+  useEffect(() => {
+    if (availableModels) {
+      setLoadedModels(availableModels);
+      setModelsLoading(false);
+      setModelsError(null);
+      return;
+    }
+
+    let cancelled = false;
+    setModelsLoading(true);
+    setModelsError(null);
+    fetchModels()
+      .then((models) => {
+        if (!cancelled) {
+          setLoadedModels(models);
+        }
+      })
+      .catch((err: any) => {
+        if (!cancelled) {
+          setModelsError(err?.message || "Failed to load models");
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setModelsLoading(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [availableModels]);
+
+  const executorSelectionValue = getModelSelectionValue(executorProvider, executorModelId);
+  const validatorSelectionValue = getModelSelectionValue(validatorProvider, validatorModelId);
+
+  const hasExecutorOverride = Boolean(executorProvider && executorModelId);
+  const hasValidatorOverride = Boolean(validatorProvider && validatorModelId);
+  const selectedModelCount = Number(hasExecutorOverride) + Number(hasValidatorOverride);
+
+  const getModelBadgeLabel = useCallback(
+    (provider?: string, modelId?: string) => {
+      if (!provider || !modelId) return "Using default";
+      const matched = loadedModels.find((model) => model.provider === provider && model.id === modelId);
+      return matched ? `${matched.provider}/${matched.id}` : `${provider}/${modelId}`;
+    },
+    [loadedModels],
+  );
 
   // Cleanup timeout on unmount
   useEffect(() => {
@@ -55,19 +147,46 @@ export function QuickEntryBox({ onCreate, addToast }: QuickEntryBoxProps) {
     }
   }, [isSubmitting, description]);
 
+  // Clear dep search when dropdown closes
+  useEffect(() => {
+    if (!showDeps) setDepSearch("");
+  }, [showDeps]);
+
+  const resetForm = useCallback(() => {
+    setDescription("");
+    setDependencies([]);
+    setBreakIntoSubtasks(false);
+    setExecutorProvider(undefined);
+    setExecutorModelId(undefined);
+    setValidatorProvider(undefined);
+    setValidatorModelId(undefined);
+    setShowDeps(false);
+    setShowModels(false);
+    setIsExpanded(false);
+    justResetRef.current = true;
+    if (textareaRef.current) {
+      textareaRef.current.style.height = "auto";
+    }
+  }, []);
+
   const handleSubmit = useCallback(async () => {
     const trimmed = description.trim();
     if (!trimmed || isSubmitting || !onCreate) return;
 
     setIsSubmitting(true);
     try {
-      await onCreate(trimmed);
+      await onCreate({
+        description: trimmed,
+        column: "triage",
+        dependencies: dependencies.length ? dependencies : undefined,
+        breakIntoSubtasks,
+        modelProvider: hasExecutorOverride ? executorProvider : undefined,
+        modelId: hasExecutorOverride ? executorModelId : undefined,
+        validatorModelProvider: hasValidatorOverride ? validatorProvider : undefined,
+        validatorModelId: hasValidatorOverride ? validatorModelId : undefined,
+      });
       // Clear input for rapid entry
-      setDescription("");
-      // Reset height after clearing
-      if (textareaRef.current) {
-        textareaRef.current.style.height = "auto";
-      }
+      resetForm();
       // Note: Focus restoration is handled by useEffect when isSubmitting becomes false
     } catch (err: any) {
       addToast(err.message || "Failed to create task", "error");
@@ -75,7 +194,21 @@ export function QuickEntryBox({ onCreate, addToast }: QuickEntryBoxProps) {
     } finally {
       setIsSubmitting(false);
     }
-  }, [description, isSubmitting, onCreate, addToast]);
+  }, [
+    description,
+    isSubmitting,
+    onCreate,
+    dependencies,
+    breakIntoSubtasks,
+    hasExecutorOverride,
+    executorProvider,
+    executorModelId,
+    hasValidatorOverride,
+    validatorProvider,
+    validatorModelId,
+    addToast,
+    resetForm,
+  ]);
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -90,8 +223,14 @@ export function QuickEntryBox({ onCreate, addToast }: QuickEntryBoxProps) {
         handleSubmit();
       } else if (e.key === "Escape") {
         e.preventDefault();
+        // Close dropdowns first if open
+        if (showDeps || showModels) {
+          setShowDeps(false);
+          setShowModels(false);
+          return;
+        }
+        // Clear non-empty input on Escape
         if (description.trim()) {
-          // Clear non-empty input on Escape
           setDescription("");
           // Reset height
           if (textareaRef.current) {
@@ -99,7 +238,7 @@ export function QuickEntryBox({ onCreate, addToast }: QuickEntryBoxProps) {
           }
         }
         // Collapse on escape
-        setIsExpanded(false);
+        resetForm();
         // Clear any pending blur timeout
         if (blurTimeoutRef.current) {
           clearTimeout(blurTimeoutRef.current);
@@ -108,10 +247,15 @@ export function QuickEntryBox({ onCreate, addToast }: QuickEntryBoxProps) {
         textareaRef.current?.blur();
       }
     },
-    [handleSubmit, description, isExpanded],
+    [handleSubmit, description, isExpanded, showDeps, showModels, resetForm],
   );
 
   const handleFocus = useCallback(() => {
+    // Skip expanding if we just reset the form (prevents controls showing after successful creation)
+    if (justResetRef.current) {
+      justResetRef.current = false;
+      return;
+    }
     setIsExpanded(true);
   }, []);
 
@@ -121,11 +265,11 @@ export function QuickEntryBox({ onCreate, addToast }: QuickEntryBoxProps) {
       clearTimeout(blurTimeoutRef.current);
     }
 
-    // Collapse if empty (after a short delay to allow click events)
+    // Collapse if empty and no dropdowns are open (after a short delay to allow click events)
     blurTimeoutRef.current = setTimeout(() => {
       // Check current textarea value directly for most accurate state
       const currentValue = textareaRef.current?.value || "";
-      if (!currentValue.trim()) {
+      if (!currentValue.trim() && !showDeps && !showModels) {
         setIsExpanded(false);
         // Reset height when collapsing
         if (textareaRef.current) {
@@ -134,7 +278,77 @@ export function QuickEntryBox({ onCreate, addToast }: QuickEntryBoxProps) {
       }
       blurTimeoutRef.current = null;
     }, 200);
+  }, [showDeps, showModels]);
+
+  const toggleDep = useCallback((id: string) => {
+    setDependencies((prev) =>
+      prev.includes(id) ? prev.filter((d) => d !== id) : [...prev, id],
+    );
   }, []);
+
+  const toggleDepsDropdown = useCallback(() => {
+    setShowDeps((prev) => {
+      const next = !prev;
+      if (next) setShowModels(false);
+      return next;
+    });
+  }, []);
+
+  const toggleModelsDropdown = useCallback(() => {
+    setShowModels((prev) => {
+      const next = !prev;
+      if (next) setShowDeps(false);
+      return next;
+    });
+  }, []);
+
+  const handleExecutorChange = useCallback((value: string) => {
+    const next = parseModelSelection(value);
+    setExecutorProvider(next.provider);
+    setExecutorModelId(next.modelId);
+  }, []);
+
+  const handleValidatorChange = useCallback((value: string) => {
+    const next = parseModelSelection(value);
+    setValidatorProvider(next.provider);
+    setValidatorModelId(next.modelId);
+  }, []);
+
+  const handleModelDropdownMouseDown = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
+    const target = e.target;
+    if (
+      target instanceof HTMLElement &&
+      (target.closest("button") || target.closest("input"))
+    ) {
+      return;
+    }
+    e.preventDefault();
+  }, []);
+
+  const truncate = (s: string, len: number) =>
+    s.length > len ? s.slice(0, len) + "…" : s;
+
+  const loadModels = useCallback(async () => {
+    if (availableModels) {
+      setLoadedModels(availableModels);
+      setModelsError(null);
+      setModelsLoading(false);
+      return;
+    }
+
+    setModelsLoading(true);
+    setModelsError(null);
+    try {
+      setLoadedModels(await fetchModels());
+    } catch (err: any) {
+      setModelsError(err?.message || "Failed to load models");
+    } finally {
+      setModelsLoading(false);
+    }
+  }, [availableModels]);
+
+  // Show expanded controls when there's content or user has interacted
+  const showExpandedControls = isExpanded || description.trim().length > 0;
 
   return (
     <div className="quick-entry-box" data-testid="quick-entry-box">
@@ -151,6 +365,163 @@ export function QuickEntryBox({ onCreate, addToast }: QuickEntryBoxProps) {
         data-testid="quick-entry-input"
         rows={1}
       />
+      {showExpandedControls && (
+        <div className="quick-entry-controls">
+          <div className="quick-entry-controls-left">
+            <div className="dep-trigger-wrap">
+              <button
+                type="button"
+                className="btn btn-sm dep-trigger"
+                onClick={toggleDepsDropdown}
+                data-testid="quick-entry-deps-button"
+              >
+                <Link size={12} style={{ verticalAlign: "middle" }} />
+                {dependencies.length > 0 ? ` ${dependencies.length} deps` : " Deps"}
+              </button>
+              {showDeps && (() => {
+                const term = depSearch.toLowerCase();
+                const filtered = (term
+                  ? tasks.filter((t) =>
+                      t.id.toLowerCase().includes(term) ||
+                      (t.title && t.title.toLowerCase().includes(term)) ||
+                      (t.description && t.description.toLowerCase().includes(term))
+                    )
+                  : [...tasks]
+                ).sort((a, b) => {
+                  const cmp = b.createdAt.localeCompare(a.createdAt);
+                  if (cmp !== 0) return cmp;
+                  const aNum = parseInt(a.id.slice(a.id.lastIndexOf("-") + 1), 10) || 0;
+                  const bNum = parseInt(b.id.slice(b.id.lastIndexOf("-") + 1), 10) || 0;
+                  return bNum - aNum;
+                });
+                return (
+                  <div className="dep-dropdown" onMouseDown={(e) => e.preventDefault()}>
+                    <input
+                      className="dep-dropdown-search"
+                      placeholder="Search tasks…"
+                      autoFocus
+                      value={depSearch}
+                      onChange={(e) => setDepSearch(e.target.value)}
+                      onClick={(e) => e.stopPropagation()}
+                    />
+                    {filtered.length === 0 ? (
+                      <div className="dep-dropdown-empty">No existing tasks</div>
+                    ) : (
+                      filtered.map((t) => (
+                        <div
+                          key={t.id}
+                          className={`dep-dropdown-item${dependencies.includes(t.id) ? " selected" : ""}`}
+                          onMouseDown={(e) => e.preventDefault()}
+                          onClick={() => toggleDep(t.id)}
+                        >
+                          <span className="dep-dropdown-id">{t.id}</span>
+                          <span className="dep-dropdown-title">{truncate(t.title || t.description || t.id, 30)}</span>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                );
+              })()}
+            </div>
+
+            <div className="quick-entry-model-wrap">
+              <button
+                type="button"
+                className="btn btn-sm quick-entry-model-trigger"
+                onClick={toggleModelsDropdown}
+                aria-expanded={showModels}
+                aria-haspopup="dialog"
+                data-testid="quick-entry-models-button"
+              >
+                <Brain size={12} style={{ verticalAlign: "middle" }} />
+                {selectedModelCount > 0
+                  ? ` ${selectedModelCount} model${selectedModelCount === 1 ? "" : "s"}`
+                  : " Models"}
+              </button>
+              {showModels && (
+                <div
+                  className="inline-create-model-dropdown"
+                  onMouseDown={handleModelDropdownMouseDown}
+                >
+                  {modelsLoading ? (
+                    <div className="inline-create-model-empty">Loading models…</div>
+                  ) : modelsError ? (
+                    <div className="inline-create-model-empty">
+                      <span>Failed to load models.</span>
+                      <button
+                        type="button"
+                        className="btn btn-sm"
+                        onClick={() => void loadModels()}
+                      >
+                        Retry
+                      </button>
+                    </div>
+                  ) : loadedModels.length === 0 ? (
+                    <div className="inline-create-model-empty">
+                      No models available. Configure authentication in Settings to enable model selection.
+                    </div>
+                  ) : (
+                    <>
+                      <div className="inline-create-model-row">
+                        <label htmlFor="quick-entry-executor-model" className="inline-create-model-label">
+                          Executor Model
+                        </label>
+                        <span className={`model-badge ${hasExecutorOverride ? "model-badge-custom" : "model-badge-default"}`}>
+                          {getModelBadgeLabel(executorProvider, executorModelId)}
+                        </span>
+                        <CustomModelDropdown
+                          id="quick-entry-executor-model"
+                          label="Executor Model"
+                          value={executorSelectionValue}
+                          onChange={handleExecutorChange}
+                          models={loadedModels}
+                          disabled={isSubmitting}
+                          placeholder="Select executor model…"
+                        />
+                      </div>
+
+                      <div className="inline-create-model-row">
+                        <label htmlFor="quick-entry-validator-model" className="inline-create-model-label">
+                          Validator Model
+                        </label>
+                        <span className={`model-badge ${hasValidatorOverride ? "model-badge-custom" : "model-badge-default"}`}>
+                          {getModelBadgeLabel(validatorProvider, validatorModelId)}
+                        </span>
+                        <CustomModelDropdown
+                          id="quick-entry-validator-model"
+                          label="Validator Model"
+                          value={validatorSelectionValue}
+                          onChange={handleValidatorChange}
+                          models={loadedModels}
+                          disabled={isSubmitting}
+                          placeholder="Select validator model…"
+                        />
+                      </div>
+                    </>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {!isSubmitting && (
+              <label
+                className="quick-entry-subtasks-toggle"
+                data-testid="quick-entry-subtasks-toggle"
+              >
+                <input
+                  type="checkbox"
+                  checked={breakIntoSubtasks}
+                  onChange={(e) => setBreakIntoSubtasks(e.target.checked)}
+                />
+                Break into subtasks
+              </label>
+            )}
+          </div>
+          <div className="quick-entry-hint">
+            Enter to create · Esc to cancel
+          </div>
+        </div>
+      )}
     </div>
   );
 }

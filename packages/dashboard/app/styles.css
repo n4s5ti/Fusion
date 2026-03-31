@@ -7684,6 +7684,79 @@ html .column.drag-over * {
   cursor: not-allowed;
 }
 
+/* Quick Entry Box expanded controls */
+.quick-entry-controls {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+  flex-wrap: wrap;
+}
+
+.quick-entry-controls-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1 1 auto;
+  flex-wrap: wrap;
+}
+
+.quick-entry-model-wrap {
+  position: relative;
+}
+
+.quick-entry-subtasks-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--text-muted);
+  cursor: pointer;
+  margin-left: 8px;
+}
+
+.quick-entry-subtasks-toggle input[type="checkbox"] {
+  width: 14px;
+  height: 14px;
+  margin: 0;
+  accent-color: var(--todo);
+  cursor: pointer;
+}
+
+.quick-entry-hint {
+  font-size: 11px;
+  color: var(--text-dim);
+  margin-left: auto;
+  white-space: nowrap;
+}
+
+.quick-entry-model-trigger {
+  font-size: 12px;
+  padding: 3px 8px;
+}
+
+/* Responsive layout for quick entry controls */
+@media (max-width: 640px) {
+  .quick-entry-controls {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 10px;
+  }
+
+  .quick-entry-controls-left {
+    width: 100%;
+  }
+
+  .quick-entry-hint {
+    margin-left: 0;
+    width: 100%;
+    text-align: center;
+  }
+}
+
 /* === New Task Modal === */
 .new-task-modal .modal-body {
   padding: 20px 24px;

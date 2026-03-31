@@ -1,6 +1,6 @@
 import { memo, useMemo, useState, useCallback, useEffect } from "react";
 import { useFlashOnIncrease } from "../hooks/useFlashOnIncrease";
-import type { Task, TaskDetail, Column as ColumnType } from "@kb/core";
+import type { Task, TaskDetail, Column as ColumnType, TaskCreateInput } from "@kb/core";
 import { COLUMN_LABELS, COLUMN_DESCRIPTIONS } from "@kb/core";
 import { TaskCard } from "./TaskCard";
 import { WorktreeGroup } from "./WorktreeGroup";
@@ -20,7 +20,7 @@ interface ColumnProps {
   onMoveTask: (id: string, column: ColumnType) => Promise<Task>;
   onOpenDetail: (task: TaskDetail) => void;
   addToast: (message: string, type?: ToastType) => void;
-  onQuickCreate?: (description: string) => Promise<void>;
+  onQuickCreate?: (input: TaskCreateInput) => Promise<void>;
   onNewTask?: () => void;
   autoMerge?: boolean;
   onToggleAutoMerge?: () => void;
@@ -34,9 +34,10 @@ interface ColumnProps {
   onArchiveAllDone?: () => Promise<Task[]>;
   collapsed?: boolean;
   onToggleCollapse?: () => void;
+  allTasks?: Task[];
 }
 
-function ColumnComponent({ column, tasks, maxConcurrent, onMoveTask, onOpenDetail, addToast, onQuickCreate, onNewTask, autoMerge, onToggleAutoMerge, globalPaused, onUpdateTask, onArchiveTask, onUnarchiveTask, onArchiveAllDone, collapsed, onToggleCollapse }: ColumnProps) {
+function ColumnComponent({ column, tasks, maxConcurrent, onMoveTask, onOpenDetail, addToast, onQuickCreate, onNewTask, autoMerge, onToggleAutoMerge, globalPaused, onUpdateTask, onArchiveTask, onUnarchiveTask, onArchiveAllDone, collapsed, onToggleCollapse, allTasks }: ColumnProps) {
   const [dragOver, setDragOver] = useState(false);
   const [visibleTaskCount, setVisibleTaskCount] = useState(VISIBLE_TASKS_INITIAL);
   const countFlashing = useFlashOnIncrease(tasks.length);
@@ -169,7 +170,11 @@ function ColumnComponent({ column, tasks, maxConcurrent, onMoveTask, onOpenDetai
       {!isCollapsed && (
         <div className="column-body">
           {column === "triage" && onQuickCreate && (
-            <QuickEntryBox onCreate={onQuickCreate} addToast={addToast} />
+            <QuickEntryBox 
+              onCreate={onQuickCreate} 
+              addToast={addToast} 
+              tasks={allTasks ?? []}
+            />
           )}
           {column === "in-progress" ? (
             worktreeGroups.length === 0 ? (

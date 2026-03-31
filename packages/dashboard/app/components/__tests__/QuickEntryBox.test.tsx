@@ -1,14 +1,81 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { QuickEntryBox } from "../QuickEntryBox";
+import type { Task } from "@kb/core";
 
-function renderQuickEntryBox() {
-  const props = {
+const MOCK_MODELS = [
+  {
+    provider: "anthropic",
+    id: "claude-sonnet-4-5",
+    name: "Claude Sonnet 4.5",
+    reasoning: true,
+    contextWindow: 200_000,
+  },
+  {
+    provider: "openai",
+    id: "gpt-4o",
+    name: "GPT-4o",
+    reasoning: true,
+    contextWindow: 128_000,
+  },
+];
+
+const mockTasks: Task[] = [
+  {
+    id: "KB-001",
+    title: "Test task 1",
+    description: "First test task",
+    column: "todo",
+    dependencies: [],
+    steps: [],
+    currentStep: 0,
+    log: [],
+    createdAt: "2026-01-01T00:00:00Z",
+    updatedAt: "2026-01-01T00:00:00Z",
+  },
+  {
+    id: "KB-002",
+    title: "Test task 2",
+    description: "Second test task",
+    column: "todo",
+    dependencies: [],
+    steps: [],
+    currentStep: 0,
+    log: [],
+    createdAt: "2026-02-01T00:00:00Z",
+    updatedAt: "2026-02-01T00:00:00Z",
+  },
+];
+
+// Mock the api module
+vi.mock("../../api", () => ({
+  fetchModels: vi.fn().mockResolvedValue([
+    {
+      provider: "anthropic",
+      id: "claude-sonnet-4-5",
+      name: "Claude Sonnet 4.5",
+      reasoning: true,
+      contextWindow: 200_000,
+    },
+    {
+      provider: "openai",
+      id: "gpt-4o",
+      name: "GPT-4o",
+      reasoning: true,
+      contextWindow: 128_000,
+    },
+  ]),
+}));
+
+function renderQuickEntryBox(props = {}) {
+  const defaultProps = {
     onCreate: vi.fn().mockResolvedValue(undefined),
     addToast: vi.fn(),
+    tasks: mockTasks,
+    availableModels: MOCK_MODELS,
   };
-  const result = render(<QuickEntryBox {...props} />);
-  return { ...result, props };
+  const result = render(<QuickEntryBox {...defaultProps} {...props} />);
+  return { ...result, props: { ...defaultProps, ...props } };
 }
 
 describe("QuickEntryBox", () => {
@@ -67,7 +134,7 @@ describe("QuickEntryBox", () => {
     expect(textarea.classList.contains("quick-entry-input--expanded")).toBe(true);
   });
 
-  it("creates task on Enter key", async () => {
+  it("creates task on Enter key with TaskCreateInput", async () => {
     const { props } = renderQuickEntryBox();
     const textarea = screen.getByTestId("quick-entry-input");
 
@@ -75,7 +142,12 @@ describe("QuickEntryBox", () => {
     fireEvent.keyDown(textarea, { key: "Enter" });
 
     await waitFor(() => {
-      expect(props.onCreate).toHaveBeenCalledWith("New task description");
+      expect(props.onCreate).toHaveBeenCalledWith(
+        expect.objectContaining({
+          description: "New task description",
+          column: "triage",
+        }),
+      );
     });
   });
 
@@ -89,7 +161,7 @@ describe("QuickEntryBox", () => {
     // Shift+Enter should not prevent default (allow newline)
     const event = fireEvent.keyDown(textarea, { key: "Enter", shiftKey: true });
 
-    // Event should not be prevented (returns false if preventDefault was called)
+    // Event should not be prevented (returns true if preventDefault was NOT called)
     expect(event).toBe(true);
   });
 
@@ -104,7 +176,11 @@ describe("QuickEntryBox", () => {
     fireEvent.keyDown(textarea, { key: "Enter" });
 
     await waitFor(() => {
-      expect(props.onCreate).toHaveBeenCalledWith("Task to submit");
+      expect(props.onCreate).toHaveBeenCalledWith(
+        expect.objectContaining({
+          description: "Task to submit",
+        }),
+      );
     });
   });
 
@@ -238,7 +314,11 @@ describe("QuickEntryBox", () => {
     fireEvent.keyDown(textarea, { key: "Enter" });
 
     await waitFor(() => {
-      expect(props.onCreate).toHaveBeenCalledWith("Task with spaces");
+      expect(props.onCreate).toHaveBeenCalledWith(
+        expect.objectContaining({
+          description: "Task with spaces",
+        }),
+      );
     });
   });
 
@@ -255,5 +335,205 @@ describe("QuickEntryBox", () => {
 
     // After successful creation, focus should be maintained
     expect(document.activeElement).toBe(textarea);
+  });
+
+  describe("Rich creation features", () => {
+    it("shows dependency button when typing", () => {
+      renderQuickEntryBox();
+      const textarea = screen.getByTestId("quick-entry-input");
+
+      // Initially, no controls are visible before focus
+      expect(screen.queryByTestId("quick-entry-deps-button")).toBeNull();
+
+      // Type something
+      fireEvent.change(textarea, { target: { value: "Task with deps" } });
+
+      // Now the dependency button should be visible
+      expect(screen.getByTestId("quick-entry-deps-button")).toBeTruthy();
+    });
+
+    it("shows model selector button when typing", () => {
+      renderQuickEntryBox();
+      const textarea = screen.getByTestId("quick-entry-input");
+
+      // Initially, no controls are visible
+      expect(screen.queryByTestId("quick-entry-models-button")).toBeNull();
+
+      // Type something
+      fireEvent.change(textarea, { target: { value: "Task with models" } });
+
+      // Now the model selector button should be visible
+      expect(screen.getByTestId("quick-entry-models-button")).toBeTruthy();
+    });
+
+    it("shows break-into-subtasks toggle when typing", () => {
+      renderQuickEntryBox();
+      const textarea = screen.getByTestId("quick-entry-input");
+
+      // Initially, no controls are visible
+      expect(screen.queryByTestId("quick-entry-subtasks-toggle")).toBeNull();
+
+      // Type something
+      fireEvent.change(textarea, { target: { value: "Task to break" } });
+
+      // Now the subtasks toggle should be visible
+      expect(screen.getByTestId("quick-entry-subtasks-toggle")).toBeTruthy();
+    });
+
+    it("opens dependency dropdown when clicking deps button", () => {
+      renderQuickEntryBox();
+      const textarea = screen.getByTestId("quick-entry-input");
+
+      fireEvent.change(textarea, { target: { value: "Task with deps" } });
+      fireEvent.click(screen.getByTestId("quick-entry-deps-button"));
+
+      // Dropdown should be visible with search input
+      expect(document.querySelector(".dep-dropdown")).toBeTruthy();
+      expect(document.querySelector(".dep-dropdown-search")).toBeTruthy();
+    });
+
+    it("opens model dropdown when clicking models button", () => {
+      renderQuickEntryBox();
+      const textarea = screen.getByTestId("quick-entry-input");
+
+      fireEvent.change(textarea, { target: { value: "Task with models" } });
+      fireEvent.click(screen.getByTestId("quick-entry-models-button"));
+
+      // Dropdown should be visible with model options
+      expect(document.querySelector(".inline-create-model-dropdown")).toBeTruthy();
+    });
+
+    it("selects dependencies and includes them in submit payload", async () => {
+      const { props } = renderQuickEntryBox();
+      const textarea = screen.getByTestId("quick-entry-input");
+
+      fireEvent.change(textarea, { target: { value: "Task with deps" } });
+      fireEvent.click(screen.getByTestId("quick-entry-deps-button"));
+
+      // Click on a task to select it
+      const taskItem = document.querySelector(".dep-dropdown-item");
+      expect(taskItem).toBeTruthy();
+      fireEvent.click(taskItem!);
+
+      // Close dropdown and submit
+      fireEvent.keyDown(textarea, { key: "Enter" });
+
+      await waitFor(() => {
+        expect(props.onCreate).toHaveBeenCalledWith(
+          expect.objectContaining({
+            description: "Task with deps",
+            dependencies: expect.arrayContaining(["KB-002"]), // Most recent task
+          }),
+        );
+      });
+    });
+
+    it("toggles break-into-subtasks and includes it in submit payload", async () => {
+      const { props } = renderQuickEntryBox();
+      const textarea = screen.getByTestId("quick-entry-input");
+
+      fireEvent.change(textarea, { target: { value: "Task to break" } });
+
+      const checkbox = screen.getByTestId("quick-entry-subtasks-toggle").querySelector("input");
+      expect(checkbox).toBeTruthy();
+      fireEvent.click(checkbox!);
+
+      fireEvent.keyDown(textarea, { key: "Enter" });
+
+      await waitFor(() => {
+        expect(props.onCreate).toHaveBeenCalledWith(
+          expect.objectContaining({
+            description: "Task to break",
+            breakIntoSubtasks: true,
+          }),
+        );
+      });
+    });
+
+    it("includes selected models in submit payload", async () => {
+      const { props } = renderQuickEntryBox();
+      const textarea = screen.getByTestId("quick-entry-input");
+
+      fireEvent.change(textarea, { target: { value: "Task with model" } });
+      fireEvent.click(screen.getByTestId("quick-entry-models-button"));
+
+      // Select executor model
+      const executorButton = screen.getByRole("button", { name: "Executor Model" });
+      fireEvent.click(executorButton);
+
+      // Select the first model option
+      const modelOption = screen.getByText("Claude Sonnet 4.5");
+      fireEvent.click(modelOption);
+
+      // Submit the task
+      fireEvent.keyDown(textarea, { key: "Enter" });
+
+      await waitFor(() => {
+        expect(props.onCreate).toHaveBeenCalledWith(
+          expect.objectContaining({
+            description: "Task with model",
+            modelProvider: "anthropic",
+            modelId: "claude-sonnet-4-5",
+          }),
+        );
+      });
+    });
+
+    it("closes dropdowns on Escape and preserves input", () => {
+      renderQuickEntryBox();
+      const textarea = screen.getByTestId("quick-entry-input");
+
+      fireEvent.change(textarea, { target: { value: "Task with dropdown" } });
+      fireEvent.click(screen.getByTestId("quick-entry-deps-button"));
+
+      // Dropdown should be open
+      expect(document.querySelector(".dep-dropdown")).toBeTruthy();
+
+      // Press Escape - should close dropdown but not clear input
+      fireEvent.keyDown(textarea, { key: "Escape" });
+
+      // Dropdown should be closed
+      expect(document.querySelector(".dep-dropdown")).toBeNull();
+
+      // Input should still have the value
+      expect((textarea as HTMLTextAreaElement).value).toBe("Task with dropdown");
+    });
+
+    it("clears all state on second Escape after dropdowns are closed", () => {
+      renderQuickEntryBox();
+      const textarea = screen.getByTestId("quick-entry-input");
+
+      fireEvent.change(textarea, { target: { value: "Task to clear" } });
+      fireEvent.click(screen.getByTestId("quick-entry-subtasks-toggle").querySelector("input")!);
+
+      // First Escape closes any dropdowns
+      fireEvent.keyDown(textarea, { key: "Escape" });
+
+      // Second Escape clears everything
+      fireEvent.keyDown(textarea, { key: "Escape" });
+
+      // Input should be cleared and collapsed
+      expect((textarea as HTMLTextAreaElement).value).toBe("");
+      expect(textarea.classList.contains("quick-entry-input--expanded")).toBe(false);
+    });
+
+    it("resets all state after successful creation", async () => {
+      const { props } = renderQuickEntryBox();
+      const textarea = screen.getByTestId("quick-entry-input");
+
+      fireEvent.change(textarea, { target: { value: "Task to reset" } });
+      fireEvent.click(screen.getByTestId("quick-entry-subtasks-toggle").querySelector("input")!);
+
+      fireEvent.keyDown(textarea, { key: "Enter" });
+
+      await waitFor(() => {
+        expect(props.onCreate).toHaveBeenCalled();
+      });
+
+      // After creation, controls should be collapsed
+      expect((textarea as HTMLTextAreaElement).value).toBe("");
+      expect(screen.queryByTestId("quick-entry-deps-button")).toBeNull();
+      expect(screen.queryByTestId("quick-entry-subtasks-toggle")).toBeNull();
+    });
   });
 });

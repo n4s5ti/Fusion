@@ -1,6 +1,6 @@
 import { useState, useCallback, useMemo, Fragment, useEffect, useRef } from "react";
 import { LayoutGrid, List as ListIcon, ArrowUpDown, ArrowUp, ArrowDown, Search, Link, Columns3, EyeOff, Eye, ChevronRight } from "lucide-react";
-import type { Task, TaskDetail, Column, TaskStep } from "@kb/core";
+import type { Task, TaskDetail, Column, TaskStep, TaskCreateInput } from "@kb/core";
 import { COLUMN_LABELS, COLUMNS } from "@kb/core";
 import { fetchTaskDetail } from "../api";
 import { QuickEntryBox } from "./QuickEntryBox";
@@ -31,7 +31,7 @@ interface ListViewProps {
   addToast: (message: string, type?: ToastType) => void;
   globalPaused?: boolean;
   onNewTask?: () => void;
-  onQuickCreate?: (description: string) => Promise<void>;
+  onQuickCreate?: (input: TaskCreateInput) => Promise<void>;
 }
 
 function getStepProgress(steps: TaskStep[]): string {

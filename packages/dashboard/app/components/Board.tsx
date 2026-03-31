@@ -1,4 +1,4 @@
-import type { Task, TaskDetail, Column as ColumnType } from "@kb/core";
+import type { Task, TaskDetail, Column as ColumnType, TaskCreateInput } from "@kb/core";
 import { COLUMNS } from "@kb/core";
 import { Column } from "./Column";
 import type { ToastType } from "../hooks/useToast";
@@ -11,7 +11,7 @@ interface BoardProps {
   onMoveTask: (id: string, column: ColumnType) => Promise<Task>;
   onOpenDetail: (task: TaskDetail) => void;
   addToast: (message: string, type?: ToastType) => void;
-  onQuickCreate?: (description: string) => Promise<void>;
+  onQuickCreate?: (input: TaskCreateInput) => Promise<void>;
   onNewTask: () => void;
   autoMerge: boolean;
   onToggleAutoMerge: () => void;
@@ -146,6 +146,7 @@ export function Board({ tasks, maxConcurrent, onMoveTask, onOpenDetail, addToast
           onUpdateTask={onUpdateTask}
           onArchiveTask={onArchiveTask}
           onUnarchiveTask={onUnarchiveTask}
+          allTasks={filteredTasks}
           {...(col === "triage" ? { onQuickCreate, onNewTask } : {})}
           {...(col === "in-review" ? { autoMerge, onToggleAutoMerge } : {})}
           {...(col === "done" ? { onArchiveAllDone } : {})}

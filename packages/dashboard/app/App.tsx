@@ -100,9 +100,9 @@ function AppInner() {
   const handleNewTaskOpen = useCallback(() => setNewTaskModalOpen(true), []);
   const handleNewTaskClose = useCallback(() => setNewTaskModalOpen(false), []);
 
-  const handleQuickCreate = useCallback(
-    async (description: string): Promise<void> => {
-      await createTask({ description, column: "triage" });
+  const handleBoardQuickCreate = useCallback(
+    async (input: TaskCreateInput): Promise<void> => {
+      await createTask({ ...input, column: "triage" });
     },
     [createTask],
   );
@@ -220,7 +220,7 @@ function AppInner() {
           onMoveTask={moveTask}
           onOpenDetail={handleDetailOpen}
           addToast={addToast}
-          onQuickCreate={handleQuickCreate}
+          onQuickCreate={handleBoardQuickCreate}
           onNewTask={handleNewTaskOpen}
           autoMerge={autoMerge}
           onToggleAutoMerge={handleToggleAutoMerge}
@@ -240,7 +240,7 @@ function AppInner() {
           addToast={addToast}
           globalPaused={globalPaused}
           onNewTask={handleNewTaskOpen}
-          onQuickCreate={handleQuickCreate}
+          onQuickCreate={handleBoardQuickCreate}
         />
       )}
       {detailTask && (

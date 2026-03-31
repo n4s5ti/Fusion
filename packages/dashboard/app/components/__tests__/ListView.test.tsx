@@ -1340,7 +1340,11 @@ describe("ListView Quick Entry", () => {
     fireEvent.keyDown(input, { key: "Enter" });
 
     await waitFor(() => {
-      expect(mockOnQuickCreate).toHaveBeenCalledWith("New quick task");
+      expect(mockOnQuickCreate).toHaveBeenCalledWith(
+        expect.objectContaining({
+          description: "New quick task",
+        })
+      );
     });
   });
 
@@ -1384,7 +1388,11 @@ describe("ListView Quick Entry", () => {
     fireEvent.keyDown(input, { key: "Enter" });
 
     await waitFor(() => {
-      expect(mockOnQuickCreate).toHaveBeenCalledWith("Task with spaces");
+      expect(mockOnQuickCreate).toHaveBeenCalledWith(
+        expect.objectContaining({
+          description: "Task with spaces",
+        })
+      );
     });
   });
 
