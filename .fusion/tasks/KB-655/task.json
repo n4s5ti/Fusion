@@ -1,19 +1,20 @@
 {
   "id": "KB-655",
   "description": "Hide done by default on list view",
-  "column": "in-progress",
+  "column": "in-review",
   "size": "S",
   "reviewLevel": 0,
-  "currentStep": 2,
+  "currentStep": 4,
   "worktree": "/Users/eclipxe/Projects/kb/.worktrees/solar-breeze",
+  "summary": "Changed the default value of `hideDoneTasks` state in ListView component from `false` to `true`. Done and archived tasks are now hidden by default when users view the list view for the first time. Updated all 98 tests in ListView.test.tsx to reflect the new default behavior, including adding localStorage.clear() to test beforeEach hooks to ensure consistent test isolation.",
   "createdAt": "2026-04-01T02:38:03.605Z",
-  "updatedAt": "2026-04-01T05:42:52.387Z",
-  "columnMovedAt": "2026-04-01T05:42:22.877Z",
+  "updatedAt": "2026-04-01T05:45:44.996Z",
+  "columnMovedAt": "2026-04-01T05:45:44.996Z",
   "dependencies": [],
   "steps": [
     {
       "name": "Change Default Value",
-      "status": "pending"
+      "status": "done"
     },
     {
       "name": "Update Tests",
@@ -21,11 +22,11 @@
     },
     {
       "name": "Testing & Verification",
-      "status": "in-progress"
+      "status": "done"
     },
     {
       "name": "Documentation & Delivery",
-      "status": "pending"
+      "status": "done"
     }
   ],
   "log": [
@@ -65,6 +66,41 @@
     {
       "timestamp": "2026-04-01T05:42:52.387Z",
       "action": "Step 2 (Testing & Verification) → in-progress"
+    },
+    {
+      "timestamp": "2026-04-01T05:44:43.717Z",
+      "action": "Step 2 (Testing & Verification) → done"
+    },
+    {
+      "timestamp": "2026-04-01T05:44:43.718Z",
+      "action": "Step 2 complete: Updated tests to reflect new default behavior (hideDoneTasks = true by default)",
+      "outcome": "All 98 tests passing"
+    },
+    {
+      "timestamp": "2026-04-01T05:44:44.939Z",
+      "action": "Step 3 (Documentation & Delivery) → in-progress"
+    },
+    {
+      "timestamp": "2026-04-01T05:45:37.335Z",
+      "action": "Step 3 (Documentation & Delivery) → done"
+    },
+    {
+      "timestamp": "2026-04-01T05:45:37.336Z",
+      "action": "Step 3 complete: ListView tests all pass (98 tests)",
+      "outcome": "Build failure is pre-existing in SettingsModal.tsx (unrelated to KB-655)"
+    },
+    {
+      "timestamp": "2026-04-01T05:45:40.004Z",
+      "action": "Step 4 complete: No documentation updates required",
+      "outcome": "Behavioral change only - no docs to update"
+    },
+    {
+      "timestamp": "2026-04-01T05:45:41.597Z",
+      "action": "Step 0 (Change Default Value) → done"
+    },
+    {
+      "timestamp": "2026-04-01T05:45:41.599Z",
+      "action": "Task marked done by agent"
     }
   ]
 }

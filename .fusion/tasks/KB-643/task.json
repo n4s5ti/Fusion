@@ -7,9 +7,9 @@
   "size": "M",
   "reviewLevel": 2,
   "currentStep": 0,
-  "blockedBy": "KB-618",
+  "blockedBy": "KB-617",
   "createdAt": "2026-04-01T01:54:15.047Z",
-  "updatedAt": "2026-04-01T05:42:22.875Z",
+  "updatedAt": "2026-04-01T05:46:08.127Z",
   "columnMovedAt": "2026-04-01T01:58:47.407Z",
   "dependencies": [
     "KB-292"

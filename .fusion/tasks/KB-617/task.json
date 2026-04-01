@@ -1,17 +1,49 @@
 {
   "id": "KB-617",
   "description": "Store a reference to files that are modified during an agent run and add a tab in the agent to view the diffs from the agent",
-  "column": "todo",
-  "status": "queued",
+  "column": "in-progress",
   "size": "M",
   "reviewLevel": 2,
   "currentStep": 0,
-  "blockedBy": "KB-618",
+  "worktree": "/Users/eclipxe/Projects/kb/.worktrees/noble-badger",
   "createdAt": "2026-03-31T23:26:05.506Z",
-  "updatedAt": "2026-04-01T05:42:22.869Z",
-  "columnMovedAt": "2026-03-31T23:32:41.668Z",
+  "updatedAt": "2026-04-01T05:46:10.152Z",
+  "columnMovedAt": "2026-04-01T05:46:07.886Z",
   "dependencies": [],
-  "steps": [],
+  "steps": [
+    {
+      "name": "Core Types and Store Updates",
+      "status": "in-progress"
+    },
+    {
+      "name": "Capture Modified Files in Executor",
+      "status": "pending"
+    },
+    {
+      "name": "API Endpoint for Task Diffs",
+      "status": "pending"
+    },
+    {
+      "name": "Frontend API Client",
+      "status": "pending"
+    },
+    {
+      "name": "Changes Tab UI Components",
+      "status": "pending"
+    },
+    {
+      "name": "Integrate Changes Tab into Task Detail Modal",
+      "status": "pending"
+    },
+    {
+      "name": "Testing & Verification",
+      "status": "pending"
+    },
+    {
+      "name": "Documentation & Delivery",
+      "status": "pending"
+    }
+  ],
   "log": [
     {
       "timestamp": "2026-03-31T23:26:05.506Z",
@@ -25,6 +57,18 @@
       "timestamp": "2026-03-31T23:32:37.918Z",
       "action": "Spec review: APPROVE",
       "outcome": "This is a well-structured specification for a medium-complexity feature that touches core types, the executor agent, API routes, and dashboard UI. The mission is clear: capture modified files at task completion and expose them via a new \"Changes\" tab. All referenced files exist at the specified paths, and the spec follows established patterns in the codebase."
+    },
+    {
+      "timestamp": "2026-04-01T05:46:08.075Z",
+      "action": "Worktree created at /Users/eclipxe/Projects/kb/.worktrees/noble-badger"
+    },
+    {
+      "timestamp": "2026-04-01T05:46:08.076Z",
+      "action": "Step 0 (Core Types and Store Updates) → pending"
+    },
+    {
+      "timestamp": "2026-04-01T05:46:10.152Z",
+      "action": "Step 0 (Core Types and Store Updates) → in-progress"
     }
   ]
 }

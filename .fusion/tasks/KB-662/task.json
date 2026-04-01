@@ -1,15 +1,29 @@
 {
   "id": "KB-662",
   "description": "When dashboard becomes visible refresh data",
-  "column": "todo",
+  "column": "in-progress",
   "size": "S",
   "reviewLevel": 1,
-  "currentStep": 0,
+  "currentStep": 1,
+  "worktree": "/Users/eclipxe/Projects/kb/.worktrees/fresh-mesa",
   "createdAt": "2026-04-01T05:35:18.262Z",
-  "updatedAt": "2026-04-01T05:41:14.386Z",
-  "columnMovedAt": "2026-04-01T05:41:14.386Z",
+  "updatedAt": "2026-04-01T05:46:07.259Z",
+  "columnMovedAt": "2026-04-01T05:45:52.895Z",
   "dependencies": [],
-  "steps": [],
+  "steps": [
+    {
+      "name": "Add Visibility Change Listener",
+      "status": "done"
+    },
+    {
+      "name": "Testing & Verification",
+      "status": "pending"
+    },
+    {
+      "name": "Documentation & Delivery",
+      "status": "pending"
+    }
+  ],
   "log": [
     {
       "timestamp": "2026-04-01T05:35:18.262Z",
@@ -23,6 +37,26 @@
       "timestamp": "2026-04-01T05:41:11.521Z",
       "action": "Spec review: APPROVE",
       "outcome": "The specification is well-crafted for a small, focused change. It correctly identifies the target files, describes concrete implementation steps with verifiable outcomes, and specifies appropriate testing requirements. The mission is clear, the file scope is accurate, and the sizing (S, Review Level 1) is appropriate for this low-blast-radius feature."
+    },
+    {
+      "timestamp": "2026-04-01T05:45:53.083Z",
+      "action": "Worktree created at /Users/eclipxe/Projects/kb/.worktrees/fresh-mesa"
+    },
+    {
+      "timestamp": "2026-04-01T05:45:53.085Z",
+      "action": "Step 0 (Add Visibility Change Listener) → pending"
+    },
+    {
+      "timestamp": "2026-04-01T05:45:55.642Z",
+      "action": "Step 0 (Add Visibility Change Listener) → in-progress"
+    },
+    {
+      "timestamp": "2026-04-01T05:46:07.258Z",
+      "action": "Step 0 (Add Visibility Change Listener) → done"
+    },
+    {
+      "timestamp": "2026-04-01T05:46:07.259Z",
+      "action": "plan review requested for Step 1 (Add Visibility Change Listener)"
     }
   ]
 }

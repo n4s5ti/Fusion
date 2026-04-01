@@ -4,11 +4,11 @@
   "column": "in-progress",
   "size": "M",
   "reviewLevel": 2,
-  "currentStep": 1,
+  "currentStep": 3,
   "worktree": "/Users/eclipxe/Projects/kb/.worktrees/early-hawk",
   "baseBranch": "kb/kb-637",
   "createdAt": "2026-04-01T02:13:55.663Z",
-  "updatedAt": "2026-04-01T05:43:48.970Z",
+  "updatedAt": "2026-04-01T05:46:04.218Z",
   "columnMovedAt": "2026-04-01T05:41:22.877Z",
   "dependencies": [
     "KB-637"
@@ -20,15 +20,15 @@
     },
     {
       "name": "Enable Parallel File Execution in Core Package",
-      "status": "in-progress"
+      "status": "done"
     },
     {
       "name": "Enable Parallel File Execution in Engine Package",
-      "status": "pending"
+      "status": "done"
     },
     {
       "name": "Enable Parallel File Execution in CLI Package",
-      "status": "pending"
+      "status": "in-progress"
     },
     {
       "name": "Evaluate Dashboard Test Parallelism",
@@ -95,6 +95,54 @@
     {
       "timestamp": "2026-04-01T05:43:48.970Z",
       "action": "code review requested for Step 1 (Optimize Backup Tests - Eliminate Real-Time Delays)"
+    },
+    {
+      "timestamp": "2026-04-01T05:44:42.363Z",
+      "action": "code review Step 1: APPROVE",
+      "outcome": "The implementation successfully replaces all `waitForNextSecond()` calls (1100ms real-time delays) with Vitest's fake timers (`vi.useFakeTimers()` and `vi.setSystemTime()`). The `waitForNextSecond()` helper function has been completely removed. The backup tests should now execute in milliseconds instead of ~24 seconds, while maintaining correctness of timestamp-dependent assertions."
+    },
+    {
+      "timestamp": "2026-04-01T05:44:44.226Z",
+      "action": "Step 1 (Enable Parallel File Execution in Core Package) → done"
+    },
+    {
+      "timestamp": "2026-04-01T05:44:44.227Z",
+      "action": "Step 2 (Enable Parallel File Execution in Engine Package) → in-progress"
+    },
+    {
+      "timestamp": "2026-04-01T05:44:44.228Z",
+      "action": "plan review requested for Step 2 (Enable Parallel File Execution in Core Package)"
+    },
+    {
+      "timestamp": "2026-04-01T05:45:07.404Z",
+      "action": "plan review Step 2: APPROVE",
+      "outcome": "The plan for Step 2 is sound and will achieve its stated outcomes. The core package tests demonstrate excellent isolation patterns with unique temp directories per test via `mkdtempSync()`, and Step 1 has already successfully refactored the backup tests to use fake timers. The approach to enable `fileParallelism: true` while keeping `maxWorkers: 16` is appropriate for this codebase."
+    },
+    {
+      "timestamp": "2026-04-01T05:45:18.598Z",
+      "action": "code review requested for Step 2 (Enable Parallel File Execution in Core Package)"
+    },
+    {
+      "timestamp": "2026-04-01T05:45:39.673Z",
+      "action": "code review Step 2: APPROVE",
+      "outcome": "The implementation correctly enables parallel file execution in the core package by setting `fileParallelism: true` in `packages/core/vitest.config.ts`. Step 1 (backup test optimization with fake timers) was also completed, which is a prerequisite for safe parallel execution. All core tests use unique temp directories via `mkdtempSync()` with unique prefixes (e.g., `\"kb-store-test-\"`, `\"kb-backup-test-\"`), ensuring proper test isolation for parallel execution."
+    },
+    {
+      "timestamp": "2026-04-01T05:45:41.093Z",
+      "action": "Step 2 (Enable Parallel File Execution in Engine Package) → done"
+    },
+    {
+      "timestamp": "2026-04-01T05:45:41.095Z",
+      "action": "Step 3 (Enable Parallel File Execution in CLI Package) → in-progress"
+    },
+    {
+      "timestamp": "2026-04-01T05:45:41.095Z",
+      "action": "plan review requested for Step 3 (Enable Parallel File Execution in Engine Package)"
+    },
+    {
+      "timestamp": "2026-04-01T05:46:04.218Z",
+      "action": "plan review Step 3: APPROVE",
+      "outcome": "The plan for Step 3 is sound and will achieve the stated outcomes. The engine package tests are well-structured for parallel execution—most use isolated mocks, fresh class instances per test, and have no shared mutable state. However, there are two tests that use actual filesystem operations with fixed directory names that may need `sequential()` marking."
     }
   ]
 }

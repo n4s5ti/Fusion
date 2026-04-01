@@ -5,10 +5,9 @@
   "size": "S",
   "reviewLevel": 0,
   "currentStep": 2,
-  "worktree": "/Users/eclipxe/Projects/kb/.worktrees/crisp-aspen",
   "createdAt": "2026-04-01T02:34:03.915Z",
-  "updatedAt": "2026-04-01T05:34:56.863Z",
-  "columnMovedAt": "2026-04-01T05:34:53.431Z",
+  "updatedAt": "2026-04-01T05:45:37.894Z",
+  "columnMovedAt": "2026-04-01T05:45:37.894Z",
   "dependencies": [],
   "steps": [
     {
@@ -87,6 +86,10 @@
     {
       "timestamp": "2026-04-01T05:34:56.863Z",
       "action": "Step 2 (Documentation & Delivery) → in-progress"
+    },
+    {
+      "timestamp": "2026-04-01T05:45:22.889Z",
+      "action": "Task terminated due to stuck agent session (no activity for ~10 minutes)"
     }
   ]
 }
