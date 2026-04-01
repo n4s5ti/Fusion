@@ -1,0 +1,130 @@
+import { useState, useEffect, useCallback, useRef } from "react";
+import type { ProjectInfo } from "../api";
+import {
+  fetchProjects,
+  registerProject,
+  unregisterProject,
+  updateProject,
+  type ProjectCreateInput,
+} from "../api";
+
+export interface UseProjectsResult {
+  /** List of all registered projects */
+  projects: ProjectInfo[];
+  /** Loading state for initial fetch */
+  loading: boolean;
+  /** Error message if fetch failed */
+  error: string | null;
+  /** Manually refresh projects list */
+  refresh: () => Promise<void>;
+  /** Register a new project */
+  register: (input: ProjectCreateInput) => Promise<ProjectInfo>;
+  /** Update an existing project */
+  update: (id: string, updates: Partial<ProjectInfo>) => Promise<ProjectInfo>;
+  /** Unregister a project */
+  unregister: (id: string) => Promise<void>;
+}
+
+const POLL_INTERVAL_MS = 5000; // 5 seconds
+
+/**
+ * Hook for fetching and managing projects.
+ * Automatically polls for updates every 5 seconds.
+ * Provides optimistic updates for UI responsiveness.
+ */
+export function useProjects(): UseProjectsResult {
+  const [projects, setProjects] = useState<ProjectInfo[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const intervalRef = useRef<NodeJS.Timeout | null>(null);
+
+  const refresh = useCallback(async () => {
+    try {
+      setError(null);
+      const data = await fetchProjects();
+      setProjects(data);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to fetch projects");
+      // Don't clear existing projects on error - keep showing stale data
+    }
+  }, []);
+
+  // Initial fetch
+  useEffect(() => {
+    let cancelled = false;
+
+    async function load() {
+      setLoading(true);
+      try {
+        const data = await fetchProjects();
+        if (!cancelled) {
+          setProjects(data);
+          setError(null);
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setError(err instanceof Error ? err.message : "Failed to fetch projects");
+        }
+      } finally {
+        if (!cancelled) {
+          setLoading(false);
+        }
+      }
+    }
+
+    load();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // Polling for updates
+  useEffect(() => {
+    // Only start polling after initial load completes
+    if (loading) return;
+
+    intervalRef.current = setInterval(() => {
+      refresh();
+    }, POLL_INTERVAL_MS);
+
+    return () => {
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current);
+        intervalRef.current = null;
+      }
+    };
+  }, [loading, refresh]);
+
+  const register = useCallback(async (input: ProjectCreateInput): Promise<ProjectInfo> => {
+    const project = await registerProject(input);
+    // Optimistically add to list
+    setProjects((prev) => [...prev, project]);
+    return project;
+  }, []);
+
+  const update = useCallback(async (id: string, updates: Partial<ProjectInfo>): Promise<ProjectInfo> => {
+    const project = await updateProject(id, updates);
+    // Optimistically update in list
+    setProjects((prev) =>
+      prev.map((p) => (p.id === id ? project : p))
+    );
+    return project;
+  }, []);
+
+  const unregister = useCallback(async (id: string): Promise<void> => {
+    await unregisterProject(id);
+    // Optimistically remove from list
+    setProjects((prev) => prev.filter((p) => p.id !== id));
+  }, []);
+
+  return {
+    projects,
+    loading,
+    error,
+    refresh,
+    register,
+    update,
+    unregister,
+  };
+}

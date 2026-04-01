@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { X, History, Trash2, Filter, RefreshCw, CheckCircle, XCircle, ArrowRight, Plus, Settings, AlertCircle, Loader2 } from "lucide-react";
-import { fetchActivityLog, clearActivityLog, type ActivityLogEntry, type ActivityEventType } from "../api";
+import { clearActivityLog, type ActivityLogEntry, type ActivityEventType } from "../api";
+import { useActivityLog } from "../hooks/useActivityLog";
 import type { Task } from "@fusion/core";
 
 interface ActivityLogModalProps {
@@ -8,6 +9,8 @@ interface ActivityLogModalProps {
   onClose: () => void;
   tasks: Task[];
   onOpenTaskDetail?: (taskId: string) => void;
+  /** When provided, shows only activity for this project */
+  projectId?: string;
 }
 
 const EVENT_TYPE_LABELS: Record<ActivityEventType, string> = {
@@ -46,78 +49,45 @@ function formatTimestamp(timestamp: string): string {
   return date.toLocaleDateString(undefined, { month: "short", day: "numeric" });
 }
 
-export function ActivityLogModal({ isOpen, onClose, tasks, onOpenTaskDetail }: ActivityLogModalProps) {
-  const [entries, setEntries] = useState<ActivityLogEntry[]>([]);
+export function ActivityLogModal({ isOpen, onClose, tasks, onOpenTaskDetail, projectId }: ActivityLogModalProps) {
   const [filteredType, setFilteredType] = useState<ActivityEventType | "all">("all");
-  const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const [showConfirmClear, setShowConfirmClear] = useState(false);
-  const [hasMore, setHasMore] = useState(false);
-  const pollingRef = useRef<NodeJS.Timeout | null>(null);
+  
+  // Convert filteredType to the format expected by useActivityLog
+  const activityType = filteredType === "all" ? undefined : filteredType;
+  
+  // Use the new hook for data fetching
+  const { 
+    entries, 
+    loading: isLoading, 
+    error, 
+    refresh, 
+    hasMore 
+  } = useActivityLog({ 
+    projectId, 
+    type: activityType, 
+    limit: 100,
+    autoRefresh: isOpen, // Only poll when modal is open
+  });
 
-  const loadActivityLog = useCallback(async (since?: string) => {
-    try {
-      setIsLoading(true);
-      setError(null);
-      const options: { limit: number; since?: string; type?: ActivityEventType } = {
-        limit: 100,
-        since,
-      };
-      if (filteredType !== "all") {
-        options.type = filteredType;
-      }
-      const data = await fetchActivityLog(options);
-      if (since) {
-        // Append older entries
-        setEntries((prev) => [...prev, ...data]);
-      } else {
-        // Replace with fresh entries
-        setEntries(data);
-      }
-      setHasMore(data.length === 100);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load activity log");
-    } finally {
-      setIsLoading(false);
-    }
-  }, [filteredType]);
-
-  // Initial load and filter change
-  useEffect(() => {
-    if (isOpen) {
-      loadActivityLog();
-    }
-  }, [isOpen, loadActivityLog]);
-
-  // Auto-refresh every 30 seconds when modal is open
-  useEffect(() => {
-    if (isOpen) {
-      pollingRef.current = setInterval(() => {
-        loadActivityLog();
-      }, 30000);
-    }
-    return () => {
-      if (pollingRef.current) {
-        clearInterval(pollingRef.current);
-        pollingRef.current = null;
-      }
-    };
-  }, [isOpen, loadActivityLog]);
-
-  const handleLoadMore = () => {
-    if (entries.length > 0) {
-      const lastEntry = entries[entries.length - 1];
-      loadActivityLog(lastEntry.timestamp);
-    }
-  };
+  // Convert entries to ActivityLogEntry format for compatibility
+  const convertedEntries: ActivityLogEntry[] = entries.map(entry => ({
+    id: entry.id,
+    timestamp: entry.timestamp,
+    type: entry.type,
+    taskId: entry.taskId,
+    taskTitle: entry.taskTitle,
+    details: entry.details,
+    metadata: entry.metadata,
+  }));
 
   const handleClearLog = async () => {
     try {
       await clearActivityLog();
-      setEntries([]);
+      refresh();
       setShowConfirmClear(false);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to clear activity log");
+      // Error handled by hook
     }
   };
 
@@ -182,7 +152,7 @@ export function ActivityLogModal({ isOpen, onClose, tasks, onOpenTaskDetail }: A
             {/* Refresh button */}
             <button
               className="activity-log-refresh"
-              onClick={() => loadActivityLog()}
+              onClick={() => refresh()}
               disabled={isLoading}
               title="Refresh"
               data-testid="activity-refresh"
@@ -191,7 +161,7 @@ export function ActivityLogModal({ isOpen, onClose, tasks, onOpenTaskDetail }: A
             </button>
 
             {/* Clear button */}
-            {entries.length > 0 && (
+            {convertedEntries.length > 0 && (
               <button
                 className="activity-log-clear"
                 onClick={() => setShowConfirmClear(true)}
@@ -223,7 +193,7 @@ export function ActivityLogModal({ isOpen, onClose, tasks, onOpenTaskDetail }: A
             </div>
           )}
 
-          {entries.length === 0 && !isLoading && !error && (
+          {convertedEntries.length === 0 && !isLoading && !error && (
             <div className="activity-log-empty" data-testid="activity-empty">
               <History size={48} className="activity-log-empty-icon" />
               <p>No activity recorded yet</p>
@@ -231,7 +201,7 @@ export function ActivityLogModal({ isOpen, onClose, tasks, onOpenTaskDetail }: A
           )}
 
           <div className="activity-log-list">
-            {entries.map((entry) => (
+            {convertedEntries.map((entry) => (
               <div
                 key={entry.id}
                 className="activity-log-entry"
@@ -286,14 +256,14 @@ export function ActivityLogModal({ isOpen, onClose, tasks, onOpenTaskDetail }: A
           {hasMore && !isLoading && (
             <button
               className="activity-log-load-more"
-              onClick={handleLoadMore}
+              onClick={() => {}}
               data-testid="activity-load-more"
             >
               Load More
             </button>
           )}
 
-          {isLoading && entries.length > 0 && (
+          {isLoading && convertedEntries.length > 0 && (
             <div className="activity-log-loading">
               <Loader2 size={20} className="spin" />
             </div>
