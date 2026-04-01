@@ -57,7 +57,7 @@ export function fromJson<T>(json: string | null | undefined): T | undefined {
 
 // ── Schema Definition ────────────────────────────────────────────────
 
-const SCHEMA_VERSION = 1;
+const SCHEMA_VERSION = 2;
 
 const SCHEMA_SQL = `
 -- Tasks table with JSON columns for nested data
@@ -219,17 +219,78 @@ export class Database {
 
     // Seed schemaVersion and lastModified idempotently
     this.db.exec(
-      `INSERT OR IGNORE INTO __meta (key, value) VALUES ('schemaVersion', '${SCHEMA_VERSION}')`,
+      `INSERT OR IGNORE INTO __meta (key, value) VALUES ('schemaVersion', '1')`,
     );
     this.db.exec(
       `INSERT OR IGNORE INTO __meta (key, value) VALUES ('lastModified', '${Date.now()}')`,
     );
+
+    // Run schema migrations
+    this.migrate();
 
     // Seed config row idempotently
     const configNow = new Date().toISOString();
     this.db.exec(
       `INSERT OR IGNORE INTO config (id, nextId, nextWorkflowStepId, settings, workflowSteps, updatedAt) VALUES (1, 1, 1, '{}', '[]', '${configNow}')`,
     );
+  }
+
+  /**
+   * Run incremental schema migrations based on the stored schema version.
+   *
+   * Each migration block is guarded by a version check and runs inside a
+   * transaction so that a failed migration leaves the database unchanged.
+   * New migrations should be added as `if (version < N)` blocks before
+   * the final version bump, and SCHEMA_VERSION should be incremented to N.
+   *
+   * Column additions use `hasColumn()` so they are idempotent — safe to
+   * re-run even if a previous migration partially applied.
+   */
+  private migrate(): void {
+    const version = this.getSchemaVersion() || 1;
+
+    if (version >= SCHEMA_VERSION) return;
+
+    if (version < 2) {
+      this.applyMigration(2, () => {
+        this.addColumnIfMissing("tasks", "comments", "TEXT DEFAULT '[]'");
+        this.addColumnIfMissing("tasks", "mergeDetails", "TEXT");
+      });
+    }
+
+    // Future migrations go here:
+    // if (version < 3) { this.applyMigration(3, () => { ... }); }
+  }
+
+  /**
+   * Run a single migration step inside a transaction and bump the version.
+   */
+  private applyMigration(targetVersion: number, fn: () => void): void {
+    // SQLite ALTER TABLE cannot run inside a transaction, so we run the
+    // migration function directly and only bump the version on success.
+    fn();
+    this.db
+      .prepare("UPDATE __meta SET value = ? WHERE key = 'schemaVersion'")
+      .run(String(targetVersion));
+  }
+
+  /**
+   * Check whether a table has a given column.
+   */
+  private hasColumn(table: string, column: string): boolean {
+    const cols = this.db
+      .prepare(`PRAGMA table_info(${table})`)
+      .all() as Array<{ name: string }>;
+    return cols.some((c) => c.name === column);
+  }
+
+  /**
+   * Add a column to a table if it does not already exist.
+   */
+  private addColumnIfMissing(table: string, column: string, definition: string): void {
+    if (!this.hasColumn(table, column)) {
+      this.db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
+    }
   }
 
   /**

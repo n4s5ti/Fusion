@@ -5,6 +5,7 @@ import type { ModelInfo, RefinementType } from "../api";
 import { fetchModels, refineText, getRefineErrorMessage } from "../api";
 import { Link, Brain, Lightbulb, ListTree, Sparkles, Save } from "lucide-react";
 import { CustomModelDropdown } from "./CustomModelDropdown";
+import { ModelSelectionModal } from "./ModelSelectionModal";
 
 const STORAGE_KEY = "kb-quick-entry-text";
 
@@ -60,7 +61,7 @@ export function QuickEntryBox({ onCreate, addToast, tasks = [], availableModels,
   const [dependencies, setDependencies] = useState<string[]>([]);
   const [showDeps, setShowDeps] = useState(false);
   const [depSearch, setDepSearch] = useState("");
-  const [showModels, setShowModels] = useState(false);
+  const [isModelModalOpen, setIsModelModalOpen] = useState(false);
   const [executorProvider, setExecutorProvider] = useState<string | undefined>(undefined);
   const [executorModelId, setExecutorModelId] = useState<string | undefined>(undefined);
   const [validatorProvider, setValidatorProvider] = useState<string | undefined>(undefined);
@@ -200,7 +201,7 @@ export function QuickEntryBox({ onCreate, addToast, tasks = [], availableModels,
     setValidatorProvider(undefined);
     setValidatorModelId(undefined);
     setShowDeps(false);
-    setShowModels(false);
+    setIsModelModalOpen(false);
     setIsRefineMenuOpen(false);
     setIsRefining(false);
     setIsExpanded(false);
@@ -266,10 +267,14 @@ export function QuickEntryBox({ onCreate, addToast, tasks = [], availableModels,
         handleSubmit();
       } else if (e.key === "Escape") {
         e.preventDefault();
+        // Close modal first if open
+        if (isModelModalOpen) {
+          setIsModelModalOpen(false);
+          return;
+        }
         // Close dropdowns first if open
-        if (showDeps || showModels || isRefineMenuOpen) {
+        if (showDeps || isRefineMenuOpen) {
           setShowDeps(false);
-          setShowModels(false);
           setIsRefineMenuOpen(false);
           return;
         }
@@ -295,7 +300,7 @@ export function QuickEntryBox({ onCreate, addToast, tasks = [], availableModels,
         textareaRef.current?.blur();
       }
     },
-    [handleSubmit, description, isExpanded, showDeps, showModels, isRefineMenuOpen, resetForm],
+    [handleSubmit, description, isExpanded, showDeps, isModelModalOpen, isRefineMenuOpen, resetForm],
   );
 
   const handleFocus = useCallback(() => {
@@ -316,7 +321,7 @@ export function QuickEntryBox({ onCreate, addToast, tasks = [], availableModels,
     // Collapse after a short delay to allow click events on dropdowns
     // Collapse regardless of content - only check if dropdowns are open
     blurTimeoutRef.current = setTimeout(() => {
-      if (!showDeps && !showModels && !isRefineMenuOpen) {
+      if (!showDeps && !isModelModalOpen && !isRefineMenuOpen) {
         setIsExpanded(false);
         // Reset height when collapsing
         if (textareaRef.current) {
@@ -325,7 +330,7 @@ export function QuickEntryBox({ onCreate, addToast, tasks = [], availableModels,
       }
       blurTimeoutRef.current = null;
     }, 200);
-  }, [showDeps, showModels, isRefineMenuOpen]);
+  }, [showDeps, isModelModalOpen, isRefineMenuOpen]);
 
   const toggleDep = useCallback((id: string) => {
     setDependencies((prev) =>
@@ -336,17 +341,14 @@ export function QuickEntryBox({ onCreate, addToast, tasks = [], availableModels,
   const toggleDepsDropdown = useCallback(() => {
     setShowDeps((prev) => {
       const next = !prev;
-      if (next) setShowModels(false);
+      if (next) setIsModelModalOpen(false);
       return next;
     });
   }, []);
 
-  const toggleModelsDropdown = useCallback(() => {
-    setShowModels((prev) => {
-      const next = !prev;
-      if (next) setShowDeps(false);
-      return next;
-    });
+  const openModelModal = useCallback(() => {
+    setIsModelModalOpen(true);
+    setShowDeps(false);
   }, []);
 
   const handleExecutorChange = useCallback((value: string) => {
@@ -359,17 +361,6 @@ export function QuickEntryBox({ onCreate, addToast, tasks = [], availableModels,
     const next = parseModelSelection(value);
     setValidatorProvider(next.provider);
     setValidatorModelId(next.modelId);
-  }, []);
-
-  const handleModelDropdownMouseDown = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
-    const target = e.target;
-    if (
-      target instanceof HTMLElement &&
-      (target.closest("button") || target.closest("input"))
-    ) {
-      return;
-    }
-    e.preventDefault();
   }, []);
 
   const handlePlanClick = useCallback(() => {
@@ -525,8 +516,8 @@ export function QuickEntryBox({ onCreate, addToast, tasks = [], availableModels,
               <button
                 type="button"
                 className="btn btn-sm quick-entry-model-trigger"
-                onClick={toggleModelsDropdown}
-                aria-expanded={showModels}
+                onClick={openModelModal}
+                aria-expanded={isModelModalOpen}
                 aria-haspopup="dialog"
                 data-testid="quick-entry-models-button"
               >
@@ -535,69 +526,6 @@ export function QuickEntryBox({ onCreate, addToast, tasks = [], availableModels,
                   ? ` ${selectedModelCount} model${selectedModelCount === 1 ? "" : "s"}`
                   : " Models"}
               </button>
-              {showModels && (
-                <div
-                  className="inline-create-model-dropdown"
-                  onMouseDown={handleModelDropdownMouseDown}
-                >
-                  {modelsLoading ? (
-                    <div className="inline-create-model-empty">Loading models…</div>
-                  ) : modelsError ? (
-                    <div className="inline-create-model-empty">
-                      <span>Failed to load models.</span>
-                      <button
-                        type="button"
-                        className="btn btn-sm"
-                        onClick={() => void loadModels()}
-                      >
-                        Retry
-                      </button>
-                    </div>
-                  ) : loadedModels.length === 0 ? (
-                    <div className="inline-create-model-empty">
-                      No models available. Configure authentication in Settings to enable model selection.
-                    </div>
-                  ) : (
-                    <>
-                      <div className="inline-create-model-row">
-                        <label htmlFor="quick-entry-executor-model" className="inline-create-model-label">
-                          Executor Model
-                        </label>
-                        <span className={`model-badge ${hasExecutorOverride ? "model-badge-custom" : "model-badge-default"}`}>
-                          {getModelBadgeLabel(executorProvider, executorModelId)}
-                        </span>
-                        <CustomModelDropdown
-                          id="quick-entry-executor-model"
-                          label="Executor Model"
-                          value={executorSelectionValue}
-                          onChange={handleExecutorChange}
-                          models={loadedModels}
-                          disabled={isSubmitting}
-                          placeholder="Select executor model…"
-                        />
-                      </div>
-
-                      <div className="inline-create-model-row">
-                        <label htmlFor="quick-entry-validator-model" className="inline-create-model-label">
-                          Validator Model
-                        </label>
-                        <span className={`model-badge ${hasValidatorOverride ? "model-badge-custom" : "model-badge-default"}`}>
-                          {getModelBadgeLabel(validatorProvider, validatorModelId)}
-                        </span>
-                        <CustomModelDropdown
-                          id="quick-entry-validator-model"
-                          label="Validator Model"
-                          value={validatorSelectionValue}
-                          onChange={handleValidatorChange}
-                          models={loadedModels}
-                          disabled={isSubmitting}
-                          placeholder="Select validator model…"
-                        />
-                      </div>
-                    </>
-                  )}
-                </div>
-              )}
             </div>
 
             {!isSubmitting && (
@@ -698,6 +626,19 @@ export function QuickEntryBox({ onCreate, addToast, tasks = [], availableModels,
           </div>
         </div>
       )}
+
+      <ModelSelectionModal
+        isOpen={isModelModalOpen}
+        onClose={() => setIsModelModalOpen(false)}
+        models={loadedModels}
+        executorValue={executorSelectionValue}
+        validatorValue={validatorSelectionValue}
+        onExecutorChange={handleExecutorChange}
+        onValidatorChange={handleValidatorChange}
+        modelsLoading={modelsLoading}
+        modelsError={modelsError}
+        onRetry={loadModels}
+      />
     </div>
   );
 }

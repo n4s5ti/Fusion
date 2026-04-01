@@ -80,7 +80,7 @@ describe("Database", () => {
     });
 
     it("seeds schema version", () => {
-      expect(db.getSchemaVersion()).toBe(1);
+      expect(db.getSchemaVersion()).toBe(2);
     });
 
     it("seeds lastModified", () => {
@@ -103,7 +103,7 @@ describe("Database", () => {
 
     it("is idempotent - calling init() twice does not fail", () => {
       expect(() => db.init()).not.toThrow();
-      expect(db.getSchemaVersion()).toBe(1);
+      expect(db.getSchemaVersion()).toBe(2);
     });
 
     it("does not overwrite existing config on re-init", () => {
@@ -583,6 +583,136 @@ describe("JSON helpers", () => {
   });
 });
 
+describe("schema migrations", () => {
+  let tmpDir: string;
+
+  afterEach(async () => {
+    await rm(tmpDir, { recursive: true, force: true });
+  });
+
+  it("migrates a v1 database by adding missing columns", () => {
+    tmpDir = makeTmpDir();
+    const kbDir = join(tmpDir, ".kb");
+
+    // Create a v1 database manually (without comments and mergeDetails columns)
+    const db = new Database(kbDir);
+    // Create tables without the new columns
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS __meta (key TEXT PRIMARY KEY, value TEXT);
+      CREATE TABLE IF NOT EXISTS tasks (
+        id TEXT PRIMARY KEY,
+        title TEXT,
+        description TEXT NOT NULL,
+        "column" TEXT NOT NULL,
+        status TEXT,
+        size TEXT,
+        reviewLevel INTEGER,
+        currentStep INTEGER DEFAULT 0,
+        worktree TEXT,
+        blockedBy TEXT,
+        paused INTEGER DEFAULT 0,
+        baseBranch TEXT,
+        modelPresetId TEXT,
+        modelProvider TEXT,
+        modelId TEXT,
+        validatorModelProvider TEXT,
+        validatorModelId TEXT,
+        mergeRetries INTEGER,
+        error TEXT,
+        summary TEXT,
+        thinkingLevel TEXT,
+        createdAt TEXT NOT NULL,
+        updatedAt TEXT NOT NULL,
+        columnMovedAt TEXT,
+        dependencies TEXT DEFAULT '[]',
+        steps TEXT DEFAULT '[]',
+        log TEXT DEFAULT '[]',
+        attachments TEXT DEFAULT '[]',
+        steeringComments TEXT DEFAULT '[]',
+        workflowStepResults TEXT DEFAULT '[]',
+        prInfo TEXT,
+        issueInfo TEXT,
+        breakIntoSubtasks INTEGER DEFAULT 0,
+        enabledWorkflowSteps TEXT DEFAULT '[]'
+      );
+      CREATE TABLE IF NOT EXISTS config (
+        id INTEGER PRIMARY KEY CHECK (id = 1),
+        nextId INTEGER DEFAULT 1,
+        nextWorkflowStepId INTEGER DEFAULT 1,
+        settings TEXT DEFAULT '{}',
+        workflowSteps TEXT DEFAULT '[]',
+        updatedAt TEXT
+      );
+      CREATE TABLE IF NOT EXISTS activityLog (
+        id TEXT PRIMARY KEY, timestamp TEXT NOT NULL, type TEXT NOT NULL,
+        taskId TEXT, taskTitle TEXT, details TEXT NOT NULL, metadata TEXT
+      );
+      CREATE TABLE IF NOT EXISTS archivedTasks (id TEXT PRIMARY KEY, data TEXT NOT NULL, archivedAt TEXT NOT NULL);
+      CREATE TABLE IF NOT EXISTS automations (
+        id TEXT PRIMARY KEY, name TEXT NOT NULL, description TEXT,
+        scheduleType TEXT NOT NULL, cronExpression TEXT NOT NULL, command TEXT NOT NULL,
+        enabled INTEGER DEFAULT 1, timeoutMs INTEGER, steps TEXT,
+        nextRunAt TEXT, lastRunAt TEXT, lastRunResult TEXT,
+        runCount INTEGER DEFAULT 0, runHistory TEXT DEFAULT '[]',
+        createdAt TEXT NOT NULL, updatedAt TEXT NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS agents (
+        id TEXT PRIMARY KEY, name TEXT NOT NULL, role TEXT NOT NULL,
+        state TEXT NOT NULL DEFAULT 'idle', taskId TEXT,
+        createdAt TEXT NOT NULL, updatedAt TEXT NOT NULL,
+        lastHeartbeatAt TEXT, metadata TEXT DEFAULT '{}'
+      );
+      CREATE TABLE IF NOT EXISTS agentHeartbeats (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        agentId TEXT NOT NULL, timestamp TEXT NOT NULL, status TEXT NOT NULL, runId TEXT NOT NULL,
+        FOREIGN KEY (agentId) REFERENCES agents(id) ON DELETE CASCADE
+      );
+    `);
+    db.exec("INSERT INTO __meta (key, value) VALUES ('schemaVersion', '1')");
+    db.exec("INSERT INTO __meta (key, value) VALUES ('lastModified', '1000')");
+
+    // Insert a task on the v1 schema
+    db.exec(`INSERT INTO tasks (id, description, "column", createdAt, updatedAt) VALUES ('KB-1', 'test', 'triage', '2025-01-01', '2025-01-01')`);
+
+    // Now run init() which should trigger migration
+    db.init();
+
+    // Verify version bumped
+    expect(db.getSchemaVersion()).toBe(2);
+
+    // Verify new columns exist and existing data is intact
+    const cols = db.prepare("PRAGMA table_info(tasks)").all() as Array<{ name: string }>;
+    const colNames = cols.map((c) => c.name);
+    expect(colNames).toContain("comments");
+    expect(colNames).toContain("mergeDetails");
+
+    // Existing task should still be readable
+    const task = db.prepare("SELECT * FROM tasks WHERE id = 'KB-1'").get() as any;
+    expect(task.description).toBe("test");
+
+    // New columns should have defaults
+    expect(task.comments).toBe("[]");
+    expect(task.mergeDetails).toBeNull();
+
+    db.close();
+  });
+
+  it("skips migration if already at target version", () => {
+    tmpDir = makeTmpDir();
+    const kbDir = join(tmpDir, ".kb");
+    const db = new Database(kbDir);
+    db.init();
+
+    expect(db.getSchemaVersion()).toBe(2);
+
+    // Re-init should not fail
+    db.init();
+    expect(db.getSchemaVersion()).toBe(2);
+
+    db.close();
+  });
+});
+
 describe("createDatabase factory", () => {
   let tmpDir: string;
 
@@ -609,7 +739,7 @@ describe("createDatabase factory", () => {
     const db = createDatabase(kbDir);
     db.init();
 
-    expect(db.getSchemaVersion()).toBe(1);
+    expect(db.getSchemaVersion()).toBe(2);
     expect(db.getLastModified()).toBeGreaterThan(0);
 
     db.close();
