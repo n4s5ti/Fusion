@@ -35,7 +35,7 @@ describe("TaskStore", () => {
   async function createTaskWithSteps(): Promise<Task> {
     const task = await store.createTask({ description: "Task with steps" });
     // Write a PROMPT.md with steps so updateStep works
-    const dir = join(rootDir, ".kb", "tasks", task.id);
+    const dir = join(rootDir, ".fusion", "tasks", task.id);
     await writeFile(
       join(dir, "PROMPT.md"),
       `# ${task.id}: Task with steps
@@ -59,7 +59,7 @@ describe("TaskStore", () => {
   }
 
   async function deleteTaskDir(taskId: string): Promise<string> {
-    const dir = join(rootDir, ".kb", "tasks", taskId);
+    const dir = join(rootDir, ".fusion", "tasks", taskId);
     await rm(dir, { recursive: true, force: true });
     return dir;
   }
@@ -174,7 +174,7 @@ describe("TaskStore", () => {
       await Promise.all(promises);
 
       // Read back and verify valid JSON
-      const taskJsonPath = join(rootDir, ".kb", "tasks", id, "task.json");
+      const taskJsonPath = join(rootDir, ".fusion", "tasks", id, "task.json");
       const raw = await readFile(taskJsonPath, "utf-8");
       const result = JSON.parse(raw) as Task;
 
@@ -189,7 +189,7 @@ describe("TaskStore", () => {
   describe("defensive JSON parsing", () => {
     it("reads from SQLite even if task.json on disk is corrupted", async () => {
       const task = await createTestTask();
-      const taskJsonPath = join(rootDir, ".kb", "tasks", task.id, "task.json");
+      const taskJsonPath = join(rootDir, ".fusion", "tasks", task.id, "task.json");
 
       // Corrupt the file: append duplicate trailing content
       const validJson = await readFile(taskJsonPath, "utf-8");
@@ -203,7 +203,7 @@ describe("TaskStore", () => {
 
     it("reads from SQLite even if task.json contains invalid content", async () => {
       const task = await createTestTask();
-      const taskJsonPath = join(rootDir, ".kb", "tasks", task.id, "task.json");
+      const taskJsonPath = join(rootDir, ".fusion", "tasks", task.id, "task.json");
 
       // Write completely invalid content
       await writeFile(taskJsonPath, "not json at all {{{");
@@ -219,7 +219,7 @@ describe("TaskStore", () => {
   describe("atomic writes", () => {
     it("produces valid JSON after write with no .tmp files left behind", async () => {
       const task = await createTestTask();
-      const dir = join(rootDir, ".kb", "tasks", task.id);
+      const dir = join(rootDir, ".fusion", "tasks", task.id);
 
       // Perform a write
       await store.logEntry(task.id, "atomic test");
@@ -253,13 +253,13 @@ describe("TaskStore", () => {
       expect(sortedIds).toEqual(["FN-001", "FN-002", "FN-003", "FN-004", "FN-005"]);
 
       // config.json should be valid JSON with nextId = 6
-      const configPath = join(rootDir, ".kb", "config.json");
+      const configPath = join(rootDir, ".fusion", "config.json");
       const raw = await readFile(configPath, "utf-8");
       const config = JSON.parse(raw);
       expect(config.nextId).toBe(6);
 
       // No .tmp files left behind
-      const haiDir = join(rootDir, ".kb");
+      const haiDir = join(rootDir, ".fusion");
       const files = await readdir(haiDir);
       expect(files.filter((f) => f.endsWith(".tmp"))).toHaveLength(0);
     });
@@ -288,7 +288,7 @@ describe("TaskStore", () => {
       expect(updated.attachments![0].filename).toBe(attachment.filename);
 
       // Verify file on disk
-      const filePath = join(rootDir, ".kb", "tasks", task.id, "attachments", attachment.filename);
+      const filePath = join(rootDir, ".fusion", "tasks", task.id, "attachments", attachment.filename);
       const content = await readFile(filePath);
       expect(content).toEqual(TINY_PNG);
     });
@@ -344,7 +344,7 @@ describe("TaskStore", () => {
       expect(updated.attachments).toBeUndefined();
 
       // Verify file removed from disk
-      const filePath = join(rootDir, ".kb", "tasks", task.id, "attachments", attachment.filename);
+      const filePath = join(rootDir, ".fusion", "tasks", task.id, "attachments", attachment.filename);
       expect(existsSync(filePath)).toBe(false);
     });
 
@@ -452,7 +452,7 @@ describe("TaskStore", () => {
       expect(settings.themeMode).toBe("dark");
 
       // Verify the project config doesn't contain themeMode
-      const configRaw = await readFile(join(rootDir, ".kb", "config.json"), "utf-8");
+      const configRaw = await readFile(join(rootDir, ".fusion", "config.json"), "utf-8");
       const config = JSON.parse(configRaw);
       expect(config.settings.themeMode).toBeUndefined();
     });
@@ -840,7 +840,7 @@ describe("TaskStore", () => {
 
     it("updateStep recreates missing task directory and persists regenerated task.json", async () => {
       const task = await createTaskWithSteps();
-      const promptDir = join(rootDir, ".kb", "tasks", task.id);
+      const promptDir = join(rootDir, ".fusion", "tasks", task.id);
       const prompt = await readFile(join(promptDir, "PROMPT.md"), "utf-8");
       const dir = await deleteTaskDir(task.id);
       await mkdir(dir, { recursive: true });
@@ -919,7 +919,7 @@ describe("TaskStore", () => {
       const task = await createTestTask();
 
       const duplicate = await store.duplicateTask(task.id);
-      const duplicateDir = join(rootDir, ".kb", "tasks", duplicate.id);
+      const duplicateDir = join(rootDir, ".fusion", "tasks", duplicate.id);
 
       expect(existsSync(duplicateDir)).toBe(true);
       expect(existsSync(join(duplicateDir, "PROMPT.md"))).toBe(true);
@@ -1703,7 +1703,7 @@ describe("TaskStore", () => {
       await Promise.all(promises);
 
       // Read back and verify valid JSON
-      const taskJsonPath = join(rootDir, ".kb", "tasks", task.id, "task.json");
+      const taskJsonPath = join(rootDir, ".fusion", "tasks", task.id, "task.json");
       const raw = await readFile(taskJsonPath, "utf-8");
       const result = JSON.parse(raw) as Task;
 
@@ -1731,7 +1731,7 @@ describe("TaskStore", () => {
   describe("parseDependenciesFromPrompt", () => {
     it("returns single dependency from PROMPT.md", async () => {
       const task = await store.createTask({ description: "Task with dep" });
-      const dir = join(rootDir, ".kb", "tasks", task.id);
+      const dir = join(rootDir, ".fusion", "tasks", task.id);
       await writeFile(
         join(dir, "PROMPT.md"),
         `# ${task.id}: Task with dep
@@ -1753,7 +1753,7 @@ describe("TaskStore", () => {
 
     it("returns multiple dependencies in order", async () => {
       const task = await store.createTask({ description: "Task with deps" });
-      const dir = join(rootDir, ".kb", "tasks", task.id);
+      const dir = join(rootDir, ".fusion", "tasks", task.id);
       await writeFile(
         join(dir, "PROMPT.md"),
         `# ${task.id}: Task with deps
@@ -1777,7 +1777,7 @@ describe("TaskStore", () => {
 
     it("returns empty array when dependencies section says None", async () => {
       const task = await store.createTask({ description: "No deps" });
-      const dir = join(rootDir, ".kb", "tasks", task.id);
+      const dir = join(rootDir, ".fusion", "tasks", task.id);
       await writeFile(
         join(dir, "PROMPT.md"),
         `# ${task.id}: No deps
@@ -1799,7 +1799,7 @@ describe("TaskStore", () => {
 
     it("returns empty array when no Dependencies section exists", async () => {
       const task = await store.createTask({ description: "No section" });
-      const dir = join(rootDir, ".kb", "tasks", task.id);
+      const dir = join(rootDir, ".fusion", "tasks", task.id);
       await writeFile(
         join(dir, "PROMPT.md"),
         `# ${task.id}: No section
@@ -1817,7 +1817,7 @@ describe("TaskStore", () => {
 
     it("returns empty array when task has no PROMPT.md file", async () => {
       const task = await store.createTask({ description: "No prompt" });
-      const dir = join(rootDir, ".kb", "tasks", task.id);
+      const dir = join(rootDir, ".fusion", "tasks", task.id);
       // Delete the PROMPT.md that createTask generates
       await unlink(join(dir, "PROMPT.md"));
 
@@ -1837,7 +1837,7 @@ describe("TaskStore", () => {
   describe("parseFileScopeFromPrompt", () => {
     it("returns paths when File Scope is followed by another heading", async () => {
       const task = await store.createTask({ description: "Mid-file scope" });
-      const dir = join(rootDir, ".kb", "tasks", task.id);
+      const dir = join(rootDir, ".fusion", "tasks", task.id);
       await writeFile(
         join(dir, "PROMPT.md"),
         `# ${task.id}: Mid-file scope
@@ -1865,7 +1865,7 @@ describe("TaskStore", () => {
       const task = await store.createTask({
         description: "End-of-file scope",
       });
-      const dir = join(rootDir, ".kb", "tasks", task.id);
+      const dir = join(rootDir, ".fusion", "tasks", task.id);
       await writeFile(
         join(dir, "PROMPT.md"),
         `# ${task.id}: End-of-file scope
@@ -1893,7 +1893,7 @@ describe("TaskStore", () => {
 
     it("returns empty array when no File Scope section exists", async () => {
       const task = await store.createTask({ description: "No scope" });
-      const dir = join(rootDir, ".kb", "tasks", task.id);
+      const dir = join(rootDir, ".fusion", "tasks", task.id);
       await writeFile(
         join(dir, "PROMPT.md"),
         `# ${task.id}: No scope
@@ -1911,7 +1911,7 @@ describe("TaskStore", () => {
 
     it("returns empty array when PROMPT.md does not exist", async () => {
       const task = await store.createTask({ description: "No prompt" });
-      const dir = join(rootDir, ".kb", "tasks", task.id);
+      const dir = join(rootDir, ".fusion", "tasks", task.id);
       await unlink(join(dir, "PROMPT.md"));
 
       const paths = await store.parseFileScopeFromPrompt(task.id);
@@ -1928,7 +1928,7 @@ describe("TaskStore", () => {
 
     it("handles glob patterns in backtick-quoted paths", async () => {
       const task = await store.createTask({ description: "Glob scope" });
-      const dir = join(rootDir, ".kb", "tasks", task.id);
+      const dir = join(rootDir, ".fusion", "tasks", task.id);
       await writeFile(
         join(dir, "PROMPT.md"),
         `# ${task.id}: Glob scope
@@ -2512,7 +2512,7 @@ describe("TaskStore", () => {
       const refined = await store.refineTask(task.id, "Need improvements");
 
       // Verify file exists in new task directory
-      const attachDir = join(rootDir, ".kb", "tasks", refined.id, "attachments");
+      const attachDir = join(rootDir, ".fusion", "tasks", refined.id, "attachments");
       const files = await readdir(attachDir);
       expect(files.length).toBe(1);
 
@@ -3006,7 +3006,7 @@ describe("TaskStore", () => {
       await store.moveTask(task.id, "done");
       await store.archiveTask(task.id);
 
-      const dir = join(rootDir, ".kb", "tasks", task.id);
+      const dir = join(rootDir, ".fusion", "tasks", task.id);
       expect(existsSync(dir)).toBe(true);
 
       await store.cleanupArchivedTasks();
@@ -3144,7 +3144,7 @@ describe("TaskStore", () => {
       await store.archiveTask(task.id);
       await store.cleanupArchivedTasks();
 
-      const dir = join(rootDir, ".kb", "tasks", task.id);
+      const dir = join(rootDir, ".fusion", "tasks", task.id);
       expect(existsSync(dir)).toBe(false);
 
       // Unarchive should restore from archive
@@ -3201,7 +3201,7 @@ describe("TaskStore", () => {
       await store.archiveTask(task.id);
 
       // Delete directory without archiving
-      const dir = join(rootDir, ".kb", "tasks", task.id);
+      const dir = join(rootDir, ".fusion", "tasks", task.id);
       const { rm } = await import("node:fs/promises");
       await rm(dir, { recursive: true, force: true });
 
@@ -3252,7 +3252,7 @@ describe("TaskStore", () => {
       await store.archiveTask(task.id);
       await store.cleanupArchivedTasks();
 
-      const dir = join(rootDir, ".kb", "tasks", task.id);
+      const dir = join(rootDir, ".fusion", "tasks", task.id);
       expect(existsSync(dir)).toBe(false);
 
       await store.unarchiveTask(task.id);
@@ -3275,7 +3275,7 @@ describe("TaskStore", () => {
       expect(archived.column).toBe("archived");
 
       // Directory should be gone immediately
-      const dir = join(rootDir, ".kb", "tasks", task.id);
+      const dir = join(rootDir, ".fusion", "tasks", task.id);
       expect(existsSync(dir)).toBe(false);
 
       // Should be in archive.jsonl
@@ -3294,7 +3294,7 @@ describe("TaskStore", () => {
       const archived = await store.archiveTaskAndCleanup(task.id);
       expect(archived.column).toBe("archived");
 
-      const dir = join(rootDir, ".kb", "tasks", task.id);
+      const dir = join(rootDir, ".fusion", "tasks", task.id);
       expect(existsSync(dir)).toBe(false);
     });
 
@@ -3309,7 +3309,7 @@ describe("TaskStore", () => {
       expect(archived.column).toBe("archived");
 
       // Directory should still exist
-      const dir = join(rootDir, ".kb", "tasks", task.id);
+      const dir = join(rootDir, ".fusion", "tasks", task.id);
       expect(existsSync(dir)).toBe(true);
     });
 
@@ -3324,7 +3324,7 @@ describe("TaskStore", () => {
       expect(archived.column).toBe("archived");
 
       // Directory should still exist (default is false)
-      const dir = join(rootDir, ".kb", "tasks", task.id);
+      const dir = join(rootDir, ".fusion", "tasks", task.id);
       expect(existsSync(dir)).toBe(true);
     });
   });

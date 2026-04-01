@@ -30,7 +30,7 @@ export class AutomationStore extends EventEmitter<AutomationStoreEvents> {
 
   constructor(private rootDir: string) {
     super();
-    this.automationsDir = join(rootDir, ".kb", "automations");
+    this.automationsDir = join(rootDir, ".fusion", "automations");
   }
 
   /**
@@ -38,7 +38,7 @@ export class AutomationStore extends EventEmitter<AutomationStoreEvents> {
    */
   private get db(): Database {
     if (!this._db) {
-      const kbDir = join(this.rootDir, ".kb");
+      const kbDir = join(this.rootDir, ".fusion");
       this._db = new Database(kbDir);
       this._db.init();
     }

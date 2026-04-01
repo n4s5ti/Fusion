@@ -26,7 +26,7 @@ describe("BackupManager", () => {
 
   beforeEach(async () => {
     tempDir = mkdtempSync(join(tmpdir(), "kb-backup-test-"));
-    kbDir = join(tempDir, ".kb");
+    kbDir = join(tempDir, ".fusion");
     await mkdir(kbDir, { recursive: true });
     // Create a dummy database file
     writeFileSync(join(kbDir, "kb.db"), "dummy database content");
@@ -103,7 +103,7 @@ describe("BackupManager", () => {
       await backupManager.createBackup();
 
       // Create some non-backup files
-      const backupDir = join(tempDir, ".kb/backups");
+      const backupDir = join(tempDir, ".fusion/backups");
       await writeFile(join(backupDir, "not-a-backup.txt"), "content");
       await writeFile(join(backupDir, "random.db"), "content");
 
@@ -265,7 +265,7 @@ describe("validateBackupRetention", () => {
 
 describe("validateBackupDir", () => {
   it("should return true for valid relative paths", () => {
-    expect(validateBackupDir(".kb/backups")).toBe(true);
+    expect(validateBackupDir(".fusion/backups")).toBe(true);
     expect(validateBackupDir("backups")).toBe(true);
     expect(validateBackupDir("data/backups/kb")).toBe(true);
   });
@@ -277,7 +277,7 @@ describe("validateBackupDir", () => {
 
   it("should return false for paths with parent traversal", () => {
     expect(validateBackupDir("../backups")).toBe(false);
-    expect(validateBackupDir(".kb/../backups")).toBe(false);
+    expect(validateBackupDir(".fusion/../backups")).toBe(false);
     expect(validateBackupDir("data/../../backups")).toBe(false);
   });
 
@@ -289,13 +289,13 @@ describe("validateBackupDir", () => {
 
 describe("createBackupManager", () => {
   it("should create manager with default options when no settings provided", () => {
-    const manager = createBackupManager("/tmp/.kb");
+    const manager = createBackupManager("/tmp/.fusion");
     expect(manager).toBeInstanceOf(BackupManager);
   });
 
   it("should use settings when provided", async () => {
     const tempDir = mkdtempSync(join(tmpdir(), "kb-backup-test-"));
-    const kbDir = join(tempDir, ".kb");
+    const kbDir = join(tempDir, ".fusion");
     await mkdir(kbDir, { recursive: true });
     writeFileSync(join(kbDir, "kb.db"), "test");
 
@@ -326,7 +326,7 @@ describe("runBackupCommand", () => {
 
   beforeEach(async () => {
     tempDir = mkdtempSync(join(tmpdir(), "kb-backup-test-"));
-    kbDir = join(tempDir, ".kb");
+    kbDir = join(tempDir, ".fusion");
     await mkdir(kbDir, { recursive: true });
     writeFileSync(join(kbDir, "kb.db"), "dummy database content");
   });

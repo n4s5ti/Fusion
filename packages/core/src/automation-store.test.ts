@@ -40,14 +40,14 @@ describe("AutomationStore", () => {
 
   describe("init", () => {
     it("creates the automations directory", async () => {
-      const dir = join(rootDir, ".kb", "automations");
+      const dir = join(rootDir, ".fusion", "automations");
       expect(existsSync(dir)).toBe(true);
     });
 
     it("is idempotent", async () => {
       await store.init();
       await store.init();
-      const dir = join(rootDir, ".kb", "automations");
+      const dir = join(rootDir, ".fusion", "automations");
       expect(existsSync(dir)).toBe(true);
     });
   });
@@ -182,7 +182,7 @@ describe("AutomationStore", () => {
         scheduleType: "weekly",
       });
 
-      const filePath = join(rootDir, ".kb", "automations", `${schedule.id}.json`);
+      const filePath = join(rootDir, ".fusion", "automations", `${schedule.id}.json`);
       expect(existsSync(filePath)).toBe(true);
     });
 
@@ -364,7 +364,7 @@ describe("AutomationStore", () => {
       const deleted = await store.deleteSchedule(schedule.id);
       expect(deleted.id).toBe(schedule.id);
 
-      const filePath = join(rootDir, ".kb", "automations", `${schedule.id}.json`);
+      const filePath = join(rootDir, ".fusion", "automations", `${schedule.id}.json`);
       expect(existsSync(filePath)).toBe(false);
     });
 

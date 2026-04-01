@@ -84,7 +84,7 @@ export class AgentStore extends EventEmitter {
 
   constructor(options: AgentStoreOptions = {}) {
     super();
-    this.rootDir = options.rootDir ?? ".kb";
+    this.rootDir = options.rootDir ?? ".fusion";
     this.agentsDir = join(this.rootDir, "agents");
   }
 

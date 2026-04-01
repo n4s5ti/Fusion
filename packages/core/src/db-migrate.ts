@@ -1,7 +1,7 @@
 /**
  * Migration from legacy file-based storage to SQLite.
  * 
- * Detects legacy data (.kb/tasks/, .kb/config.json, etc.) and migrates
+ * Detects legacy data (.fusion/tasks/, .fusion/config.json, etc.) and migrates
  * it to the SQLite database. After successful migration, original files
  * are renamed with .bak suffix as backups.
  * 
@@ -443,7 +443,7 @@ async function migrateAgents(kbDir: string, db: Database): Promise<void> {
 
 /**
  * Create backups of legacy files by renaming them with .bak suffix.
- * Note: .kb/tasks/ is NOT renamed because blob files (PROMPT.md, agent.log,
+ * Note: .fusion/tasks/ is NOT renamed because blob files (PROMPT.md, agent.log,
  * attachments) remain on the filesystem. Only task.json files inside each
  * task directory are the "migrated" data now in SQLite. We rename individual
  * task.json files to task.json.bak instead.

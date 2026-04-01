@@ -63,14 +63,14 @@ describe("buildSpecificationPrompt", () => {
   it("generates basic specification prompt", () => {
     const prompt = buildSpecificationPrompt(
       baseTask,
-      ".kb/tasks/KB-001/PROMPT.md",
+      ".fusion/tasks/KB-001/PROMPT.md",
     );
 
     expect(prompt).toContain("Specify this task");
     expect(prompt).toContain("FN-001");
     expect(prompt).toContain("Test Task");
     expect(prompt).toContain("Test task description");
-    expect(prompt).toContain(".kb/tasks/KB-001/PROMPT.md");
+    expect(prompt).toContain(".fusion/tasks/KB-001/PROMPT.md");
   });
 
   it("includes project commands when provided", () => {
@@ -86,7 +86,7 @@ describe("buildSpecificationPrompt", () => {
 
     const prompt = buildSpecificationPrompt(
       baseTask,
-      ".kb/tasks/KB-001/PROMPT.md",
+      ".fusion/tasks/KB-001/PROMPT.md",
       settings,
     );
 
@@ -101,7 +101,7 @@ describe("buildSpecificationPrompt", () => {
 
     const prompt = buildSpecificationPrompt(
       baseTask,
-      ".kb/tasks/KB-001/PROMPT.md",
+      ".fusion/tasks/KB-001/PROMPT.md",
       undefined,
       [],
       existingPrompt,
@@ -133,7 +133,7 @@ describe("buildSpecificationPrompt", () => {
 
     const prompt = buildSpecificationPrompt(
       baseTask,
-      ".kb/tasks/KB-001/PROMPT.md",
+      ".fusion/tasks/KB-001/PROMPT.md",
       undefined,
       attachments,
     );
@@ -152,7 +152,7 @@ describe("buildSpecificationPrompt", () => {
 
     const prompt = buildSpecificationPrompt(
       taskWithDeps,
-      ".kb/tasks/KB-001/PROMPT.md",
+      ".fusion/tasks/KB-001/PROMPT.md",
     );
 
     expect(prompt).toContain("Dependencies");
@@ -167,7 +167,7 @@ describe("buildSpecificationPrompt", () => {
 
     const prompt = buildSpecificationPrompt(
       taskWithoutTitle,
-      ".kb/tasks/KB-001/PROMPT.md",
+      ".fusion/tasks/KB-001/PROMPT.md",
     );
 
     expect(prompt).toContain("(none)");
@@ -176,7 +176,7 @@ describe("buildSpecificationPrompt", () => {
   it("includes proactive subtask guidance when breakdown was not explicitly requested", () => {
     const prompt = buildSpecificationPrompt(
       baseTask,
-      ".kb/tasks/KB-001/PROMPT.md",
+      ".fusion/tasks/KB-001/PROMPT.md",
     );
 
     expect(prompt).toContain("## Subtask Consideration");
@@ -191,7 +191,7 @@ describe("buildSpecificationPrompt", () => {
         ...baseTask,
         breakIntoSubtasks: true,
       },
-      ".kb/tasks/KB-001/PROMPT.md",
+      ".fusion/tasks/KB-001/PROMPT.md",
     );
 
     expect(prompt).toContain("## Subtask Breakdown Requested");
@@ -221,7 +221,7 @@ describe("readAttachmentContents", () => {
   beforeEach(async () => {
     // Clean up and create test directory
     await rm(testDir, { recursive: true, force: true });
-    await mkdir(join(testDir, ".kb", "tasks", taskId, "attachments"), {
+    await mkdir(join(testDir, ".fusion", "tasks", taskId, "attachments"), {
       recursive: true,
     });
   });
@@ -253,7 +253,7 @@ describe("readAttachmentContents", () => {
 
     const content = "Test notes content";
     await writeFile(
-      join(testDir, ".kb", "tasks", taskId, "attachments", "1234567890-notes.txt"),
+      join(testDir, ".fusion", "tasks", taskId, "attachments", "1234567890-notes.txt"),
       content,
     );
 
@@ -278,7 +278,7 @@ describe("readAttachmentContents", () => {
 
     const largeContent = "a".repeat(60 * 1024); // 60KB
     await writeFile(
-      join(testDir, ".kb", "tasks", taskId, "attachments", "1234567890-large.txt"),
+      join(testDir, ".fusion", "tasks", taskId, "attachments", "1234567890-large.txt"),
       largeContent,
     );
 
@@ -302,7 +302,7 @@ describe("readAttachmentContents", () => {
     // Write fake PNG data (just some bytes)
     const imageData = Buffer.from([0x89, 0x50, 0x4e, 0x47]); // PNG magic bytes
     await writeFile(
-      join(testDir, ".kb", "tasks", taskId, "attachments", "1234567890-image.png"),
+      join(testDir, ".fusion", "tasks", taskId, "attachments", "1234567890-image.png"),
       imageData,
     );
 
@@ -444,7 +444,7 @@ describe("requirePlanApproval setting", () => {
   });
 
   it("sets awaiting-approval status instead of moving to todo when requirePlanApproval is true", async () => {
-    const taskDir = join(rootDir, ".kb", "tasks", "FN-001");
+    const taskDir = join(rootDir, ".fusion", "tasks", "FN-001");
     await mkdir(taskDir, { recursive: true });
     await writeFile(
       join(taskDir, "task.json"),

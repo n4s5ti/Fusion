@@ -455,7 +455,7 @@ describe("task file operations", () => {
       await readFile(mockStore, "FN-123", "PROMPT.md");
 
       expect(mockReadFile).toHaveBeenCalledWith(
-        "/project/.kb/tasks/KB-123/PROMPT.md",
+        "/project/.fusion/tasks/KB-123/PROMPT.md",
         "utf-8",
       );
     });
@@ -476,7 +476,7 @@ describe("task file operations", () => {
       await readFile(mockStore, "FN-123", "PROMPT.md");
 
       expect(mockReadFile).toHaveBeenCalledWith(
-        "/project/.kb/tasks/KB-123/PROMPT.md",
+        "/project/.fusion/tasks/KB-123/PROMPT.md",
         "utf-8",
       );
     });
@@ -597,7 +597,7 @@ describe("workspace operations", () => {
 
       expect(result.content).toBe("Task description");
       expect(mockReadFile).toHaveBeenCalledWith(
-        "/project/.kb/tasks/KB-123/PROMPT.md",
+        "/project/.fusion/tasks/KB-123/PROMPT.md",
         "utf-8",
       );
     });
@@ -641,7 +641,7 @@ describe("workspace operations", () => {
 
       expect(result.success).toBe(true);
       expect(mockWriteFile).toHaveBeenCalledWith(
-        "/project/.kb/tasks/KB-123/output.txt",
+        "/project/.fusion/tasks/KB-123/output.txt",
         "Task output",
         "utf-8",
       );

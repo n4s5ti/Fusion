@@ -173,7 +173,7 @@ export class Scheduler {
    * @returns Object with `valid: true` if checks pass, or `valid: false` with a `reason` string if they fail
    */
   private async validateTaskFilesystem(id: string): Promise<{ valid: boolean; reason?: string }> {
-    const taskDir = join(this.store.getRootDir(), ".kb", "tasks", id);
+    const taskDir = join(this.store.getRootDir(), ".fusion", "tasks", id);
     
     // Check if task directory exists
     if (!existsSync(taskDir)) {

@@ -61,7 +61,7 @@ export class TaskStore extends EventEmitter<TaskStoreEvents> {
   constructor(private rootDir: string, globalSettingsDir?: string) {
     super();
     this.setMaxListeners(100);
-    this.kbDir = join(rootDir, ".kb");
+    this.kbDir = join(rootDir, ".fusion");
     this.tasksDir = join(this.kbDir, "tasks");
     this.configPath = join(this.kbDir, "config.json");
     this.archiveLogPath = join(this.kbDir, "archive.jsonl");

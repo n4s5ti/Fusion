@@ -30,7 +30,7 @@ describe("MissionStore", () => {
 
   beforeEach(() => {
     tmpDir = makeTmpDir();
-    kbDir = join(tmpDir, ".kb");
+    kbDir = join(tmpDir, ".fusion");
     db = new Database(kbDir);
     db.init();
     store = new MissionStore(kbDir, db);

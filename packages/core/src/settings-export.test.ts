@@ -20,7 +20,7 @@ import {
 // Helper to create a temporary test environment
 function createTestEnv() {
   const tempDir = mkdtempSync(join(tmpdir(), "kb-settings-test-"));
-  const kbDir = join(tempDir, ".kb");
+  const kbDir = join(tempDir, ".fusion");
   const tasksDir = join(kbDir, "tasks");
   const globalSettingsDir = join(tempDir, "global-settings");
 

@@ -410,7 +410,7 @@ export class TriageProcessor {
     try {
       const detail = await this.store.getTask(task.id);
       const settings = await this.store.getSettings();
-      const promptPath = `.kb/tasks/${task.id}/PROMPT.md`;
+      const promptPath = `.fusion/tasks/${task.id}/PROMPT.md`;
 
       const agentWork = async () => {
         // Set status only after the semaphore slot has been acquired, so
@@ -1056,7 +1056,7 @@ export async function readAttachmentContents(
   for (const att of attachments) {
     const filePath = join(
       rootDir,
-      ".kb",
+      ".fusion",
       "tasks",
       taskId,
       "attachments",

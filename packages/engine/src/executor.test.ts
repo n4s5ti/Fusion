@@ -1391,7 +1391,7 @@ describe("buildExecutionPrompt", () => {
 
     expect(result).toContain("## Attachments");
     expect(result).toContain("**screenshot.png** (screenshot)");
-    expect(result).toContain("/home/user/project/.kb/tasks/KB-001/attachments/abc123-screenshot.png");
+    expect(result).toContain("/home/user/project/.fusion/tasks/KB-001/attachments/abc123-screenshot.png");
   });
 
   it("includes attachment section with absolute paths for text attachments", () => {
@@ -1405,7 +1405,7 @@ describe("buildExecutionPrompt", () => {
     expect(result).toContain("## Attachments");
     expect(result).toContain("**error.log** (text/plain)");
     expect(result).toContain("read for context");
-    expect(result).toContain("/home/user/project/.kb/tasks/KB-001/attachments/def456-error.log");
+    expect(result).toContain("/home/user/project/.fusion/tasks/KB-001/attachments/def456-error.log");
   });
 
   it("includes both image and text attachments", () => {

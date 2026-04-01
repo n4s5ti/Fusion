@@ -1949,7 +1949,7 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
       // Remove PROMPT.md to force regeneration
       const { rm } = await import("node:fs/promises");
       const { join } = await import("node:path");
-      const promptPath = join(store.getRootDir(), ".kb", "tasks", task.id, "PROMPT.md");
+      const promptPath = join(store.getRootDir(), ".fusion", "tasks", task.id, "PROMPT.md");
       await rm(promptPath, { force: true });
 
       const updated = await store.getTask(task.id);

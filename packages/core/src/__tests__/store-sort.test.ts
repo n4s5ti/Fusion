@@ -32,7 +32,7 @@ describe("TaskStore.listTasks() sort order", () => {
 
     // Force identical createdAt by rewriting the task.json files
     const { readFile, writeFile } = await import("node:fs/promises");
-    const tasksDir = join(rootDir, ".kb", "tasks");
+    const tasksDir = join(rootDir, ".fusion", "tasks");
     const sameTimestamp = "2026-06-01T00:00:00Z";
 
     for (const t of [t1, t2, t3]) {

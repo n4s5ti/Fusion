@@ -43,7 +43,7 @@ export async function runTaskCreate(descriptionArg?: string, attachFiles?: strin
   if (task.dependencies.length > 0) {
     console.log(`    Dependencies: ${task.dependencies.join(", ")}`);
   }
-  console.log(`    Path:   .kb/tasks/${task.id}/`);
+  console.log(`    Path:   .fusion/tasks/${task.id}/`);
 
   if (attachFiles && attachFiles.length > 0) {
     const { readFile } = await import("node:fs/promises");
@@ -241,7 +241,7 @@ export async function runTaskLogs(id: string, options: LogsOptions = {}) {
   // Follow mode: watch for new entries
   if (options.follow) {
     const cwd = process.cwd();
-    const logPath = join(cwd, ".kb", "tasks", id, "agent.log");
+    const logPath = join(cwd, ".fusion", "tasks", id, "agent.log");
 
     if (!existsSync(logPath)) {
       console.log(`\n  Waiting for log file to be created...`);
@@ -434,7 +434,7 @@ export async function runTaskAttach(id: string, filePath: string) {
   console.log();
   console.log(`  ✓ Attached to ${id}: ${attachment.originalName}`);
   console.log(`    File: ${attachment.filename} (${sizeKB} KB)`);
-  console.log(`    Path: .kb/tasks/${id}/attachments/${attachment.filename}`);
+  console.log(`    Path: .fusion/tasks/${id}/attachments/${attachment.filename}`);
   console.log();
 }
 
@@ -477,7 +477,7 @@ export async function runTaskDuplicate(id: string) {
 
   console.log();
   console.log(`  ✓ Duplicated ${id} → ${newTask.id}`);
-  console.log(`    Path: .kb/tasks/${newTask.id}/`);
+  console.log(`    Path: .fusion/tasks/${newTask.id}/`);
   console.log();
 }
 
@@ -509,7 +509,7 @@ export async function runTaskRefine(id: string, feedbackArg?: string) {
   console.log(`  ✓ Created refinement ${newTask.id} for ${id}`);
   console.log(`    Column: triage`);
   console.log(`    Dependency: ${id}`);
-  console.log(`    Path: .kb/tasks/${newTask.id}/`);
+  console.log(`    Path: .fusion/tasks/${newTask.id}/`);
   console.log();
 }
 
@@ -1463,7 +1463,7 @@ export async function runTaskPlan(initialPlanArg?: string, yesFlag = false): Pro
           if (task.dependencies.length > 0) {
             console.log(`    Dependencies: ${task.dependencies.join(", ")}`);
           }
-          console.log(`    Path:   .kb/tasks/${task.id}/`);
+          console.log(`    Path:   .fusion/tasks/${task.id}/`);
           console.log();
         } else {
           console.log("\n  Task creation cancelled.\n");

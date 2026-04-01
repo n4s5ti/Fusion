@@ -96,7 +96,7 @@ async function getTaskBasePath(store: TaskStore, taskId: string): Promise<string
     }
     // Fall back to task directory
     const rootDir = store.getRootDir();
-    return resolve(join(rootDir, ".kb", "tasks", taskId));
+    return resolve(join(rootDir, ".fusion", "tasks", taskId));
   } catch (err: any) {
     if (err.code === "ENOENT" || err.message?.includes("not found")) {
       throw new FileServiceError(`Task ${taskId} not found`, "ENOTASK");

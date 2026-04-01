@@ -253,7 +253,7 @@ export class Database {
   constructor(private kbDir: string) {
     this.dbPath = join(kbDir, "kb.db");
 
-    // Ensure .kb directory exists
+    // Ensure .fusion directory exists
     if (!existsSync(kbDir)) {
       mkdirSync(kbDir, { recursive: true });
     }
@@ -466,7 +466,7 @@ export class Database {
 /**
  * Create a new Database instance (does NOT initialize schema).
  * Callers must call `db.init()` separately.
- * @param kbDir - Path to the `.kb` directory (e.g., `/path/to/project/.kb`)
+ * @param kbDir - Path to the `.fusion` directory (e.g., `/path/to/project/.fusion`)
  * @returns Database instance (not yet initialized)
  */
 export function createDatabase(kbDir: string): Database {

@@ -99,7 +99,7 @@ export default function kbExtension(pi: ExtensionAPI) {
               (task.dependencies.length
                 ? `Dependencies: ${task.dependencies.join(", ")}\n`
                 : "") +
-              `Path: .kb/tasks/${task.id}/`,
+              `Path: .fusion/tasks/${task.id}/`,
           },
         ],
         details: { taskId: task.id, column: task.column, dependencies: task.dependencies },
@@ -287,7 +287,7 @@ export default function kbExtension(pi: ExtensionAPI) {
             type: "text",
             text:
               `Attached to ${params.id}: ${attachment.originalName} (${sizeKB} KB)\n` +
-              `Path: .kb/tasks/${params.id}/attachments/${attachment.filename}`,
+              `Path: .fusion/tasks/${params.id}/attachments/${attachment.filename}`,
           },
         ],
         details: { taskId: params.id, attachment },

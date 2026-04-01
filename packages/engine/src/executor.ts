@@ -1677,7 +1677,7 @@ git log --oneline
     const IMAGE_MIMES = new Set(["image/png", "image/jpeg", "image/gif", "image/webp"]);
     const lines = ["## Attachments", ""];
     for (const att of task.attachments) {
-      const absPath = `${rootDir}/.kb/tasks/${task.id}/attachments/${att.filename}`;
+      const absPath = `${rootDir}/.fusion/tasks/${task.id}/attachments/${att.filename}`;
       if (IMAGE_MIMES.has(att.mimeType)) {
         lines.push(`- **${att.originalName}** (screenshot): \`${absPath}\``);
       } else {

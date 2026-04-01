@@ -16,7 +16,7 @@ describe("detectLegacyData", () => {
 
   beforeEach(() => {
     tmpDir = makeTmpDir();
-    kbDir = join(tmpDir, ".kb");
+    kbDir = join(tmpDir, ".fusion");
   });
 
   afterEach(async () => {
@@ -77,7 +77,7 @@ describe("getMigrationStatus", () => {
 
   beforeEach(() => {
     tmpDir = makeTmpDir();
-    kbDir = join(tmpDir, ".kb");
+    kbDir = join(tmpDir, ".fusion");
   });
 
   afterEach(async () => {
@@ -121,7 +121,7 @@ describe("migrateFromLegacy", () => {
 
   beforeEach(async () => {
     tmpDir = makeTmpDir();
-    kbDir = join(tmpDir, ".kb");
+    kbDir = join(tmpDir, ".fusion");
     await mkdir(kbDir, { recursive: true });
     db = new Database(kbDir);
     db.init();

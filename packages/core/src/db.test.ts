@@ -17,7 +17,7 @@ describe("Database", () => {
 
   beforeEach(() => {
     tmpDir = makeTmpDir();
-    kbDir = join(tmpDir, ".kb");
+    kbDir = join(tmpDir, ".fusion");
     db = new Database(kbDir);
     db.init(); // Explicit init required — createDatabase() does not auto-init
   });
@@ -36,7 +36,7 @@ describe("Database", () => {
       expect(existsSync(join(kbDir, "kb.db"))).toBe(true);
     });
 
-    it("creates the .kb directory if missing", () => {
+    it("creates the .fusion directory if missing", () => {
       expect(existsSync(kbDir)).toBe(true);
     });
 
@@ -598,7 +598,7 @@ describe("schema migrations", () => {
 
   it("migrates a v1 database by adding missing columns", () => {
     tmpDir = makeTmpDir();
-    const kbDir = join(tmpDir, ".kb");
+    const kbDir = join(tmpDir, ".fusion");
 
     // Create a v1 database manually (without comments and mergeDetails columns)
     const db = new Database(kbDir);
@@ -705,7 +705,7 @@ describe("schema migrations", () => {
 
   it("skips migration if already at target version", () => {
     tmpDir = makeTmpDir();
-    const kbDir = join(tmpDir, ".kb");
+    const kbDir = join(tmpDir, ".fusion");
     const db = new Database(kbDir);
     db.init();
 
@@ -720,7 +720,7 @@ describe("schema migrations", () => {
 
   it("migrates a v2 database by adding missionId and sliceId columns", () => {
     tmpDir = makeTmpDir();
-    const kbDir = join(tmpDir, ".kb");
+    const kbDir = join(tmpDir, ".fusion");
 
     // Create a v2 database manually (without missionId and sliceId columns)
     const db = new Database(kbDir);
@@ -847,7 +847,7 @@ describe("createDatabase factory", () => {
 
   it("creates a database instance without auto-init", () => {
     tmpDir = makeTmpDir();
-    const kbDir = join(tmpDir, ".kb");
+    const kbDir = join(tmpDir, ".fusion");
     const db = createDatabase(kbDir);
 
     // DB file exists (created on open) but schema not initialized
@@ -860,7 +860,7 @@ describe("createDatabase factory", () => {
 
   it("works after explicit init()", () => {
     tmpDir = makeTmpDir();
-    const kbDir = join(tmpDir, ".kb");
+    const kbDir = join(tmpDir, ".fusion");
     const db = createDatabase(kbDir);
     db.init();
 
@@ -872,7 +872,7 @@ describe("createDatabase factory", () => {
 
   it("getPath returns the database file path", () => {
     tmpDir = makeTmpDir();
-    const kbDir = join(tmpDir, ".kb");
+    const kbDir = join(tmpDir, ".fusion");
     const db = createDatabase(kbDir);
 
     expect(db.getPath()).toBe(join(kbDir, "kb.db"));
@@ -882,7 +882,7 @@ describe("createDatabase factory", () => {
 
   it("is idempotent when init() called multiple times", () => {
     tmpDir = makeTmpDir();
-    const kbDir = join(tmpDir, ".kb");
+    const kbDir = join(tmpDir, ".fusion");
 
     // First call
     const db1 = createDatabase(kbDir);

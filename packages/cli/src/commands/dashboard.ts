@@ -687,7 +687,7 @@ export async function runDashboard(port: number, opts: { paused?: boolean; dev?:
     console.log(`  ────────────────────────`);
     console.log(`  → http://localhost:${actualPort}`);
     console.log();
-    console.log(`  Tasks stored in .kb/tasks/`);
+    console.log(`  Tasks stored in .fusion/tasks/`);
     console.log(`  Merge:      AI-assisted (conflict resolution + commit messages)`);
     if (opts.dev) {
       console.log(`  AI engine:  ✗ disabled (dev mode)`);

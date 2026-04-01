@@ -22,7 +22,7 @@ export interface BackupInfo {
  * Options for configuring the backup manager.
  */
 export interface BackupOptions {
-  /** Directory for backup files, relative to the project root. Default: ".kb/backups" */
+  /** Directory for backup files, relative to the project root. Default: ".fusion/backups" */
   backupDir?: string;
   /** Number of backups to retain. Default: 7 */
   retention?: number;
@@ -44,7 +44,7 @@ export class BackupManager {
    */
   constructor(kbDir: string, options?: BackupOptions) {
     this.kbDir = kbDir;
-    this.backupDir = options?.backupDir ?? ".kb/backups";
+    this.backupDir = options?.backupDir ?? ".fusion/backups";
     this.retention = options?.retention ?? 7;
   }
 

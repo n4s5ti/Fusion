@@ -28,7 +28,7 @@ if (isBunBinary) {
     writeFileSync(
       join(tmp, "package.json"),
       JSON.stringify(
-        { name: "kb", version: "0.1.0", type: "module", piConfig: { name: "kb", configDir: ".kb" } },
+        { name: "kb", version: "0.1.0", type: "module", piConfig: { name: "kb", configDir: ".fusion" } },
         null,
         2,
       ) + "\n",
