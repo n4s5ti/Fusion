@@ -1314,6 +1314,42 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
     }
   });
 
+  // ── Executor Stats Route ────────────────────────────────────────────
+
+  /**
+   * GET /api/executor/stats
+   * Returns executor statistics for the status bar.
+   * 
+   * Counts (running, blocked, queued, in-review, stuck) are derived client-side
+   * from the tasks array. This endpoint returns settings-based values and
+   * lastActivityAt from the activity log.
+   */
+  router.get("/executor/stats", async (_req, res) => {
+    try {
+      const settings = await store.getSettings();
+      
+      // Get the most recent activity timestamp from the activity log
+      let lastActivityAt: string | undefined;
+      try {
+        const activityLog = await store.getActivityLog({ limit: 1 });
+        if (activityLog.length > 0) {
+          lastActivityAt = activityLog[0].timestamp;
+        }
+      } catch {
+        // If we can't get activity log, that's OK - just leave lastActivityAt undefined
+      }
+
+      res.json({
+        globalPause: settings.globalPause ?? false,
+        enginePaused: settings.enginePaused ?? false,
+        maxConcurrent: settings.maxConcurrent ?? 2,
+        lastActivityAt,
+      });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   // ── Backup Routes ─────────────────────────────────────────────────
 
   /**
