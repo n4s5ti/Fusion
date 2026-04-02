@@ -24,6 +24,12 @@ interface QuickEntryBoxProps {
    * Called when the user clicks the "Subtask" button to trigger subtask breakdown.
    */
   onSubtaskBreakdown?: (description: string) => void;
+  /**
+   * When true, the component automatically expands when focused.
+   * Set to false to keep the view collapsed until manually toggled.
+   * Defaults to true for backward compatibility.
+   */
+  autoExpand?: boolean;
 }
 
 function getModelSelectionValue(provider?: string, modelId?: string): string {
@@ -46,7 +52,7 @@ function parseModelSelection(value: string): { provider?: string; modelId?: stri
   };
 }
 
-export function QuickEntryBox({ onCreate, addToast, tasks = [], availableModels, onPlanningMode, onSubtaskBreakdown }: QuickEntryBoxProps) {
+export function QuickEntryBox({ onCreate, addToast, tasks = [], availableModels, onPlanningMode, onSubtaskBreakdown, autoExpand = true }: QuickEntryBoxProps) {
   const [description, setDescription] = useState(() => {
     if (typeof window !== "undefined") {
       return localStorage.getItem(STORAGE_KEY) || "";
@@ -334,6 +340,13 @@ export function QuickEntryBox({ onCreate, addToast, tasks = [], availableModels,
     }
   }, []);
 
+  const handleFocus = useCallback(() => {
+    // Auto-expand on focus when autoExpand prop is true (default)
+    if (autoExpand) {
+      setIsExpanded(true);
+    }
+  }, [autoExpand]);
+
   const toggleDep = useCallback((id: string) => {
     setDependencies((prev) =>
       prev.includes(id) ? prev.filter((d) => d !== id) : [...prev, id],
@@ -474,6 +487,7 @@ export function QuickEntryBox({ onCreate, addToast, tasks = [], availableModels,
           value={description}
           onChange={(e) => setDescription(e.target.value)}
           onKeyDown={handleKeyDown}
+          onFocus={handleFocus}
           onBlur={handleBlur}
           disabled={isSubmitting || isDisabled}
           data-testid="quick-entry-input"

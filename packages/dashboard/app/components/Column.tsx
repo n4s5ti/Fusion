@@ -194,6 +194,7 @@ function ColumnComponent({ column, tasks, maxConcurrent, onMoveTask, onOpenDetai
               availableModels={availableModels}
               onPlanningMode={onPlanningMode}
               onSubtaskBreakdown={onSubtaskBreakdown}
+              autoExpand={true}
             />
           )}
           {column === "in-progress" ? (

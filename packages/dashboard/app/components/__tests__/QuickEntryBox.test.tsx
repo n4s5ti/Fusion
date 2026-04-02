@@ -180,15 +180,24 @@ describe("QuickEntryBox", () => {
     expect((textarea as HTMLTextAreaElement).placeholder).toBe("Add a task...");
   });
 
-  it("does NOT expand on focus", () => {
-    renderQuickEntryBox({}, { startCollapsed: true });
-      // Component starts with disclosure expanded by default
+  it("does NOT expand on focus when autoExpand is false", () => {
+    renderQuickEntryBox({ autoExpand: false });
     const textarea = screen.getByTestId("quick-entry-input");
 
     fireEvent.focus(textarea);
 
-    // Should NOT auto-expand on focus (manual toggle only)
+    // Should NOT auto-expand on focus when autoExpand is false
     expect(textarea.classList.contains("quick-entry-input--expanded")).toBe(false);
+  });
+
+  it("expands on focus by default (backward compatible)", () => {
+    renderQuickEntryBox();
+    const textarea = screen.getByTestId("quick-entry-input");
+
+    fireEvent.focus(textarea);
+
+    // Should auto-expand on focus by default (autoExpand defaults to true)
+    expect(textarea.classList.contains("quick-entry-input--expanded")).toBe(true);
   });
 
   it("toggle button expands the view", () => {
@@ -838,12 +847,13 @@ describe("QuickEntryBox", () => {
         expect(props.onCreate).toHaveBeenCalled();
       });
 
-      // After creation, input should be cleared
+      // After creation, input is cleared and focus is restored
       expect((textarea as HTMLTextAreaElement).value).toBe("");
-      // Disclosure preference persists - controls remain visible since we expanded earlier
-      expect(screen.getByTestId("quick-entry-deps-button")).toBeTruthy();
-      expect(screen.getByTestId("plan-button")).toBeTruthy();
-      expect(screen.getByTestId("subtask-button")).toBeTruthy();
+      
+      // With autoExpand=true (default), textarea auto-expands on focus restore
+      // So the toggle should be expanded (controls visible)
+      expect(screen.getByTestId("quick-entry-toggle").getAttribute("aria-expanded")).toBe("true");
+      expect(document.getElementById("quick-entry-controls")?.hasAttribute("hidden")).toBe(false);
     });
   });
 
