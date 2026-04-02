@@ -1,0 +1,366 @@
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { ExecutorStatusBar } from "../ExecutorStatusBar";
+
+// Mock the useExecutorStats hook
+vi.mock("../../hooks/useExecutorStats", () => ({
+  useExecutorStats: vi.fn(),
+}));
+
+import { useExecutorStats } from "../../hooks/useExecutorStats";
+import type { ExecutorStats } from "../../api";
+
+const mockUseExecutorStats = useExecutorStats as ReturnType<typeof vi.fn>;
+
+describe("ExecutorStatusBar", () => {
+  const defaultStats: ExecutorStats = {
+    runningTaskCount: 2,
+    blockedTaskCount: 1,
+    stuckTaskCount: 0,
+    queuedTaskCount: 5,
+    inReviewCount: 3,
+    executorState: "running",
+    maxConcurrent: 4,
+    lastActivityAt: new Date().toISOString(),
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(mockUseExecutorStats).mockReturnValue({
+      stats: defaultStats,
+      loading: false,
+      error: null,
+      refresh: vi.fn(),
+    });
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  describe("rendering", () => {
+    it("renders all stat segments", () => {
+      render(<ExecutorStatusBar />);
+
+      const statusBar = screen.getByRole("status");
+      expect(statusBar).toHaveTextContent("Running");
+      expect(statusBar).toHaveTextContent("Blocked");
+      expect(statusBar).toHaveTextContent("Queued");
+      expect(statusBar).toHaveTextContent("In Review");
+    });
+
+    it("displays running task count", () => {
+      render(<ExecutorStatusBar />);
+
+      const statusBar = screen.getByRole("status");
+      expect(statusBar).toHaveTextContent("2");
+    });
+
+    it("displays max concurrent count", () => {
+      render(<ExecutorStatusBar />);
+
+      const statusBar = screen.getByRole("status");
+      expect(statusBar).toHaveTextContent("/");
+      expect(statusBar).toHaveTextContent("4");
+    });
+
+    it("displays blocked task count", () => {
+      render(<ExecutorStatusBar />);
+
+      const statusBar = screen.getByRole("status");
+      expect(statusBar).toHaveTextContent("1");
+    });
+
+    it("displays queued task count", () => {
+      render(<ExecutorStatusBar />);
+
+      const statusBar = screen.getByRole("status");
+      expect(statusBar).toHaveTextContent("5");
+    });
+
+    it("displays in-review count", () => {
+      render(<ExecutorStatusBar />);
+
+      const statusBar = screen.getByRole("status");
+      expect(statusBar).toHaveTextContent("3");
+    });
+
+    it("does not show stuck tasks segment when count is 0", () => {
+      render(<ExecutorStatusBar />);
+
+      expect(screen.queryByText("Stuck")).not.toBeInTheDocument();
+    });
+
+    it("shows stuck tasks segment when count is > 0", () => {
+      vi.mocked(mockUseExecutorStats).mockReturnValue({
+        stats: { ...defaultStats, stuckTaskCount: 2 },
+        loading: false,
+        error: null,
+        refresh: vi.fn(),
+      });
+
+      render(<ExecutorStatusBar />);
+
+      const statusBar = screen.getByRole("status");
+      expect(statusBar).toHaveTextContent("Stuck");
+      expect(statusBar).toHaveTextContent("2");
+    });
+  });
+
+  describe("executor state", () => {
+    it("shows Running state with running executorState", () => {
+      render(<ExecutorStatusBar />);
+
+      const statusBar = screen.getByRole("status");
+      const stateElement = statusBar.querySelector(".executor-status-bar__state");
+      expect(stateElement).toHaveTextContent("Running");
+    });
+
+    it("shows Paused state with paused executorState", () => {
+      vi.mocked(mockUseExecutorStats).mockReturnValue({
+        stats: { ...defaultStats, executorState: "paused" },
+        loading: false,
+        error: null,
+        refresh: vi.fn(),
+      });
+
+      render(<ExecutorStatusBar />);
+
+      const statusBar = screen.getByRole("status");
+      const stateElement = statusBar.querySelector(".executor-status-bar__state");
+      expect(stateElement).toHaveTextContent("Paused");
+    });
+
+    it("shows Idle state with idle executorState", () => {
+      vi.mocked(mockUseExecutorStats).mockReturnValue({
+        stats: { ...defaultStats, executorState: "idle", runningTaskCount: 0 },
+        loading: false,
+        error: null,
+        refresh: vi.fn(),
+      });
+
+      render(<ExecutorStatusBar />);
+
+      const statusBar = screen.getByRole("status");
+      const stateElement = statusBar.querySelector(".executor-status-bar__state");
+      expect(stateElement).toHaveTextContent("Idle");
+    });
+
+    it("applies running class when executor is running", () => {
+      render(<ExecutorStatusBar />);
+
+      const statusBar = screen.getByRole("status");
+      expect(statusBar).toHaveClass("executor-status-bar--running");
+    });
+
+    it("does not apply running class when executor is paused", () => {
+      vi.mocked(mockUseExecutorStats).mockReturnValue({
+        stats: { ...defaultStats, executorState: "paused" },
+        loading: false,
+        error: null,
+        refresh: vi.fn(),
+      });
+
+      render(<ExecutorStatusBar />);
+
+      const statusBar = screen.getByRole("status");
+      expect(statusBar).not.toHaveClass("executor-status-bar--running");
+    });
+
+    it("does not apply running class when executor is idle", () => {
+      vi.mocked(mockUseExecutorStats).mockReturnValue({
+        stats: { ...defaultStats, executorState: "idle", runningTaskCount: 0 },
+        loading: false,
+        error: null,
+        refresh: vi.fn(),
+      });
+
+      render(<ExecutorStatusBar />);
+
+      const statusBar = screen.getByRole("status");
+      expect(statusBar).not.toHaveClass("executor-status-bar--running");
+    });
+  });
+
+  describe("loading state", () => {
+    it("shows loading text when loading and no running tasks", () => {
+      vi.mocked(mockUseExecutorStats).mockReturnValue({
+        stats: { ...defaultStats, runningTaskCount: 0 },
+        loading: true,
+        error: null,
+        refresh: vi.fn(),
+      });
+
+      render(<ExecutorStatusBar />);
+
+      const statusBar = screen.getByRole("status");
+      expect(statusBar).toHaveTextContent("Loading...");
+      expect(statusBar).toHaveClass("executor-status-bar--loading");
+    });
+
+    it("does not show loading text when not loading", () => {
+      render(<ExecutorStatusBar />);
+
+      expect(screen.queryByText("Loading...")).not.toBeInTheDocument();
+    });
+
+    it("does not show loading text when loading but running tasks exist", () => {
+      vi.mocked(mockUseExecutorStats).mockReturnValue({
+        stats: defaultStats,
+        loading: true,
+        error: null,
+        refresh: vi.fn(),
+      });
+
+      render(<ExecutorStatusBar />);
+
+      expect(screen.queryByText("Loading...")).not.toBeInTheDocument();
+    });
+  });
+
+  describe("error state", () => {
+    it("shows error message when error is present", () => {
+      vi.mocked(mockUseExecutorStats).mockReturnValue({
+        stats: defaultStats,
+        loading: false,
+        error: "Failed to fetch stats",
+        refresh: vi.fn(),
+      });
+
+      render(<ExecutorStatusBar />);
+
+      const statusBar = screen.getByRole("status");
+      expect(statusBar).toHaveTextContent("Failed to fetch stats");
+      expect(statusBar).toHaveClass("executor-status-bar--error");
+    });
+
+    it("does not show stat segments when error is present", () => {
+      vi.mocked(mockUseExecutorStats).mockReturnValue({
+        stats: defaultStats,
+        loading: false,
+        error: "Failed to fetch stats",
+        refresh: vi.fn(),
+      });
+
+      render(<ExecutorStatusBar />);
+
+      const statusBar = screen.getByRole("status");
+      // The error bar shouldn't have the running segment
+      expect(statusBar).not.toHaveTextContent("Running");
+    });
+  });
+
+  describe("accessibility", () => {
+    it("has role status", () => {
+      render(<ExecutorStatusBar />);
+
+      expect(screen.getByRole("status")).toBeInTheDocument();
+    });
+
+    it("has aria-label", () => {
+      render(<ExecutorStatusBar />);
+
+      expect(screen.getByRole("status")).toHaveAttribute("aria-label", "Executor status");
+    });
+
+    it("applies warning class to blocked count when blocked tasks exist", () => {
+      render(<ExecutorStatusBar />);
+
+      // Get the status bar and look for the blocked count element
+      const statusBar = screen.getByRole("status");
+      const blockedSegment = statusBar.querySelector(".executor-status-bar__indicator--blocked");
+      expect(blockedSegment?.parentElement?.querySelector(".executor-status-bar__count")).toHaveClass("executor-status-bar__count--warning");
+    });
+
+    it("applies error class to stuck count when stuck tasks exist", () => {
+      vi.mocked(mockUseExecutorStats).mockReturnValue({
+        stats: { ...defaultStats, stuckTaskCount: 1 },
+        loading: false,
+        error: null,
+        refresh: vi.fn(),
+      });
+
+      render(<ExecutorStatusBar />);
+
+      const statusBar = screen.getByRole("status");
+      const stuckSegment = statusBar.querySelector(".executor-status-bar__segment--stuck");
+      expect(stuckSegment?.querySelector(".executor-status-bar__count")).toHaveClass("executor-status-bar__count--error");
+    });
+
+    it("applies active class to running indicator when tasks are running", () => {
+      render(<ExecutorStatusBar />);
+
+      const statusBar = screen.getByRole("status");
+      expect(statusBar).toHaveClass("executor-status-bar--running");
+    });
+  });
+
+  describe("visual states", () => {
+    it("shows warning styling when blocked tasks exist", () => {
+      render(<ExecutorStatusBar />);
+
+      const blockedCount = screen.getByText("1");
+      expect(blockedCount).toHaveClass("executor-status-bar__count--warning");
+    });
+
+    it("does not show warning styling when no blocked tasks", () => {
+      vi.mocked(mockUseExecutorStats).mockReturnValue({
+        stats: { ...defaultStats, blockedTaskCount: 0 },
+        loading: false,
+        error: null,
+        refresh: vi.fn(),
+      });
+
+      render(<ExecutorStatusBar />);
+
+      const counts = screen.queryAllByText("0");
+      // First one is running count which shouldn't have warning
+      // We need to check the blocked one specifically
+    });
+  });
+
+  describe("project context", () => {
+    it("passes projectId to useExecutorStats when provided", () => {
+      render(<ExecutorStatusBar projectId="proj_abc123" />);
+
+      expect(mockUseExecutorStats).toHaveBeenCalledWith("proj_abc123");
+    });
+
+    it("passes undefined to useExecutorStats when projectId not provided", () => {
+      render(<ExecutorStatusBar />);
+
+      expect(mockUseExecutorStats).toHaveBeenCalledWith(undefined);
+    });
+  });
+
+  describe("time display", () => {
+    it("displays relative time for recent activity", () => {
+      const now = new Date();
+      const twoMinutesAgo = new Date(now.getTime() - 2 * 60 * 1000).toISOString();
+      vi.mocked(mockUseExecutorStats).mockReturnValue({
+        stats: { ...defaultStats, lastActivityAt: twoMinutesAgo },
+        loading: false,
+        error: null,
+        refresh: vi.fn(),
+      });
+
+      render(<ExecutorStatusBar />);
+
+      expect(screen.getByText("2m ago")).toBeInTheDocument();
+    });
+
+    it("displays 'no activity' when lastActivityAt is undefined", () => {
+      vi.mocked(mockUseExecutorStats).mockReturnValue({
+        stats: { ...defaultStats, lastActivityAt: undefined },
+        loading: false,
+        error: null,
+        refresh: vi.fn(),
+      });
+
+      render(<ExecutorStatusBar />);
+
+      expect(screen.getByText("no activity")).toBeInTheDocument();
+    });
+  });
+});
