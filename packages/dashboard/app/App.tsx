@@ -1,6 +1,6 @@
 import { useState, useCallback, useEffect } from "react";
 import type { TaskDetail, TaskCreateInput, Task, ThemeMode } from "@fusion/core";
-import { fetchConfig, fetchSettings, fetchAuthStatus, updateSettings, fetchModels, fetchTaskDetail, updateProject, unregisterProject } from "./api";
+import { fetchConfig, fetchSettings, fetchAuthStatus, updateSettings, updateGlobalSettings, fetchModels, fetchTaskDetail, updateProject, unregisterProject } from "./api";
 import type { ModelInfo, ProjectInfo } from "./api";
 import { Header } from "./components/Header";
 import { Board } from "./components/Board";
@@ -103,6 +103,8 @@ function AppInner() {
   const [searchQuery, setSearchQuery] = useState("");
   const [githubTokenConfigured, setGithubTokenConfigured] = useState(false);
   const [availableModels, setAvailableModels] = useState<ModelInfo[]>([]);
+  const [favoriteProviders, setFavoriteProviders] = useState<string[]>([]);
+  const [favoriteModels, setFavoriteModels] = useState<string[]>([]);
 
   // Persist view mode
   useEffect(() => {
@@ -180,9 +182,48 @@ function AppInner() {
   // Fetch available models
   useEffect(() => {
     fetchModels()
-      .then((response) => setAvailableModels(response.models))
+      .then((response) => {
+        setAvailableModels(response.models);
+        setFavoriteProviders(response.favoriteProviders);
+        setFavoriteModels(response.favoriteModels);
+      })
       .catch(() => {/* keep empty array on failure */});
   }, []);
+
+  // Favorite provider/model toggle handlers (shared by ListView bulk edit)
+  const handleToggleFavorite = useCallback(async (provider: string) => {
+    const currentFavorites = favoriteProviders;
+    const isFavorite = currentFavorites.includes(provider);
+    const newFavorites = isFavorite
+      ? currentFavorites.filter((p) => p !== provider)
+      : [provider, ...currentFavorites];
+
+    setFavoriteProviders(newFavorites);
+
+    try {
+      await updateGlobalSettings({ favoriteProviders: newFavorites, favoriteModels });
+    } catch {
+      setFavoriteProviders(currentFavorites);
+      addToast("Failed to update favorites", "error");
+    }
+  }, [favoriteProviders, favoriteModels, addToast]);
+
+  const handleToggleModelFavorite = useCallback(async (modelId: string) => {
+    const currentFavorites = favoriteModels;
+    const isFavorite = currentFavorites.includes(modelId);
+    const newFavorites = isFavorite
+      ? currentFavorites.filter((m) => m !== modelId)
+      : [modelId, ...currentFavorites];
+
+    setFavoriteModels(newFavorites);
+
+    try {
+      await updateGlobalSettings({ favoriteProviders, favoriteModels: newFavorites });
+    } catch {
+      setFavoriteModels(currentFavorites);
+      addToast("Failed to update model favorites", "error");
+    }
+  }, [favoriteModels, favoriteProviders, addToast]);
 
   // Handle deep link to task on mount (with optional project context)
   useEffect(() => {
@@ -491,6 +532,10 @@ function AppInner() {
         onPlanningMode={handleNewTaskPlanningMode}
         onSubtaskBreakdown={handleSubtaskBreakdown}
         availableModels={availableModels}
+        favoriteProviders={favoriteProviders}
+        favoriteModels={favoriteModels}
+        onToggleFavorite={handleToggleFavorite}
+        onToggleModelFavorite={handleToggleModelFavorite}
       />
     );
   };
