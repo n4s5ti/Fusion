@@ -1161,6 +1161,124 @@ describe("GitManagerModal", () => {
     expect(screen.queryByTestId("commits-to-push")).not.toBeInTheDocument();
   });
 
+  it("re-fetches ahead commits when status changes after fetch operation", async () => {
+    // This test verifies the regression fix: ahead commits are re-fetched when
+    // the ahead count changes after a remote action.
+    //
+    // Setup: mock status to go from ahead=0 → ahead=2 after fetch
+    // 1st call: mount (status tab)
+    // 2nd call: remotes tab load
+    // 3rd call: parent's handleFetch refreshes status
+    (fetchGitStatus as any)
+      .mockResolvedValueOnce({
+        branch: "main", commit: "abc1234", isDirty: false, ahead: 0, behind: 0,
+      })
+      .mockResolvedValueOnce({
+        branch: "main", commit: "abc1234", isDirty: false, ahead: 0, behind: 0,
+      })
+      .mockResolvedValueOnce({
+        branch: "main", commit: "abc1234", isDirty: false, ahead: 2, behind: 0,
+      });
+
+    // fetchAheadCommits should not be called initially (ahead=0)
+    (fetchAheadCommits as any).mockResolvedValue([]);
+
+    const user = userEvent.setup();
+    render(
+      <GitManagerModal isOpen={true} onClose={vi.fn()} tasks={mockTasks} addToast={mockAddToast} />
+    );
+
+    // Switch to remotes tab (uses 2nd mock: ahead=0)
+    fireEvent.click(screen.getByRole("tab", { name: /remotes/i }));
+
+    await waitFor(() => {
+      expect(screen.getByText("origin")).toBeInTheDocument();
+    });
+
+    // No commits-to-push section since ahead=0
+    expect(screen.queryByTestId("commits-to-push")).not.toBeInTheDocument();
+
+    // Now mock ahead commits to return data when called next
+    (fetchAheadCommits as any).mockResolvedValue([
+      { hash: "aaa1111", shortHash: "aaa1", message: "Ahead commit after fetch", author: "Dev", date: "2026-01-01T00:00:00Z", parents: [] },
+      { hash: "bbb2222", shortHash: "bbb2", message: "Another ahead commit", author: "Dev", date: "2026-01-02T00:00:00Z", parents: [] },
+    ]);
+
+    // Click the Refresh button in the header to trigger a full status refresh
+    // This causes fetchGitStatus to be called again (3rd mock: ahead=2)
+    const refreshBtn = screen.getByTitle("Refresh");
+    await user.click(refreshBtn);
+
+    // After status refresh, ahead=2 triggers loadAheadCommits
+    await waitFor(() => {
+      expect(fetchAheadCommits).toHaveBeenCalled();
+    });
+
+    await waitFor(() => {
+      expect(screen.getByTestId("commits-to-push")).toBeInTheDocument();
+      expect(screen.getByText("Ahead commit after fetch")).toBeInTheDocument();
+      expect(screen.getByText("Another ahead commit")).toBeInTheDocument();
+    });
+  });
+
+  it("clears ahead commits after push succeeds and ahead count drops to 0", async () => {
+    const user = userEvent.setup();
+
+    // First call: initial mount (status tab)
+    // Second call: switching to remotes tab — shows ahead commits
+    // Third call: after push — ahead drops to 0
+    (fetchGitStatus as any)
+      .mockResolvedValueOnce({
+        branch: "main",
+        commit: "abc1234",
+        isDirty: false,
+        ahead: 2,
+        behind: 0,
+      })
+      .mockResolvedValueOnce({
+        branch: "main",
+        commit: "abc1234",
+        isDirty: false,
+        ahead: 2,
+        behind: 0,
+      })
+      .mockResolvedValueOnce({
+        branch: "main",
+        commit: "abc1234",
+        isDirty: false,
+        ahead: 0,
+        behind: 0,
+      });
+
+    (fetchAheadCommits as any).mockResolvedValue([
+      { hash: "aaa1111", shortHash: "aaa1", message: "First commit", author: "Dev", date: "2026-01-01T00:00:00Z", parents: [] },
+      { hash: "bbb2222", shortHash: "bbb2", message: "Second commit", author: "Dev", date: "2026-01-02T00:00:00Z", parents: [] },
+    ]);
+
+    render(
+      <GitManagerModal isOpen={true} onClose={vi.fn()} tasks={mockTasks} addToast={mockAddToast} />
+    );
+    fireEvent.click(screen.getByRole("tab", { name: /remotes/i }));
+
+    // Initially shows commits to push
+    await waitFor(() => {
+      expect(screen.getByTestId("commits-to-push")).toBeInTheDocument();
+    });
+
+    // Push — parent handler refreshes status (3rd mock returns ahead: 0)
+    // Use getAllByRole since "2 commit(s) to push" text also matches /push/i
+    const pushButtons = screen.getAllByRole("button").filter(
+      (btn) => btn.textContent?.includes("Push") && !btn.textContent?.includes("commit")
+    );
+    expect(pushButtons.length).toBeGreaterThan(0);
+    await user.click(pushButtons[0]);
+
+    // After push, commits-to-push section should disappear
+    await waitFor(() => {
+      expect(screen.queryByTestId("commits-to-push")).not.toBeInTheDocument();
+    });
+  });
+
   // ── Remote Selection & Recent Commits ──────────────────────────
 
   it("shows recent commits section for auto-selected remote", async () => {

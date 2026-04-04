@@ -1510,11 +1510,22 @@ function RemotesPanel({
   const [loadingRemoteCommits, setLoadingRemoteCommits] = useState(false);
   const [remoteCommitsError, setRemoteCommitsError] = useState<string | null>(null);
 
-  // Fetch remotes and ahead commits when panel mounts
+  // Fetch remotes when panel mounts
   useEffect(() => {
     loadRemotes();
-    loadAheadCommits();
   }, []);
+
+  // Load ahead commits whenever the ahead count indicates commits to push.
+  // This covers: initial mount (when status arrives), status refresh after
+  // remote actions (fetch/pull/push), and any other status updates.
+  useEffect(() => {
+    if (status && status.ahead > 0) {
+      loadAheadCommits();
+    } else if (status && status.ahead === 0) {
+      // Clear stale ahead commits when push succeeds or upstream catches up
+      setAheadCommits([]);
+    }
+  }, [status?.ahead]);
 
   // Auto-select first remote when remotes load
   useEffect(() => {
