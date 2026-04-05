@@ -255,23 +255,13 @@ export class AgentStore extends EventEmitter {
         ...agent,
         state: newState,
         updatedAt: new Date().toISOString(),
+        // Clear lastError when transitioning away from terminated
+        ...(currentState === "terminated" && newState !== "terminated" && { lastError: undefined }),
       };
 
       await this.writeAgent(updated);
       this.emit("agent:stateChanged", agentId, currentState, newState);
       this.emit("agent:updated", updated, currentState);
-
-      // Handle heartbeat run lifecycle
-      if (newState === "active" && !agent.lastHeartbeatAt) {
-        // Starting first activity - start a heartbeat run
-        await this.startHeartbeatRun(agentId);
-      } else if (newState === "terminated") {
-        // End the active run if any
-        const activeRun = await this.getActiveHeartbeatRun(agentId);
-        if (activeRun) {
-          await this.endHeartbeatRun(activeRun.id, "terminated");
-        }
-      }
 
       return updated;
     });
@@ -301,6 +291,37 @@ export class AgentStore extends EventEmitter {
 
       return updated;
     });
+  }
+
+  /**
+   * Reset an agent from any state back to "idle".
+   * Clears lastError, taskId, and ends any active heartbeat run.
+   * Uses updateAgentState internally for proper validation and event emission.
+   * @param agentId - The agent ID
+   * @returns The reset agent
+   * @throws Error if agent not found or transition is invalid
+   */
+  async resetAgent(agentId: string): Promise<Agent> {
+    // End any active heartbeat run before transitioning
+    const activeRun = await this.getActiveHeartbeatRun(agentId);
+    if (activeRun) {
+      await this.endHeartbeatRun(activeRun.id, "terminated");
+    }
+
+    // Transition state via updateAgentState (validates transition, emits events)
+    const agent = await this.updateAgentState(agentId, "idle");
+
+    // Clear taskId and lastError on top of the state transition
+    const reset: Agent = {
+      ...agent,
+      taskId: undefined,
+      lastError: undefined,
+      updatedAt: new Date().toISOString(),
+    };
+
+    await this.writeAgent(reset);
+
+    return reset;
   }
 
   /**

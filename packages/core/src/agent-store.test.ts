@@ -405,14 +405,11 @@ describe("AgentStore", () => {
       ).rejects.toThrow("Invalid state transition: idle -> terminated");
     });
 
-    it("transition from terminated to invalid states throws", async () => {
+    it("transition from terminated to paused still throws", async () => {
       const agent = await createReadyAgent(store, "Terminated");
       await store.updateAgentState(agent.id, "active");
       await store.updateAgentState(agent.id, "terminated");
 
-      await expect(
-        store.updateAgentState(agent.id, "idle")
-      ).rejects.toThrow("Invalid state transition: terminated -> idle");
       await expect(
         store.updateAgentState(agent.id, "paused")
       ).rejects.toThrow("Invalid state transition: terminated -> paused");
@@ -434,6 +431,26 @@ describe("AgentStore", () => {
 
       const updated = await store.updateAgentState(agent.id, "running");
       expect(updated.state).toBe("running");
+    });
+
+    it("terminated → idle transition succeeds", async () => {
+      const agent = await createReadyAgent(store, "RestartIdle");
+      await store.updateAgentState(agent.id, "active");
+      await store.updateAgentState(agent.id, "terminated");
+
+      const updated = await store.updateAgentState(agent.id, "idle");
+      expect(updated.state).toBe("idle");
+    });
+
+    it("transitioning from terminated clears lastError", async () => {
+      const agent = await createReadyAgent(store, "ClearError");
+      await store.updateAgentState(agent.id, "active");
+      await store.updateAgent(agent.id, { lastError: "something broke" });
+      await store.updateAgentState(agent.id, "terminated");
+
+      const restarted = await store.updateAgentState(agent.id, "active");
+      expect(restarted.state).toBe("active");
+      expect(restarted.lastError).toBeUndefined();
     });
 
     it("emits both 'agent:stateChanged' and 'agent:updated' events", async () => {
@@ -498,6 +515,61 @@ describe("AgentStore", () => {
       await expect(
         store.assignTask("agent-missing", "KB-001")
       ).rejects.toThrow("Agent agent-missing not found");
+    });
+  });
+
+  // ── resetAgent ────────────────────────────────────────────────────
+
+  describe("resetAgent", () => {
+    // Helper: create an agent and transition it to terminated with error/task
+    async function createTerminatedAgent(s: AgentStore, name: string) {
+      const agent = await s.createAgent({ name, role: "executor" });
+      await s.recordHeartbeat(agent.id, "ok");
+      await s.recordHeartbeat(agent.id, "missed");
+      await s.updateAgentState(agent.id, "active");
+      await s.assignTask(agent.id, "KB-999");
+      await s.updateAgent(agent.id, { lastError: "something broke" });
+      await s.updateAgentState(agent.id, "terminated");
+      return agent;
+    }
+
+    it("transitions terminated agent to idle", async () => {
+      const agent = await createTerminatedAgent(store, "ResetToIdle");
+      const reset = await store.resetAgent(agent.id);
+
+      expect(reset.state).toBe("idle");
+    });
+
+    it("clears lastError", async () => {
+      const agent = await createTerminatedAgent(store, "ResetClearsError");
+      const reset = await store.resetAgent(agent.id);
+
+      expect(reset.lastError).toBeUndefined();
+    });
+
+    it("clears taskId", async () => {
+      const agent = await createTerminatedAgent(store, "ResetClearsTask");
+      const reset = await store.resetAgent(agent.id);
+
+      expect(reset.taskId).toBeUndefined();
+    });
+
+    it("starts fresh heartbeat tracking on subsequent active transition", async () => {
+      const agent = await createTerminatedAgent(store, "ResetHeartbeat");
+      await store.resetAgent(agent.id);
+
+      // After reset, explicitly start a heartbeat run (as the caller would)
+      const run = await store.startHeartbeatRun(agent.id);
+
+      const activeRun = await store.getActiveHeartbeatRun(agent.id);
+      expect(activeRun).not.toBeNull();
+      expect(activeRun!.id).toBe(run.id);
+    });
+
+    it("throws for non-existent agent", async () => {
+      await expect(
+        store.resetAgent("agent-ghost")
+      ).rejects.toThrow("Agent agent-ghost not found");
     });
   });
 
