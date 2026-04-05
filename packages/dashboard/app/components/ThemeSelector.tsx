@@ -33,6 +33,11 @@ const COLOR_THEMES: { value: ColorTheme; label: string; className: string }[] = 
   { value: "dracula", label: "Dracula", className: "theme-swatch-dracula" },
   { value: "gruvbox", label: "Gruvbox", className: "theme-swatch-gruvbox" },
   { value: "tokyo-night", label: "Tokyo Night", className: "theme-swatch-tokyo-night" },
+  { value: "catppuccin-mocha", label: "Catppuccin Mocha", className: "theme-swatch-catppuccin-mocha" },
+  { value: "github-dark", label: "GitHub Dark", className: "theme-swatch-github-dark" },
+  { value: "everforest", label: "Everforest", className: "theme-swatch-everforest" },
+  { value: "rose-pine", label: "Rosé Pine", className: "theme-swatch-rose-pine" },
+  { value: "kanagawa", label: "Kanagawa", className: "theme-swatch-kanagawa" },
 ];
 
 /**

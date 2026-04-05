@@ -93,6 +93,11 @@ describe("ThemeSelector", () => {
     expect(screen.getByLabelText("Dracula theme")).toBeDefined();
     expect(screen.getByLabelText("Gruvbox theme")).toBeDefined();
     expect(screen.getByLabelText("Tokyo Night theme")).toBeDefined();
+    expect(screen.getByLabelText("Catppuccin Mocha theme")).toBeDefined();
+    expect(screen.getByLabelText("GitHub Dark theme")).toBeDefined();
+    expect(screen.getByLabelText("Everforest theme")).toBeDefined();
+    expect(screen.getByLabelText("Rosé Pine theme")).toBeDefined();
+    expect(screen.getByLabelText("Kanagawa theme")).toBeDefined();
   });
 
   it("marks current color theme as active", () => {
@@ -155,6 +160,33 @@ describe("ThemeSelector", () => {
     expect(onColorThemeChange).toHaveBeenCalledWith("tokyo-night");
   });
 
+  it("calls onColorThemeChange when newest color themes are clicked", () => {
+    const onColorThemeChange = vi.fn();
+    render(
+      <ThemeSelector
+        themeMode="dark"
+        colorTheme="default"
+        onThemeModeChange={vi.fn()}
+        onColorThemeChange={onColorThemeChange}
+      />
+    );
+
+    fireEvent.click(screen.getByLabelText("Catppuccin Mocha theme"));
+    expect(onColorThemeChange).toHaveBeenCalledWith("catppuccin-mocha");
+
+    fireEvent.click(screen.getByLabelText("GitHub Dark theme"));
+    expect(onColorThemeChange).toHaveBeenCalledWith("github-dark");
+
+    fireEvent.click(screen.getByLabelText("Everforest theme"));
+    expect(onColorThemeChange).toHaveBeenCalledWith("everforest");
+
+    fireEvent.click(screen.getByLabelText("Rosé Pine theme"));
+    expect(onColorThemeChange).toHaveBeenCalledWith("rose-pine");
+
+    fireEvent.click(screen.getByLabelText("Kanagawa theme"));
+    expect(onColorThemeChange).toHaveBeenCalledWith("kanagawa");
+  });
+
   it("displays Nord in preview when selected", () => {
     render(
       <ThemeSelector
@@ -205,6 +237,84 @@ describe("ThemeSelector", () => {
     );
 
     expect(screen.getByText(/Dark \/ Tokyo Night/)).toBeDefined();
+  });
+
+  it("displays Catppuccin Mocha in preview when selected", () => {
+    render(
+      <ThemeSelector
+        themeMode="dark"
+        colorTheme="catppuccin-mocha"
+        onThemeModeChange={vi.fn()}
+        onColorThemeChange={vi.fn()}
+      />
+    );
+
+    expect(screen.getByText(/Dark \/ Catppuccin Mocha/)).toBeDefined();
+  });
+
+  it("displays GitHub Dark in preview when selected", () => {
+    render(
+      <ThemeSelector
+        themeMode="dark"
+        colorTheme="github-dark"
+        onThemeModeChange={vi.fn()}
+        onColorThemeChange={vi.fn()}
+      />
+    );
+
+    expect(screen.getByText(/Dark \/ GitHub Dark/)).toBeDefined();
+  });
+
+  it("displays Everforest in preview when selected", () => {
+    render(
+      <ThemeSelector
+        themeMode="dark"
+        colorTheme="everforest"
+        onThemeModeChange={vi.fn()}
+        onColorThemeChange={vi.fn()}
+      />
+    );
+
+    expect(screen.getByText(/Dark \/ Everforest/)).toBeDefined();
+  });
+
+  it("displays Rosé Pine in preview when selected", () => {
+    render(
+      <ThemeSelector
+        themeMode="dark"
+        colorTheme="rose-pine"
+        onThemeModeChange={vi.fn()}
+        onColorThemeChange={vi.fn()}
+      />
+    );
+
+    expect(screen.getByText(/Dark \/ Rosé Pine/)).toBeDefined();
+  });
+
+  it("displays Kanagawa in preview when selected", () => {
+    render(
+      <ThemeSelector
+        themeMode="dark"
+        colorTheme="kanagawa"
+        onThemeModeChange={vi.fn()}
+        onColorThemeChange={vi.fn()}
+      />
+    );
+
+    expect(screen.getByText(/Dark \/ Kanagawa/)).toBeDefined();
+  });
+
+  it("displays light Catppuccin Mocha in preview when light mode", () => {
+    render(
+      <ThemeSelector
+        themeMode="light"
+        colorTheme="catppuccin-mocha"
+        onThemeModeChange={vi.fn()}
+        onColorThemeChange={vi.fn()}
+      />
+    );
+
+    expect(screen.getByText(/Light \/ Catppuccin Mocha/)).toBeDefined();
   });
 
   it("displays light Tokyo Night in preview when light mode", () => {

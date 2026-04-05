@@ -28,6 +28,11 @@ export const COLOR_THEMES = [
   "dracula",
   "gruvbox",
   "tokyo-night",
+  "catppuccin-mocha",
+  "github-dark",
+  "everforest",
+  "rose-pine",
+  "kanagawa",
 ] as const;
 export type ColorTheme = (typeof COLOR_THEMES)[number];
 
