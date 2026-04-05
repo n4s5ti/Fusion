@@ -466,6 +466,7 @@ The engine automatically recovers from transient failures using bounded exponent
 | `@fusion/core` | Domain model — tasks, board columns, SQLite store |
 | `@fusion/dashboard` | Web UI — Express server + kanban board with SSE |
 | `@fusion/engine` | AI engine — triage, execution, scheduling, workflow steps |
+| `@fusion/tui` | Terminal UI — Ink-based CLI components |
 | `@gsxdsm/fusion` | CLI + pi extension — published to npm |
 
 ## Configuration Reference
