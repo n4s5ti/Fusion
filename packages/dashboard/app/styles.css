@@ -153,6 +153,51 @@
   --state-error-bg: rgba(248, 81, 73, 0.15);
   --state-error-text: #f85149;
   --state-error-border: #f85149;
+
+  /* === Mission & Milestone Status Colors === */
+  --mission-planning-bg: color-mix(in srgb, var(--triage) 15%, transparent);
+  --mission-planning-text: var(--triage);
+  --mission-active-bg: color-mix(in srgb, var(--in-review) 15%, transparent);
+  --mission-active-text: var(--in-review);
+  --mission-blocked-bg: color-mix(in srgb, var(--color-error) 15%, transparent);
+  --mission-blocked-text: var(--color-error);
+  --mission-complete-bg: color-mix(in srgb, #3b82f6 15%, transparent);
+  --mission-complete-text: #3b82f6;
+  --mission-archived-bg: var(--bg-tertiary);
+  --mission-archived-text: var(--text-secondary);
+
+  /* === Slice Status Colors === */
+  --slice-pending-bg: color-mix(in srgb, var(--triage) 15%, transparent);
+  --slice-pending-text: var(--triage);
+  --slice-active-bg: color-mix(in srgb, var(--in-review) 15%, transparent);
+  --slice-active-text: var(--in-review);
+  --slice-complete-bg: color-mix(in srgb, #3b82f6 15%, transparent);
+  --slice-complete-text: #3b82f6;
+
+  /* === Feature (Task) Status Colors === */
+  --feature-defined-bg: color-mix(in srgb, var(--triage) 15%, transparent);
+  --feature-defined-text: var(--triage);
+  --feature-triaged-bg: color-mix(in srgb, #a855f7 15%, transparent);
+  --feature-triaged-text: #a855f7;
+  --feature-in-progress-bg: color-mix(in srgb, var(--in-review) 15%, transparent);
+  --feature-in-progress-text: var(--in-review);
+  --feature-done-bg: color-mix(in srgb, #3b82f6 15%, transparent);
+  --feature-done-text: #3b82f6;
+
+  /* === Autopilot State Colors === */
+  --autopilot-inactive-bg: color-mix(in srgb, #94a3b8 15%, transparent);
+  --autopilot-inactive-text: #94a3b8;
+  --autopilot-watching-bg: color-mix(in srgb, var(--in-review) 15%, transparent);
+  --autopilot-watching-text: var(--in-review);
+  --autopilot-activating-bg: color-mix(in srgb, #3b82f6 15%, transparent);
+  --autopilot-activating-text: #3b82f6;
+  --autopilot-completing-bg: color-mix(in srgb, #a855f7 15%, transparent);
+  --autopilot-completing-text: #a855f7;
+
+  /* === Interview Modal Icon Colors === */
+  --icon-milestone: var(--triage);
+  --icon-slice: var(--in-review);
+  --icon-feature: #3b82f6;
 }
 
 html,

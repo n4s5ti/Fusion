@@ -854,7 +854,7 @@ function MissionPlanReview({
                     ) : (
                       <ChevronRight size={16} style={{ color: "var(--text-secondary)", flexShrink: 0 }} />
                     )}
-                    <Layers size={16} style={{ color: "#eab308", flexShrink: 0 }} />
+                    <Layers size={16} style={{ color: "var(--icon-milestone)", flexShrink: 0 }} />
                     <input
                       type="text"
                       className="form-input"
@@ -931,7 +931,7 @@ function MissionPlanReview({
                               ) : (
                                 <ChevronRight size={14} style={{ color: "var(--text-secondary)", flexShrink: 0 }} />
                               )}
-                              <Package size={14} style={{ color: "#22c55e", flexShrink: 0 }} />
+                              <Package size={14} style={{ color: "var(--icon-slice)", flexShrink: 0 }} />
                               <input
                                 type="text"
                                 className="form-input"
@@ -986,7 +986,7 @@ function MissionPlanReview({
                                           : "none",
                                     }}
                                   >
-                                    <Box size={12} style={{ color: "#3b82f6", marginTop: "4px", flexShrink: 0 }} />
+                                    <Box size={12} style={{ color: "var(--icon-feature)", marginTop: "4px", flexShrink: 0 }} />
                                     <div style={{ flex: 1, minWidth: 0 }}>
                                       <input
                                         type="text"

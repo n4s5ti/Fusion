@@ -83,38 +83,38 @@ interface MissionManagerProps {
 
 // Status badge colors — use CSS custom-property-compatible tokens
 const missionStatusColors: Record<MissionStatus, { bg: string; text: string }> = {
-  planning: { bg: "rgba(234, 179, 8, 0.15)", text: "#eab308" },
-  active: { bg: "rgba(34, 197, 94, 0.15)", text: "#22c55e" },
-  blocked: { bg: "rgba(239, 68, 68, 0.15)", text: "#ef4444" },
-  complete: { bg: "rgba(59, 130, 246, 0.15)", text: "#3b82f6" },
-  archived: { bg: "var(--bg-tertiary)", text: "var(--text-secondary)" },
+  planning: { bg: "var(--mission-planning-bg)", text: "var(--mission-planning-text)" },
+  active: { bg: "var(--mission-active-bg)", text: "var(--mission-active-text)" },
+  blocked: { bg: "var(--mission-blocked-bg)", text: "var(--mission-blocked-text)" },
+  complete: { bg: "var(--mission-complete-bg)", text: "var(--mission-complete-text)" },
+  archived: { bg: "var(--mission-archived-bg)", text: "var(--mission-archived-text)" },
 };
 
 const milestoneStatusColors: Record<MilestoneStatus, { bg: string; text: string }> = {
-  planning: { bg: "rgba(234, 179, 8, 0.15)", text: "#eab308" },
-  active: { bg: "rgba(34, 197, 94, 0.15)", text: "#22c55e" },
-  blocked: { bg: "rgba(239, 68, 68, 0.15)", text: "#ef4444" },
-  complete: { bg: "rgba(59, 130, 246, 0.15)", text: "#3b82f6" },
+  planning: { bg: "var(--mission-planning-bg)", text: "var(--mission-planning-text)" },
+  active: { bg: "var(--mission-active-bg)", text: "var(--mission-active-text)" },
+  blocked: { bg: "var(--mission-blocked-bg)", text: "var(--mission-blocked-text)" },
+  complete: { bg: "var(--mission-complete-bg)", text: "var(--mission-complete-text)" },
 };
 
 const sliceStatusColors: Record<SliceStatus, { bg: string; text: string }> = {
-  pending: { bg: "rgba(234, 179, 8, 0.15)", text: "#eab308" },
-  active: { bg: "rgba(34, 197, 94, 0.15)", text: "#22c55e" },
-  complete: { bg: "rgba(59, 130, 246, 0.15)", text: "#3b82f6" },
+  pending: { bg: "var(--slice-pending-bg)", text: "var(--slice-pending-text)" },
+  active: { bg: "var(--slice-active-bg)", text: "var(--slice-active-text)" },
+  complete: { bg: "var(--slice-complete-bg)", text: "var(--slice-complete-text)" },
 };
 
 const featureStatusColors: Record<FeatureStatus, { bg: string; text: string }> = {
-  defined: { bg: "rgba(234, 179, 8, 0.15)", text: "#eab308" },
-  triaged: { bg: "rgba(168, 85, 247, 0.15)", text: "#a855f7" },
-  "in-progress": { bg: "rgba(34, 197, 94, 0.15)", text: "#22c55e" },
-  done: { bg: "rgba(59, 130, 246, 0.15)", text: "#3b82f6" },
+  defined: { bg: "var(--feature-defined-bg)", text: "var(--feature-defined-text)" },
+  triaged: { bg: "var(--feature-triaged-bg)", text: "var(--feature-triaged-text)" },
+  "in-progress": { bg: "var(--feature-in-progress-bg)", text: "var(--feature-in-progress-text)" },
+  done: { bg: "var(--feature-done-bg)", text: "var(--feature-done-text)" },
 };
 
 const autopilotStateColors: Record<AutopilotState, { bg: string; text: string }> = {
-  inactive: { bg: "rgba(148, 163, 184, 0.15)", text: "#94a3b8" },
-  watching: { bg: "rgba(34, 197, 94, 0.15)", text: "#22c55e" },
-  activating: { bg: "rgba(59, 130, 246, 0.15)", text: "#3b82f6" },
-  completing: { bg: "rgba(168, 85, 247, 0.15)", text: "#a855f7" },
+  inactive: { bg: "var(--autopilot-inactive-bg)", text: "var(--autopilot-inactive-text)" },
+  watching: { bg: "var(--autopilot-watching-bg)", text: "var(--autopilot-watching-text)" },
+  activating: { bg: "var(--autopilot-activating-bg)", text: "var(--autopilot-activating-text)" },
+  completing: { bg: "var(--autopilot-completing-bg)", text: "var(--autopilot-completing-text)" },
 };
 
 // Form types
