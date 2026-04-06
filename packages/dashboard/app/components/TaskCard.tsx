@@ -1,7 +1,7 @@
 import { memo, useCallback, useState, useRef, useEffect, useMemo } from "react";
 import { Link, Clock, Layers, Pencil, ChevronDown, Folder, Target } from "lucide-react";
 import type { Task, TaskDetail, Column, PrInfo, IssueInfo } from "@fusion/core";
-import { fetchTaskDetail, uploadAttachment } from "../api";
+import { fetchTaskDetail, uploadAttachment, fetchMission } from "../api";
 import { GitHubBadge } from "./GitHubBadge";
 import { pickPreferredBadge } from "./TaskCardBadge";
 import { useBadgeWebSocket } from "../hooks/useBadgeWebSocket";
@@ -10,6 +10,37 @@ import { useSessionFiles } from "../hooks/useSessionFiles";
 import { useTaskDiffStats } from "../hooks/useTaskDiffStats";
 import { isTaskStuck } from "../utils/taskStuck";
 import type { ToastType } from "../hooks/useToast";
+
+// ── Mission title caching ───────────────────────────────────────────────────
+
+const missionTitleCache = new Map<string, string>();
+
+/** @internal Test helper to reset the mission title cache between tests */
+export function __test_clearMissionTitleCache(): void {
+  missionTitleCache.clear();
+}
+
+async function getMissionTitle(missionId: string, projectId?: string): Promise<string> {
+  const cached = missionTitleCache.get(missionId);
+  if (cached) return cached;
+
+  try {
+    const mission = await fetchMission(missionId, projectId);
+    missionTitleCache.set(missionId, mission.title);
+    return mission.title;
+  } catch {
+    return missionId;
+  }
+}
+
+const MAX_MISSION_TITLE_LENGTH = 20;
+
+function abbreviateMissionTitle(title: string): string {
+  if (title.length <= MAX_MISSION_TITLE_LENGTH) return title;
+  return title.slice(0, MAX_MISSION_TITLE_LENGTH - 3) + "...";
+}
+
+// ── Constants ───────────────────────────────────────────────────────────────
 
 const COLUMN_COLOR_MAP: Record<Column, string> = {
   triage: "rgba(210,153,34,0.15)",
@@ -151,6 +182,7 @@ function TaskCardComponent({
     task.column === "in-progress" ||
     (task.column === "triage" && task.steps.some(s => s.status === "done" || s.status === "skipped"))
   );
+  const [missionTitle, setMissionTitle] = useState<string | null>(null);
 
   const descTextareaRef = useRef<HTMLTextAreaElement>(null);
   const touchOpenHandledRef = useRef(false);
@@ -171,6 +203,27 @@ function TaskCardComponent({
   useEffect(() => {
     setEditDescription(task.description || "");
   }, [task.id, task.description]);
+
+  // Fetch mission title when missionId is set
+  useEffect(() => {
+    if (!task.missionId) {
+      setMissionTitle(null);
+      return;
+    }
+
+    // Check cache synchronously first
+    const cached = missionTitleCache.get(task.missionId);
+    if (cached) {
+      setMissionTitle(cached);
+      return;
+    }
+
+    let cancelled = false;
+    void getMissionTitle(task.missionId, projectId).then((title) => {
+      if (!cancelled) setMissionTitle(title);
+    });
+    return () => { cancelled = true; };
+  }, [task.missionId, projectId]);
 
   // Auto-focus and auto-resize description textarea when entering edit mode
   useEffect(() => {
@@ -616,12 +669,12 @@ function TaskCardComponent({
           <span
             className="card-mission-badge"
             onClick={handleMissionClick}
-            title={`Mission: ${task.missionId}`}
+            title={`Mission: ${missionTitle ?? task.missionId}`}
             role={onOpenMission ? "button" : undefined}
             tabIndex={onOpenMission ? 0 : undefined}
           >
             <Target size={11} />
-            {task.missionId}
+            {abbreviateMissionTitle(missionTitle ?? task.missionId)}
           </span>
         )}
         <div className="card-header-actions">

@@ -20,9 +20,10 @@ vi.mock("lucide-react", () => ({
 vi.mock("../api", () => ({
   fetchTaskDetail: vi.fn(),
   uploadAttachment: vi.fn(),
+  fetchMission: vi.fn(),
 }));
 
-import { uploadAttachment } from "../api";
+import { uploadAttachment, fetchMission } from "../api";
 
 function makeTask(overrides: Partial<Task> = {}): Task {
   return {
@@ -255,5 +256,150 @@ describe("TaskCard", () => {
     expect(actionsContainer).not.toBeNull();
     expect(archiveBtn).not.toBeNull();
     expect(actionsContainer?.contains(archiveBtn)).toBe(true);
+  });
+});
+
+describe("TaskCard mission badge", () => {
+  // Access the internal cache reset helper
+  let clearCache: () => void;
+
+  beforeAll(async () => {
+    const mod = await import("./TaskCard");
+    clearCache = (mod as any).__test_clearMissionTitleCache;
+  });
+
+  beforeEach(() => {
+    clearCache?.();
+    vi.mocked(fetchMission).mockReset();
+  });
+
+  it("displays mission title instead of missionId", async () => {
+    vi.mocked(fetchMission).mockResolvedValue({
+      id: "M-ABC123",
+      title: "Database Optimization",
+      status: "active",
+      interviewState: "completed",
+      milestones: [],
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+    });
+
+    const { container } = render(
+      <TaskCard
+        task={makeTask({ missionId: "M-ABC123" })}
+        onOpenDetail={noop}
+        addToast={noop}
+      />,
+    );
+
+    const badge = container.querySelector(".card-mission-badge");
+    expect(badge).not.toBeNull();
+
+    await waitFor(() => {
+      expect(badge?.textContent).toContain("Database Optimiza...");
+    });
+  });
+
+  it("abbreviates long mission titles with ellipsis", async () => {
+    vi.mocked(fetchMission).mockResolvedValue({
+      id: "M-LONG1",
+      title: "This Is A Very Long Mission Title That Exceeds Twenty Characters",
+      status: "active",
+      interviewState: "completed",
+      milestones: [],
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+    });
+
+    const { container } = render(
+      <TaskCard
+        task={makeTask({ missionId: "M-LONG1" })}
+        onOpenDetail={noop}
+        addToast={noop}
+      />,
+    );
+
+    const badge = container.querySelector(".card-mission-badge");
+    expect(badge).not.toBeNull();
+
+    await waitFor(() => {
+      // MAX_MISSION_TITLE_LENGTH is 20, so first 17 chars + "..."
+      expect(badge?.textContent).toContain("This Is A Very Lo...");
+    });
+  });
+
+  it("falls back to missionId on fetch error", async () => {
+    vi.mocked(fetchMission).mockRejectedValue(new Error("Network error"));
+
+    const { container } = render(
+      <TaskCard
+        task={makeTask({ missionId: "M-ERR99" })}
+        onOpenDetail={noop}
+        addToast={noop}
+      />,
+    );
+
+    const badge = container.querySelector(".card-mission-badge");
+    expect(badge).not.toBeNull();
+
+    await waitFor(() => {
+      expect(badge?.textContent).toContain("M-ERR99");
+    });
+  });
+
+  it("shows mission title in title attribute", async () => {
+    vi.mocked(fetchMission).mockResolvedValue({
+      id: "M-TITLE",
+      title: "Refactor Auth",
+      status: "active",
+      interviewState: "completed",
+      milestones: [],
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+    });
+
+    const { container } = render(
+      <TaskCard
+        task={makeTask({ missionId: "M-TITLE" })}
+        onOpenDetail={noop}
+        addToast={noop}
+      />,
+    );
+
+    const badge = container.querySelector(".card-mission-badge");
+    expect(badge).not.toBeNull();
+
+    await waitFor(() => {
+      expect(badge?.getAttribute("title")).toBe("Mission: Refactor Auth");
+    });
+  });
+
+  it("shows short mission title without abbreviation", async () => {
+    vi.mocked(fetchMission).mockResolvedValue({
+      id: "M-SHORT",
+      title: "Auth Fix",
+      status: "active",
+      interviewState: "completed",
+      milestones: [],
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+    });
+
+    const { container } = render(
+      <TaskCard
+        task={makeTask({ missionId: "M-SHORT" })}
+        onOpenDetail={noop}
+        addToast={noop}
+      />,
+    );
+
+    const badge = container.querySelector(".card-mission-badge");
+    expect(badge).not.toBeNull();
+
+    await waitFor(() => {
+      // "Auth Fix" is 8 chars, well under 20 — no abbreviation needed
+      expect(badge?.textContent).toContain("Auth Fix");
+      expect(badge?.textContent).not.toContain("...");
+    });
   });
 });
