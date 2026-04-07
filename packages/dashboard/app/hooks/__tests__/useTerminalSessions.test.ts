@@ -427,6 +427,123 @@ describe("useTerminalSessions", () => {
     });
   });
 
+  describe("replacing active tab session (invalid session recovery)", () => {
+    it("swaps sessionId on active tab without killing old session", async () => {
+      localStorageMock.getItem.mockReturnValue(null);
+      mockListTerminalSessions.mockResolvedValue([]);
+
+      mockCreateTerminalSession
+        .mockResolvedValueOnce({ sessionId: "session-1", shell: "/bin/bash", cwd: "/project" })
+        .mockResolvedValueOnce({ sessionId: "session-replacement", shell: "/bin/bash", cwd: "/project" });
+
+      const { result } = renderHook(() => useTerminalSessions());
+
+      await waitFor(() => {
+        expect(result.current.tabs.length).toBe(1);
+        expect(result.current.activeTab?.sessionId).toBe("session-1");
+      });
+
+      const tabId = result.current.activeTab!.id;
+
+      await act(async () => {
+        await result.current.replaceActiveTabSession();
+      });
+
+      // Should NOT kill the old session (it's already gone from server)
+      expect(mockKillPtyTerminalSession).not.toHaveBeenCalled();
+
+      // Tab should still exist with same ID but new sessionId
+      expect(result.current.tabs.length).toBe(1);
+      expect(result.current.activeTab?.id).toBe(tabId);
+      expect(result.current.activeTab?.sessionId).toBe("session-replacement");
+    });
+
+    it("sets bootstrapError when replacement session creation fails", async () => {
+      localStorageMock.getItem.mockReturnValue(null);
+      mockListTerminalSessions.mockResolvedValue([]);
+
+      mockCreateTerminalSession
+        .mockResolvedValueOnce({ sessionId: "session-1", shell: "/bin/bash", cwd: "/project" })
+        .mockRejectedValueOnce(new Error("Server unreachable"));
+
+      const { result } = renderHook(() => useTerminalSessions());
+
+      await waitFor(() => {
+        expect(result.current.tabs.length).toBe(1);
+      });
+
+      await act(async () => {
+        await result.current.replaceActiveTabSession();
+      });
+
+      // Error should be set so UI can show retry
+      await waitFor(() => {
+        expect(result.current.bootstrapError).toBe("Server unreachable");
+      });
+
+      // Tab should still exist with the old sessionId
+      expect(result.current.activeTab?.sessionId).toBe("session-1");
+    });
+
+    it("does nothing when no active tab exists", async () => {
+      // Set up a scenario where tabs are empty and isReady is true but no auto-create happened yet
+      localStorageMock.getItem.mockReturnValue(null);
+      mockListTerminalSessions.mockResolvedValue([]);
+      // Make auto-create hang so no tab is created
+      mockCreateTerminalSession.mockReturnValue(new Promise(() => {}));
+
+      const { result } = renderHook(() => useTerminalSessions());
+
+      // Wait for isReady to be true (list completes) but tabs are empty (create pending)
+      await waitFor(() => {
+        expect(result.current.isReady).toBe(true);
+      });
+
+      // replaceActiveTabSession should be a no-op with no active tab
+      await act(async () => {
+        await result.current.replaceActiveTabSession();
+      });
+
+      // No additional createTerminalSession calls beyond the pending auto-create
+      expect(mockCreateTerminalSession).toHaveBeenCalledTimes(1);
+    });
+
+    it("clears bootstrapError on successful replacement after failure", async () => {
+      localStorageMock.getItem.mockReturnValue(null);
+      mockListTerminalSessions.mockResolvedValue([]);
+
+      mockCreateTerminalSession
+        .mockResolvedValueOnce({ sessionId: "session-1", shell: "/bin/bash", cwd: "/project" })
+        .mockRejectedValueOnce(new Error("Temporary failure"))
+        .mockResolvedValueOnce({ sessionId: "session-recovered", shell: "/bin/bash", cwd: "/project" });
+
+      const { result } = renderHook(() => useTerminalSessions());
+
+      await waitFor(() => {
+        expect(result.current.tabs.length).toBe(1);
+      });
+
+      // First replacement fails
+      await act(async () => {
+        await result.current.replaceActiveTabSession();
+      });
+
+      await waitFor(() => {
+        expect(result.current.bootstrapError).toBe("Temporary failure");
+      });
+
+      // Second replacement succeeds
+      await act(async () => {
+        await result.current.replaceActiveTabSession();
+      });
+
+      await waitFor(() => {
+        expect(result.current.bootstrapError).toBeNull();
+      });
+      expect(result.current.activeTab?.sessionId).toBe("session-recovered");
+    });
+  });
+
   describe("localStorage persistence", () => {
     it("persists tabs to localStorage", async () => {
       localStorageMock.getItem.mockReturnValue(null);

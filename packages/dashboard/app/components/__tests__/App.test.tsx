@@ -102,6 +102,7 @@ vi.mock("../../hooks/useTerminal", () => ({
     onConnect: vi.fn(() => vi.fn()),
     onScrollback: vi.fn(() => vi.fn()),
     reconnect: vi.fn(),
+    onSessionInvalid: vi.fn(() => vi.fn()),
   }),
 }));
 

@@ -19,6 +19,13 @@ export interface UseTerminalReturn {
   onScrollback: (callback: (data: string) => void) => () => void;
   /** Manually reconnect */
   reconnect: () => void;
+  /**
+   * Register a callback for session-invalid events.
+   * Fires when the WebSocket closes with code 4004 (session-not-found),
+   * meaning the server no longer recognizes the session. The caller should
+   * create a new session rather than attempting reconnect.
+   */
+  onSessionInvalid: (callback: () => void) => () => void;
 }
 
 interface WebSocketMessage {
@@ -86,6 +93,7 @@ export function useTerminal(sessionId: string | null): UseTerminalReturn {
   const onExitCallbacksRef = useRef<Set<(exitCode: number) => void>>(new Set());
   const onConnectCallbacksRef = useRef<Set<(info: { shell: string; cwd: string }) => void>>(new Set());
   const onScrollbackCallbacksRef = useRef<Set<(data: string) => void>>(new Set());
+  const onSessionInvalidCallbacksRef = useRef<Set<() => void>>(new Set());
 
   // Buffer for initial messages received before subscribers are registered.
   // This ensures scrollback, connected info, and early shell output are
@@ -133,6 +141,17 @@ export function useTerminal(sessionId: string | null): UseTerminalReturn {
       buffer.scrollback = null;
     }
     return () => onScrollbackCallbacksRef.current.delete(callback);
+  }, []);
+
+  /**
+   * Register a callback for session-invalid events.
+   * Fires when the server closes the WebSocket with code 4004, indicating
+   * the session no longer exists. Unlike transient disconnects, this is a
+   * permanent condition that requires creating a new session to recover.
+   */
+  const onSessionInvalid = useCallback((callback: () => void) => {
+    onSessionInvalidCallbacksRef.current.add(callback);
+    return () => onSessionInvalidCallbacksRef.current.delete(callback);
   }, []);
 
   // Send input to terminal
@@ -288,6 +307,13 @@ export function useTerminal(sessionId: string | null): UseTerminalReturn {
       // Don't reconnect for certain close codes
       if (event.code === 4000 || event.code === 4004) {
         setConnectionStatus("disconnected");
+
+        // Code 4004 means the server doesn't recognize the session — it's
+        // permanently invalid. Notify subscribers so they can create a new
+        // session rather than retrying the stale one.
+        if (event.code === 4004) {
+          onSessionInvalidCallbacksRef.current.forEach((cb) => cb());
+        }
         return;
       }
 
@@ -342,5 +368,6 @@ export function useTerminal(sessionId: string | null): UseTerminalReturn {
     onConnect,
     onScrollback,
     reconnect,
+    onSessionInvalid,
   };
 }

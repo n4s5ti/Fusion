@@ -203,10 +203,11 @@ export function TerminalModal({ isOpen, onClose, initialCommand }: TerminalModal
     updateTabTitle,
     restartActiveTab,
     retryBootstrap,
+    replaceActiveTabSession,
   } = useTerminalSessions();
 
   // Get the WebSocket connection for the active session
-  const { connectionStatus, sendInput, resize, onData, onConnect, onExit, onScrollback, reconnect } = 
+  const { connectionStatus, sendInput, resize, onData, onConnect, onExit, onScrollback, reconnect, onSessionInvalid } = 
     useTerminal(activeTab?.sessionId ?? null);
 
   // Keep a ref to resize so the viewport-change effect can call it
@@ -503,6 +504,39 @@ export function TerminalModal({ isOpen, onClose, initialCommand }: TerminalModal
       }, 100);
     }
   }, [connectionStatus]);
+
+  /**
+   * Auto-recover when the server reports the session is invalid (code 4004).
+   *
+   * Without this handler the user sees "Disconnected" with a reconnect button
+   * that retries the same stale session forever — the only fix was a full page
+   * reload. Now we silently create a fresh session on the active tab and let
+   * the normal connect effect (useTerminal's sessionId dep) open a new
+   * WebSocket to the replacement session.
+   */
+  useEffect(() => {
+    const unsub = onSessionInvalid(() => {
+      // Clear terminal display for the fresh session
+      xtermRef.current?.clear();
+      setExitCode(null);
+      hasInitialCommandRun.current = false;
+
+      // Dispose current xterm so the init effect re-runs with the new session
+      if (xtermRef.current) {
+        xtermRef.current.dispose();
+        xtermRef.current = null;
+      }
+      fitAddonRef.current = null;
+      xtermInitializedRef.current = false;
+      setXtermReady(false);
+      setXtermInitError(null);
+
+      replaceActiveTabSession().catch((err) => {
+        console.error("Failed to replace invalid terminal session:", err);
+      });
+    });
+    return unsub;
+  }, [onSessionInvalid, replaceActiveTabSession]);
 
   // Handle overlay click to close
   const handleOverlayClick = useCallback(

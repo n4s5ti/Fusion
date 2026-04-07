@@ -181,6 +181,16 @@ Saved scripts (managed via the Scripts modal or QuickScripts dropdown in the hea
 - On successful recovery, the terminal initializes normally; the error state clears automatically
 - Existing sessions (tabs) that are already connected are not affected by bootstrap errors on new tabs
 
+**First-Open Reliability**:
+- The terminal is usable on first modal open without requiring a page reload
+- Stale sessions from a previous browser session are detected during bootstrap via server-side validation (`listTerminalSessions`) and automatically filtered out; a fresh session is created when all stored sessions are stale
+- When the WebSocket reports that the current session is invalid (close code 4004 — session-not-found), the terminal auto-recovers without user intervention:
+  1. xterm is disposed and state is cleared
+  2. A new server session is created for the active tab via `replaceActiveTabSession`
+  3. The WebSocket reconnects to the new session automatically (triggered by `sessionId` change)
+- If session creation fails during recovery, the bootstrap error UI is shown with a retry button
+- This recovery path also handles server restarts, session garbage collection, and any scenario where the backend no longer recognizes the client's stored session ID
+
 ### Git Manager
 The Git Manager provides comprehensive repository visualization and management directly from the web UI. Access it via the Git Branch icon button in the header (desktop: inline with other utility buttons, mobile: in the overflow menu).
 - **Safety Validation**: Dangerous commands (rm -rf /, etc.) are automatically blocked

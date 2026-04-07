@@ -83,6 +83,7 @@ const defaultSessionState = {
   updateTabTitle: vi.fn(),
   restartActiveTab: vi.fn(),
   retryBootstrap: vi.fn(),
+  replaceActiveTabSession: vi.fn().mockResolvedValue(undefined),
 };
 
 describe("TerminalModal", () => {
@@ -100,6 +101,7 @@ describe("TerminalModal", () => {
     onConnect: vi.fn(() => vi.fn()),
     onScrollback: vi.fn(() => vi.fn()),
     reconnect: mockReconnect,
+    onSessionInvalid: vi.fn(() => vi.fn()),
     ...overrides,
   });
 
@@ -555,6 +557,7 @@ describe("TerminalModal", () => {
       onConnect: vi.fn(() => vi.fn()),
       onScrollback: vi.fn(() => vi.fn()),
       reconnect: mockReconnect,
+      onSessionInvalid: vi.fn(() => vi.fn()),
     });
 
     render(<TerminalModal isOpen={true} onClose={mockOnClose} />);
@@ -839,6 +842,149 @@ describe("TerminalModal", () => {
       });
     });
   });
+
+  // --- Invalid session auto-recovery ---
+  describe("invalid session auto-recovery (FN-1021)", () => {
+    it("calls replaceActiveTabSession when WebSocket reports session invalid (code 4004)", async () => {
+      const mockReplaceActiveTabSession = vi.fn().mockResolvedValue(undefined);
+      let capturedSessionInvalidCb: (() => void) | null = null;
+
+      mockUseTerminalSessions.mockReturnValue({
+        ...defaultSessionState,
+        replaceActiveTabSession: mockReplaceActiveTabSession,
+      });
+
+      mockUseTerminal.mockReturnValue(
+        createMockTerminalState({
+          connectionStatus: "disconnected",
+          onSessionInvalid: vi.fn((cb: () => void) => {
+            capturedSessionInvalidCb = cb;
+            return vi.fn();
+          }),
+        })
+      );
+
+      render(<TerminalModal isOpen={true} onClose={mockOnClose} />);
+
+      await waitFor(() => {
+        expect(capturedSessionInvalidCb).not.toBeNull();
+      });
+
+      // Simulate the WebSocket reporting session invalid
+      act(() => {
+        capturedSessionInvalidCb!();
+      });
+
+      expect(mockReplaceActiveTabSession).toHaveBeenCalledTimes(1);
+    });
+
+    it("clears xterm state when session is invalid", async () => {
+      const mockReplaceActiveTabSession = vi.fn().mockResolvedValue(undefined);
+      let capturedSessionInvalidCb: (() => void) | null = null;
+
+      mockUseTerminalSessions.mockReturnValue({
+        ...defaultSessionState,
+        replaceActiveTabSession: mockReplaceActiveTabSession,
+      });
+
+      mockUseTerminal.mockReturnValue(
+        createMockTerminalState({
+          connectionStatus: "connected",
+          onSessionInvalid: vi.fn((cb: () => void) => {
+            capturedSessionInvalidCb = cb;
+            return vi.fn();
+          }),
+        })
+      );
+
+      render(<TerminalModal isOpen={true} onClose={mockOnClose} />);
+
+      // Wait for xterm to initialize
+      await waitFor(() => {
+        expect(mockTerminalInstance.open).toHaveBeenCalled();
+      });
+
+      // Simulate session invalidation
+      act(() => {
+        capturedSessionInvalidCb!();
+      });
+
+      // xterm should be disposed and cleared for fresh init
+      expect(mockTerminalInstance.dispose).toHaveBeenCalled();
+      expect(mockTerminalInstance.clear).toHaveBeenCalled();
+    });
+
+    it("terminal is usable after session recovery without page reload", async () => {
+      const mockReplaceActiveTabSession = vi.fn().mockResolvedValue(undefined);
+      let capturedSessionInvalidCb: (() => void) | null = null;
+
+      // Start with a stale session that will be invalidated
+      const staleTab = {
+        id: "tab-stale",
+        sessionId: "stale-session-999",
+        title: "bash",
+        isActive: true,
+        createdAt: Date.now(),
+      };
+
+      mockUseTerminalSessions.mockReturnValue({
+        ...defaultSessionState,
+        tabs: [staleTab],
+        activeTab: staleTab,
+        replaceActiveTabSession: mockReplaceActiveTabSession,
+      });
+
+      mockUseTerminal.mockReturnValue(
+        createMockTerminalState({
+          connectionStatus: "disconnected",
+          onSessionInvalid: vi.fn((cb: () => void) => {
+            capturedSessionInvalidCb = cb;
+            return vi.fn();
+          }),
+        })
+      );
+
+      render(<TerminalModal isOpen={true} onClose={mockOnClose} />);
+
+      await waitFor(() => {
+        expect(screen.getByTestId("terminal-modal")).toBeTruthy();
+      });
+
+      // Trigger session invalidation
+      act(() => {
+        capturedSessionInvalidCb!();
+      });
+
+      // replaceActiveTabSession should be called — this creates a new session
+      await waitFor(() => {
+        expect(mockReplaceActiveTabSession).toHaveBeenCalledTimes(1);
+      });
+
+      // Simulate the session hook returning a new session after replacement
+      const freshTab = {
+        id: "tab-stale",
+        sessionId: "fresh-session-001",
+        title: "bash",
+        isActive: true,
+        createdAt: Date.now(),
+      };
+
+      mockUseTerminalSessions.mockReturnValue({
+        ...defaultSessionState,
+        tabs: [freshTab],
+        activeTab: freshTab,
+        replaceActiveTabSession: mockReplaceActiveTabSession,
+      });
+
+      // After replacement, useTerminal should be called with the new session ID
+      // This happens automatically because activeTab.sessionId changed
+      // The modal should still be open and usable
+      expect(screen.getByTestId("terminal-modal")).toBeTruthy();
+
+      // No bootstrap error should be shown (we recovered)
+      expect(screen.queryByTestId("terminal-bootstrap-error")).toBeNull();
+    });
+  });
 });
 
 // --- Mobile layout regression tests ---
@@ -867,6 +1013,7 @@ describe("TerminalModal — mobile layout contract", () => {
     onConnect: vi.fn(() => vi.fn()),
     onScrollback: vi.fn(() => vi.fn()),
     reconnect: mockReconnect,
+    onSessionInvalid: vi.fn(() => vi.fn()),
     ...overrides,
   });
 
@@ -1132,6 +1279,7 @@ describe("TerminalModal — new tab while modal open", () => {
     onConnect: vi.fn(() => vi.fn()),
     onScrollback: vi.fn(() => vi.fn()),
     reconnect: mockReconnect,
+    onSessionInvalid: vi.fn(() => vi.fn()),
     ...overrides,
   });
 
@@ -1446,6 +1594,7 @@ describe("TerminalModal — virtual keyboard overlap handling", () => {
     onConnect: vi.fn(() => vi.fn()),
     onScrollback: vi.fn(() => vi.fn()),
     reconnect: mockReconnect,
+    onSessionInvalid: vi.fn(() => vi.fn()),
     ...overrides,
   });
 
@@ -1466,6 +1615,7 @@ describe("TerminalModal — virtual keyboard overlap handling", () => {
     setActiveTab: vi.fn(),
     updateTabTitle: vi.fn(),
     restartActiveTab: vi.fn(),
+    replaceActiveTabSession: vi.fn().mockResolvedValue(undefined),
   };
 
   let savedVisualViewport: typeof window.visualViewport;
@@ -1964,6 +2114,7 @@ describe("TerminalModal — close and reopen scrollback replay", () => {
     onConnect: vi.fn(() => vi.fn()),
     onScrollback: vi.fn(() => vi.fn()),
     reconnect: mockReconnect,
+    onSessionInvalid: vi.fn(() => vi.fn()),
     ...overrides,
   });
 
@@ -1986,6 +2137,7 @@ describe("TerminalModal — close and reopen scrollback replay", () => {
     updateTabTitle: vi.fn(),
     restartActiveTab: vi.fn(),
     retryBootstrap: vi.fn(),
+    replaceActiveTabSession: vi.fn().mockResolvedValue(undefined),
   };
 
   beforeEach(() => {
@@ -2169,6 +2321,7 @@ describe("TerminalModal — FN-872 real-device keyboard overlap refinement", () 
     onConnect: vi.fn(() => vi.fn()),
     onScrollback: vi.fn(() => vi.fn()),
     reconnect: mockReconnect,
+    onSessionInvalid: vi.fn(() => vi.fn()),
     ...overrides,
   });
 
@@ -2191,6 +2344,7 @@ describe("TerminalModal — FN-872 real-device keyboard overlap refinement", () 
     updateTabTitle: vi.fn(),
     restartActiveTab: vi.fn(),
     retryBootstrap: vi.fn(),
+    replaceActiveTabSession: vi.fn().mockResolvedValue(undefined),
   };
 
   let savedVisualViewport: typeof window.visualViewport;

@@ -50,6 +50,14 @@ interface UseTerminalSessionsReturn {
   restartActiveTab: () => Promise<void>;
   /** Retry bootstrap after a creation failure. Clears error and re-attempts auto-create. */
   retryBootstrap: () => void;
+  /**
+   * Replace the active tab's session with a fresh server session.
+   * Called when the WebSocket reports the current session is invalid (code 4004).
+   * Unlike restartActiveTab, this does NOT kill the old session (it's already
+   * gone from the server) and does NOT reset xterm state — it only swaps the
+   * sessionId so the next WebSocket connect targets the new session.
+   */
+  replaceActiveTabSession: () => Promise<void>;
 }
 
 /**
@@ -393,6 +401,46 @@ export function useTerminalSessions(): UseTerminalSessionsReturn {
     );
   }, [tabs]);
 
+  /**
+   * Replace the active tab's session with a fresh server session.
+   * Called when the WebSocket reports the current session is invalid (code 4004).
+   *
+   * Unlike restartActiveTab:
+   * - Does NOT kill the old session (it's already gone from the server).
+   * - Does NOT clear xterm or reset exit state — TerminalModal handles that.
+   * - Only swaps the sessionId so useTerminal reconnects to the new session.
+   *
+   * If session creation fails, the bootstrap error is set so the user can
+   * retry via the error UI.
+   */
+  const replaceActiveTabSession = useCallback(async (): Promise<void> => {
+    // Read the active tab directly from the derived value.
+    // Use a local snapshot since the async createTerminalSession may
+    // cause re-renders that change tabs state.
+    const currentActiveTab = tabs.find((t) => t.isActive);
+    if (!currentActiveTab) return;
+
+    try {
+      const session = await createTerminalSession();
+
+      setTabs((currentTabs) =>
+        currentTabs.map((tab) =>
+          tab.id === currentActiveTab.id
+            ? { ...tab, sessionId: session.sessionId }
+            : tab
+        )
+      );
+      setBootstrapError(null);
+    } catch (err) {
+      if (!isRelativeUrlFetchError(err)) {
+        console.error(err);
+      }
+      const message =
+        err instanceof Error ? err.message : typeof err === "string" ? err : "Failed to create terminal session";
+      setBootstrapError(message);
+    }
+  }, [tabs]);
+
   // Derive active tab
   const activeTab = tabs.find((tab) => tab.isActive) ?? null;
 
@@ -420,5 +468,6 @@ export function useTerminalSessions(): UseTerminalSessionsReturn {
     updateTabTitle,
     restartActiveTab,
     retryBootstrap,
+    replaceActiveTabSession,
   };
 }

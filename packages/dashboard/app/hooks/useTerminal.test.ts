@@ -186,6 +186,90 @@ describe("useTerminal", () => {
     expect(result.current.connectionStatus).toBe("disconnected");
   });
 
+  describe("onSessionInvalid callback", () => {
+    it("fires onSessionInvalid callbacks when WebSocket closes with code 4004", () => {
+      const { result } = renderHook(() => useTerminal("test-session-123"));
+      const onSessionInvalid = vi.fn();
+
+      act(() => {
+        result.current.onSessionInvalid(onSessionInvalid);
+      });
+
+      act(() => {
+        MockWebSocket.instances[0].emitClose(4004);
+      });
+
+      expect(onSessionInvalid).toHaveBeenCalledTimes(1);
+    });
+
+    it("does NOT fire onSessionInvalid for close code 4000", () => {
+      const { result } = renderHook(() => useTerminal("test-session-123"));
+      const onSessionInvalid = vi.fn();
+
+      act(() => {
+        result.current.onSessionInvalid(onSessionInvalid);
+      });
+
+      act(() => {
+        MockWebSocket.instances[0].emitClose(4000);
+      });
+
+      expect(onSessionInvalid).not.toHaveBeenCalled();
+    });
+
+    it("does NOT fire onSessionInvalid for normal close codes", () => {
+      const { result } = renderHook(() => useTerminal("test-session-123"));
+      const onSessionInvalid = vi.fn();
+
+      act(() => {
+        result.current.onSessionInvalid(onSessionInvalid);
+      });
+
+      act(() => {
+        MockWebSocket.instances[0].emitClose(1000);
+      });
+
+      expect(onSessionInvalid).not.toHaveBeenCalled();
+    });
+
+    it("unsubscribes correctly", () => {
+      const { result } = renderHook(() => useTerminal("test-session-123"));
+      const onSessionInvalid = vi.fn();
+
+      const unsub = result.current.onSessionInvalid(onSessionInvalid);
+
+      // Unsubscribe
+      act(() => {
+        unsub();
+      });
+
+      act(() => {
+        MockWebSocket.instances[0].emitClose(4004);
+      });
+
+      // Should NOT have been called after unsubscribe
+      expect(onSessionInvalid).not.toHaveBeenCalled();
+    });
+
+    it("fires for multiple subscribers", () => {
+      const { result } = renderHook(() => useTerminal("test-session-123"));
+      const cb1 = vi.fn();
+      const cb2 = vi.fn();
+
+      act(() => {
+        result.current.onSessionInvalid(cb1);
+        result.current.onSessionInvalid(cb2);
+      });
+
+      act(() => {
+        MockWebSocket.instances[0].emitClose(4004);
+      });
+
+      expect(cb1).toHaveBeenCalledTimes(1);
+      expect(cb2).toHaveBeenCalledTimes(1);
+    });
+  });
+
   describe("early message buffering", () => {
     it("replays buffered scrollback to late subscribers", () => {
       const { result } = renderHook(() => useTerminal("test-session-123"));
