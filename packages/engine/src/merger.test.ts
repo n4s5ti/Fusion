@@ -93,6 +93,7 @@ function setupHappyPathExecSync() {
   mockedExecSync.mockImplementation((cmd: any) => {
     const cmdStr = String(cmd);
     if (cmdStr.includes("rev-parse --verify")) return Buffer.from("abc123");
+    if (cmdStr === "git rev-parse HEAD" || cmdStr.startsWith("git rev-parse HEAD ")) return "mergedcommit123";
     if (cmdStr.includes("git log")) return "- feat: something" as any;
     if (cmdStr.includes("merge-base")) return Buffer.from("abc123");
     if (cmdStr.includes("git diff") && cmdStr.includes("--stat")) return "1 file changed" as any;
@@ -101,6 +102,7 @@ function setupHappyPathExecSync() {
     if (cmdStr.includes("diff --cached --quiet")) return "1" as any;
     // Post-agent check: "did agent commit?" → "0" = yes
     if (cmdStr.includes("diff --cached")) return "0" as any;
+    if (cmdStr.includes("show --shortstat")) return "3 files changed, 10 insertions(+), 2 deletions(-)" as any;
     if (cmdStr.includes("branch -d") || cmdStr.includes("branch -D")) return Buffer.from("");
     if (cmdStr.includes("worktree remove")) return Buffer.from("");
     return Buffer.from("");
@@ -2383,5 +2385,191 @@ describe("aiMergeTask — post-merge workflow steps", () => {
 
     expect(result.merged).toBe(true);
     expect(store.moveTask).toHaveBeenCalledWith("FN-050", "done");
+  });
+});
+
+// ── Merge Details Collection Tests ─────────────────────────────────────
+
+describe("aiMergeTask — merge details collection", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockedExistsSync.mockReturnValue(true);
+
+    mockedCreateHaiAgent.mockResolvedValue({
+      session: {
+        prompt: vi.fn().mockResolvedValue(undefined),
+        dispose: vi.fn(),
+      },
+    } as any);
+  });
+
+  it("stores mergeDetails with commitSha and stats after successful merge", async () => {
+    const store = createMockStore(
+      { id: "FN-050", worktree: "/tmp/root/.worktrees/KB-050" },
+      [{ id: "FN-050", worktree: "/tmp/root/.worktrees/KB-050", column: "in-review" } as Task],
+    );
+
+    mockedExecSync.mockImplementation((cmd: any) => {
+      const cmdStr = String(cmd);
+      if (cmdStr.includes("rev-parse --verify")) return Buffer.from("abc123");
+      if (cmdStr === "git rev-parse HEAD" || cmdStr.startsWith("git rev-parse HEAD "))
+        return "mergedcommit123456789"; // encoding: utf-8 → string
+      if (cmdStr.includes("git log")) return "- feat: something";
+      if (cmdStr.includes("merge-base")) return Buffer.from("abc123");
+      if (cmdStr.includes("--stat")) return "1 file changed";
+      if (cmdStr.includes("merge --squash")) return Buffer.from("");
+      if (cmdStr.includes("diff --name-only --diff-filter=U")) return "";
+      if (cmdStr.includes("diff --cached --quiet")) return "1";
+      if (cmdStr.includes("git commit")) return Buffer.from("");
+      if (cmdStr.includes("show --shortstat"))
+        return "3 files changed, 10 insertions(+), 2 deletions(-)";
+      if (cmdStr.includes("branch -d") || cmdStr.includes("branch -D")) return Buffer.from("");
+      if (cmdStr.includes("worktree remove")) return Buffer.from("");
+      return Buffer.from("");
+    });
+
+    const result = await aiMergeTask(store, "/tmp/root", "FN-050");
+
+    expect(result.merged).toBe(true);
+
+    // Find the updateTask call that set mergeDetails
+    const updateCalls = (store.updateTask as ReturnType<typeof vi.fn>).mock.calls;
+    const mergeDetailsCall = updateCalls.find(
+      (call: any[]) => call[1]?.mergeDetails !== undefined,
+    );
+    expect(mergeDetailsCall).toBeDefined();
+
+    const mergeDetails = mergeDetailsCall![1].mergeDetails;
+    expect(mergeDetails.commitSha).toBe("mergedcommit123456789");
+    expect(mergeDetails.filesChanged).toBe(3);
+    expect(mergeDetails.insertions).toBe(10);
+    expect(mergeDetails.deletions).toBe(2);
+    expect(mergeDetails.mergeCommitMessage).toBe("- feat: something");
+    expect(mergeDetails.mergedAt).toBeDefined();
+    expect(mergeDetails.mergeConfirmed).toBe(true);
+    expect(mergeDetails.resolutionStrategy).toBe("ai");
+    expect(mergeDetails.resolutionMethod).toBe("ai");
+    expect(mergeDetails.attemptsMade).toBe(1);
+  });
+
+  it("stores partial mergeDetails when branch is not found", async () => {
+    const store = createMockStore(
+      { id: "FN-050", worktree: "/tmp/root/.worktrees/KB-050" },
+      [{ id: "FN-050", worktree: "/tmp/root/.worktrees/KB-050", column: "in-review" } as Task],
+    );
+
+    mockedExecSync.mockImplementation((cmd: any) => {
+      const cmdStr = String(cmd);
+      // Branch verification fails → branch not found
+      if (cmdStr.includes("rev-parse --verify")) throw new Error("not found");
+      // But rev-parse HEAD still works → can capture commitSha (encoding: utf-8 → string)
+      if (cmdStr === "git rev-parse HEAD" || cmdStr.startsWith("git rev-parse HEAD "))
+        return "existingheadsha999";
+      return Buffer.from("");
+    });
+
+    const result = await aiMergeTask(store, "/tmp/root", "FN-050");
+
+    expect(result.merged).toBe(false);
+    expect(result.error).toContain("not found");
+
+    // Find the updateTask call that set mergeDetails
+    const updateCalls = (store.updateTask as ReturnType<typeof vi.fn>).mock.calls;
+    const mergeDetailsCall = updateCalls.find(
+      (call: any[]) => call[1]?.mergeDetails !== undefined,
+    );
+    expect(mergeDetailsCall).toBeDefined();
+
+    const mergeDetails = mergeDetailsCall![1].mergeDetails;
+    expect(mergeDetails.commitSha).toBe("existingheadsha999");
+    expect(mergeDetails.mergedAt).toBeDefined();
+    expect(mergeDetails.mergeConfirmed).toBe(false);
+  });
+
+  it("completes merge even when git commands fail during merge details collection", async () => {
+    const store = createMockStore(
+      { id: "FN-050", worktree: "/tmp/root/.worktrees/KB-050" },
+      [{ id: "FN-050", worktree: "/tmp/root/.worktrees/KB-050", column: "in-review" } as Task],
+    );
+
+    let revParseHeadCalled = false;
+    mockedExecSync.mockImplementation((cmd: any) => {
+      const cmdStr = String(cmd);
+      if (cmdStr.includes("rev-parse --verify")) return Buffer.from("abc123");
+      if (cmdStr === "git rev-parse HEAD" || cmdStr.startsWith("git rev-parse HEAD ")) {
+        revParseHeadCalled = true;
+        throw new Error("git rev-parse HEAD failed");
+      }
+      if (cmdStr.includes("git log")) return "- feat: something";
+      if (cmdStr.includes("merge-base")) return Buffer.from("abc123");
+      if (cmdStr.includes("--stat")) return "1 file changed";
+      if (cmdStr.includes("merge --squash")) return Buffer.from("");
+      if (cmdStr.includes("diff --name-only --diff-filter=U")) return "";
+      if (cmdStr.includes("diff --cached --quiet")) return "1";
+      if (cmdStr.includes("git commit")) return Buffer.from("");
+      if (cmdStr.includes("branch -d") || cmdStr.includes("branch -D")) return Buffer.from("");
+      if (cmdStr.includes("worktree remove")) return Buffer.from("");
+      return Buffer.from("");
+    });
+
+    const result = await aiMergeTask(store, "/tmp/root", "FN-050");
+
+    // Merge should still succeed even though merge details collection failed
+    expect(result.merged).toBe(true);
+    expect(revParseHeadCalled).toBe(true);
+
+    // No mergeDetails should have been stored
+    const updateCalls = (store.updateTask as ReturnType<typeof vi.fn>).mock.calls;
+    const mergeDetailsCall = updateCalls.find(
+      (call: any[]) => call[1]?.mergeDetails !== undefined,
+    );
+    expect(mergeDetailsCall).toBeUndefined();
+
+    // Task should still be moved to done
+    expect(store.moveTask).toHaveBeenCalledWith("FN-050", "done");
+  });
+
+  it("handles missing shortstat gracefully when show --shortstat fails", async () => {
+    const store = createMockStore(
+      { id: "FN-050", worktree: "/tmp/root/.worktrees/KB-050" },
+      [{ id: "FN-050", worktree: "/tmp/root/.worktrees/KB-050", column: "in-review" } as Task],
+    );
+
+    mockedExecSync.mockImplementation((cmd: any) => {
+      const cmdStr = String(cmd);
+      if (cmdStr.includes("rev-parse --verify")) return Buffer.from("abc123");
+      if (cmdStr === "git rev-parse HEAD" || cmdStr.startsWith("git rev-parse HEAD "))
+        return "mergedcommit123"; // encoding: utf-8 → string
+      if (cmdStr.includes("git log")) return "- feat: something";
+      if (cmdStr.includes("merge-base")) return Buffer.from("abc123");
+      if (cmdStr.includes("--stat")) return "1 file changed";
+      if (cmdStr.includes("merge --squash")) return Buffer.from("");
+      if (cmdStr.includes("diff --name-only --diff-filter=U")) return "";
+      if (cmdStr.includes("diff --cached --quiet")) return "1";
+      if (cmdStr.includes("git commit")) return Buffer.from("");
+      // show --shortstat fails
+      if (cmdStr.includes("show --shortstat")) throw new Error("show failed");
+      if (cmdStr.includes("branch -d") || cmdStr.includes("branch -D")) return Buffer.from("");
+      if (cmdStr.includes("worktree remove")) return Buffer.from("");
+      return Buffer.from("");
+    });
+
+    const result = await aiMergeTask(store, "/tmp/root", "FN-050");
+
+    expect(result.merged).toBe(true);
+
+    // mergeDetails should still be stored with commitSha but without stats
+    const updateCalls = (store.updateTask as ReturnType<typeof vi.fn>).mock.calls;
+    const mergeDetailsCall = updateCalls.find(
+      (call: any[]) => call[1]?.mergeDetails !== undefined,
+    );
+    expect(mergeDetailsCall).toBeDefined();
+
+    const mergeDetails = mergeDetailsCall![1].mergeDetails;
+    expect(mergeDetails.commitSha).toBe("mergedcommit123");
+    // Stats should be undefined since show --shortstat failed (inner catch sets them as undefined)
+    expect(mergeDetails.filesChanged).toBeUndefined();
+    expect(mergeDetails.insertions).toBeUndefined();
+    expect(mergeDetails.deletions).toBeUndefined();
   });
 });

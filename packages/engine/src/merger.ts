@@ -1,6 +1,6 @@
 import { execSync } from "node:child_process";
 import { existsSync } from "node:fs";
-import { getTaskMergeBlocker, type TaskStore, type MergeResult, type WorkflowStep, type WorkflowStepResult, type Settings } from "@fusion/core";
+import { getTaskMergeBlocker, type TaskStore, type MergeResult, type MergeDetails, type WorkflowStep, type WorkflowStepResult, type Settings } from "@fusion/core";
 import { createKbAgent, describeModel, promptWithFallback } from "./pi.js";
 import type { WorktreePool } from "./worktree-pool.js";
 import { AgentLogger } from "./agent-logger.js";
@@ -618,6 +618,26 @@ export async function aiMergeTask(
     });
   } catch {
     result.error = `Branch '${branch}' not found — moving to done without merge`;
+    // Best-effort: try to capture current HEAD commitSha even though branch is missing
+    try {
+      const commitSha = execSync("git rev-parse HEAD", {
+        cwd: rootDir,
+        stdio: "pipe",
+        encoding: "utf-8",
+      }).trim() || undefined;
+      if (commitSha) {
+        await store.updateTask(taskId, {
+          mergeDetails: {
+            commitSha,
+            mergedAt: new Date().toISOString(),
+            mergeConfirmed: false,
+          },
+        });
+        mergerLog.log(`${taskId}: branch not found but captured commitSha ${commitSha.slice(0, 8)}`);
+      }
+    } catch {
+      // No commit SHA available — task will show summary fallback
+    }
     await completeTask(store, taskId, result);
     return result;
   }
@@ -790,6 +810,53 @@ export async function aiMergeTask(
       execSync("git reset --merge", { cwd: rootDir, stdio: "pipe" });
     } catch { /* */ }
     throw new Error(`AI merge failed for ${taskId}: all 3 attempts exhausted`);
+  }
+
+  // 5b. Collect merge details and store on task
+  try {
+    const commitSha = execSync("git rev-parse HEAD", {
+      cwd: rootDir,
+      stdio: "pipe",
+      encoding: "utf-8",
+    }).trim() || undefined;
+
+    let filesChanged: number | undefined;
+    let insertions: number | undefined;
+    let deletions: number | undefined;
+
+    try {
+      const statsOutput = execSync("git show --shortstat --format= HEAD", {
+        cwd: rootDir,
+        stdio: "pipe",
+        encoding: "utf-8",
+      }).trim();
+      const normalized = statsOutput.replace(/\n/g, " ");
+      const filesMatch = normalized.match(/(\d+) files? changed/);
+      const insertionsMatch = normalized.match(/(\d+) insertions?\(\+\)/);
+      const deletionsMatch = normalized.match(/(\d+) deletions?\(-\)/);
+      filesChanged = filesMatch ? Number.parseInt(filesMatch[1], 10) : 0;
+      insertions = insertionsMatch ? Number.parseInt(insertionsMatch[1], 10) : 0;
+      deletions = deletionsMatch ? Number.parseInt(deletionsMatch[1], 10) : 0;
+    } catch { /* non-fatal */ }
+
+    const mergeDetails: MergeDetails = {
+      commitSha,
+      filesChanged,
+      insertions,
+      deletions,
+      mergeCommitMessage: commitLog,
+      mergedAt: new Date().toISOString(),
+      mergeConfirmed: true,
+      resolutionStrategy: result.resolutionStrategy,
+      resolutionMethod: result.resolutionMethod,
+      attemptsMade: result.attemptsMade,
+      autoResolvedCount: result.autoResolvedCount,
+    };
+
+    await store.updateTask(taskId, { mergeDetails });
+    mergerLog.log(`${taskId}: merge details stored (commitSha: ${commitSha?.slice(0, 8)})`);
+  } catch (err: any) {
+    mergerLog.warn(`${taskId}: failed to collect/store merge details: ${err.message}`);
   }
 
   // 6. Delete branch

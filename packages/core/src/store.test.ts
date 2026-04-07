@@ -5648,4 +5648,62 @@ Task with acceptance criteria
       expect(branchCommands).toHaveLength(0);
     });
   });
+
+  describe("mergeDetails via updateTask", () => {
+    it("can set mergeDetails on a task", async () => {
+      const task = await store.createTask({ description: "test merge details" });
+      await store.moveTask(task.id, "todo");
+      await store.moveTask(task.id, "in-progress");
+      await store.moveTask(task.id, "in-review");
+      await store.moveTask(task.id, "done");
+
+      const mergeDetails = {
+        commitSha: "abc123",
+        filesChanged: 5,
+        insertions: 10,
+        deletions: 3,
+        mergeCommitMessage: "Merge task",
+        mergedAt: new Date().toISOString(),
+        mergeConfirmed: true,
+      };
+
+      const updated = await store.updateTask(task.id, { mergeDetails });
+      expect(updated.mergeDetails).toEqual(mergeDetails);
+
+      // Verify it persists
+      const reloaded = await store.getTask(task.id);
+      expect(reloaded.mergeDetails).toEqual(mergeDetails);
+    });
+
+    it("can clear mergeDetails by passing null", async () => {
+      const task = await store.createTask({ description: "test merge details clear" });
+      await store.moveTask(task.id, "todo");
+      await store.moveTask(task.id, "in-progress");
+      await store.moveTask(task.id, "in-review");
+      await store.moveTask(task.id, "done");
+
+      await store.updateTask(task.id, {
+        mergeDetails: { commitSha: "abc123", mergeConfirmed: true },
+      });
+
+      const cleared = await store.updateTask(task.id, { mergeDetails: null });
+      expect(cleared.mergeDetails).toBeUndefined();
+    });
+
+    it("does not modify mergeDetails when not included in updates", async () => {
+      const task = await store.createTask({ description: "test merge details no-op" });
+      await store.moveTask(task.id, "todo");
+      await store.moveTask(task.id, "in-progress");
+      await store.moveTask(task.id, "in-review");
+      await store.moveTask(task.id, "done");
+
+      await store.updateTask(task.id, {
+        mergeDetails: { commitSha: "def456", mergeConfirmed: true },
+      });
+
+      // Update something unrelated
+      const updated = await store.updateTask(task.id, { summary: "some summary" });
+      expect(updated.mergeDetails).toEqual({ commitSha: "def456", mergeConfirmed: true });
+    });
+  });
 });
