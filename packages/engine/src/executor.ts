@@ -755,9 +755,23 @@ export class TaskExecutor {
           stuckTaskDetector: this.options.stuckTaskDetector,
           onStepStart: (stepIndex) => {
             this.options.stuckTaskDetector?.recordProgress(task.id);
+            try {
+              this.store.updateStep(task.id, stepIndex, "in-progress").catch((err) => {
+                executorLog.warn(`${task.id}: failed to update step ${stepIndex} status to in-progress: ${err}`);
+              });
+            } catch (err) {
+              executorLog.warn(`${task.id}: failed to update step ${stepIndex} status to in-progress: ${err}`);
+            }
           },
           onStepComplete: (stepIndex, result) => {
             executorLog.log(`${task.id}: step ${stepIndex} ${result.success ? "succeeded" : "failed"} (${result.retries} retries)`);
+            try {
+              this.store.updateStep(task.id, stepIndex, result.success ? "done" : "skipped").catch((err) => {
+                executorLog.warn(`${task.id}: failed to update step ${stepIndex} status: ${err}`);
+              });
+            } catch (err) {
+              executorLog.warn(`${task.id}: failed to update step ${stepIndex} status: ${err}`);
+            }
           },
         });
         this.activeStepExecutors.set(task.id, stepExecutor);

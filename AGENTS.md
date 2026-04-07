@@ -960,6 +960,51 @@ Timeout in milliseconds for detecting stuck tasks. When a task's agent session s
 - The timeout is read from settings on every poll cycle, so changes take effect immediately
 - When the timeout value is changed (e.g., reduced from 30 to 10 minutes), the system immediately checks for stuck tasks under the new timer rather than waiting for the next poll cycle
 
+### `runStepsInNewSessions` (default: `false`)
+
+When enabled, each task step runs in its own fresh agent session via `StepSessionExecutor` instead of a single monolithic session. This enables per-step error recovery with retry semantics and optional parallel execution for non-conflicting steps.
+
+**How it works:**
+- Each step gets its own agent session, providing isolation and independent retry logic
+- Failed steps can be retried without re-running previously completed steps
+- Step progress is tracked in the task store, updating step status to "in-progress" when starting and "done"/"skipped" on completion
+- The dashboard step progress bar reflects real-time status during execution
+
+**Configuration:**
+```json
+{
+  "settings": {
+    "runStepsInNewSessions": true,
+    "maxParallelSteps": 2
+  }
+}
+```
+
+**Notes:**
+- When disabled (default), all steps run in a single agent session (existing behavior)
+- Step status updates are best-effort and do not block execution if they fail
+
+### `maxParallelSteps` (default: `2`)
+
+Maximum number of steps to run in parallel when `runStepsInNewSessions` is enabled. Steps execute in isolated git worktrees to avoid conflicts.
+
+**Valid range:** 1–4
+
+**Configuration:**
+```json
+{
+  "settings": {
+    "runStepsInNewSessions": true,
+    "maxParallelSteps": 3
+  }
+}
+```
+
+**Notes:**
+- This setting has no effect when `runStepsInNewSessions` is false
+- Each parallel step requires its own worktree, so ensure `maxWorktrees` is sufficiently high
+- Setting to `1` runs steps sequentially (still in separate sessions)
+
 ### `worktreeNaming` (default: `"random"`)
 
 Controls how worktree directory names are generated when `recycleWorktrees` is NOT enabled. This setting only affects fresh worktrees (not pooled/recycled ones).

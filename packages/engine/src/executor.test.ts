@@ -8435,4 +8435,65 @@ describe("StepSessionExecutor integration", () => {
     // which should mark the task as failed with "Workflow step failed"
     expect(onError).toHaveBeenCalled();
   });
+
+  it("onStepStart callback updates step status to in-progress", async () => {
+    const store = createStepSessionStore();
+    store.updateStep.mockResolvedValue({} as any);
+
+    const executor = new TaskExecutor(store, "/tmp/test", {});
+    await executor.execute(createTaskWithSteps());
+
+    // Capture the StepSessionExecutor constructor options
+    expect(mockedStepSessionExecutor).toHaveBeenCalled();
+    const ctorOptions = mockedStepSessionExecutor.mock.calls[mockedStepSessionExecutor.mock.calls.length - 1][0];
+
+    // Invoke the onStepStart callback
+    ctorOptions.onStepStart!(0);
+
+    // Should update step status in store
+    expect(store.updateStep).toHaveBeenCalledWith("FN-200", 0, "in-progress");
+  });
+
+  it("onStepComplete callback updates step status to done on success", async () => {
+    const store = createStepSessionStore();
+    store.updateStep.mockResolvedValue({} as any);
+
+    const executor = new TaskExecutor(store, "/tmp/test", {});
+    await executor.execute(createTaskWithSteps());
+
+    const ctorOptions = mockedStepSessionExecutor.mock.calls[mockedStepSessionExecutor.mock.calls.length - 1][0];
+
+    ctorOptions.onStepComplete!(0, { stepIndex: 0, success: true, retries: 0 });
+
+    expect(store.updateStep).toHaveBeenCalledWith("FN-200", 0, "done");
+  });
+
+  it("onStepComplete callback updates step status to skipped on failure", async () => {
+    const store = createStepSessionStore();
+    store.updateStep.mockResolvedValue({} as any);
+
+    const executor = new TaskExecutor(store, "/tmp/test", {});
+    await executor.execute(createTaskWithSteps());
+
+    const ctorOptions = mockedStepSessionExecutor.mock.calls[mockedStepSessionExecutor.mock.calls.length - 1][0];
+
+    ctorOptions.onStepComplete!(1, { stepIndex: 1, success: false, retries: 3 });
+
+    expect(store.updateStep).toHaveBeenCalledWith("FN-200", 1, "skipped");
+  });
+
+  it("step status update errors do not block execution", async () => {
+    const store = createStepSessionStore();
+    store.updateStep.mockRejectedValue(new Error("DB error"));
+
+    const executor = new TaskExecutor(store, "/tmp/test", {});
+    // Should not throw even when updateStep rejects
+    await executor.execute(createTaskWithSteps());
+
+    const ctorOptions = mockedStepSessionExecutor.mock.calls[mockedStepSessionExecutor.mock.calls.length - 1][0];
+
+    // Invoking callbacks should not throw
+    expect(() => ctorOptions.onStepStart!(0)).not.toThrow();
+    expect(() => ctorOptions.onStepComplete!(0, { stepIndex: 0, success: true, retries: 0 })).not.toThrow();
+  });
 });

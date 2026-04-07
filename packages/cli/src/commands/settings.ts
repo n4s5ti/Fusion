@@ -13,6 +13,8 @@ export const VALID_SETTINGS = [
   "requirePlanApproval",
   "ntfyEnabled",
   "defaultModel",
+  "runStepsInNewSessions",
+  "maxParallelSteps",
 ] as const;
 
 const GLOBAL_ONLY_SETTINGS = ["ntfyEnabled", "ntfyTopic", "defaultModel"] as const;
@@ -24,6 +26,8 @@ const PROJECT_ONLY_SETTINGS = [
   "autoResolveConflicts",
   "smartConflictResolution",
   "requirePlanApproval",
+  "runStepsInNewSessions",
+  "maxParallelSteps",
 ] as const;
 
 type ValidSettingKey = (typeof VALID_SETTINGS)[number];
@@ -34,9 +38,10 @@ const BOOLEAN_SETTINGS: readonly string[] = [
   "smartConflictResolution",
   "requirePlanApproval",
   "ntfyEnabled",
+  "runStepsInNewSessions",
 ];
 
-const NUMBER_SETTINGS: readonly string[] = ["maxConcurrent", "maxWorktrees"];
+const NUMBER_SETTINGS: readonly string[] = ["maxConcurrent", "maxWorktrees", "maxParallelSteps"];
 
 const ENUM_SETTINGS: Record<string, readonly string[]> = {
   worktreeNaming: ["random", "task-id", "task-title"],
@@ -48,6 +53,7 @@ const STRING_SETTINGS: readonly string[] = ["taskPrefix", "ntfyTopic", "defaultM
 const NUMBER_RANGES: Record<string, { min: number; max: number }> = {
   maxConcurrent: { min: 1, max: 10 },
   maxWorktrees: { min: 1, max: 20 },
+  maxParallelSteps: { min: 1, max: 4 },
 };
 
 async function getGlobalSettingsStore(): Promise<GlobalSettingsStore> {
@@ -184,6 +190,10 @@ export async function runSettingsShow(projectName?: string): Promise<void> {
     {
       title: "Engine",
       keys: ["maxConcurrent", "maxWorktrees", "autoResolveConflicts", "smartConflictResolution"],
+    },
+    {
+      title: "Execution",
+      keys: ["runStepsInNewSessions", "maxParallelSteps"],
     },
     {
       title: "Worktrees",

@@ -139,4 +139,70 @@ describe("settings commands", () => {
     expect(errorSpy).toHaveBeenCalledWith('Error: Setting "maxConcurrent" is project-only. Use --project or run from a project directory.');
     expect(resolveProject).not.toHaveBeenCalled();
   });
+
+  it("runSettingsSet with project updates runStepsInNewSessions", async () => {
+    const updateSettings = vi.fn().mockResolvedValue(makeSettings({ runStepsInNewSessions: true }));
+    const getSettings = vi.fn().mockResolvedValue(makeSettings({ runStepsInNewSessions: true }));
+    vi.mocked(resolveProject).mockResolvedValue({
+      projectId: "proj-1",
+      projectName: "demo-project",
+      projectPath: "/projects/demo",
+      isRegistered: true,
+      store: { updateSettings, getSettings } as any,
+    });
+
+    await runSettingsSet("runStepsInNewSessions", "true", "demo-project");
+
+    expect(updateSettings).toHaveBeenCalledWith({ runStepsInNewSessions: true });
+  });
+
+  it("runSettingsSet with project updates maxParallelSteps", async () => {
+    const updateSettings = vi.fn().mockResolvedValue(makeSettings({ maxParallelSteps: 3 }));
+    const getSettings = vi.fn().mockResolvedValue(makeSettings({ maxParallelSteps: 3 }));
+    vi.mocked(resolveProject).mockResolvedValue({
+      projectId: "proj-1",
+      projectName: "demo-project",
+      projectPath: "/projects/demo",
+      isRegistered: true,
+      store: { updateSettings, getSettings } as any,
+    });
+
+    await runSettingsSet("maxParallelSteps", "3", "demo-project");
+
+    expect(updateSettings).toHaveBeenCalledWith({ maxParallelSteps: 3 });
+  });
+
+  it("rejects maxParallelSteps values outside range", async () => {
+    vi.mocked(resolveProject).mockResolvedValue({
+      projectId: "proj-1",
+      projectName: "demo-project",
+      projectPath: "/projects/demo",
+      isRegistered: true,
+      store: { updateSettings: vi.fn(), getSettings: vi.fn() } as any,
+    });
+
+    await expect(runSettingsSet("maxParallelSteps", "5", "demo-project")).rejects.toThrow("process.exit:1");
+    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining("Value out of range for maxParallelSteps"));
+  });
+
+  it("runSettingsShow displays Execution section with step-session settings", async () => {
+    const getSettings = vi.fn().mockResolvedValue(makeSettings({
+      runStepsInNewSessions: true,
+      maxParallelSteps: 3,
+    }));
+    vi.mocked(resolveProject).mockResolvedValue({
+      projectId: "proj-1",
+      projectName: "demo-project",
+      projectPath: "/projects/demo",
+      isRegistered: true,
+      store: { getSettings } as any,
+    });
+
+    await runSettingsShow("demo-project");
+
+    const output = logSpy.mock.calls.map((args) => args.join(" ")).join("\n");
+    expect(output).toContain("Execution");
+    expect(output).toContain("Run Steps In New Sessions");
+    expect(output).toContain("Max Parallel Steps");
+  });
 });
