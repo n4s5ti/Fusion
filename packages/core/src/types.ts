@@ -1494,6 +1494,70 @@ export interface AgentPromptsConfig {
   roleAssignments?: Partial<Record<AgentCapability, string>>;
 }
 
+// ── Agent Permission Types ──────────────────────────────────────────────────
+
+/** Canonical permission identifiers for agent access control.
+ *  Each string represents a discrete capability that can be granted or denied. */
+export const AGENT_PERMISSIONS = [
+  "tasks:assign", // Assign tasks to agents
+  "tasks:create", // Create new tasks
+  "tasks:execute", // Execute/run tasks
+  "tasks:review", // Review task output (code, specs)
+  "tasks:merge", // Merge completed task branches
+  "tasks:delete", // Delete tasks
+  "tasks:archive", // Archive/unarchive tasks
+  "agents:create", // Create new agents
+  "agents:update", // Update agent configuration
+  "agents:delete", // Delete agents
+  "agents:view", // View agent details and logs
+  "settings:read", // Read project settings
+  "settings:update", // Modify project settings
+  "workflows:manage", // Create/edit/delete workflow steps
+  "missions:manage", // Create/edit/delete missions and slices
+  "automations:manage", // Create/edit/delete scheduled automations
+  "messages:send", // Send messages to agents/users
+  "messages:read", // Read mailbox messages
+] as const;
+
+/** A single canonical permission string. */
+export type AgentPermission = (typeof AGENT_PERMISSIONS)[number];
+
+/** Describes how an agent's task assignment capability was determined. */
+export type TaskAssignSource =
+  | "role_default" // Granted automatically by role (e.g., scheduler gets tasks:assign)
+  | "explicit_grant" // Explicitly granted via permissions field
+  | "denied"; // Not granted by any source
+
+/** Computed access state for an agent, derived from its role and permissions. */
+export interface AgentAccessState {
+  /** The agent ID this access state belongs to. */
+  agentId: string;
+  /** Whether this agent can assign tasks to other agents. */
+  canAssignTasks: boolean;
+  /** How the tasks:assign permission was determined. */
+  taskAssignSource: TaskAssignSource;
+  /** Whether this agent can create new agents. */
+  canCreateAgents: boolean;
+  /** Whether this agent can execute tasks. */
+  canExecuteTasks: boolean;
+  /** Whether this agent can review task output. */
+  canReviewTasks: boolean;
+  /** Whether this agent can merge task branches. */
+  canMergeTasks: boolean;
+  /** Whether this agent can delete agents. */
+  canDeleteAgents: boolean;
+  /** Whether this agent can manage missions. */
+  canManageMissions: boolean;
+  /** Whether this agent can send messages. */
+  canSendMessages: boolean;
+  /** Full set of resolved permissions (union of role defaults + explicit grants). */
+  resolvedPermissions: Set<AgentPermission>;
+  /** Permissions explicitly granted on this agent (from the permissions field). */
+  explicitPermissions: Set<AgentPermission>;
+  /** Permissions granted by role default (not explicitly set). */
+  roleDefaultPermissions: Set<AgentPermission>;
+}
+
 /** Agent record stored in the system */
 export interface Agent {
   /** Unique identifier (e.g., "agent-001") */

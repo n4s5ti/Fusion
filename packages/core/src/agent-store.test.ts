@@ -136,6 +136,45 @@ describe("AgentStore", () => {
     });
   });
 
+  // ── getAccessState ────────────────────────────────────────────────
+
+  describe("getAccessState", () => {
+    it("returns computed state for an executor agent", async () => {
+      const created = await store.createAgent({
+        name: "Executor",
+        role: "executor",
+      });
+
+      const state = await store.getAccessState(created.id);
+
+      expect(state).not.toBeNull();
+      expect(state?.agentId).toBe(created.id);
+      expect(state?.canExecuteTasks).toBe(true);
+      expect(state?.canAssignTasks).toBe(false);
+      expect(state?.taskAssignSource).toBe("denied");
+    });
+
+    it("returns null for non-existent agent", async () => {
+      const state = await store.getAccessState("agent-missing");
+      expect(state).toBeNull();
+    });
+
+    it("reflects explicit permissions when set", async () => {
+      const created = await store.createAgent({
+        name: "Explicit",
+        role: "executor",
+        permissions: { "tasks:assign": true },
+      });
+
+      const state = await store.getAccessState(created.id);
+
+      expect(state).not.toBeNull();
+      expect(state?.canAssignTasks).toBe(true);
+      expect(state?.taskAssignSource).toBe("explicit_grant");
+      expect(state?.explicitPermissions.has("tasks:assign")).toBe(true);
+    });
+  });
+
   // ── updateAgent ───────────────────────────────────────────────────
 
   describe("updateAgent", () => {

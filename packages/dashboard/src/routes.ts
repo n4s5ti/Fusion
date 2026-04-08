@@ -6937,6 +6937,15 @@ Output ONLY the prompt text (no markdown, no explanations).`;
     return true;
   }
 
+  function serializeAccessState(state: import("@fusion/core").AgentAccessState) {
+    return {
+      ...state,
+      resolvedPermissions: Array.from(state.resolvedPermissions),
+      explicitPermissions: Array.from(state.explicitPermissions),
+      roleDefaultPermissions: Array.from(state.roleDefaultPermissions),
+    };
+  }
+
   /**
    * POST /api/agents
    * Create a new agent.
@@ -7289,6 +7298,77 @@ Output ONLY the prompt text (no markdown, no explanations).`;
         res.status(404).json({ error: err.message });
       } else if (err.message?.includes("cannot be empty")) {
         res.status(400).json({ error: err.message });
+      } else {
+        res.status(500).json({ error: err.message });
+      }
+    }
+  });
+
+  /**
+   * GET /api/agents/:id/access
+   * Get computed access state for an agent.
+   */
+  router.get("/agents/:id/access", async (req, res) => {
+    try {
+      const scopedStore = await getScopedStore(req);
+      const { AgentStore, computeAccessState } = await import("@fusion/core");
+      const agentStore = new AgentStore({ rootDir: scopedStore.getFusionDir() });
+      await agentStore.init();
+
+      const agent = await agentStore.getAgent(req.params.id);
+      if (!agent) {
+        res.status(404).json({ error: "Agent not found" });
+        return;
+      }
+
+      const state = computeAccessState(agent);
+      res.json(serializeAccessState(state));
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  /**
+   * PATCH /api/agents/:id/permissions
+   * Update agent permission grants.
+   */
+  router.patch("/agents/:id/permissions", async (req, res) => {
+    try {
+      const { permissions } = req.body ?? {};
+
+      if (permissions === undefined || permissions === null || typeof permissions !== "object" || Array.isArray(permissions)) {
+        res.status(400).json({ error: "permissions must be an object" });
+        return;
+      }
+
+      const { AgentStore, isValidPermission } = await import("@fusion/core");
+
+      for (const [key, value] of Object.entries(permissions as Record<string, unknown>)) {
+        if (key.startsWith("budget:")) {
+          res.status(400).json({ error: "Budget permissions are not supported" });
+          return;
+        }
+        if (!isValidPermission(key)) {
+          res.status(400).json({ error: `Invalid permission: ${key}` });
+          return;
+        }
+        if (typeof value !== "boolean") {
+          res.status(400).json({ error: `Permission value for ${key} must be boolean` });
+          return;
+        }
+      }
+
+      const scopedStore = await getScopedStore(req);
+      const agentStore = new AgentStore({ rootDir: scopedStore.getFusionDir() });
+      await agentStore.init();
+
+      const agent = await agentStore.updateAgent(req.params.id, {
+        permissions: permissions as Record<string, boolean>,
+      });
+      res.json(agent);
+    } catch (err: any) {
+      if (err.message?.includes("not found")) {
+        res.status(404).json({ error: err.message });
       } else {
         res.status(500).json({ error: err.message });
       }

@@ -32,8 +32,10 @@ import type {
   AgentTaskSession,
   AgentConfigRevision,
   AgentConfigSnapshot,
+  AgentAccessState,
 } from "./types.js";
 import { AGENT_VALID_TRANSITIONS, agentToConfigSnapshot, diffConfigSnapshots } from "./types.js";
+import { computeAccessState } from "./agent-permissions.js";
 
 /** Events emitted by AgentStore */
 export interface AgentStoreEvents {
@@ -173,6 +175,20 @@ export class AgentStore extends EventEmitter {
       }
       throw err;
     }
+  }
+
+  /**
+   * Get computed access capabilities for an agent.
+   * @param agentId - The agent ID
+   * @returns Computed access state, or null if agent not found
+   */
+  async getAccessState(agentId: string): Promise<AgentAccessState | null> {
+    const agent = await this.getAgent(agentId);
+    if (!agent) {
+      return null;
+    }
+
+    return computeAccessState(agent);
   }
 
   /**
