@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { fetchModels, updateTask, updateGlobalSettings } from "../api";
 import type { ModelInfo } from "../api";
-import type { Task, TaskDetail } from "@fusion/core";
+import type { Settings, Task, TaskDetail } from "@fusion/core";
 import type { ToastType } from "../hooks/useToast";
 import { CustomModelDropdown } from "./CustomModelDropdown";
 import { ProviderIcon } from "./ProviderIcon";
@@ -10,6 +10,7 @@ interface ModelSelectorTabProps {
   task: Task | TaskDetail;
   addToast: (message: string, type?: ToastType) => void;
   onTaskUpdated?: (task: Task) => void;
+  settings?: Settings;
 }
 
 interface ModelSelection {
@@ -40,6 +41,51 @@ function getPlanningSelection(task: Task | TaskDetail): ModelSelection {
     provider: normalizeModelField(task.planningModelProvider),
     modelId: normalizeModelField(task.planningModelId),
   };
+}
+
+function resolveEffectiveExecutor(
+  task: Task | TaskDetail,
+  settings?: Settings,
+): ModelSelection {
+  if (task.modelProvider && task.modelId) {
+    return { provider: task.modelProvider, modelId: task.modelId };
+  }
+  if (settings?.defaultProvider && settings.defaultModelId) {
+    return { provider: settings.defaultProvider, modelId: settings.defaultModelId };
+  }
+  return {};
+}
+
+function resolveEffectiveValidator(
+  task: Task | TaskDetail,
+  settings?: Settings,
+): ModelSelection {
+  if (task.validatorModelProvider && task.validatorModelId) {
+    return { provider: task.validatorModelProvider, modelId: task.validatorModelId };
+  }
+  if (settings?.validatorProvider && settings.validatorModelId) {
+    return { provider: settings.validatorProvider, modelId: settings.validatorModelId };
+  }
+  if (settings?.defaultProvider && settings.defaultModelId) {
+    return { provider: settings.defaultProvider, modelId: settings.defaultModelId };
+  }
+  return {};
+}
+
+function resolveEffectivePlanning(
+  task: Task | TaskDetail,
+  settings?: Settings,
+): ModelSelection {
+  if (task.planningModelProvider && task.planningModelId) {
+    return { provider: task.planningModelProvider, modelId: task.planningModelId };
+  }
+  if (settings?.planningProvider && settings.planningModelId) {
+    return { provider: settings.planningProvider, modelId: settings.planningModelId };
+  }
+  if (settings?.defaultProvider && settings.defaultModelId) {
+    return { provider: settings.defaultProvider, modelId: settings.defaultModelId };
+  }
+  return {};
 }
 
 function parseModelValue(value: string): ModelSelection {
@@ -79,7 +125,7 @@ function getSuccessToastMessage(target: "executor" | "validator" | "planning", s
   return `${label} model set to ${selection.provider}/${selection.modelId}`;
 }
 
-export function ModelSelectorTab({ task, addToast, onTaskUpdated }: ModelSelectorTabProps) {
+export function ModelSelectorTab({ task, addToast, onTaskUpdated, settings }: ModelSelectorTabProps) {
   const [availableModels, setAvailableModels] = useState<ModelInfo[]>([]);
   const [favoriteProviders, setFavoriteProviders] = useState<string[]>([]);
   const [favoriteModels, setFavoriteModels] = useState<string[]>([]);
@@ -176,6 +222,9 @@ export function ModelSelectorTab({ task, addToast, onTaskUpdated }: ModelSelecto
   const executorValue = useMemo(() => getDropdownValue(selectedExecutor), [selectedExecutor]);
   const validatorValue = useMemo(() => getDropdownValue(selectedValidator), [selectedValidator]);
   const planningValue = useMemo(() => getDropdownValue(selectedPlanning), [selectedPlanning]);
+  const effectiveExecutor = useMemo(() => resolveEffectiveExecutor(task, settings), [task, settings]);
+  const effectiveValidator = useMemo(() => resolveEffectiveValidator(task, settings), [task, settings]);
+  const effectivePlanning = useMemo(() => resolveEffectivePlanning(task, settings), [task, settings]);
   const isSaving = savingTarget !== null;
 
   const saveSelection = useCallback(
@@ -389,7 +438,9 @@ export function ModelSelectorTab({ task, addToast, onTaskUpdated }: ModelSelecto
             <label htmlFor="executorModel">Executor Model</label>
             <div className="model-selector-current">
               {executorUsingDefault ? (
-                <span className="model-badge model-badge-default">Using default</span>
+                <span className="model-badge model-badge-default">
+                  Using default{effectiveExecutor.provider && effectiveExecutor.modelId ? ` (${effectiveExecutor.provider}/${effectiveExecutor.modelId})` : ""}
+                </span>
               ) : (
                 <span className="model-badge model-badge-custom">
                   {savedExecutor.provider && <ProviderIcon provider={savedExecutor.provider} size="sm" />}
@@ -417,7 +468,9 @@ export function ModelSelectorTab({ task, addToast, onTaskUpdated }: ModelSelecto
             <label htmlFor="validatorModel">Validator Model</label>
             <div className="model-selector-current">
               {validatorUsingDefault ? (
-                <span className="model-badge model-badge-default">Using default</span>
+                <span className="model-badge model-badge-default">
+                  Using default{effectiveValidator.provider && effectiveValidator.modelId ? ` (${effectiveValidator.provider}/${effectiveValidator.modelId})` : ""}
+                </span>
               ) : (
                 <span className="model-badge model-badge-custom">
                   {savedValidator.provider && <ProviderIcon provider={savedValidator.provider} size="sm" />}
@@ -445,7 +498,9 @@ export function ModelSelectorTab({ task, addToast, onTaskUpdated }: ModelSelecto
             <label htmlFor="planningModel">Planning Model</label>
             <div className="model-selector-current">
               {planningUsingDefault ? (
-                <span className="model-badge model-badge-default">Using default</span>
+                <span className="model-badge model-badge-default">
+                  Using default{effectivePlanning.provider && effectivePlanning.modelId ? ` (${effectivePlanning.provider}/${effectivePlanning.modelId})` : ""}
+                </span>
               ) : (
                 <span className="model-badge model-badge-custom">
                   {savedPlanning.provider && <ProviderIcon provider={savedPlanning.provider} size="sm" />}

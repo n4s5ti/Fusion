@@ -142,6 +142,108 @@ describe("ModelSelectorTab", () => {
     expect(within(planningSection!).getByText("Using default")).toBeInTheDocument();
   });
 
+  it("shows resolved default model in badge when settings are provided", async () => {
+    render(
+      <ModelSelectorTab
+        task={FAKE_TASK}
+        addToast={mockAddToast}
+        settings={{
+          defaultProvider: "anthropic",
+          defaultModelId: "claude-sonnet-4-5",
+        }}
+      />,
+    );
+
+    await waitForSelectors();
+
+    const executorSection = getSection("Executor Model");
+    expect(within(executorSection!).getByText("Using default (anthropic/claude-sonnet-4-5)")).toBeInTheDocument();
+  });
+
+  it("shows 'Using default' without resolution when settings prop is undefined", async () => {
+    render(<ModelSelectorTab task={FAKE_TASK} addToast={mockAddToast} />);
+
+    await waitForSelectors();
+
+    const executorSection = getSection("Executor Model");
+    expect(within(executorSection!).getByText("Using default")).toBeInTheDocument();
+    expect(within(executorSection!).queryByText(/Using default \(.+\)/)).not.toBeInTheDocument();
+  });
+
+  it("shows validator resolved model using validator settings then default fallback", async () => {
+    render(
+      <ModelSelectorTab
+        task={FAKE_TASK}
+        addToast={mockAddToast}
+        settings={{
+          validatorProvider: "openai",
+          validatorModelId: "gpt-4o",
+          defaultProvider: "anthropic",
+          defaultModelId: "claude-sonnet-4-5",
+        }}
+      />,
+    );
+
+    await waitForSelectors();
+
+    const validatorSection = getSection("Validator Model");
+    expect(within(validatorSection!).getByText("Using default (openai/gpt-4o)")).toBeInTheDocument();
+  });
+
+  it("shows planning resolved model using planning settings then default fallback", async () => {
+    render(
+      <ModelSelectorTab
+        task={FAKE_TASK}
+        addToast={mockAddToast}
+        settings={{
+          planningProvider: "google",
+          planningModelId: "gemini-2.5-pro",
+          defaultProvider: "anthropic",
+          defaultModelId: "claude-sonnet-4-5",
+        }}
+      />,
+    );
+
+    await waitForSelectors();
+
+    const planningSection = getSection("Planning Model");
+    expect(within(planningSection!).getByText("Using default (google/gemini-2.5-pro)")).toBeInTheDocument();
+  });
+
+  it("updates resolved model when settings change", async () => {
+    const { rerender } = render(
+      <ModelSelectorTab
+        task={FAKE_TASK}
+        addToast={mockAddToast}
+        settings={{
+          defaultProvider: "anthropic",
+          defaultModelId: "claude-sonnet-4-5",
+        }}
+      />,
+    );
+
+    await waitForSelectors();
+
+    const executorSection = getSection("Executor Model");
+    expect(within(executorSection!).getByText("Using default (anthropic/claude-sonnet-4-5)")).toBeInTheDocument();
+
+    rerender(
+      <ModelSelectorTab
+        task={FAKE_TASK}
+        addToast={mockAddToast}
+        settings={{
+          defaultProvider: "openai",
+          defaultModelId: "gpt-4o",
+        }}
+      />,
+    );
+
+    await waitFor(() => {
+      const nextExecutorSection = getSection("Executor Model");
+      expect(within(nextExecutorSection!).getByText("Using default (openai/gpt-4o)")).toBeInTheDocument();
+    });
+  });
+
   it("shows current custom model when overrides are set", async () => {
     const taskWithModels = {
       ...FAKE_TASK,

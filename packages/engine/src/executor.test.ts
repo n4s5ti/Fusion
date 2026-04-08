@@ -88,6 +88,14 @@ vi.mock("@mariozechner/pi-coding-agent", () => {
       open: vi.fn().mockReturnValue(mockSessionManager),
       inMemory: vi.fn().mockReturnValue(mockSessionManager),
     },
+    ModelRegistry: vi.fn().mockImplementation(() => ({
+      find: vi.fn(),
+      refresh: vi.fn(),
+    })),
+    AuthStorage: {
+      create: vi.fn().mockReturnValue({}),
+    },
+    getAgentDir: vi.fn().mockReturnValue("/tmp/agent-dir"),
   };
 });
 
@@ -2809,6 +2817,196 @@ describe("TaskExecutor pause behavior", () => {
     // Should fall back to SessionManager.create (not open)
     expect(mockedSessionManager.create).toHaveBeenCalled();
     expect(mockedSessionManager.open).not.toHaveBeenCalled();
+  });
+});
+
+describe("TaskExecutor executor model hot-swap", () => {
+  const buildUpdatedTask = (overrides: Partial<Task> = {}): Task => ({
+    id: "FN-001",
+    title: "Model task",
+    description: "Test model updates",
+    column: "in-progress",
+    paused: false,
+    dependencies: [],
+    steps: [],
+    currentStep: 0,
+    log: [],
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+    ...overrides,
+  });
+
+  const flushTaskUpdated = async () => {
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("hot-swaps executor model on active session when modelProvider/modelId change", async () => {
+    const store = createMockStore();
+    const setModel = vi.fn().mockResolvedValue(undefined);
+    const findModel = vi.fn().mockReturnValue({
+      provider: { name: "openai" },
+      id: "gpt-4o",
+      name: "GPT-4o",
+    });
+
+    const executor = new TaskExecutor(store, "/tmp/test");
+    (executor as any)._modelRegistry = { find: findModel };
+    (executor as any).activeSessions.set("FN-001", {
+      session: { setModel, dispose: vi.fn() },
+      seenSteeringIds: new Set(),
+      lastModelProvider: "anthropic",
+      lastModelId: "claude-sonnet-4-5",
+    });
+
+    store._trigger("task:updated", buildUpdatedTask({
+      modelProvider: "openai",
+      modelId: "gpt-4o",
+    }));
+
+    await flushTaskUpdated();
+
+    expect(setModel).toHaveBeenCalledTimes(1);
+    expect(setModel).toHaveBeenCalledWith(expect.objectContaining({
+      provider: expect.objectContaining({ name: "openai" }),
+      id: "gpt-4o",
+    }));
+    expect(store.logEntry).toHaveBeenCalledWith("FN-001", "Model changed to openai/gpt-4o");
+  });
+
+  it("does not attempt hot-swap when no active session exists", async () => {
+    const store = createMockStore();
+    const setModel = vi.fn().mockResolvedValue(undefined);
+
+    new TaskExecutor(store, "/tmp/test");
+
+    store._trigger("task:updated", buildUpdatedTask({
+      modelProvider: "openai",
+      modelId: "gpt-4o",
+    }));
+
+    await flushTaskUpdated();
+
+    expect(setModel).not.toHaveBeenCalled();
+  });
+
+  it("does not hot-swap when model fields are unchanged", async () => {
+    const store = createMockStore();
+    const setModel = vi.fn().mockResolvedValue(undefined);
+    const findModel = vi.fn();
+
+    const executor = new TaskExecutor(store, "/tmp/test");
+    (executor as any)._modelRegistry = { find: findModel };
+    (executor as any).activeSessions.set("FN-001", {
+      session: { setModel, dispose: vi.fn() },
+      seenSteeringIds: new Set(),
+      lastModelProvider: "anthropic",
+      lastModelId: "claude-sonnet-4-5",
+    });
+
+    store._trigger("task:updated", buildUpdatedTask({
+      modelProvider: "anthropic",
+      modelId: "claude-sonnet-4-5",
+    }));
+
+    await flushTaskUpdated();
+
+    expect(findModel).not.toHaveBeenCalled();
+    expect(setModel).not.toHaveBeenCalled();
+  });
+
+  it("hot-swaps to settings default when override is cleared", async () => {
+    const store = createMockStore();
+    const setModel = vi.fn().mockResolvedValue(undefined);
+    const findModel = vi.fn().mockReturnValue({
+      provider: { name: "openai" },
+      id: "gpt-4o",
+      name: "GPT-4o",
+    });
+
+    store.getSettings.mockResolvedValue({
+      defaultProvider: "openai",
+      defaultModelId: "gpt-4o",
+    });
+
+    const executor = new TaskExecutor(store, "/tmp/test");
+    (executor as any)._modelRegistry = { find: findModel };
+    (executor as any).activeSessions.set("FN-001", {
+      session: { setModel, dispose: vi.fn() },
+      seenSteeringIds: new Set(),
+      lastModelProvider: "anthropic",
+      lastModelId: "claude-sonnet-4-5",
+    });
+
+    store._trigger("task:updated", buildUpdatedTask({
+      modelProvider: undefined,
+      modelId: undefined,
+    }));
+
+    await flushTaskUpdated();
+
+    expect(findModel).toHaveBeenCalledWith("openai", "gpt-4o");
+    expect(setModel).toHaveBeenCalledTimes(1);
+  });
+
+  it("logs error and continues when setModel fails", async () => {
+    const store = createMockStore();
+    const setModel = vi.fn().mockRejectedValue(new Error("API key not found"));
+    const findModel = vi.fn().mockReturnValue({
+      provider: { name: "openai" },
+      id: "gpt-4o",
+      name: "GPT-4o",
+    });
+
+    const executor = new TaskExecutor(store, "/tmp/test");
+    (executor as any)._modelRegistry = { find: findModel };
+    (executor as any).activeSessions.set("FN-001", {
+      session: { setModel, dispose: vi.fn() },
+      seenSteeringIds: new Set(),
+      lastModelProvider: "anthropic",
+      lastModelId: "claude-sonnet-4-5",
+    });
+
+    store._trigger("task:updated", buildUpdatedTask({
+      modelProvider: "openai",
+      modelId: "gpt-4o",
+    }));
+
+    await flushTaskUpdated();
+
+    expect(store.logEntry).toHaveBeenCalledWith("FN-001", "Model change failed: API key not found");
+    expect((executor as any).activeSessions.has("FN-001")).toBe(true);
+  });
+
+  it("does not attempt hot-swap on paused task", async () => {
+    const store = createMockStore();
+    const setModel = vi.fn().mockResolvedValue(undefined);
+    const dispose = vi.fn();
+    const findModel = vi.fn();
+
+    const executor = new TaskExecutor(store, "/tmp/test");
+    (executor as any)._modelRegistry = { find: findModel };
+    (executor as any).activeSessions.set("FN-001", {
+      session: { setModel, dispose },
+      seenSteeringIds: new Set(),
+      lastModelProvider: "anthropic",
+      lastModelId: "claude-sonnet-4-5",
+    });
+
+    store._trigger("task:updated", buildUpdatedTask({
+      paused: true,
+      modelProvider: "openai",
+      modelId: "gpt-4o",
+    }));
+
+    await flushTaskUpdated();
+
+    expect(dispose).toHaveBeenCalledTimes(1);
+    expect(findModel).not.toHaveBeenCalled();
+    expect(setModel).not.toHaveBeenCalled();
   });
 });
 

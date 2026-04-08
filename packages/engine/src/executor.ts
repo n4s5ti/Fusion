@@ -9,7 +9,7 @@ import { generateWorktreeName, slugify } from "./worktree-names.js";
 import { Type, type Static } from "@mariozechner/pi-ai";
 import { createKbAgent, describeModel, promptWithFallback, compactSessionContext } from "./pi.js";
 import { reviewStep, type ReviewVerdict } from "./reviewer.js";
-import { SessionManager, type ToolDefinition, type AgentSession } from "@mariozechner/pi-coding-agent";
+import { AuthStorage, ModelRegistry, SessionManager, getAgentDir, type ToolDefinition, type AgentSession } from "@mariozechner/pi-coding-agent";
 import { PRIORITY_EXECUTE, type AgentSemaphore } from "./concurrency.js";
 import type { WorktreePool } from "./worktree-pool.js";
 import { AgentLogger } from "./agent-logger.js";
@@ -241,6 +241,8 @@ export class TaskExecutor {
   private activeSessions = new Map<string, {
     session: AgentSession;
     seenSteeringIds: Set<string>;
+    lastModelProvider?: string | null;
+    lastModelId?: string | null;
   }>();
   /** Active step-session executors per task (mutually exclusive with activeSessions). */
   private activeStepExecutors = new Map<string, StepSessionExecutor>();
@@ -262,6 +264,16 @@ export class TaskExecutor {
   private totalSpawnedCount = 0;
   /** Token cap detector for proactive context compaction. */
   private tokenCapDetector = new TokenCapDetector();
+  private _modelRegistry?: InstanceType<typeof ModelRegistry>;
+
+  private get modelRegistry(): InstanceType<typeof ModelRegistry> {
+    if (!this._modelRegistry) {
+      const authStorage = AuthStorage.create();
+      this._modelRegistry = new ModelRegistry(authStorage, join(getAgentDir(), "models.json"));
+      this._modelRegistry.refresh();
+    }
+    return this._modelRegistry;
+  }
 
   /** Returns the set of task IDs currently being executed. */
   getExecutingTaskIds(): Set<string> {
@@ -342,6 +354,42 @@ export class TaskExecutor {
           );
         }
         return;
+      }
+
+      // Handle executor model hot-swap on active single-session executions
+      if (this.activeSessions.has(task.id) && !task.paused) {
+        const activeEntry = this.activeSessions.get(task.id)!;
+        const providerChanged = task.modelProvider !== activeEntry.lastModelProvider;
+        const modelIdChanged = task.modelId !== activeEntry.lastModelId;
+
+        if (providerChanged || modelIdChanged) {
+          activeEntry.lastModelProvider = task.modelProvider;
+          activeEntry.lastModelId = task.modelId;
+
+          const settings = await this.store.getSettings();
+          const newProvider = task.modelProvider && task.modelId
+            ? task.modelProvider
+            : settings?.defaultProvider;
+          const newModelId = task.modelProvider && task.modelId
+            ? task.modelId
+            : settings?.defaultModelId;
+
+          if (newProvider && newModelId) {
+            try {
+              const model = this.modelRegistry.find(newProvider, newModelId);
+              if (model) {
+                await activeEntry.session.setModel(model);
+                executorLog.log(`${task.id}: executor model hot-swapped to ${newProvider}/${newModelId}`);
+                await this.store.logEntry(task.id, `Model changed to ${newProvider}/${newModelId}`);
+              } else {
+                executorLog.log(`${task.id}: model ${newProvider}/${newModelId} not found in registry for hot-swap`);
+              }
+            } catch (err: any) {
+              executorLog.error(`${task.id}: failed to hot-swap model: ${err.message}`);
+              await this.store.logEntry(task.id, `Model change failed: ${err.message}`);
+            }
+          }
+        }
       }
 
       // Handle steering comments - inject new ones into the running session
@@ -1061,7 +1109,12 @@ export class TaskExecutor {
             seenSteeringIds.add(comment.id);
           }
         }
-        this.activeSessions.set(task.id, { session, seenSteeringIds });
+        this.activeSessions.set(task.id, {
+          session,
+          seenSteeringIds,
+          lastModelProvider: detail.modelProvider,
+          lastModelId: detail.modelId,
+        });
 
         // Register with stuck task detector for heartbeat monitoring
         stuckDetector?.trackTask(task.id, session);
@@ -1232,7 +1285,12 @@ export class TaskExecutor {
             // Reassign so finally{} disposes the correct session
             session = retrySession;
             sessionRef.current = retrySession;
-            this.activeSessions.set(task.id, { session: retrySession, seenSteeringIds });
+            this.activeSessions.set(task.id, {
+              session: retrySession,
+              seenSteeringIds,
+              lastModelProvider: detail.modelProvider,
+              lastModelId: detail.modelId,
+            });
             stuckDetector?.trackTask(task.id, retrySession);
 
             const retryPrompt = [

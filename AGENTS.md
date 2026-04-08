@@ -1301,7 +1301,7 @@ To clear overrides, select "Use default" for both fields and save. To reset thin
 
 ### Engine Behavior
 
-- **Executor**: When both `modelProvider` and `modelId` are set on a task, the executor uses those instead of global settings when creating the agent session.
+- **Executor**: When both `modelProvider` and `modelId` are set on a task, the executor uses those instead of global settings when creating the agent session. In single-session execution mode, changing these fields on an in-progress task hot-swaps the active session model immediately (no pause/resume required). In step-session mode (`runStepsInNewSessions`), currently-running steps are not hot-swapped; changes apply when the next step session is created.
 - **Reviewer**: When both `validatorModelProvider` and `validatorModelId` are set, the reviewer uses those instead of global settings. The validator model is passed via `ReviewOptions` to `reviewStep()`.
 - **Planning**: When both `planningModelProvider` and `planningModelId` are set, the triage agent uses those instead of global settings for task specification.
 - **Thinking Level**: When `thinkingLevel` is set to a value other than `"off"`, the executor uses that reasoning effort level instead of the global default. Configurable from the Model tab in the task detail modal and during task creation. Valid values: `"off"`, `"minimal"`, `"low"`, `"medium"`, `"high"`.
