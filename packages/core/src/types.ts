@@ -1785,6 +1785,42 @@ export interface AgentHeartbeatConfig {
    * "on-heartbeat" defers message handling to the next scheduled heartbeat (default).
    */
   messageResponseMode?: MessageResponseMode;
+  /** Per-agent budget governance configuration. When set, enables budget tracking and enforcement. */
+  budgetConfig?: AgentBudgetConfig;
+}
+
+/** Per-agent budget configuration, stored in agent.runtimeConfig.budgetConfig */
+export interface AgentBudgetConfig {
+  /** Total token cap (input + output). When undefined, no budget limit is enforced. */
+  tokenBudget?: number;
+  /** Warning threshold as a fraction (0–1). Default: 0.8. Triggers isOverThreshold when usagePercent >= this value * 100. */
+  usageThreshold?: number;
+  /** Budget accumulation period. Default: "lifetime". */
+  budgetPeriod?: "daily" | "weekly" | "monthly" | "lifetime";
+  /** Day of month/week for period reset (1–31 for monthly, 0–6 for weekly where 0=Sunday). Only used when budgetPeriod is "monthly" or "weekly". */
+  resetDay?: number;
+}
+
+/** Computed budget status for an agent at a point in time. */
+export interface AgentBudgetStatus {
+  /** The agent this status belongs to */
+  agentId: string;
+  /** Total tokens consumed (input + output) */
+  currentUsage: number;
+  /** Token cap from config, or null when no budget is configured */
+  budgetLimit: number | null;
+  /** Usage as a percentage of budget (0–100), or null when no budget */
+  usagePercent: number | null;
+  /** The configured threshold fraction (e.g., 0.8), or null when no budget */
+  thresholdPercent: number | null;
+  /** Whether currentUsage >= budgetLimit */
+  isOverBudget: boolean;
+  /** Whether usagePercent >= thresholdPercent * 100 */
+  isOverThreshold: boolean;
+  /** ISO-8601 timestamp of the last budget reset, or null */
+  lastResetAt: string | null;
+  /** ISO-8601 timestamp of the next scheduled reset, or null for lifetime/no budget */
+  nextResetAt: string | null;
 }
 
 /** Configuration for an agent's instruction bundle — a collection of markdown files

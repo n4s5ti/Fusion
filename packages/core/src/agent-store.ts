@@ -29,6 +29,8 @@ import type {
   AgentHeartbeatEvent,
   AgentHeartbeatRun,
   AgentDetail,
+  AgentBudgetConfig,
+  AgentBudgetStatus,
   AgentTaskSession,
   AgentConfigRevision,
   AgentConfigSnapshot,
@@ -209,6 +211,59 @@ export class AgentStore extends EventEmitter {
     }
 
     return computeAccessState(agent);
+  }
+
+  /**
+   * Get computed budget usage status for an agent.
+   * @param agentId - The agent ID
+   * @returns Computed budget usage status
+   * @throws Error if agent not found
+   */
+  async getBudgetStatus(agentId: string): Promise<AgentBudgetStatus> {
+    const agent = await this.getAgent(agentId);
+    if (!agent) {
+      throw new Error(`Agent ${agentId} not found`);
+    }
+
+    const totalInputTokens = agent.totalInputTokens ?? 0;
+    const totalOutputTokens = agent.totalOutputTokens ?? 0;
+    const currentUsage = totalInputTokens + totalOutputTokens;
+
+    const runtimeConfig = (agent.runtimeConfig ?? {}) as Record<string, unknown>;
+    const budgetConfig = runtimeConfig.budgetConfig as AgentBudgetConfig | undefined;
+    const rawLastResetAt = runtimeConfig.budgetResetAt;
+    const lastResetAt = typeof rawLastResetAt === "string" ? rawLastResetAt : null;
+
+    if (!budgetConfig || budgetConfig.tokenBudget === undefined) {
+      return {
+        agentId,
+        currentUsage,
+        budgetLimit: null,
+        usagePercent: null,
+        thresholdPercent: null,
+        isOverBudget: false,
+        isOverThreshold: false,
+        lastResetAt,
+        nextResetAt: null,
+      };
+    }
+
+    const tokenBudget = budgetConfig.tokenBudget;
+    const usagePercent = Math.min((currentUsage / tokenBudget) * 100, 100);
+    const usageThreshold = budgetConfig.usageThreshold ?? 0.8;
+    const thresholdPercent = usageThreshold * 100;
+
+    return {
+      agentId,
+      currentUsage,
+      budgetLimit: tokenBudget,
+      usagePercent,
+      thresholdPercent,
+      isOverBudget: currentUsage >= tokenBudget,
+      isOverThreshold: usagePercent >= thresholdPercent,
+      lastResetAt,
+      nextResetAt: this.computeNextResetAt(budgetConfig.budgetPeriod, budgetConfig.resetDay),
+    };
   }
 
   /**
@@ -749,6 +804,35 @@ export class AgentStore extends EventEmitter {
       }
 
       return updated;
+    });
+  }
+
+  /**
+   * Reset budget token usage counters for an agent.
+   * @param agentId - The agent ID
+   * @throws Error if agent not found
+   */
+  async resetBudgetUsage(agentId: string): Promise<void> {
+    await this.withLock(agentId, async () => {
+      const agent = await this.getAgent(agentId);
+      if (!agent) {
+        throw new Error(`Agent ${agentId} not found`);
+      }
+
+      const budgetResetAt = new Date().toISOString();
+      const updated: Agent = {
+        ...agent,
+        totalInputTokens: 0,
+        totalOutputTokens: 0,
+        runtimeConfig: {
+          ...(agent.runtimeConfig ?? {}),
+          budgetResetAt,
+        },
+        updatedAt: budgetResetAt,
+      };
+
+      await this.writeAgent(updated);
+      this.emit("agent:updated", updated);
     });
   }
 
@@ -1494,6 +1578,61 @@ export class AgentStore extends EventEmitter {
       if (match) {
         return match;
       }
+    }
+
+    return null;
+  }
+
+  private computeNextResetAt(period: AgentBudgetConfig["budgetPeriod"], resetDay?: number): string | null {
+    if (!period || period === "lifetime") {
+      return null;
+    }
+
+    const now = new Date();
+
+    if (period === "daily") {
+      const nextMidnight = new Date(now);
+      nextMidnight.setHours(0, 0, 0, 0);
+      nextMidnight.setDate(nextMidnight.getDate() + 1);
+      return nextMidnight.toISOString();
+    }
+
+    if (period === "weekly") {
+      const normalizedResetDay =
+        typeof resetDay === "number" && Number.isFinite(resetDay)
+          ? Math.max(0, Math.min(6, Math.floor(resetDay)))
+          : 0;
+      const nextWeeklyReset = new Date(now);
+      nextWeeklyReset.setHours(0, 0, 0, 0);
+
+      const currentDay = nextWeeklyReset.getDay();
+      let daysUntilReset = (normalizedResetDay - currentDay + 7) % 7;
+      if (daysUntilReset === 0) {
+        daysUntilReset = 7;
+      }
+
+      nextWeeklyReset.setDate(nextWeeklyReset.getDate() + daysUntilReset);
+      return nextWeeklyReset.toISOString();
+    }
+
+    if (period === "monthly") {
+      const normalizedResetDay =
+        typeof resetDay === "number" && Number.isFinite(resetDay)
+          ? Math.max(1, Math.min(31, Math.floor(resetDay)))
+          : 1;
+
+      const createMonthlyReset = (year: number, month: number): Date => {
+        const lastDayOfMonth = new Date(year, month + 1, 0).getDate();
+        const clampedResetDay = Math.min(normalizedResetDay, lastDayOfMonth);
+        return new Date(year, month, clampedResetDay, 0, 0, 0, 0);
+      };
+
+      let nextMonthlyReset = createMonthlyReset(now.getFullYear(), now.getMonth());
+      if (nextMonthlyReset <= now) {
+        nextMonthlyReset = createMonthlyReset(now.getFullYear(), now.getMonth() + 1);
+      }
+
+      return nextMonthlyReset.toISOString();
     }
 
     return null;

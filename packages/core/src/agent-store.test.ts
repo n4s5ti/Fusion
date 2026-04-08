@@ -175,6 +175,332 @@ describe("AgentStore", () => {
     });
   });
 
+  // ── Budget Management ─────────────────────────────────────────────
+
+  describe("Budget Management", () => {
+    describe("getBudgetStatus", () => {
+      it("throws if agent not found", async () => {
+        await expect(store.getBudgetStatus("nonexistent")).rejects.toThrow("not found");
+      });
+
+      it("returns no-limit status when agent has no budgetConfig", async () => {
+        const agent = await store.createAgent({
+          name: "No Budget Config",
+          role: "executor",
+        });
+
+        const status = await store.getBudgetStatus(agent.id);
+
+        expect(status.currentUsage).toBe(0);
+        expect(status.budgetLimit).toBeNull();
+        expect(status.usagePercent).toBeNull();
+        expect(status.thresholdPercent).toBeNull();
+        expect(status.isOverBudget).toBe(false);
+        expect(status.isOverThreshold).toBe(false);
+        expect(status.lastResetAt).toBeNull();
+        expect(status.nextResetAt).toBeNull();
+      });
+
+      it("returns no-limit status when budgetConfig has no tokenBudget", async () => {
+        const agent = await store.createAgent({
+          name: "Threshold Only",
+          role: "executor",
+          runtimeConfig: {
+            budgetConfig: {
+              usageThreshold: 0.9,
+            },
+          },
+        });
+
+        const status = await store.getBudgetStatus(agent.id);
+
+        expect(status.budgetLimit).toBeNull();
+        expect(status.usagePercent).toBeNull();
+        expect(status.thresholdPercent).toBeNull();
+      });
+
+      it("computes usage from totalInputTokens + totalOutputTokens", async () => {
+        const agent = await store.createAgent({
+          name: "Usage Counter",
+          role: "executor",
+          runtimeConfig: {
+            budgetConfig: {
+              tokenBudget: 20000,
+            },
+          },
+        });
+
+        await store.updateAgent(agent.id, {
+          totalInputTokens: 5000,
+          totalOutputTokens: 3000,
+        });
+
+        const status = await store.getBudgetStatus(agent.id);
+        expect(status.currentUsage).toBe(8000);
+      });
+
+      it("detects over-budget when usage >= tokenBudget", async () => {
+        const agent = await store.createAgent({
+          name: "Over Budget",
+          role: "executor",
+          runtimeConfig: {
+            budgetConfig: {
+              tokenBudget: 1000,
+            },
+          },
+        });
+
+        await store.updateAgent(agent.id, {
+          totalInputTokens: 800,
+          totalOutputTokens: 300,
+        });
+
+        const status = await store.getBudgetStatus(agent.id);
+        expect(status.isOverBudget).toBe(true);
+      });
+
+      it("detects over-threshold when usagePercent >= thresholdPercent", async () => {
+        const agent = await store.createAgent({
+          name: "Threshold Hit",
+          role: "executor",
+          runtimeConfig: {
+            budgetConfig: {
+              tokenBudget: 10000,
+              usageThreshold: 0.5,
+            },
+          },
+        });
+
+        await store.updateAgent(agent.id, {
+          totalInputTokens: 3000,
+          totalOutputTokens: 2500,
+        });
+
+        const status = await store.getBudgetStatus(agent.id);
+        expect(status.usagePercent).toBeCloseTo(55, 10);
+        expect(status.thresholdPercent).toBe(50);
+        expect(status.isOverThreshold).toBe(true);
+      });
+
+      it("is not over-threshold when below threshold", async () => {
+        const agent = await store.createAgent({
+          name: "Threshold Safe",
+          role: "executor",
+          runtimeConfig: {
+            budgetConfig: {
+              tokenBudget: 10000,
+              usageThreshold: 0.8,
+            },
+          },
+        });
+
+        await store.updateAgent(agent.id, {
+          totalInputTokens: 2500,
+          totalOutputTokens: 2500,
+        });
+
+        const status = await store.getBudgetStatus(agent.id);
+        expect(status.usagePercent).toBe(50);
+        expect(status.isOverThreshold).toBe(false);
+      });
+
+      it("clamps usagePercent to 100 when over budget", async () => {
+        const agent = await store.createAgent({
+          name: "Clamp Usage",
+          role: "executor",
+          runtimeConfig: {
+            budgetConfig: {
+              tokenBudget: 100,
+            },
+          },
+        });
+
+        await store.updateAgent(agent.id, {
+          totalInputTokens: 400,
+          totalOutputTokens: 100,
+        });
+
+        const status = await store.getBudgetStatus(agent.id);
+        expect(status.usagePercent).toBe(100);
+      });
+
+      it("returns lastResetAt from runtimeConfig.budgetResetAt", async () => {
+        const budgetResetAt = "2026-01-01T00:00:00.000Z";
+        const agent = await store.createAgent({
+          name: "Has Reset Timestamp",
+          role: "executor",
+          runtimeConfig: {
+            budgetResetAt,
+          },
+        });
+
+        const status = await store.getBudgetStatus(agent.id);
+        expect(status.lastResetAt).toBe(budgetResetAt);
+      });
+
+      it("returns null nextResetAt for lifetime budget period", async () => {
+        const agent = await store.createAgent({
+          name: "Lifetime Budget",
+          role: "executor",
+          runtimeConfig: {
+            budgetConfig: {
+              tokenBudget: 1000,
+              budgetPeriod: "lifetime",
+            },
+          },
+        });
+
+        const status = await store.getBudgetStatus(agent.id);
+        expect(status.nextResetAt).toBeNull();
+      });
+
+      it("computes nextResetAt for daily period as next midnight", async () => {
+        const agent = await store.createAgent({
+          name: "Daily Budget",
+          role: "executor",
+          runtimeConfig: {
+            budgetConfig: {
+              tokenBudget: 1000,
+              budgetPeriod: "daily",
+            },
+          },
+        });
+
+        const now = Date.now();
+        const status = await store.getBudgetStatus(agent.id);
+
+        expect(status.nextResetAt).not.toBeNull();
+        const nextResetAt = new Date(status.nextResetAt!);
+        expect(nextResetAt.getTime()).toBeGreaterThan(now);
+        expect(nextResetAt.getHours()).toBe(0);
+        expect(nextResetAt.getMinutes()).toBe(0);
+        expect(nextResetAt.getSeconds()).toBe(0);
+        expect(nextResetAt.getMilliseconds()).toBe(0);
+      });
+
+      it("computes nextResetAt for weekly period using resetDay", async () => {
+        const agent = await store.createAgent({
+          name: "Weekly Budget",
+          role: "executor",
+          runtimeConfig: {
+            budgetConfig: {
+              tokenBudget: 1000,
+              budgetPeriod: "weekly",
+              resetDay: 1,
+            },
+          },
+        });
+
+        const now = Date.now();
+        const status = await store.getBudgetStatus(agent.id);
+
+        expect(status.nextResetAt).not.toBeNull();
+        const nextResetAt = new Date(status.nextResetAt!);
+        expect(nextResetAt.getTime()).toBeGreaterThan(now);
+        expect(nextResetAt.getDay()).toBe(1);
+        expect(nextResetAt.getHours()).toBe(0);
+        expect(nextResetAt.getMinutes()).toBe(0);
+        expect(nextResetAt.getSeconds()).toBe(0);
+        expect(nextResetAt.getMilliseconds()).toBe(0);
+        expect(nextResetAt.getTime() - now).toBeLessThanOrEqual(8 * 24 * 60 * 60 * 1000);
+      });
+
+      it("clamps resetDay to month length for monthly period", async () => {
+        const agent = await store.createAgent({
+          name: "Monthly Budget",
+          role: "executor",
+          runtimeConfig: {
+            budgetConfig: {
+              tokenBudget: 1000,
+              budgetPeriod: "monthly",
+              resetDay: 31,
+            },
+          },
+        });
+
+        const now = Date.now();
+        const status = await store.getBudgetStatus(agent.id);
+
+        expect(status.nextResetAt).not.toBeNull();
+        const nextResetAt = new Date(status.nextResetAt!);
+        const lastDayOfMonth = new Date(nextResetAt.getFullYear(), nextResetAt.getMonth() + 1, 0).getDate();
+
+        expect(nextResetAt.getTime()).toBeGreaterThan(now);
+        expect(nextResetAt.getDate()).toBe(Math.min(31, lastDayOfMonth));
+        expect(nextResetAt.getHours()).toBe(0);
+        expect(nextResetAt.getMinutes()).toBe(0);
+        expect(nextResetAt.getSeconds()).toBe(0);
+        expect(nextResetAt.getMilliseconds()).toBe(0);
+      });
+    });
+
+    describe("resetBudgetUsage", () => {
+      it("throws if agent not found", async () => {
+        await expect(store.resetBudgetUsage("nonexistent")).rejects.toThrow("not found");
+      });
+
+      it("resets totalInputTokens and totalOutputTokens to 0", async () => {
+        const agent = await store.createAgent({
+          name: "Reset Usage",
+          role: "executor",
+        });
+
+        await store.updateAgent(agent.id, {
+          totalInputTokens: 1200,
+          totalOutputTokens: 800,
+        });
+
+        await store.resetBudgetUsage(agent.id);
+
+        const updated = await store.getAgent(agent.id);
+        expect(updated).not.toBeNull();
+        expect(updated?.totalInputTokens).toBe(0);
+        expect(updated?.totalOutputTokens).toBe(0);
+      });
+
+      it("sets budgetResetAt to current timestamp", async () => {
+        const agent = await store.createAgent({
+          name: "Reset Timestamp",
+          role: "executor",
+        });
+
+        const beforeReset = Date.now();
+        await store.resetBudgetUsage(agent.id);
+
+        const updated = await store.getAgent(agent.id);
+        const rawBudgetResetAt = (updated?.runtimeConfig as Record<string, unknown> | undefined)?.budgetResetAt;
+
+        expect(typeof rawBudgetResetAt).toBe("string");
+
+        const parsedResetAt = new Date(rawBudgetResetAt as string).getTime();
+        expect(parsedResetAt).toBeGreaterThanOrEqual(beforeReset - 5000);
+        expect(parsedResetAt).toBeGreaterThan(Date.now() - 5000);
+      });
+
+      it("preserves other runtimeConfig values", async () => {
+        const agent = await store.createAgent({
+          name: "Preserve Config",
+          role: "executor",
+          runtimeConfig: {
+            heartbeatIntervalMs: 30000,
+            budgetConfig: {
+              tokenBudget: 1000,
+            },
+          },
+        });
+
+        await store.resetBudgetUsage(agent.id);
+
+        const updated = await store.getAgent(agent.id);
+        const runtimeConfig = updated?.runtimeConfig as Record<string, unknown>;
+
+        expect(runtimeConfig.heartbeatIntervalMs).toBe(30000);
+        expect(runtimeConfig.budgetConfig).toEqual({ tokenBudget: 1000 });
+        expect(typeof runtimeConfig.budgetResetAt).toBe("string");
+      });
+    });
+  });
+
   // ── updateAgent ───────────────────────────────────────────────────
 
   describe("updateAgent", () => {
