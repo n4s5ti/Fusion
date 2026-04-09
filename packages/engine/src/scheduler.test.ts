@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import type { PrMonitor } from "./pr-monitor.js";
 import { Scheduler, pathsOverlap } from "./scheduler.js";
 import { AgentSemaphore } from "./concurrency.js";
-import type { TaskStore, Task, Column } from "@fusion/core";
+import type { TaskStore, Task } from "@fusion/core";
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 
@@ -24,11 +24,10 @@ vi.mock("node:fs/promises", async (importOriginal) => {
 });
 
 // Helper to create mock tasks
-function createMockTask(overrides: Partial<Task & { prompt?: string }> = {}): Task {
+function createMockTask(overrides: Partial<Task> = {}): Task {
   return {
     id: "FN-001",
     description: "Test task",
-    prompt: "Test prompt",
     column: "todo",
     dependencies: [],
     steps: [],
@@ -1782,7 +1781,7 @@ describe("Scheduler", () => {
 
     it("updates feature to in-progress when task is in-progress and feature is triaged", async () => {
       const store = createMockStore({
-        getTask: vi.fn().mockResolvedValue(createMockTask({ id: "FN-001", column: "in-progress" as Column })),
+        getTask: vi.fn().mockReturnValue(createMockTask({ id: "FN-001", column: "in-progress" })),
       });
       const mockMissionStore = createMockMissionStore({
         listMissions: vi.fn().mockReturnValue([
@@ -1819,7 +1818,7 @@ describe("Scheduler", () => {
 
     it("updates feature to done when task is done and feature is not done", async () => {
       const store = createMockStore({
-        getTask: vi.fn().mockResolvedValue(createMockTask({ id: "FN-001", column: "done" as Column })),
+        getTask: vi.fn().mockReturnValue(createMockTask({ id: "FN-001", column: "done" })),
       });
       const mockMissionStore = createMockMissionStore({
         listMissions: vi.fn().mockReturnValue([
@@ -1856,7 +1855,7 @@ describe("Scheduler", () => {
 
     it("updates feature to triaged when task moves back to todo and feature is in-progress", async () => {
       const store = createMockStore({
-        getTask: vi.fn().mockResolvedValue(createMockTask({ id: "FN-001", column: "todo" as Column })),
+        getTask: vi.fn().mockReturnValue(createMockTask({ id: "FN-001", column: "todo" })),
       });
       const mockMissionStore = createMockMissionStore({
         listMissions: vi.fn().mockReturnValue([
@@ -1893,7 +1892,7 @@ describe("Scheduler", () => {
 
     it("does not update correctly synced features", async () => {
       const store = createMockStore({
-        getTask: vi.fn().mockResolvedValue(createMockTask({ id: "FN-001", column: "in-progress" as Column })),
+        getTask: vi.fn().mockReturnValue(createMockTask({ id: "FN-001", column: "in-progress" })),
       });
       const mockMissionStore = createMockMissionStore({
         listMissions: vi.fn().mockReturnValue([
@@ -2007,12 +2006,12 @@ describe("Scheduler", () => {
     it("handles multiple features across multiple missions and slices", async () => {
       const store = createMockStore({
         getTask: vi.fn((id: string) => {
-          const columns: Record<string, Column> = {
+          const columns: Record<string, string> = {
             "FN-001": "in-progress",
             "FN-002": "done",
             "FN-003": "triage",
           };
-          return Promise.resolve(createMockTask({ id, column: columns[id] || "todo" }));
+          return createMockTask({ id, column: columns[id] || "todo" });
         }),
       });
       const mockMissionStore = createMockMissionStore({
