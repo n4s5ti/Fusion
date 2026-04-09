@@ -5827,13 +5827,10 @@ body {
 
   .mobile-search-expanded {
     position: absolute;
-    right: 0;
-    left: auto;
+    right: 120px;
+    left: var(--space-md);
     top: 50%;
     transform: translateY(-50%);
-    width: 200px;
-    max-width: calc(100vw - 140px - var(--space-md) * 2);
-    min-width: 120px;
     z-index: 10;
     background: var(--surface);
     box-shadow: var(--shadow-md);
