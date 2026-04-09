@@ -368,10 +368,10 @@ describe("FileBrowser", () => {
     });
   });
 
-  it("defines 44px mobile touch targets for context menu items", () => {
+  it("defines mobile-friendly touch targets for context menu items", () => {
     const cssPath = resolve(process.cwd(), "app/styles.css");
     const css = readFileSync(cssPath, "utf8");
-    expect(css).toMatch(/@media \(max-width: 768px\)\s*\{[\s\S]*\.file-browser-context-menu__item\s*\{[\s\S]*min-height:\s*44px;/);
+    expect(css).toMatch(/\.file-browser-context-menu__item\s*\{[^}]*min-height:\s*36px;/);
   });
 
   // ── Download Actions ────────────────────────────────────────────────

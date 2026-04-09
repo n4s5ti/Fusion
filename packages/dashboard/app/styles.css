@@ -5779,7 +5779,7 @@ body {
     min-height: 36px;
   }
 
-  /* Small tappable controls that are explicitly sized below 44px at desktop */
+  /* Small tappable controls — adequate touch sizing for mobile */
   .view-toggle-btn,
   .header-search-clear,
   .inline-create-toggle,
@@ -6105,7 +6105,7 @@ body {
     font-size: 16px;
   }
 
-  /* Inline create: 44px touch targets */
+  /* Inline create: mobile-friendly touch sizing */
   .inline-create-toggle {
     min-width: 36px;
     min-height: 36px;
@@ -8021,7 +8021,7 @@ body {
   }
 
   .list-card--selectable {
-    padding-left: 44px;
+    padding-left: 32px;
   }
 
   .list-card-empty {
@@ -13789,8 +13789,6 @@ body[data-color-theme="terminal"][data-theme="light"]::before {
   }
 
   .file-browser-modal-header .modal-close {
-    min-width: 44px;
-    min-height: 44px;
     padding: 10px;
     display: flex;
     align-items: center;
@@ -14746,7 +14744,7 @@ body[data-color-theme="terminal"][data-theme="light"]::before {
     justify-content: center;
   }
 
-  /* Subtask action buttons meet 44px touch target */
+  /* Subtask action buttons: mobile-friendly sizing */
   .subtask-item-actions .btn-icon {
     min-width: 36px;
     min-height: 36px;
@@ -14777,7 +14775,7 @@ body[data-color-theme="terminal"][data-theme="light"]::before {
     font-size: 11px;
   }
 
-  /* Confirm buttons meet 44px touch target */
+  /* Confirm buttons: mobile-friendly sizing */
   .planning-confirm-btn {
     min-height: 36px;
     padding: var(--space-sm) var(--space-md);
@@ -22058,7 +22056,7 @@ body[data-color-theme="terminal"][data-theme="light"]::before {
     gap: var(--space-xs);
   }
 
-  /* Fix touch targets to meet 44px minimum */
+  /* Fix touch targets to meet 36px minimum */
   .mission-list__item-actions .mission-icon-btn,
   .mission-milestone__actions .mission-icon-btn,
   .mission-slice__actions .mission-icon-btn,
