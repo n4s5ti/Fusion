@@ -16,7 +16,7 @@ At a high level, Fusion is split into:
 - **Dashboard API + SPA** (`@fusion/dashboard`)
 - **CLI + Pi extension** (`@gsxdsm/fusion`)
 - **Desktop shell** (`@fusion/desktop`)
-- **TUI stub** (`@fusion/tui`)
+- **TUI** (`@fusion/tui`)
 
 ### High-level runtime diagram
 
@@ -64,7 +64,7 @@ At a high level, Fusion is split into:
 | `@fusion/dashboard` | Private | Express API server + React app | `packages/dashboard/src/server.ts`, `routes.ts`, `sse.ts`, `websocket.ts`, `packages/dashboard/app/App.tsx` |
 | `@gsxdsm/fusion` | **Published** | CLI binary (`fn`) + Pi extension | `packages/cli/src/bin.ts`, `commands/*`, `project-resolver.ts`, `extension.ts` |
 | `@fusion/desktop` | Private | Electron shell around Fusion dashboard/client | `packages/desktop/src/main.ts`, `ipc.ts`, `preload.ts`, `scripts/build.ts` |
-| `@fusion/tui` | Private | Ink-based terminal package (currently minimal stub) | `packages/tui/src/index.tsx` |
+| `@fusion/tui` | Private | Ink-based terminal package with ScreenRouter and tab navigation | `packages/tui/src/index.tsx`, `packages/tui/src/components/screen-router.tsx` |
 
 > Note: The workspace also contains `@fusion/mobile` (`packages/mobile`), which packages dashboard assets for Capacitor targets.
 
@@ -97,7 +97,7 @@ At a high level, Fusion is split into:
                     │ (embeds dashboard client)   │
                     └──────────────────────────────┘
 
-        @fusion/tui is currently independent/minimal.
+        @fusion/tui provides keyboard-navigable screen routing.
 ```
 
 Concrete references:

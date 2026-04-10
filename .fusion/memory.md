@@ -127,6 +127,8 @@ The plugin system is built on three layers:
 - When mocking `useFusion` in TUI tests, use `vi.mock("../fusion-context.js", ...)` to intercept the import.
 - For EventEmitter mocking in TUI tests, create mock objects with `Object.create(EventEmitter.prototype)` and add methods like `listTasks` or `getActivityLog`.
 - Ink's render function captures errors but doesn't throw them — use `expect(() => instance.unmount()).not.toThrow()` pattern for error-handling tests.
+- When testing components that use `useInput` (Ink's keyboard input hook), mock it with `vi.mock("ink", async (importOriginal) => { const actual = await importOriginal<typeof import("ink")>(); return { ...actual, useInput: vi.fn() }; })` to avoid "Raw mode is not supported" errors in test environments without TTY.
+- ScreenRouter component captures `activeScreen` state by passing it to children and capturing in a local variable for test assertions.
 
 - When adding database schema migrations, increment `SCHEMA_VERSION` and add migration blocks with `applyMigration(N, () => { ... })`. Also update hardcoded schema version assertions in `db.test.ts` and other test files (e.g., `task-documents.test.ts`) to expect the new version. Missing updates cause test failures like `expected 22 to be 21`.
 

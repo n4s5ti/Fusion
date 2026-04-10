@@ -5,10 +5,10 @@ Scope: `packages/core`, `packages/engine`, `packages/dashboard`, `packages/cli`,
 
 ## 1) Incomplete & Stub Packages
 
-### Finding 1.1 — `@fusion/tui` is still a stub package (**Medium**)
-- Evidence: `packages/tui/src/index.tsx` only renders `Hello from @fusion/tui!` via Ink and has no command routing, task views, or integration points.
-- Impact: The workspace includes a TUI package, but it is not usable for real workflows and may be mistaken as production-ready.
-- Existing tracking: **FN-1055** is present in task list and describes this exact stub gap.
+### Finding 1.1 — `@fusion/tui` has basic screen navigation (**Medium**)
+- Evidence: `packages/tui/src/index.tsx` renders `DemoApp` with `FusionProvider` and `ScreenRouter`. The `ScreenRouter` component (`packages/tui/src/components/screen-router.tsx`) provides keyboard-navigable tab switching with support for five screens (board, detail, activity, agents, settings). Number keys 1-5 and Tab/Shift+Tab navigate between tabs. However, the actual screen content is still placeholder text.
+- Impact: The TUI package now has a foundation for real screen implementations, but full task views and integration points remain to be built.
+- Existing tracking: **FN-1055** and **FN-1470** track TUI development.
 
 ### Finding 1.2 — `packages/desktop` is implemented, not a placeholder (**Info / correction to preflight assumption**)
 - Evidence: `packages/desktop` contains `package.json`, `tsconfig.json`, `vitest.config.ts`, `README.md`, build scripts, and substantial source files (`src/main.ts`, `src/ipc.ts`, `src/menu.ts`, `src/tray.ts`, `src/preload.ts`, renderer components/hooks, etc.).
