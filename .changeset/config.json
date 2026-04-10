@@ -7,5 +7,15 @@
   "access": "public",
   "baseBranch": "main",
   "updateInternalDependencies": "patch",
-  "ignore": []
+  "ignore": [
+    "@fusion/core",
+    "@fusion/dashboard",
+    "@fusion/engine",
+    "@fusion/tui",
+    "@fusion/plugin-sdk",
+    "@fusion-plugin-examples/auto-label",
+    "@fusion-plugin-examples/ci-status",
+    "@fusion-plugin-examples/notification",
+    "@fusion-plugin-examples/settings-demo"
+  ]
 }

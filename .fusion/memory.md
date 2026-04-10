@@ -460,3 +460,21 @@ Key learnings from adding integration test coverage for run-audit:
 - `createRunAuditor(store, null)` returns no-op auditor
 - Store without `recordRunAuditEvent` method returns no-op auditor
 - No throw on null/undefined context or missing methods
+
+## FN-1537: CI Workflow Stabilization
+
+**Node.js version compatibility:**
+- All GitHub Actions workflows must use `node-version: "24"` in `actions/checkout` and `pnpm/action-setup`
+- Use `actions/setup-node@v5` with `node-version: "24"` instead of `v4`
+- Node.js 20 actions are deprecated and will stop working June 2, 2026
+
+**Changesets configuration:**
+- Internal packages with `private: true` must be listed in `.changeset/config.json` `ignore` array
+- Published packages: `@gsxdsm/fusion`
+- Private packages (must be ignored): `@fusion/core`, `@fusion/dashboard`, `@fusion/engine`, `@fusion/tui`, `@fusion/plugin-sdk`, `@fusion-plugin-examples/*`
+- Without proper ignore entries, changesets tries to publish private packages and fails npm provenance verification
+
+**Test version assertions:**
+- Tests asserting package versions must read dynamically from `package.json` using `JSON.parse(readFileSync(pkgPath, "utf-8"))`
+- Hardcoded version strings in tests (e.g., `expect(version).toBe("0.1.0")`) break after version bumps
+- Use `getAppVersion()` for runtime version checks in tests

@@ -95,3 +95,16 @@ This will trigger `release.yml` to build binaries and create a GitHub Release. N
 - You can add multiple changesets per PR if you're making changes to multiple packages
 - Changeset files are automatically deleted when versions are bumped
 - CI verifies binary compilation on every push/PR to catch build regressions early
+
+## Internal packages
+
+The following packages are **internal** and are **not published to npm**:
+
+- `@fusion/core` — Core domain model and task store
+- `@fusion/dashboard` — Web UI and API server
+- `@fusion/engine` — AI agents and orchestration
+- `@fusion/tui` — Terminal UI components
+- `@fusion/plugin-sdk` — Plugin development SDK
+- `@fusion-plugin-examples/*` — Example plugins
+
+These packages have `private: true` in their `package.json` and are listed in the `.changeset/config.json` `ignore` array to prevent accidental publishing. Only the `@gsxdsm/fusion` package is published to npm.

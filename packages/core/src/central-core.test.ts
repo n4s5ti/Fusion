@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { CentralCore } from "./central-core.js";
 import { NodeDiscovery } from "./node-discovery.js";
 import { NodeConnection, type ConnectionResult } from "./node-connection.js";
+import { getAppVersion } from "./app-version.js";
 import * as systemMetrics from "./system-metrics.js";
 import type {
   RegisteredProject,
@@ -1458,7 +1459,7 @@ describe("CentralCore", () => {
 
         const updated = await central.updateNodeVersionInfo(node.id, versionInfo);
 
-        expect(updated.versionInfo?.appVersion).toBe("0.1.0");
+        expect(updated.versionInfo?.appVersion).toBe(getAppVersion());
       });
 
       it("should emit node:version:updated and node:updated events", async () => {

@@ -34,7 +34,12 @@ describe("getAppVersion", () => {
     const version1 = getAppVersion();
     const version2 = getAppVersion();
     expect(version1).toBe(version2);
-    expect(version1).toBe("0.1.0");
+    // Verify cached version matches the actual package version
+    const testFileDir = dirname(fileURLToPath(import.meta.url));
+    const coreDir = join(testFileDir, "..");
+    const pkgPath = join(coreDir, "package.json");
+    const pkg = JSON.parse(readFileSync(pkgPath, "utf-8"));
+    expect(version1).toBe(pkg.version);
   });
 });
 
