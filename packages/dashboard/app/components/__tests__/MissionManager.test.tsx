@@ -1111,12 +1111,12 @@ describe("MissionManager", () => {
       });
     });
 
-    it("shows refresh button in inline mode header", async () => {
+    it("does not show refresh button in inline mode", async () => {
       globalThis.fetch = vi.fn().mockResolvedValue(mockApiResponse([]));
       render(<MissionManager isOpen={true} isInline={true} onClose={vi.fn()} addToast={vi.fn()} />);
 
       await waitFor(() => {
-        expect(screen.getByTestId("mission-refresh-btn")).toBeDefined();
+        expect(screen.queryByTestId("mission-refresh-btn")).toBeNull();
       });
     });
 
@@ -1126,30 +1126,6 @@ describe("MissionManager", () => {
 
       await waitFor(() => {
         expect(screen.queryByTestId("mission-refresh-btn")).toBeNull();
-      });
-    });
-
-    it("refresh button triggers loadMissions when clicked in inline mode", async () => {
-      const fetchMock = vi.fn().mockResolvedValue(mockApiResponse([]));
-      globalThis.fetch = fetchMock;
-
-      render(<MissionManager isOpen={true} isInline={true} onClose={vi.fn()} addToast={vi.fn()} />);
-
-      // Wait for initial load
-      await waitFor(() => {
-        expect(screen.getByText("No missions yet. Create one to start planning.")).toBeDefined();
-      });
-
-      // Reset fetch mock to track reload
-      fetchMock.mockClear();
-      fetchMock.mockResolvedValueOnce(mockApiResponse([]));
-
-      // Click refresh button
-      fireEvent.click(screen.getByTestId("mission-refresh-btn"));
-
-      // Verify missions were fetched again
-      await waitFor(() => {
-        expect(fetchMock).toHaveBeenCalled();
       });
     });
 

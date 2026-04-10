@@ -1292,21 +1292,7 @@ export function MissionManager({ isOpen, isInline = false, onClose, addToast, pr
               {selectedMission ? selectedMission.title : "Missions"}
             </h2>
           </div>
-          {isInline ? (
-            /* Inline mode: show refresh button instead of modal close */
-            <div className="mission-manager__header-controls">
-              <button
-                className="btn-icon"
-                onClick={() => loadMissions()}
-                title="Refresh"
-                disabled={loading}
-                aria-label="Refresh missions"
-                data-testid="mission-refresh-btn"
-              >
-                <RefreshCw size={16} className={loading ? "spin" : ""} />
-              </button>
-            </div>
-          ) : (
+          {!isInline && (
             /* Modal mode: show close button */
             <button
               className="modal-close"
