@@ -3,11 +3,12 @@ import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { getTaskMergeBlocker, type TaskStore, type MergeResult, type MergeDetails, type WorkflowStep, type WorkflowStepResult, type Settings, type AgentPromptsConfig } from "@fusion/core";
 import { resolveAgentPrompt } from "@fusion/core";
-import { createKbAgent, describeModel, promptWithFallback } from "./pi.js";
+import { createKbAgent, describeModel, promptWithFallback, compactSessionContext } from "./pi.js";
 import type { WorktreePool } from "./worktree-pool.js";
 import { AgentLogger } from "./agent-logger.js";
 import { mergerLog } from "./logger.js";
 import { isUsageLimitError, checkSessionError, type UsageLimitPauser } from "./usage-limit-detector.js";
+import { isContextLimitError } from "./context-limit-detector.js";
 import { withRateLimitRetry } from "./rate-limit-retry.js";
 import { resolveAgentInstructions, buildSystemPromptWithInstructions } from "./agent-instructions.js";
 import type { ToolDefinition } from "@mariozechner/pi-coding-agent";
@@ -1398,8 +1399,24 @@ interface AiAgentParams {
 
 /**
  * Run the AI agent to resolve conflicts and/or write commit message.
- * Returns { success: true } on success, { success: false, error: string } on build failure.
- * Throws on agent errors or unrecoverable failures.
+ *
+ * Each invocation creates a **fresh session** via `createKbAgent` to ensure
+ * no stale conversation state from previous merge attempts or unrelated sessions
+ * pollutes the merge context. The session is disposed in the `finally` block
+ * regardless of success or failure.
+ *
+ * **Context-limit recovery:** If the session's `prompt()` call throws a
+ * context-window overflow error (detected via `isContextLimitError`), this
+ * function attempts a single **compact-and-retry** cycle:
+ * 1. Calls `compactSessionContext()` to compress the conversation history
+ * 2. Retries the `prompt()` call with the compacted session
+ * 3. If compaction is unavailable or fails, propagates the original error
+ *
+ * Non-context errors (network, rate limits, build failures) are propagated
+ * immediately without compaction recovery.
+ *
+ * @returns `{ success: true }` on successful commit, `{ success: false, error }`
+ *          when build verification fails, or throws on unrecoverable errors.
  */
 async function runAiAgentForCommit(params: AiAgentParams): Promise<{ success: boolean; error?: string }> {
   const {
@@ -1502,15 +1519,61 @@ async function runAiAgentForCommit(params: AiAgentParams): Promise<{ success: bo
       simplifiedContext,
       buildCommand,
     });
-    await withRateLimitRetry(async () => {
-      await promptWithFallback(session, prompt);
-      checkSessionError(session);
-    }, {
-      onRetry: (attempt, delayMs, error) => {
-        const delaySec = Math.round(delayMs / 1000);
-        mergerLog.warn(`⏳ ${taskId} rate limited — retry ${attempt} in ${delaySec}s: ${error.message}`);
-      },
-    });
+
+    // Attempt prompting with fresh session (first attempt).
+    // Log message distinguishes fresh-session start from compaction recovery path.
+    mergerLog.log(`${taskId}: starting fresh merge agent session`);
+
+    try {
+      await withRateLimitRetry(async () => {
+        await promptWithFallback(session, prompt);
+        checkSessionError(session);
+      }, {
+        onRetry: (attempt, delayMs, error) => {
+          const delaySec = Math.round(delayMs / 1000);
+          mergerLog.warn(`⏳ ${taskId} rate limited — retry ${attempt} in ${delaySec}s: ${error.message}`);
+        },
+      });
+    } catch (err: unknown) {
+      // Context-limit error: try compact-and-retry recovery.
+      // This detects when the LLM rejects the prompt due to context-window overflow.
+      const errorMessage = err instanceof Error ? err.message : String(err);
+      if (isContextLimitError(errorMessage)) {
+        mergerLog.warn(`${taskId}: context limit hit in merge agent — attempting compaction recovery`);
+        await store.logEntry(taskId, "Context limit reached during merge — compacting session and retrying");
+
+        // Attempt to compress conversation history to free context space.
+        const compactResult = await compactSessionContext(session);
+        if (compactResult) {
+          // Compaction succeeded: retry with the compressed session.
+          mergerLog.log(`${taskId}: context compacted at ${compactResult.tokensBefore} tokens — retrying`);
+          await store.logEntry(taskId, `Session compacted at ${compactResult.tokensBefore} tokens — retrying merge`);
+
+          // Retry the prompting after compaction
+          await withRateLimitRetry(async () => {
+            await promptWithFallback(session, prompt);
+            checkSessionError(session);
+          }, {
+            onRetry: (attempt, delayMs, error) => {
+              const delaySec = Math.round(delayMs / 1000);
+              mergerLog.warn(`⏳ ${taskId} rate limited after compaction — retry ${attempt} in ${delaySec}s: ${error.message}`);
+            },
+          });
+        } else {
+          // Compaction unavailable or failed: log and propagate original error.
+          // The outer mergeAttempt loop will clean up and retry the whole attempt
+          // if retries are remaining.
+          mergerLog.error(`${taskId}: session compaction unavailable or failed — cannot continue`);
+          await store.logEntry(taskId, "Session compaction unavailable — cannot continue merge");
+          throw err;
+        }
+      } else {
+        // Non-context error (network, rate limit, build failure): propagate immediately.
+        // Rate limit errors are handled by withRateLimitRetry above; this catches
+        // errors that bubble up after retries are exhausted.
+        throw err;
+      }
+    }
 
     // Check if build failed
     if (buildFailed) {

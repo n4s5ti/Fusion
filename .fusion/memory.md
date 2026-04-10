@@ -410,6 +410,14 @@ The `@fusion/tui` package provides Ink-based React components for terminal UI.
 - When fixing executor recovery paths that fall through to failure, ensure the fix adds an explicit `return` after successful recovery to prevent execution from continuing to the failure path
 - Vitest runs source files directly (`.ts`) rather than compiled dist files - rebuild with `tsc` before running tests if changes aren't picked up
 
+## FN-1525: Merger Fresh-Session and Compaction Recovery
+
+- The merger (`runAiAgentForCommit`) enforces a fresh session per merge attempt via `createKbAgent` - no stale conversation state
+- Context-limit errors trigger compact-and-retry: `isContextLimitError` detects overflow, `compactSessionContext` compresses history, then retry
+- Non-context errors propagate immediately without compaction - no false-positive recovery attempts
+- Error handling uses `err: unknown` type with `err instanceof Error ? err.message : String(err)` pattern for type safety
+- Log messages distinguish fresh-session start ("starting fresh merge agent session") from compaction recovery ("Context limit reached", "Compacted at X tokens")
+
 ## FN-1532: SQLite Index Optimization
 
 When adding indexes to SQLite schema migrations:
