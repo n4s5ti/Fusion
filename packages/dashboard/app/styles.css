@@ -15560,6 +15560,240 @@ html .column.drag-over * {
   }
 }
 
+/* ── Routines ──────────────────────────────────────────────────── */
+
+.routine-empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-md);
+  padding: 48px 24px;
+  color: var(--text-muted);
+  text-align: center;
+}
+
+.routine-empty-state h4 {
+  margin: 0;
+  font-size: 16px;
+  color: var(--text-primary);
+}
+
+.routine-empty-state p {
+  margin: 0;
+  font-size: 13px;
+}
+
+.routine-empty-state .btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: var(--space-sm);
+}
+
+.routine-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+}
+
+.routine-card {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 14px 16px;
+  background: var(--card-bg);
+  transition: border-color 0.15s;
+}
+
+.routine-card:hover {
+  border-color: var(--border-hover, var(--border));
+}
+
+.routine-card.disabled {
+  opacity: 0.55;
+}
+
+.routine-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: var(--space-md);
+}
+
+.routine-card-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.routine-card-name-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  flex-wrap: wrap;
+}
+
+.routine-card-name {
+  font-weight: 600;
+  font-size: 14px;
+  color: var(--text-primary);
+}
+
+.routine-trigger-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  font-weight: 500;
+  padding: 1px 7px;
+  border-radius: 999px;
+  border: 1px solid;
+  line-height: 1.5;
+  white-space: nowrap;
+}
+
+.routine-card-description {
+  margin: 4px 0 0;
+  font-size: 12px;
+  color: var(--text-muted);
+  line-height: 1.4;
+}
+
+.routine-card-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  flex-shrink: 0;
+}
+
+.routine-card-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-md);
+  margin-top: 10px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.routine-meta-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+}
+
+.routine-meta-label {
+  font-weight: 500;
+}
+
+.routine-cron {
+  font-size: 11px;
+  padding: 1px 5px;
+  background: var(--bg-secondary);
+  border-radius: var(--radius-sm);
+}
+
+.routine-policy-badge {
+  font-size: 11px;
+  padding: 1px 7px;
+  background: var(--bg-secondary);
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+}
+
+.routine-card-history {
+  margin-top: 10px;
+  border-top: 1px solid var(--border);
+  padding-top: 8px;
+}
+
+.routine-history-trigger-type {
+  font-size: 10px;
+  padding: 0px 4px;
+  background: var(--bg-tertiary);
+  border-radius: var(--radius-sm);
+  color: var(--text-muted);
+  margin-left: 4px;
+}
+
+/* Routine form */
+.routine-form {
+  padding: 0;
+}
+
+.routine-form .modal-actions {
+  padding: 16px 0 0;
+  border-top: 1px solid var(--border);
+  margin-top: var(--space-lg);
+}
+
+.routine-trigger-type-selector {
+  display: flex;
+  gap: var(--space-sm);
+  flex-wrap: wrap;
+}
+
+.routine-trigger-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg);
+  color: var(--text-secondary);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition:
+    border-color 0.15s,
+    background 0.15s,
+    color 0.15s;
+}
+
+.routine-trigger-btn:hover {
+  border-color: var(--border-hover, var(--border));
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+}
+
+.routine-trigger-btn.active {
+  border-color: var(--in-progress);
+  background: color-mix(in srgb, var(--in-progress) 10%, transparent);
+  color: var(--in-progress);
+}
+
+.routine-trigger-info {
+  display: block;
+  padding: var(--space-md);
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+/* Routine mobile responsive */
+@media (max-width: 768px) {
+  .routine-card-header {
+    flex-wrap: wrap;
+    gap: var(--space-sm);
+  }
+
+  .routine-card-actions {
+    flex-wrap: wrap;
+    width: 100%;
+    justify-content: flex-end;
+  }
+
+  .routine-trigger-type-selector {
+    flex-direction: column;
+  }
+
+  .routine-trigger-btn {
+    justify-content: center;
+  }
+}
+
 /* ── Activity Log Modal ─────────────────────────────────────────── */
 
 .activity-log-modal {

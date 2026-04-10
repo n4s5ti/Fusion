@@ -1,6 +1,11 @@
 import { useState, useEffect, useCallback } from "react";
-import { Plus, Clock } from "lucide-react";
-import type { ScheduledTask, ScheduledTaskCreateInput } from "@fusion/core";
+import { Plus, Clock, Zap } from "lucide-react";
+import type {
+  ScheduledTask,
+  ScheduledTaskCreateInput,
+  Routine,
+  RoutineCreateInput,
+} from "@fusion/core";
 import {
   fetchAutomations,
   createAutomation,
@@ -8,12 +13,19 @@ import {
   deleteAutomation,
   runAutomation,
   toggleAutomation,
+  fetchRoutines,
+  createRoutine,
+  updateRoutine,
+  deleteRoutine,
+  runRoutine,
 } from "../api";
 import { ScheduleForm } from "./ScheduleForm";
 import { ScheduleCard } from "./ScheduleCard";
+import { RoutineCard } from "./RoutineCard";
+import { RoutineEditor } from "./RoutineEditor";
 import type { ToastType } from "../hooks/useToast";
 
-/** Polling interval for auto-refreshing the schedule list (30 seconds). */
+/** Polling interval for auto-refreshing the schedule/routine list (30 seconds). */
 const POLL_INTERVAL_MS = 30_000;
 
 interface ScheduledTasksModalProps {
@@ -22,14 +34,25 @@ interface ScheduledTasksModalProps {
 }
 
 type ModalView = "list" | "create" | "edit";
+type ActiveTab = "schedules" | "routines";
 
 export function ScheduledTasksModal({ onClose, addToast }: ScheduledTasksModalProps) {
+  // Tab state
+  const [activeTab, setActiveTab] = useState<ActiveTab>("schedules");
+
+  // Schedule state
   const [schedules, setSchedules] = useState<ScheduledTask[]>([]);
   const [loading, setLoading] = useState(true);
   const [view, setView] = useState<ModalView>("list");
   const [editingSchedule, setEditingSchedule] = useState<ScheduledTask | undefined>();
   /** Track which schedule is currently running a manual execution. */
   const [runningId, setRunningId] = useState<string | null>(null);
+
+  // Routine state
+  const [routines, setRoutines] = useState<Routine[]>([]);
+  const [routineView, setRoutineView] = useState<"list" | "create" | "edit">("list");
+  const [editingRoutine, setEditingRoutine] = useState<Routine | undefined>();
+  const [runningRoutineId, setRunningRoutineId] = useState<string | null>(null);
 
   // Load schedules
   const loadSchedules = useCallback(async () => {
@@ -43,31 +66,55 @@ export function ScheduledTasksModal({ onClose, addToast }: ScheduledTasksModalPr
     }
   }, [addToast]);
 
+  // Load routines
+  const loadRoutines = useCallback(async () => {
+    try {
+      const data = await fetchRoutines();
+      setRoutines(data);
+    } catch (err: any) {
+      addToast(err.message || "Failed to load routines", "error");
+    }
+  }, [addToast]);
+
   useEffect(() => {
     loadSchedules();
-  }, [loadSchedules]);
+    loadRoutines();
+  }, [loadSchedules, loadRoutines]);
 
   // Poll for updates while modal is open
   useEffect(() => {
-    const interval = setInterval(loadSchedules, POLL_INTERVAL_MS);
+    const interval = setInterval(() => {
+      void loadSchedules();
+      void loadRoutines();
+    }, POLL_INTERVAL_MS);
     return () => clearInterval(interval);
-  }, [loadSchedules]);
+  }, [loadSchedules, loadRoutines]);
 
   // Close on Escape (only when not in a sub-form)
   useEffect(() => {
     const handleKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
-        if (view !== "list") {
-          setView("list");
-          setEditingSchedule(undefined);
+        if (activeTab === "schedules") {
+          if (view !== "list") {
+            setView("list");
+            setEditingSchedule(undefined);
+          } else {
+            onClose();
+          }
         } else {
-          onClose();
+          // Routines tab
+          if (routineView !== "list") {
+            setRoutineView("list");
+            setEditingRoutine(undefined);
+          } else {
+            onClose();
+          }
         }
       }
     };
     document.addEventListener("keydown", handleKey);
     return () => document.removeEventListener("keydown", handleKey);
-  }, [onClose, view]);
+  }, [onClose, activeTab, view, routineView]);
 
   const handleOverlayClick = useCallback(
     (e: React.MouseEvent) => {
@@ -76,7 +123,8 @@ export function ScheduledTasksModal({ onClose, addToast }: ScheduledTasksModalPr
     [onClose],
   );
 
-  // CRUD handlers
+  // ── Schedule CRUD handlers ──────────────────────────────────────────────
+
   const handleCreate = useCallback(
     async (input: ScheduledTaskCreateInput) => {
       try {
@@ -166,7 +214,110 @@ export function ScheduledTasksModal({ onClose, addToast }: ScheduledTasksModalPr
     setEditingSchedule(undefined);
   }, []);
 
-  const renderContent = () => {
+  // ── Routine CRUD handlers ───────────────────────────────────────────────
+
+  const handleCreateRoutine = useCallback(
+    async (input: RoutineCreateInput) => {
+      try {
+        await createRoutine(input);
+        addToast("Routine created", "success");
+        setRoutineView("list");
+        await loadRoutines();
+      } catch (err: any) {
+        addToast(err.message || "Failed to create routine", "error");
+      }
+    },
+    [addToast, loadRoutines],
+  );
+
+  const handleEditRoutine = useCallback((routine: Routine) => {
+    setEditingRoutine(routine);
+    setRoutineView("edit");
+  }, []);
+
+  const handleUpdateRoutine = useCallback(
+    async (input: RoutineCreateInput) => {
+      if (!editingRoutine) return;
+      try {
+        await updateRoutine(editingRoutine.id, input);
+        addToast("Routine updated", "success");
+        setRoutineView("list");
+        setEditingRoutine(undefined);
+        await loadRoutines();
+      } catch (err: any) {
+        addToast(err.message || "Failed to update routine", "error");
+      }
+    },
+    [editingRoutine, addToast, loadRoutines],
+  );
+
+  const handleDeleteRoutine = useCallback(
+    async (routine: Routine) => {
+      try {
+        await deleteRoutine(routine.id);
+        addToast(`Deleted "${routine.name}"`, "success");
+        await loadRoutines();
+      } catch (err: any) {
+        addToast(err.message || "Failed to delete routine", "error");
+      }
+    },
+    [addToast, loadRoutines],
+  );
+
+  const handleRunRoutine = useCallback(
+    async (routine: Routine) => {
+      setRunningRoutineId(routine.id);
+      try {
+        const { result } = await runRoutine(routine.id);
+        if (result.success) {
+          addToast(`"${routine.name}" completed successfully`, "success");
+        } else {
+          addToast(`"${routine.name}" failed: ${result.error || "Unknown error"}`, "error");
+        }
+        await loadRoutines();
+      } catch (err: any) {
+        addToast(err.message || "Failed to run routine", "error");
+      } finally {
+        setRunningRoutineId(null);
+      }
+    },
+    [addToast, loadRoutines],
+  );
+
+  const handleToggleRoutine = useCallback(
+    async (routine: Routine) => {
+      try {
+        await updateRoutine(routine.id, { enabled: !routine.enabled });
+        addToast(
+          `"${routine.name}" ${routine.enabled ? "disabled" : "enabled"}`,
+          "success",
+        );
+        await loadRoutines();
+      } catch (err: any) {
+        addToast(err.message || "Failed to toggle routine", "error");
+      }
+    },
+    [addToast, loadRoutines],
+  );
+
+  const handleRoutineCancel = useCallback(() => {
+    setRoutineView("list");
+    setEditingRoutine(undefined);
+  }, []);
+
+  // ── Tab switch handlers ─────────────────────────────────────────────────
+
+  const handleTabSwitch = useCallback((tab: ActiveTab) => {
+    setActiveTab(tab);
+    setView("list");
+    setEditingSchedule(undefined);
+    setRoutineView("list");
+    setEditingRoutine(undefined);
+  }, []);
+
+  // ── Render content ─────────────────────────────────────────────────────
+
+  const renderSchedulesContent = () => {
     if (view === "create") {
       return <ScheduleForm onSubmit={handleCreate} onCancel={handleFormCancel} />;
     }
@@ -220,20 +371,89 @@ export function ScheduledTasksModal({ onClose, addToast }: ScheduledTasksModalPr
     );
   };
 
+  const renderRoutinesContent = () => {
+    if (routineView === "create") {
+      return <RoutineEditor onSubmit={handleCreateRoutine} onCancel={handleRoutineCancel} />;
+    }
+
+    if (routineView === "edit" && editingRoutine) {
+      return (
+        <RoutineEditor
+          routine={editingRoutine}
+          onSubmit={handleUpdateRoutine}
+          onCancel={handleRoutineCancel}
+        />
+      );
+    }
+
+    // List view
+    if (routines.length === 0) {
+      return (
+        <div className="routine-empty-state">
+          <Zap size={48} strokeWidth={1} />
+          <h4>No routines yet</h4>
+          <p>Create a routine to assign recurring tasks to agents.</p>
+          <button
+            className="btn btn-primary btn-sm"
+            onClick={() => setRoutineView("create")}
+          >
+            <Plus size={14} />
+            Create your first routine
+          </button>
+        </div>
+      );
+    }
+
+    return (
+      <div className="routine-list">
+        {routines.map((r) => (
+          <RoutineCard
+            key={r.id}
+            routine={r}
+            onEdit={handleEditRoutine}
+            onDelete={handleDeleteRoutine}
+            onRun={handleRunRoutine}
+            onToggle={handleToggleRoutine}
+            running={runningRoutineId === r.id}
+          />
+        ))}
+      </div>
+    );
+  };
+
+  const renderContent = () => {
+    if (activeTab === "schedules") {
+      return renderSchedulesContent();
+    }
+    return renderRoutinesContent();
+  };
+
+  // Determine if we're in "list" view for showing the "New" button
+  const isShowingList =
+    activeTab === "schedules" ? view === "list" && schedules.length > 0 : routineView === "list" && routines.length > 0;
+  const isShowingEmptyState =
+    activeTab === "schedules" ? view === "list" && schedules.length === 0 && !loading : routineView === "list" && routines.length === 0;
+
   return (
     <div className="modal-overlay open" onClick={handleOverlayClick}>
       <div className="modal modal-lg" role="dialog" aria-labelledby="schedules-modal-title">
         <div className="modal-header">
           <h3 id="schedules-modal-title">Scheduled Tasks</h3>
           <div className="modal-header-actions">
-            {view === "list" && schedules.length > 0 && (
+            {isShowingList && (
               <button
                 className="btn btn-primary btn-sm"
-                onClick={() => setView("create")}
-                aria-label="Create new schedule"
+                onClick={() => {
+                  if (activeTab === "schedules") {
+                    setView("create");
+                  } else {
+                    setRoutineView("create");
+                  }
+                }}
+                aria-label={activeTab === "schedules" ? "Create new schedule" : "Create new routine"}
               >
                 <Plus size={14} />
-                New Schedule
+                {activeTab === "schedules" ? "New Schedule" : "New Routine"}
               </button>
             )}
             <button className="modal-close" onClick={onClose} aria-label="Close">
@@ -242,7 +462,31 @@ export function ScheduledTasksModal({ onClose, addToast }: ScheduledTasksModalPr
           </div>
         </div>
 
-        <div className="schedule-modal-content">
+        {/* Tab navigation */}
+        <div className="detail-tabs" role="tablist">
+          <button
+            className={`detail-tab${activeTab === "schedules" ? " detail-tab-active" : ""}`}
+            role="tab"
+            id="tab-schedules"
+            aria-selected={activeTab === "schedules"}
+            aria-controls="scheduled-tasks-content"
+            onClick={() => handleTabSwitch("schedules")}
+          >
+            <Clock size={14} /> Schedules
+          </button>
+          <button
+            className={`detail-tab${activeTab === "routines" ? " detail-tab-active" : ""}`}
+            role="tab"
+            id="tab-routines"
+            aria-selected={activeTab === "routines"}
+            aria-controls="scheduled-tasks-content"
+            onClick={() => handleTabSwitch("routines")}
+          >
+            <Zap size={14} /> Routines
+          </button>
+        </div>
+
+        <div className="schedule-modal-content" role="tabpanel" id="scheduled-tasks-content">
           {renderContent()}
         </div>
       </div>
