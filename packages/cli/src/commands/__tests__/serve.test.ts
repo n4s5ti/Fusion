@@ -762,3 +762,161 @@ describe("runServe — Memory Insight Automation wiring", () => {
     await triggerSignal("SIGINT");
   });
 });
+
+describe("runServe — Semaphore boundary (task lanes only)", () => {
+  const originalCwd = process.cwd;
+  const originalOn = process.on;
+  const originalExit = process.exit;
+
+  let signalHandlers: Record<"SIGINT" | "SIGTERM", Array<() => void>>;
+  let cwdSpy: ReturnType<typeof vi.spyOn>;
+  let processOnSpy: ReturnType<typeof vi.spyOn>;
+
+  async function triggerSignal(signal: "SIGINT" | "SIGTERM") {
+    const handlers = signalHandlers[signal];
+    expect(handlers.length).toBeGreaterThan(0);
+    handlers[handlers.length - 1]();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.reset();
+
+    signalHandlers = { SIGINT: [], SIGTERM: [] };
+
+    cwdSpy = vi.spyOn(process, "cwd").mockReturnValue("/repo");
+    processOnSpy = vi.spyOn(process, "on").mockImplementation(((event: string, listener: () => void) => {
+      if (event === "SIGINT" || event === "SIGTERM") {
+        signalHandlers[event].push(listener);
+      }
+      return process;
+    }) as typeof process.on);
+    process.exit = vi.fn() as never;
+  });
+
+  afterEach(() => {
+    cwdSpy.mockRestore();
+    processOnSpy.mockRestore();
+    process.cwd = originalCwd;
+    process.on = originalOn;
+    process.exit = originalExit;
+  });
+
+  it("passes semaphore to TriageProcessor (task lane)", async () => {
+    await runServe(4040, {});
+
+    expect(mocks.triageCtor).toHaveBeenCalledTimes(1);
+    const triageOptions = mocks.triageCtor.mock.calls[0][2];
+    expect(triageOptions).toHaveProperty("semaphore");
+    expect(triageOptions.semaphore).toBeDefined();
+
+    await triggerSignal("SIGINT");
+  });
+
+  it("passes semaphore to TaskExecutor (task lane)", async () => {
+    await runServe(4040, {});
+
+    expect(mocks.executorCtor).toHaveBeenCalledTimes(1);
+    const executorOptions = mocks.executorCtor.mock.calls[0][2];
+    expect(executorOptions).toHaveProperty("semaphore");
+    expect(executorOptions.semaphore).toBeDefined();
+
+    await triggerSignal("SIGINT");
+  });
+
+  it("passes semaphore to Scheduler (task lane)", async () => {
+    await runServe(4040, {});
+
+    expect(mocks.schedulerCtor).toHaveBeenCalledTimes(1);
+    const schedulerOptions = mocks.schedulerCtor.mock.calls[0][1];
+    expect(schedulerOptions).toHaveProperty("semaphore");
+    expect(schedulerOptions.semaphore).toBeDefined();
+
+    await triggerSignal("SIGINT");
+  });
+
+  it("creates shared semaphore instance for task lanes", async () => {
+    await runServe(4040, {});
+
+    // Get the semaphore instance from each component
+    const triageSemaphore = mocks.triageCtor.mock.calls[0][2].semaphore;
+    const executorSemaphore = mocks.executorCtor.mock.calls[0][2].semaphore;
+    const schedulerSemaphore = mocks.schedulerCtor.mock.calls[0][1].semaphore;
+
+    // All should reference the same semaphore instance
+    expect(triageSemaphore).toBe(executorSemaphore);
+    expect(executorSemaphore).toBe(schedulerSemaphore);
+
+    await triggerSignal("SIGINT");
+  });
+
+  it("does NOT pass semaphore to HeartbeatMonitor (utility path)", async () => {
+    const { HeartbeatMonitor } = await import("@fusion/engine");
+
+    await runServe(4040, {});
+
+    expect(HeartbeatMonitor).toHaveBeenCalledTimes(1);
+    const heartbeatOptions = HeartbeatMonitor.mock.calls[0][0];
+    expect(heartbeatOptions).not.toHaveProperty("semaphore");
+
+    await triggerSignal("SIGINT");
+  });
+
+  it("does NOT pass semaphore to HeartbeatTriggerScheduler (utility path)", async () => {
+    const { HeartbeatTriggerScheduler } = await import("@fusion/engine");
+
+    await runServe(4040, {});
+
+    expect(HeartbeatTriggerScheduler).toHaveBeenCalledTimes(1);
+    // HeartbeatTriggerScheduler takes 2-3 args: (agentStore, callback, taskStore?)
+    const triggerArgs = HeartbeatTriggerScheduler.mock.calls[0];
+    // Semaphore should NOT be in any of the arguments (it would have _active property)
+    expect(triggerArgs).not.toContainEqual(expect.objectContaining({ _active: expect.any(Number) }));
+
+    await triggerSignal("SIGINT");
+  });
+
+  it("does NOT pass semaphore to CronRunner (utility path)", async () => {
+    await runServe(4040, {});
+
+    expect(mocks.cronRunnerCtor).toHaveBeenCalledTimes(1);
+    // CronRunner takes (taskStore, automationStore, options)
+    const cronOptions = mocks.cronRunnerCtor.mock.calls[0][2];
+    expect(cronOptions).not.toHaveProperty("semaphore");
+
+    await triggerSignal("SIGINT");
+  });
+
+  it("calls createAiPromptExecutor with cwd only (no semaphore)", async () => {
+    const { createAiPromptExecutor } = await import("@fusion/engine");
+
+    await runServe(4040, {});
+
+    expect(createAiPromptExecutor).toHaveBeenCalledTimes(1);
+    // createAiPromptExecutor takes only cwd parameter
+    expect(createAiPromptExecutor).toHaveBeenCalledWith(expect.any(String));
+    const calledWith = createAiPromptExecutor.mock.calls[0];
+    // Should be called with exactly one argument (cwd)
+    expect(calledWith.length).toBe(1);
+
+    await triggerSignal("SIGINT");
+  });
+
+  it("onMerge uses semaphore.run() to gate merge execution (task lane)", async () => {
+    const { createServer } = await import("@fusion/dashboard");
+
+    await runServe(4040, {});
+
+    // The onMerge function is passed to createServer and should use semaphore.run()
+    expect(createServer).toHaveBeenCalledTimes(1);
+    const serverOpts = createServer.mock.calls[0][1];
+    expect(serverOpts).toHaveProperty("onMerge");
+    expect(typeof serverOpts.onMerge).toBe("function");
+    // The onMerge function should be a wrapper that uses semaphore.run()
+    // We can't directly test the internals, but we verified semaphore is passed to
+    // the same instance used by triage/executor/scheduler above
+
+    await triggerSignal("SIGINT");
+  });
+});

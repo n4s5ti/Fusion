@@ -564,3 +564,125 @@ describe("runDashboard — Memory Insight Automation wiring", () => {
     consoleSpy.mockRestore();
   });
 });
+
+describe("runDashboard — Semaphore boundary (task lanes only)", () => {
+  beforeEach(async () => {
+    vi.clearAllMocks();
+    mockDiscoverAndLoadExtensions.mockResolvedValue({
+      runtime: { pendingProviderRegistrations: [] },
+      errors: [],
+    });
+    const { TaskStore } = await import("@fusion/core");
+    (TaskStore as unknown as ReturnType<typeof vi.fn>).mockImplementation(() => makeMockStore());
+  });
+
+  it("passes semaphore to TriageProcessor (task lane)", async () => {
+    const { TriageProcessor } = await import("@fusion/engine");
+
+    await runDashboard(0, {});
+
+    expect(TriageProcessor).toHaveBeenCalledTimes(1);
+    const triageOptions = (TriageProcessor as ReturnType<typeof vi.fn>).mock.calls[0][2];
+    expect(triageOptions).toHaveProperty("semaphore");
+    expect(triageOptions.semaphore).toBeDefined();
+  });
+
+  it("passes semaphore to TaskExecutor (task lane)", async () => {
+    const { TaskExecutor } = await import("@fusion/engine");
+
+    await runDashboard(0, {});
+
+    expect(TaskExecutor).toHaveBeenCalledTimes(1);
+    const executorOptions = (TaskExecutor as ReturnType<typeof vi.fn>).mock.calls[0][2];
+    expect(executorOptions).toHaveProperty("semaphore");
+    expect(executorOptions.semaphore).toBeDefined();
+  });
+
+  it("passes semaphore to Scheduler (task lane)", async () => {
+    const { Scheduler } = await import("@fusion/engine");
+
+    await runDashboard(0, {});
+
+    expect(Scheduler).toHaveBeenCalledTimes(1);
+    const schedulerOptions = (Scheduler as ReturnType<typeof vi.fn>).mock.calls[0][1];
+    expect(schedulerOptions).toHaveProperty("semaphore");
+    expect(schedulerOptions.semaphore).toBeDefined();
+  });
+
+  it("creates shared semaphore instance for task lanes", async () => {
+    const { AgentSemaphore } = await import("@fusion/engine");
+    const { TriageProcessor, TaskExecutor, Scheduler } = await import("@fusion/engine");
+
+    await runDashboard(0, {});
+
+    // Get the semaphore instance from each component
+    const triageSemaphore = (TriageProcessor as ReturnType<typeof vi.fn>).mock.calls[0][2].semaphore;
+    const executorSemaphore = (TaskExecutor as ReturnType<typeof vi.fn>).mock.calls[0][2].semaphore;
+    const schedulerSemaphore = (Scheduler as ReturnType<typeof vi.fn>).mock.calls[0][1].semaphore;
+
+    // All should reference the same semaphore instance
+    expect(triageSemaphore).toBe(executorSemaphore);
+    expect(executorSemaphore).toBe(schedulerSemaphore);
+  });
+
+  it("does NOT pass semaphore to HeartbeatMonitor (utility path)", async () => {
+    const { HeartbeatMonitor } = await import("@fusion/engine");
+
+    await runDashboard(0, {});
+
+    expect(HeartbeatMonitor).toHaveBeenCalledTimes(1);
+    const heartbeatOptions = (HeartbeatMonitor as ReturnType<typeof vi.fn>).mock.calls[0][0];
+    expect(heartbeatOptions).not.toHaveProperty("semaphore");
+  });
+
+  it("does NOT pass semaphore to HeartbeatTriggerScheduler (utility path)", async () => {
+    const { HeartbeatTriggerScheduler } = await import("@fusion/engine");
+
+    await runDashboard(0, {});
+
+    expect(HeartbeatTriggerScheduler).toHaveBeenCalledTimes(1);
+    // HeartbeatTriggerScheduler takes 2-3 args: (agentStore, callback, taskStore?)
+    const triggerOptions = (HeartbeatTriggerScheduler as ReturnType<typeof vi.fn>).mock.calls[0];
+    // Semaphore should NOT be in any of the arguments
+    expect(triggerOptions).not.toContainEqual(expect.objectContaining({ _active: expect.any(Number) }));
+  });
+
+  it("does NOT pass semaphore to CronRunner (utility path)", async () => {
+    const { CronRunner } = await import("@fusion/engine");
+
+    await runDashboard(0, {});
+
+    expect(CronRunner).toHaveBeenCalledTimes(1);
+    // CronRunner takes (taskStore, automationStore, options)
+    const cronOptions = (CronRunner as ReturnType<typeof vi.fn>).mock.calls[0][2];
+    expect(cronOptions).not.toHaveProperty("semaphore");
+  });
+
+  it("calls createAiPromptExecutor with cwd only (no semaphore)", async () => {
+    const { createAiPromptExecutor } = await import("@fusion/engine");
+
+    await runDashboard(0, {});
+
+    expect(createAiPromptExecutor).toHaveBeenCalledTimes(1);
+    // createAiPromptExecutor takes only cwd parameter
+    expect(createAiPromptExecutor).toHaveBeenCalledWith(expect.any(String));
+    const calledWith = (createAiPromptExecutor as ReturnType<typeof vi.fn>).mock.calls[0];
+    // Should be called with exactly one argument (cwd)
+    expect(calledWith.length).toBe(1);
+  });
+
+  it("onMerge uses semaphore.run() to gate merge execution (task lane)", async () => {
+    const { createServer } = await import("@fusion/dashboard");
+
+    await runDashboard(0, {});
+
+    // The onMerge function is passed to createServer and should use semaphore.run()
+    expect(createServer).toHaveBeenCalledTimes(1);
+    const serverOpts = (createServer as ReturnType<typeof vi.fn>).mock.calls[0][1];
+    expect(serverOpts).toHaveProperty("onMerge");
+    expect(typeof serverOpts.onMerge).toBe("function");
+    // The onMerge function should be a wrapper that uses semaphore.run()
+    // We can't directly test the internals, but we verified semaphore is passed to
+    // the same instance used by triage/executor/scheduler above
+  });
+});

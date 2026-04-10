@@ -330,12 +330,17 @@ export async function runDashboard(port: number, opts: { paused?: boolean; dev?:
     taskStore: store,
   });
 
-  // ── HeartbeatMonitor: runtime monitoring and execution for agents ───
+  // ── HeartbeatMonitor: runtime monitoring (UTILITY — NO semaphore) ───
+  //
+  // ⚠️ UTILITY PATH: This component does NOT receive the task-lane semaphore.
   //
   // Provides the Paperclip-style heartbeat execution engine:
   //   wake → check inbox → work → exit
   //
-  // Enables agent execution runs triggered by timers, assignments, or manual API calls.
+  // Enables lightweight agent sessions for monitoring, not task-lane work.
+  // By design, heartbeat sessions are independent of task concurrency limits
+  // so they can run regardless of how busy the task lanes are.
+  //
   // Passed to createServer to enable the dashboard's heartbeat routes.
   //
   let heartbeatMonitor: HeartbeatMonitor | undefined;
@@ -355,7 +360,13 @@ export async function runDashboard(port: number, opts: { paused?: boolean; dev?:
     });
     heartbeatMonitor.start();
 
-    // HeartbeatTriggerScheduler manages timer and assignment-based triggers
+    // HeartbeatTriggerScheduler: trigger scheduling (UTILITY — NO semaphore) ──
+    //
+    // ⚠️ UTILITY PATH: This scheduler does NOT receive the task-lane semaphore.
+    //
+    // Manages timer and assignment-based triggers for heartbeat execution.
+    // By design, trigger scheduling is independent of task-lane concurrency limits.
+    //
     triggerScheduler = new HeartbeatTriggerScheduler(
       agentStore,
       async (agentId, source, context: WakeContext) => {
@@ -429,12 +440,24 @@ export async function runDashboard(port: number, opts: { paused?: boolean; dev?:
     console.log("[engine] Starting in paused mode — automation disabled");
   }
 
-  // ── Shared concurrency semaphore ──────────────────────────────────
+  // ── Task-lane concurrency semaphore ────────────────────────────────
   //
-  // Gates all agentic activities (triage, execution, merge) behind a
-  // single slot limit so they collectively respect settings.maxConcurrent.
-  // Created eagerly so the merge queue can reference it; the engine block
-  // below passes it to triage/executor/scheduler as well.
+  // ⚠️ SEMAPHORE BOUNDARY: This semaphore governs ONLY task-lane agents.
+  //
+  // Governed components (task lanes):
+  //   - TriageProcessor: specification agents that produce PROMPT.md
+  //   - TaskExecutor: task execution agents that implement features
+  //   - Scheduler: coordinates which agent gets which task
+  //   - onMerge: AI-powered merge execution for completed tasks
+  //
+  // UTILITY WORKFLOWS — NOT governed by this semaphore:
+  //   - HeartbeatMonitor: lightweight heartbeat sessions for agent monitoring
+  //   - HeartbeatTriggerScheduler: timer/assignment-based trigger scheduling
+  //   - CronRunner (via createAiPromptExecutor): scheduled automation prompts
+  //   - Model sync, auth setup, plugin loading: bootstrap/setup workflows
+  //
+  // This boundary prevents utility workflows from being blocked by
+  // task-lane saturation and ensures utility work is always available.
   //
   // The limit is read from a cached value that is refreshed from the store
   // on each scheduler poll cycle (see engine block below). This avoids
@@ -489,9 +512,13 @@ export async function runDashboard(port: number, opts: { paused?: boolean; dev?:
   const usageLimitPauser = new UsageLimitPauser(store);
   const githubClient = new GitHubClient();
 
-  // AI-powered merge handler (used by the web UI for manual merges).
-  // Wrapped with the shared semaphore so merges count toward the global
-  // concurrency limit alongside triage and execution agents.
+  // ── onMerge: AI-powered merge (TASK LANE — semaphore-gated) ─────────────
+  //
+  // ⚠️ TASK LANE: aiMergeTask is wrapped with semaphore.run() to ensure
+  // merge agents count toward settings.maxConcurrent alongside triage and execution.
+  //
+  // The raw aiMergeTask does NOT receive the semaphore directly;
+  // the semaphore gating is applied at the onMerge wrapper level.
   //
   // Track the active merge session so it can be killed on global pause.
   let activeMergeSession: { dispose: () => void } | null = null;
@@ -838,6 +865,11 @@ export async function runDashboard(port: number, opts: { paused?: boolean; dev?:
       },
     });
 
+    // ── TriageProcessor: task specification (TASK LANE — receives semaphore) ──
+    //
+    // Receives the task-lane semaphore to ensure specification agents
+    // count toward settings.maxConcurrent alongside execution and merge.
+    //
     const triage = new TriageProcessor(store, cwd, {
       semaphore,
       usageLimitPauser,
@@ -849,6 +881,11 @@ export async function runDashboard(port: number, opts: { paused?: boolean; dev?:
     });
     triageRef.current = triage;
 
+    // ── TaskExecutor: task execution (TASK LANE — receives semaphore) ──────────
+    //
+    // Receives the task-lane semaphore to ensure execution agents
+    // count toward settings.maxConcurrent alongside specification and merge.
+    //
     const executor = new TaskExecutor(store, cwd, {
       semaphore,
       pool,
@@ -872,6 +909,11 @@ export async function runDashboard(port: number, opts: { paused?: boolean; dev?:
     // The scheduler reference is set after construction via setScheduler()
     // to break the circular dependency.
 
+    // ── Scheduler: task coordination (TASK LANE — receives semaphore) ──────────
+    //
+    // Receives the task-lane semaphore to ensure task assignment decisions
+    // respect the concurrency limit alongside running execution agents.
+    //
     const scheduler = new Scheduler(store, {
       semaphore,
       prMonitor,
@@ -936,6 +978,17 @@ export async function runDashboard(port: number, opts: { paused?: boolean; dev?:
       }
     };
 
+    // ── CronRunner: scheduled automation (UTILITY — NO semaphore) ──────────
+    //
+    // ⚠️ UTILITY PATH: CronRunner does NOT receive the task-lane semaphore.
+    //
+    // Uses createAiPromptExecutor (cwd-only factory) for AI execution in
+    // scheduled tasks. By design, automation prompts are independent of
+    // task concurrency limits so they can run regardless of task-lane saturation.
+    //
+    // createAiPromptExecutor takes only `cwd` (no semaphore parameter),
+    // ensuring automation never competes with task-lane agents for slots.
+    //
     const aiPromptExecutor = await createAiPromptExecutor(cwd);
     const cronRunner = new CronRunner(store, automationStore, {
       aiPromptExecutor,
