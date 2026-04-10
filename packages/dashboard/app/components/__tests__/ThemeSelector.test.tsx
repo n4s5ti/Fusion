@@ -120,6 +120,12 @@ describe("ThemeSelector", () => {
     expect(screen.getByLabelText("Copper theme")).toBeDefined();
     expect(screen.getByLabelText("Foundry theme")).toBeDefined();
     expect(screen.getByLabelText("Carbon theme")).toBeDefined();
+    expect(screen.getByLabelText("Sandstone theme")).toBeDefined();
+    expect(screen.getByLabelText("Lagoon theme")).toBeDefined();
+    expect(screen.getByLabelText("Frost theme")).toBeDefined();
+    expect(screen.getByLabelText("Lavender theme")).toBeDefined();
+    expect(screen.getByLabelText("Neon Bloom theme")).toBeDefined();
+    expect(screen.getByLabelText("Sepia theme")).toBeDefined();
   });
 
   it("marks current color theme as active", () => {
@@ -446,6 +452,12 @@ describe("ThemeSelector", () => {
       ["copper", "Copper"],
       ["foundry", "Foundry"],
       ["carbon", "Carbon"],
+      ["sandstone", "Sandstone"],
+      ["lagoon", "Lagoon"],
+      ["frost", "Frost"],
+      ["lavender", "Lavender"],
+      ["neon-bloom", "Neon Bloom"],
+      ["sepia", "Sepia"],
     ] as const;
 
     dramaticThemes.forEach(([value, label]) => {
