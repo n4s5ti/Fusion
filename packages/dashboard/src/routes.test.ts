@@ -2050,7 +2050,6 @@ describe("PATCH /tasks/:id", () => {
       planningModelProvider: null,
       planningModelId: null,
       thinkingLevel: undefined,
-      assigneeUserId: null,
       assigneeUserId: "requesting-user",
     });
   });
@@ -8281,6 +8280,7 @@ describe("Routine routes", () => {
       triggerManual: vi.fn().mockResolvedValue({
         routineId: "routine-001",
         success: true,
+        output: "",
         triggerType: "cron" as const,
         startedAt: new Date().toISOString(),
         completedAt: new Date().toISOString(),
@@ -8288,6 +8288,7 @@ describe("Routine routes", () => {
       triggerWebhook: vi.fn().mockResolvedValue({
         routineId: "routine-001",
         success: true,
+        output: "",
         triggerType: "webhook" as const,
         startedAt: new Date().toISOString(),
         completedAt: new Date().toISOString(),
@@ -9232,7 +9233,7 @@ describe("GET /settings/scopes", () => {
 
 describe("POST /settings/test-ntfy", () => {
   let store: TaskStore;
-  let fetchSpy: ReturnType<typeof vi.spyOn>;
+  let fetchSpy: ReturnType<typeof vi.spyOn<any, any>>;
 
   beforeEach(() => {
     store = createMockStore();
@@ -9263,7 +9264,8 @@ describe("POST /settings/test-ntfy", () => {
 
     // Verify the ntfy request uses Fusion branding
     expect(fetchSpy).toHaveBeenCalledTimes(1);
-    const [url, options] = fetchSpy.mock.calls[0];
+    const url = fetchSpy.mock.calls[0]?.[0] as string;
+    const options = fetchSpy.mock.calls[0]?.[1] as RequestInit;
     expect(url).toBe("https://ntfy.sh/test-topic");
     expect(options?.method).toBe("POST");
     expect(options?.headers).toHaveProperty("Title", "Fusion test notification");
@@ -9278,7 +9280,7 @@ describe("POST /settings/test-ntfy", () => {
     const res = await REQUEST(buildApp(), "POST", "/api/settings/test-ntfy");
 
     expect(res.status).toBe(200);
-    const [_, options] = fetchSpy.mock.calls[0];
+    const options = fetchSpy.mock.calls[0]?.[1] as RequestInit;
     expect(options?.body).toBe("Fusion test notification — your notifications are working!");
   });
 

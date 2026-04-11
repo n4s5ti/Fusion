@@ -158,7 +158,7 @@ function areCommentsEqual(previous: Task["comments"], next: Task["comments"]): b
     if (!nextComment) return false;
     return (
       comment.author === nextComment.author &&
-      comment.content === nextComment.content &&
+      comment.text === nextComment.text &&
       comment.createdAt === nextComment.createdAt
     );
   });
@@ -782,6 +782,7 @@ function TaskCardComponent({
             title={`Mission: ${missionTitle ?? task.missionId}`}
             role={onOpenMission ? "button" : undefined}
             tabIndex={onOpenMission ? 0 : undefined}
+            style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
           >
             <Target size={11} />
             {abbreviateMissionTitle(missionTitle ?? task.missionId)}

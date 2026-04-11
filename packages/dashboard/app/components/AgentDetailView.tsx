@@ -268,7 +268,7 @@ export function AgentDetailView({ agentId, projectId, onClose, addToast, onChild
                   {agent.state}
                 </span>
                 <span className="badge" style={{ color: health.color }}>
-                  {health.icon}
+                  {"icon" in health ? health.icon : null}
                   {health.label}
                 </span>
               </div>

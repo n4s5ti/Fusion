@@ -1133,8 +1133,7 @@ describe("InlineCreateCard button visibility when collapsed", () => {
         projectId="proj-2"
       />);
 
-      // Open picker again for project 2
-      expandCard();
+      // Open picker again for project 2 (controls already expanded — state persists across rerender)
       fireEvent.click(screen.getByTestId("inline-create-agent-button"));
 
       await waitFor(() => {

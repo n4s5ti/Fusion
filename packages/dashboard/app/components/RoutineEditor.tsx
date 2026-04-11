@@ -65,7 +65,7 @@ function extractTriggerFields(routine: Routine) {
         triggerType: "cron" as RoutineTriggerType,
         cronExpression: (trigger as RoutineCronTrigger).cronExpression,
         webhookPath: "",
-        webhookSecret: (trigger as RoutineWebhookTrigger).secret || "",
+        webhookSecret: "",
         endpoint: "",
       };
     case "webhook":
@@ -182,6 +182,7 @@ export function RoutineEditor({ routine, onSubmit, onCancel }: RoutineEditorProp
         const trigger = buildTrigger(triggerType, cronExpression, webhookPath, webhookSecret, endpoint);
         const input: RoutineCreateInput = {
           name: name.trim(),
+          agentId: routine?.agentId ?? "",
           description: description.trim() || undefined,
           trigger,
           executionPolicy,

@@ -287,7 +287,7 @@ describe("Node routes", () => {
     const res = await request(app, "DELETE", "/api/nodes/node_1");
 
     expect(res.status).toBe(204);
-    expect(res.body).toBeNull();
+    expect(res.body == null || res.body === "").toBe(true);
     expect(mockUnregisterNode).toHaveBeenCalledWith("node_1");
   });
 

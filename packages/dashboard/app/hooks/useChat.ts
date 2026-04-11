@@ -11,11 +11,11 @@ import {
 
 export interface ChatSessionInfo {
   id: string;
-  title?: string;
+  title?: string | null;
   agentId: string;
   status: string;
-  modelProvider?: string;
-  modelId?: string;
+  modelProvider?: string | null;
+  modelId?: string | null;
   createdAt: string;
   updatedAt: string;
   lastMessagePreview?: string;
@@ -25,9 +25,9 @@ export interface ChatSessionInfo {
 export interface ChatMessageInfo {
   id: string;
   sessionId: string;
-  role: "user" | "assistant";
+  role: "user" | "assistant" | "system";
   content: string;
-  thinkingOutput?: string;
+  thinkingOutput?: string | null;
   createdAt: string;
 }
 

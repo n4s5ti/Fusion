@@ -2762,7 +2762,7 @@ export interface NodeInfo {
   url?: NodeConfig["url"];
   apiKey?: NodeConfig["apiKey"];
   status: NodeStatus;
-  capabilities?: string[];
+  capabilities?: NodeConfig["capabilities"];
   maxConcurrent: NodeConfig["maxConcurrent"];
   createdAt: NodeConfig["createdAt"];
   updatedAt: NodeConfig["updatedAt"];
@@ -4047,7 +4047,7 @@ export async function previewEnrichedDescription(
 
 export interface AiSessionSummary {
   id: string;
-  type: "planning" | "subtask" | "mission_interview";
+  type: "planning" | "subtask" | "mission_interview" | "milestone_interview" | "slice_interview";
   status: "generating" | "awaiting_input" | "complete" | "error";
   title: string;
   projectId: string | null;

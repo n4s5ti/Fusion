@@ -16,12 +16,16 @@ const TYPE_ICONS = {
   planning: Lightbulb,
   subtask: Layers,
   mission_interview: Target,
+  milestone_interview: Target,
+  slice_interview: Target,
 } as const;
 
 const TYPE_LABELS = {
   planning: "Planning",
   subtask: "Subtask Breakdown",
   mission_interview: "Mission Interview",
+  milestone_interview: "Milestone Interview",
+  slice_interview: "Slice Interview",
 } as const;
 
 export function BackgroundTasksIndicator({

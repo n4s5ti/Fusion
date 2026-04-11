@@ -2484,8 +2484,7 @@ describe("QuickEntryBox", () => {
         projectId="proj-2"
       />);
 
-      // Open picker again for project 2
-      expandQuickEntry();
+      // Open picker again for project 2 (controls already expanded from prior render — state persists across rerender)
       fireEvent.click(screen.getByTestId("quick-entry-agent-button"));
 
       await waitFor(() => {

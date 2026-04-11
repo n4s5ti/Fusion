@@ -8118,7 +8118,7 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
 
       const routine = await routineStore.createRoutine({
         name: name.trim(),
-        agentId: agentId.trim(),
+        agentId: typeof agentId === "string" ? agentId.trim() : "",
         description,
         trigger,
         catchUpPolicy,
@@ -12392,25 +12392,39 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
       await central.init();
 
       const nodes = await central.listNodes();
+      const remoteNodes = nodes.filter((n: any) => n.type === "remote");
+      const meshState: unknown[] = [];
+      for (const node of nodes) {
+        const state = typeof (central as any).getMeshState === "function"
+          ? await (central as any).getMeshState(node.id)
+          : null;
+        if (state) {
+          meshState.push(state);
+        } else {
+          const connections =
+            node.type === "local"
+              ? remoteNodes.map((peer: any) => ({
+                  peerId: peer.id,
+                  peerName: peer.name,
+                  peerUrl: peer.url ?? null,
+                  status: peer.status,
+                }))
+              : [];
+          meshState.push({
+            nodeId: node.id,
+            nodeName: node.name,
+            nodeUrl: node.url ?? null,
+            type: node.type,
+            status: node.status,
+            metrics: null,
+            lastSeen: node.updatedAt ?? null,
+            connectedAt: node.createdAt ?? null,
+            knownPeers: connections,
+            connections,
+          });
+        }
+      }
       await central.close();
-
-      // Return nodes with connection info for topology visualization
-      const meshState = nodes.map((node) => ({
-        id: node.id,
-        name: node.name,
-        type: node.type,
-        status: node.status,
-        url: node.url ?? null,
-        // For now, we don't have peer-to-peer connection info,
-        // so all connections are shown as connected to local node
-        connections: nodes
-          .filter((n) => n.id !== node.id)
-          .map((n) => ({
-            peerId: n.id,
-            peerName: n.name,
-            status: n.status,
-          })),
-      }));
 
       res.json(meshState);
     } catch (err: any) {
