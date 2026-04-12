@@ -90,7 +90,18 @@ Use the 🌳 button to:
 - Reorder by drag-and-drop
 - Add dependency links before creating tasks
 
-### Option D: CLI
+### Option D: Expanded Controls (Board)
+
+Expand the quick entry panel (▼) to access additional controls:
+
+- **Refine** (✨) — Improve the description with AI
+- **Deps** (🔗) — Link existing tasks as dependencies
+- **Attach** — Add image attachments
+- **Models** (🧠) — Set per-task model overrides
+- **Agent** — Assign an agent to the task
+- **Save** — Create the task manually
+
+### Option E: CLI
 
 ```bash
 fn task create "Fix flaky login test"

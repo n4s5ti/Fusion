@@ -104,7 +104,12 @@ fn task import owner/repo --labels bug --limit 10      # Import GitHub issues
 - **Quick Entry** — Type a description, press Enter
 - **Plan** (💡) — AI interviews you to refine requirements before creating the task; summary view supports **Break into Tasks** for multi-task generation with dependencies
 - **Subtask** (🌳) — AI suggests 2–5 subtasks with drag-and-drop reordering and dependency linking
-- **Actions** (⋯) — Access advanced controls: dependencies, model overrides (executor/validator/planning), and manual save
+- **Refine** (✨) — Refine the description with AI: clarify, add details, expand, or simplify
+- **Deps** (🔗) — Link existing tasks as dependencies before creation
+- **Attach** — Attach images to the task
+- **Models** (🧠) — Override executor, validator, or planning models per-task
+- **Agent** — Assign a specific agent to the task
+- **Save** — Manually save the task (alternative to pressing Enter)
 - **AI Title Summarization** — When `autoSummarizeTitles` is enabled, tasks without titles get concise AI-generated names (≤60 characters)
 
 ### AI Execution
@@ -139,7 +144,7 @@ Real-time kanban board at `localhost:4040`:
 - **Mission manager** — Hierarchical mission/milestone/slice/feature planning with progress tracking and autopilot controls
 - **Activity log** — Task lifecycle events, settings changes, filter by type, auto-refresh
 - **Files browser** — Browse project root or task worktrees, edit files with syntax highlighting
-- **Theme system** — Dark/Light/System modes, 17 color themes (Ocean, Forest, Nord, Dracula, and more)
+- **Theme system** — Dark/Light/System modes, 54 color themes (Ocean, Forest, Nord, Dracula, and more)
 - **Usage dialog** — Real-time AI provider subscription usage with progress bars and reset timers
 - **Spec editor** — Edit `PROMPT.md` directly, request AI revision, or rebuild/regenerate specs
 - **Planning Mode (multi-task)** — After AI planning, choose **Create Task** or **Break into Tasks** to generate dependency-linked subtasks

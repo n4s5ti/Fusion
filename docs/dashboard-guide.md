@@ -79,7 +79,7 @@ Features:
 Visual customization includes:
 
 - Theme mode: dark/light/system
-- **55 color themes** (including Ocean, Forest, Nord, Dracula, Gruvbox, Tokyo Night, and more)
+- **54 color themes** (including Ocean, Forest, Nord, Dracula, Gruvbox, Tokyo Night, and more)
 
 Theme preferences are stored in global settings.
 

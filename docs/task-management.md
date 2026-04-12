@@ -31,7 +31,18 @@ Use the 🌳 button:
 - Add dependencies only on earlier items
 - Create tasks in one action
 
-### 4) CLI creation
+### 4) Expanded Controls
+
+Expand the creation panel (▼) to access additional controls:
+
+- **Refine** (✨) — Improve the description with AI
+- **Deps** (🔗) — Link existing tasks as dependencies
+- **Attach** — Add image attachments
+- **Models** (🧠) — Set per-task model overrides (executor, validator, planning)
+- **Agent** — Assign an agent to the task
+- **Browser Verify** — Enable browser verification workflow step
+
+### 5) CLI creation
 
 ```bash
 fn task create "Fix API timeout handling"
