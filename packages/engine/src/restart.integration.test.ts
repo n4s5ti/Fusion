@@ -541,8 +541,21 @@ describe("In-review merge handling after restart", () => {
     // Branch exists, merge starts, agent creates but prompt fails
     mockedExecSync.mockImplementation((cmd: any) => {
       const cmdStr = String(cmd);
+      // Make merge fail so all attempts exhaust
+      if (cmdStr.includes("merge --squash") || cmdStr.includes("merge -X")) {
+        const err = new Error("Merge conflict");
+        err.name = "ExecSyncError";
+        throw err;
+      }
       if (cmdStr.includes("diff --cached --quiet")) return "1" as any;
       if (cmdStr.includes("diff --cached")) return "0" as any;
+      if (cmdStr.includes("diff --name-only --diff-filter=U")) return "src/file.ts";
+      // Make auto-resolution fail by making git add fail
+      if (cmdStr.includes("git add")) {
+        const err = new Error("git add failed");
+        err.name = "ExecSyncError";
+        throw err;
+      }
       return Buffer.from("");
     });
 
@@ -827,8 +840,21 @@ describe("Crash scenario edge cases", () => {
 
     mockedExecSync.mockImplementation((cmd: any) => {
       const cmdStr = String(cmd);
+      // Make merge fail so all attempts exhaust
+      if (cmdStr.includes("merge --squash") || cmdStr.includes("merge -X")) {
+        const err = new Error("Merge conflict");
+        err.name = "ExecSyncError";
+        throw err;
+      }
       // Post-squash check: squash staged changes → "1"
       if (cmdStr.includes("diff --cached --quiet")) return "1" as any;
+      if (cmdStr.includes("diff --name-only --diff-filter=U")) return "src/file.ts";
+      // Make auto-resolution fail by making git add fail
+      if (cmdStr.includes("git add")) {
+        const err = new Error("git add failed");
+        err.name = "ExecSyncError";
+        throw err;
+      }
       return Buffer.from("");
     });
 

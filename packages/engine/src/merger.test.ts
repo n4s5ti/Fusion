@@ -125,6 +125,9 @@ function createMockStore(taskOverrides: Partial<Task> = {}, allTasks: Task[] = [
  * Set up execSync to handle the standard merge flow:
  * rev-parse, log, diff, merge --squash, diff --cached --quiet (squash check),
  * diff --cached (post-agent verify), branch -d
+ *
+ * For tests that want the merge to fail after 3 AI attempts (before -X theirs succeeds),
+ * call setupFailingTheirsStrategy() instead.
  */
 function setupHappyPathExecSync() {
   mockedExecSync.mockImplementation((cmd: any) => {
@@ -135,6 +138,37 @@ function setupHappyPathExecSync() {
     if (cmdStr.includes("merge-base")) return Buffer.from("abc123");
     if (cmdStr.includes("git diff") && cmdStr.includes("--stat")) return "1 file changed" as any;
     if (cmdStr.includes("merge --squash")) return Buffer.from("");
+    if (cmdStr.includes("merge -X theirs --squash")) return Buffer.from("");
+    // Post-squash check: --quiet means "did squash stage anything?" → "1" = yes
+    if (cmdStr.includes("diff --cached --quiet")) return "1" as any;
+    // Post-agent check: "did agent commit?" → "0" = yes
+    if (cmdStr.includes("diff --cached")) return "0" as any;
+    if (cmdStr.includes("show --shortstat")) return "3 files changed, 10 insertions(+), 2 deletions(-)" as any;
+    if (cmdStr.includes("branch -d") || cmdStr.includes("branch -D")) return Buffer.from("");
+    if (cmdStr.includes("worktree remove")) return Buffer.from("");
+    return Buffer.from("");
+  });
+}
+
+/**
+ * Same as setupHappyPathExecSync but makes -X theirs merge fail.
+ * Use this for tests that expect the merge to throw after 3 AI attempts fail.
+ */
+function setupFailingTheirsStrategy() {
+  mockedExecSync.mockImplementation((cmd: any) => {
+    const cmdStr = String(cmd);
+    if (cmdStr.includes("rev-parse --verify")) return Buffer.from("abc123");
+    if (cmdStr === "git rev-parse HEAD" || cmdStr.startsWith("git rev-parse HEAD ")) return "mergedcommit123";
+    if (cmdStr.includes("git log")) return "- feat: something" as any;
+    if (cmdStr.includes("merge-base")) return Buffer.from("abc123");
+    if (cmdStr.includes("git diff") && cmdStr.includes("--stat")) return "1 file changed" as any;
+    if (cmdStr.includes("merge --squash")) return Buffer.from("");
+    // -X theirs should fail for these tests (they expect merge to throw)
+    if (cmdStr.includes("merge -X theirs --squash")) {
+      const err = new Error("fatal: git merge -X theirs failed with unresolved conflicts");
+      err.name = "ExecSyncError";
+      throw err;
+    }
     // Post-squash check: --quiet means "did squash stage anything?" → "1" = yes
     if (cmdStr.includes("diff --cached --quiet")) return "1" as any;
     // Post-agent check: "did agent commit?" → "0" = yes
@@ -625,7 +659,9 @@ describe("aiMergeTask — usage limit detection", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockedExistsSync.mockReturnValue(true);
-    setupHappyPathExecSync();
+    // Use setupFailingTheirsStrategy so -X theirs merge fails,
+    // allowing tests that expect throws to pass
+    setupFailingTheirsStrategy();
   });
 
   it("triggers global pause when merger catches a usage-limit error", async () => {
@@ -1405,13 +1441,27 @@ describe("aiMergeTask — retry logic with escalating strategies", () => {
       if (cmdStr.includes("merge-base")) return Buffer.from("abc123");
       if (cmdStr.includes("--stat")) return "1 file changed";
 
-      if (cmdStr.includes("merge --squash") || cmdStr.includes("merge -X theirs")) {
-        // All merge attempts fail with conflicts
+      if (cmdStr.includes("merge --squash")) {
+        // AI merge attempts fail with conflicts
         throw new Error("Merge conflict");
+      }
+
+      if (cmdStr.includes("merge -X theirs")) {
+        // -X theirs also fails (some conflicts can't be auto-resolved)
+        const err = new Error("Merge conflict");
+        err.name = "ExecSyncError";
+        throw err;
       }
 
       if (cmdStr.includes("diff --name-only --diff-filter=U")) {
         return "src/always-conflicts.ts\n"; // Always has conflicts
+      }
+
+      // Make auto-resolution fail by making git add fail
+      if (cmdStr.includes("git add")) {
+        const err = new Error("git add failed");
+        err.name = "ExecSyncError";
+        throw err;
       }
 
       if (cmdStr.includes("reset --merge")) {
@@ -3474,19 +3524,28 @@ describe("aiMergeTask — context limit recovery with truncation", () => {
       return { session } as any;
     });
 
-    // Setup that simulates merge failing
+    // Setup that simulates merge failing - make merge --squash throw so auto-resolution isn't triggered
+    // Also make commit fail so all attempts exhaust
     mockedExecSync.mockImplementation((cmd: any) => {
       const cmdStr = String(cmd);
       if (cmdStr.includes("rev-parse --verify")) return Buffer.from("abc123");
       if (cmdStr.includes("git log")) return "- feat: something";
       if (cmdStr.includes("merge-base")) return Buffer.from("abc123");
       if (cmdStr.includes("--stat")) return "1 file changed";
-      // All merge attempts fail
+      // All merge attempts fail - make merge --squash throw with conflicts
       if (cmdStr.includes("merge --squash") || cmdStr.includes("merge -X")) {
-        throw new Error("merge conflict");
+        const err = new Error("merge conflict");
+        err.name = "ExecSyncError";
+        throw err;
       }
       if (cmdStr.includes("diff --name-only --diff-filter=U")) return "src/file.ts";
       if (cmdStr.includes("reset --merge")) return Buffer.from("");
+      // Make commit fail so attempt 2's auto-resolution also fails
+      if (cmdStr.includes("git commit")) {
+        const err = new Error("commit failed");
+        err.name = "ExecSyncError";
+        throw err;
+      }
       return Buffer.from("");
     });
 
