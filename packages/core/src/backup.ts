@@ -5,6 +5,25 @@ import { CronExpressionParser } from "cron-parser";
 import type { ProjectSettings } from "./types.js";
 
 /**
+ * Legacy backup directory default value from the old .kb storage structure.
+ * Projects that were created before the .fusion rename may still have this
+ * value persisted in their config. It is canonicalized to the new default
+ * so that all backup operations use a consistent directory.
+ */
+const LEGACY_BACKUP_DIR = ".kb/backups";
+
+/**
+ * Canonicalizes the backup directory from legacy defaults.
+ * Only the exact legacy default alias is transformed — custom paths are preserved.
+ */
+function canonicalizeBackupDir(dir: string | undefined): string | undefined {
+  if (dir === LEGACY_BACKUP_DIR) {
+    return ".fusion/backups";
+  }
+  return dir;
+}
+
+/**
  * Metadata for a database backup file.
  */
 export interface BackupInfo {
@@ -285,6 +304,7 @@ export function validateBackupDir(dir: string): boolean {
 
 /**
  * Factory function to create a BackupManager with project settings.
+ * Applies defensive canonicalization for the legacy backup directory default.
  * @param kbDir - Absolute path to the .fusion directory
  * @param settings - Project settings containing backup configuration
  * @returns Configured BackupManager instance
@@ -294,7 +314,7 @@ export function createBackupManager(
   settings?: Partial<ProjectSettings>
 ): BackupManager {
   return new BackupManager(kbDir, {
-    backupDir: settings?.autoBackupDir,
+    backupDir: canonicalizeBackupDir(settings?.autoBackupDir),
     retention: settings?.autoBackupRetention,
   });
 }

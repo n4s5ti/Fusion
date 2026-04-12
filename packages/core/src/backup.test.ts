@@ -387,6 +387,55 @@ describe("createBackupManager", () => {
     vi.useRealTimers();
     await rm(tempDir, { recursive: true, force: true });
   });
+
+  it("should canonicalize legacy .kb/backups to .fusion/backups in settings", async () => {
+    const tempDir = mkdtempSync(join(tmpdir(), "kb-backup-test-"));
+    const kbDir = join(tempDir, ".fusion");
+    await mkdir(kbDir, { recursive: true });
+    writeFileSync(join(kbDir, "fusion.db"), "test");
+
+    const settings: Partial<ProjectSettings> = {
+      autoBackupDir: ".kb/backups", // Legacy value
+    };
+
+    const manager = createBackupManager(kbDir, settings);
+
+    // Use fake timers and create a backup
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-01-01T00:00:00.000Z"));
+    const backup = await manager.createBackup();
+
+    // Verify the backup was created in the canonical .fusion/backups directory
+    expect(backup.path).toContain(".fusion/backups");
+    expect(backup.path).not.toContain(".kb/backups");
+
+    vi.useRealTimers();
+    await rm(tempDir, { recursive: true, force: true });
+  });
+
+  it("should preserve non-legacy custom .kb/* directories", async () => {
+    const tempDir = mkdtempSync(join(tmpdir(), "kb-backup-test-"));
+    const kbDir = join(tempDir, ".fusion");
+    await mkdir(kbDir, { recursive: true });
+    writeFileSync(join(kbDir, "fusion.db"), "test");
+
+    const settings: Partial<ProjectSettings> = {
+      autoBackupDir: ".kb/my-custom-backups", // Custom path, not the legacy default
+    };
+
+    const manager = createBackupManager(kbDir, settings);
+
+    // Use fake timers and create a backup
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-01-01T00:00:00.000Z"));
+    const backup = await manager.createBackup();
+
+    // Verify the backup was created in the custom .kb/my-custom-backups directory
+    expect(backup.path).toContain(".kb/my-custom-backups");
+
+    vi.useRealTimers();
+    await rm(tempDir, { recursive: true, force: true });
+  });
 });
 
 describe("runBackupCommand", () => {

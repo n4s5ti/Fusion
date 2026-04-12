@@ -16,6 +16,34 @@ import { getTaskMergeBlocker } from "./task-merge.js";
 import { ensureMemoryFile } from "./project-memory.js";
 import { runCommandAsync } from "./run-command.js";
 
+/**
+ * Legacy backup directory default value from the old .kb storage structure.
+ * Projects that were created before the .fusion rename may still have this
+ * value persisted in their config. It is canonicalized to the new default
+ * so that all backup operations use a consistent directory.
+ */
+const LEGACY_BACKUP_DIR = ".kb/backups";
+
+/**
+ * Canonicalizes a settings object by resolving legacy defaults.
+ * Currently handles the .kb/backups → .fusion/backups migration.
+ *
+ * This function applies only the exact-match legacy alias transformation.
+ * Other custom .kb/* paths are preserved as-is.
+ */
+function canonicalizeSettings(settings: Settings): Settings {
+  // Canonicalize the legacy backup directory default to the new location.
+  // Only the exact legacy default value is transformed — custom paths like
+  // ".kb/my-custom-backups" are preserved unchanged.
+  if ((settings as Partial<ProjectSettings>).autoBackupDir === LEGACY_BACKUP_DIR) {
+    return {
+      ...settings,
+      autoBackupDir: ".fusion/backups",
+    };
+  }
+  return settings;
+}
+
 export interface TaskStoreEvents {
   "task:created": [task: Task];
   "task:moved": [data: { task: Task; from: Column; to: Column }];
@@ -621,17 +649,19 @@ export class TaskStore extends EventEmitter<TaskStoreEvents> {
    *
    * Returns the combined view that most consumers should use. Project-level
    * values in `.fusion/config.json` override global values from `~/.pi/fusion/settings.json`.
+   *
+   * Settings are canonicalized to resolve legacy defaults (e.g., `.kb/backups` → `.fusion/backups`).
    */
   async getSettings(): Promise<Settings> {
     const [globalSettings, config] = await Promise.all([
       this.globalSettingsStore.getSettings(),
       this.readConfig(),
     ]);
-    return {
+    return canonicalizeSettings({
       ...DEFAULT_SETTINGS,
       ...globalSettings,
       ...config.settings,
-    };
+    });
   }
 
   /**
@@ -643,6 +673,8 @@ export class TaskStore extends EventEmitter<TaskStoreEvents> {
    * read-heavy paths like the settings page that don't need workflow steps.
    *
    * Note: Do NOT use this method when you need workflow steps — use `getSettings()` instead.
+   *
+   * Settings are canonicalized to resolve legacy defaults (e.g., `.kb/backups` → `.fusion/backups`).
    */
   async getSettingsFast(): Promise<Settings> {
     const [globalSettings, row] = await Promise.all([
@@ -652,17 +684,19 @@ export class TaskStore extends EventEmitter<TaskStoreEvents> {
 
     const projectSettings = row?.settings ? fromJson<Settings>(row.settings) : undefined;
 
-    return {
+    return canonicalizeSettings({
       ...DEFAULT_SETTINGS,
       ...globalSettings,
       ...projectSettings,
-    };
+    });
   }
 
   /**
    * Get settings separated by scope. Returns both the global and
    * project-level settings independently (useful for the UI to show
    * which scope a value comes from).
+   *
+   * Settings are canonicalized to resolve legacy defaults (e.g., `.kb/backups` → `.fusion/backups`).
    */
   async getSettingsByScope(): Promise<{ global: GlobalSettings; project: Partial<ProjectSettings> }> {
     const [globalSettings, config] = await Promise.all([
@@ -680,7 +714,10 @@ export class TaskStore extends EventEmitter<TaskStoreEvents> {
       }
     }
 
-    return { global: globalSettings, project: projectSettings };
+    // Apply canonicalization to both the project settings and the merged result
+    const canonicalizedProject = canonicalizeSettings(projectSettings as Settings);
+
+    return { global: globalSettings, project: canonicalizedProject };
   }
 
   /**

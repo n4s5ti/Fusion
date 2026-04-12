@@ -938,6 +938,70 @@ describe("TaskStore", () => {
     });
   });
 
+  // ── Backup Directory Canonicalization ─────────────────────────────
+
+  describe("autoBackupDir canonicalization", () => {
+    it("getSettings returns .fusion/backups when persisted config contains legacy .kb/backups", async () => {
+      // Directly set the legacy backup dir in the SQLite config to simulate legacy projects
+      const db = (store as any).db;
+      const row = db.prepare("SELECT settings FROM config WHERE id = 1").get() as { settings?: string } | undefined;
+      const existingSettings = row?.settings ? JSON.parse(row.settings) : {};
+      existingSettings.autoBackupDir = ".kb/backups";
+      db.prepare("UPDATE config SET settings = ? WHERE id = 1").run(JSON.stringify(existingSettings));
+
+      const settings = await store.getSettings();
+      expect(settings.autoBackupDir).toBe(".fusion/backups");
+    });
+
+    it("getSettingsFast returns .fusion/backups when persisted config contains legacy .kb/backups", async () => {
+      const db = (store as any).db;
+      const row = db.prepare("SELECT settings FROM config WHERE id = 1").get() as { settings?: string } | undefined;
+      const existingSettings = row?.settings ? JSON.parse(row.settings) : {};
+      existingSettings.autoBackupDir = ".kb/backups";
+      db.prepare("UPDATE config SET settings = ? WHERE id = 1").run(JSON.stringify(existingSettings));
+
+      const settings = await store.getSettingsFast();
+      expect(settings.autoBackupDir).toBe(".fusion/backups");
+    });
+
+    it("getSettingsByScope returns .fusion/backups in project when persisted config contains legacy .kb/backups", async () => {
+      const db = (store as any).db;
+      const row = db.prepare("SELECT settings FROM config WHERE id = 1").get() as { settings?: string } | undefined;
+      const existingSettings = row?.settings ? JSON.parse(row.settings) : {};
+      existingSettings.autoBackupDir = ".kb/backups";
+      db.prepare("UPDATE config SET settings = ? WHERE id = 1").run(JSON.stringify(existingSettings));
+
+      const { project } = await store.getSettingsByScope();
+      expect(project.autoBackupDir).toBe(".fusion/backups");
+    });
+
+    it("autoBackupDir: null removes the override and falls back to default .fusion/backups", async () => {
+      // First set a custom backup dir
+      await store.updateSettings({ autoBackupDir: "custom/backups" });
+      let settings = await store.getSettings();
+      expect(settings.autoBackupDir).toBe("custom/backups");
+
+      // Then clear it with null (null-as-delete semantics)
+      await store.updateSettings({ autoBackupDir: null as unknown as undefined });
+      settings = await store.getSettings();
+      // Should fall back to the default .fusion/backups (which is the canonical form)
+      expect(settings.autoBackupDir).toBe(".fusion/backups");
+    });
+
+    it("non-legacy custom .kb/* directories are preserved (not canonicalized)", async () => {
+      // Custom path like ".kb/my-custom-backups" should NOT be canonicalized
+      await store.updateSettings({ autoBackupDir: ".kb/my-custom-backups" });
+      const settings = await store.getSettings();
+      expect(settings.autoBackupDir).toBe(".kb/my-custom-backups");
+    });
+
+    it("getSettings preserves explicit .fusion/backups setting", async () => {
+      await store.updateSettings({ autoBackupDir: ".fusion/backups" });
+      const settings = await store.getSettings();
+      expect(settings.autoBackupDir).toBe(".fusion/backups");
+    });
+  });
+
   // ── Prompt Overrides Tests ─────────────────────────────────────────
 
   describe("promptOverrides settings", () => {
