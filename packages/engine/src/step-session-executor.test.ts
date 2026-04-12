@@ -521,6 +521,7 @@ vi.mock("./pi.js", () => ({
     await session.prompt(prompt);
   }),
   describeModel: vi.fn().mockReturnValue("mock-provider/mock-model"),
+  compactSessionContext: vi.fn(),
 }));
 
 // Mock logger
@@ -542,10 +543,21 @@ vi.mock("./logger.js", () => {
     runtimeLog: createMockLogger(),
     ipcLog: createMockLogger(),
     projectManagerLog: createMockLogger(),
-    hybridExecutorLog: createMockLogger(),
     autopilotLog: createMockLogger(),
   };
 });
+
+// Mock context-limit-detector
+vi.mock("./context-limit-detector.js", () => ({
+  isContextLimitError: vi.fn().mockImplementation((msg: string) =>
+    /context\s+window\s+exceeds/i.test(msg),
+  ),
+}));
+
+// Mock usage-limit-detector
+vi.mock("./usage-limit-detector.js", () => ({
+  checkSessionError: vi.fn(),
+}));
 
 // Mock worktree-names
 vi.mock("./worktree-names.js", async () => {
@@ -1674,6 +1686,148 @@ describe("StepSessionExecutor", () => {
       await resultPromise;
 
       expect(flushSpy).toHaveBeenCalled();
+    });
+  });
+
+  describe("context-limit recovery", () => {
+    beforeEach(() => {
+      vi.useFakeTimers({ shouldAdvanceTime: true });
+      vi.clearAllMocks();
+    });
+
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it("succeeds when compact-and-resume recovers from context-limit error", async () => {
+      const task = makeTaskDetail({
+        prompt: makeStepPrompt("FN-001", 1),
+        steps: [{ name: "Step 0", status: "pending" }],
+      });
+      const settings = makeSettings({ maxParallelSteps: 1 });
+      const appendAgentLog = vi.fn().mockResolvedValue(undefined);
+      const store = { appendAgentLog } as unknown as TaskStore;
+
+      // Create session that throws context-limit error on first prompt
+      mockedCreateKbAgent.mockResolvedValue({
+        session: makeMockSession(),
+      } as any);
+
+      // Mock promptWithFallback: first call throws, subsequent calls succeed
+      const { promptWithFallback } = await import("./pi.js");
+      let callCount = 0;
+      vi.mocked(promptWithFallback).mockImplementation(async (session: any, prompt: string) => {
+        callCount++;
+        if (callCount === 1) {
+          throw new Error("context window exceeds limit (2013)");
+        }
+        // Subsequent calls (compact-and-resume) succeed
+      });
+
+      // Mock compactSessionContext to succeed
+      const { compactSessionContext } = await import("./pi.js");
+      vi.mocked(compactSessionContext).mockResolvedValue({
+        summary: "Compacted",
+        tokensBefore: 150000,
+      });
+
+      const executor = new StepSessionExecutor({
+        store,
+        taskDetail: task,
+        worktreePath: "/project/.worktrees/main",
+        rootDir: "/project",
+        settings,
+      });
+
+      const results = await executor.executeAll();
+
+      expect(results).toHaveLength(1);
+      expect(results[0].success).toBe(true);
+      expect(results[0].retries).toBe(0);
+    });
+
+    it("succeeds with reduced-prompt retry when compact returns null", async () => {
+      const task = makeTaskDetail({
+        prompt: makeStepPrompt("FN-001", 1),
+        steps: [{ name: "Step 0", status: "pending" }],
+      });
+      const settings = makeSettings({ maxParallelSteps: 1 });
+      const appendAgentLog = vi.fn().mockResolvedValue(undefined);
+      const store = { appendAgentLog } as unknown as TaskStore;
+
+      mockedCreateKbAgent.mockResolvedValue({
+        session: makeMockSession(),
+      } as any);
+
+      // Mock promptWithFallback: first call throws context-limit, second succeeds (reduced prompt)
+      const { promptWithFallback } = await import("./pi.js");
+      let callCount = 0;
+      vi.mocked(promptWithFallback).mockImplementation(async (session: any, prompt: string) => {
+        callCount++;
+        if (callCount === 1) {
+          throw new Error("context window exceeds limit (2013)");
+        }
+        // Reduced-prompt succeeds
+      });
+
+      // Mock compactSessionContext to return null (no history)
+      const { compactSessionContext } = await import("./pi.js");
+      vi.mocked(compactSessionContext).mockResolvedValue(null);
+
+      const executor = new StepSessionExecutor({
+        store,
+        taskDetail: task,
+        worktreePath: "/project/.worktrees/main",
+        rootDir: "/project",
+        settings,
+      });
+
+      const results = await executor.executeAll();
+
+      expect(results).toHaveLength(1);
+      expect(results[0].success).toBe(true);
+    });
+
+    it("fails when all recovery attempts fail", async () => {
+      const task = makeTaskDetail({
+        prompt: makeStepPrompt("FN-001", 1),
+        steps: [{ name: "Step 0", status: "pending" }],
+      });
+      const settings = makeSettings({ maxParallelSteps: 1 });
+      const appendAgentLog = vi.fn().mockResolvedValue(undefined);
+      const store = { appendAgentLog } as unknown as TaskStore;
+
+      mockedCreateKbAgent.mockResolvedValue({
+        session: makeMockSession(),
+      } as any);
+
+      // Mock promptWithFallback: always throws context-limit error
+      const { promptWithFallback } = await import("./pi.js");
+      vi.mocked(promptWithFallback).mockRejectedValue(
+        new Error("context window exceeds limit (2013)"),
+      );
+
+      // Mock compactSessionContext to return null (no history)
+      const { compactSessionContext } = await import("./pi.js");
+      vi.mocked(compactSessionContext).mockResolvedValue(null);
+
+      const executor = new StepSessionExecutor({
+        store,
+        taskDetail: task,
+        worktreePath: "/project/.worktrees/main",
+        rootDir: "/project",
+        settings,
+      });
+
+      const resultsPromise = executor.executeAll();
+      // Advance timers for retry delays
+      await vi.advanceTimersByTimeAsync(90_000);
+      const results = await resultsPromise;
+
+      // All recovery attempts exhausted, step should fail
+      expect(results).toHaveLength(1);
+      expect(results[0].success).toBe(false);
+      expect(results[0].error).toContain("context window exceeds limit");
     });
   });
 });

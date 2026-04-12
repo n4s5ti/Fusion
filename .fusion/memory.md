@@ -484,6 +484,30 @@ The `@fusion/tui` package provides Ink-based React components for terminal UI.
 - When fixing executor recovery paths that fall through to failure, ensure the fix adds an explicit `return` after successful recovery to prevent execution from continuing to the failure path
 - Vitest runs source files directly (`.ts`) rather than compiled dist files - rebuild with `tsc` before running tests if changes aren't picked up
 
+## FN-1643: Unified Context-Limit Recovery Across Executor Paths
+
+Both single-session and step-session executors now share consistent context-limit recovery:
+
+**Single-session executor (executor.ts catch block):**
+- Normalize error messages with `const errorMessage = typeof err === "string" ? err : err?.message ?? String(err)`
+- Recovery flow: compact-and-resume → reduced-prompt retry (bounded to 1 attempt per error)
+- Recovery state tracked in `loopRecoveryState` Map with `attempts` counter
+- Explicit `return` after successful recovery prevents fallthrough to failure path
+
+**Step-session executor (step-session-executor.ts executeStep loop):**
+- Recovery attempts tracked separately from `retries` counter via `recoveryAttempts` variable
+- Recovery bounded to `MAX_STEP_RETRIES` attempts to prevent infinite loops
+- New `buildReducedStepPrompt()` generates simpler step prompts for recovery
+- New imports: `compactSessionContext`, `isContextLimitError`, `checkSessionError`
+
+**Testing context-limit recovery:**
+- Use `vi.mocked(promptWithFallback)` to control success/failure per call
+- Track `callCount` to make first call throw and subsequent calls succeed
+- Use `vi.useFakeTimers()` for retry delay handling in step-session tests
+- `vi.clearAllMocks()` in `beforeEach` to reset mocks between tests
+
+**Key pitfall:** The `appendAgentLog` method requires 5 parameters (including `type` as `AgentLogType`). Use `"text"` for info messages and `"tool_error"` for error messages.
+
 ## FN-1525: Merger Fresh-Session and Compaction Recovery
 
 - The merger (`runAiAgentForCommit`) enforces a fresh session per merge attempt via `createKbAgent` - no stale conversation state

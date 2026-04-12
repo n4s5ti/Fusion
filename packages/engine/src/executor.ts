@@ -1793,20 +1793,28 @@ export class TaskExecutor {
         this.stuckAborted.delete(task.id);
         executorLog.log(`${task.id} terminated by stuck task detector — will ${stuckRequeue ? "retry" : "not retry (budget exhausted)"}`);
       } else {
-        // Check if the error is a context-limit error and attempt compact-and-resume
-        // before falling through to the normal failure path. This catches context
-        // overflow errors from the LLM provider that occur during prompt execution.
+        // Normalize error message for consistent handling across different error types.
+        // This ensures we don't make assumptions about error object structure.
+        const errorMessage = typeof err === "string" ? err : err?.message ?? String(err);
+
+        // Check if the error is a context-limit error and attempt bounded recovery
+        // before falling through to the normal failure path. Recovery strategy:
+        // 1. Try compact-and-resume (compacts session history, then resumes with same prompt)
+        // 2. If compaction fails, try reduced-prompt retry (simpler, shorter prompt)
+        // 3. If reduced prompt succeeds, return (task continues)
+        // 4. If all recovery fails, fall through to mark task as failed
         const loopState = this.loopRecoveryState.get(task.id);
         const loopAttempts = loopState?.attempts ?? 0;
 
-        if (isContextLimitError(err.message) && loopAttempts < 1) {
+        if (isContextLimitError(errorMessage) && loopAttempts < 1) {
           const activeEntry = this.activeSessions.get(task.id);
           if (activeEntry) {
             executorLog.log(`${task.id} context limit error — attempting compact-and-resume`);
-            await this.store.logEntry(task.id, `Context limit error — attempting compact-and-resume: ${err.message}`, undefined, this.currentRunContext);
+            await this.store.logEntry(task.id, `Context limit error — attempting compact-and-resume: ${errorMessage}`, undefined, this.currentRunContext);
 
             const compactResult = await compactSessionContext(activeEntry.session);
             if (compactResult) {
+              // Compaction succeeded — try to resume with original prompt
               this.loopRecoveryState.set(task.id, { attempts: loopAttempts + 1, pending: true });
               executorLog.log(`${task.id} context compaction succeeded — resuming`);
               await this.store.logEntry(task.id, "Context compaction succeeded — resuming execution", undefined, this.currentRunContext);
@@ -1836,18 +1844,55 @@ export class TaskExecutor {
                 // and call task_done or complete implicitly.
                 return;
               } catch (resumeErr: any) {
-                // Resume after context compaction failed — fall through to normal failure
-                executorLog.error(`${task.id} resume after context compaction failed: ${resumeErr.message}`);
-                await this.store.logEntry(task.id, `Resume after context compaction failed: ${resumeErr.message}`, undefined, this.currentRunContext);
+                // Resume after context compaction failed — fall through to reduced-prompt retry
+                const resumeErrorMessage = resumeErr?.message ?? String(resumeErr);
+                executorLog.error(`${task.id} resume after context compaction failed: ${resumeErrorMessage}`);
+                await this.store.logEntry(task.id, `Resume after context compaction failed: ${resumeErrorMessage}`, undefined, this.currentRunContext);
+                // Fall through to reduced-prompt retry below
               }
+            }
+
+            // Compact returned null (no history to compact) OR compact succeeded but resume failed.
+            // Try reduced-prompt recovery: a simpler prompt that doesn't include full history.
+            // This is bounded to 1 attempt to prevent infinite retry loops.
+            if (this.loopRecoveryState.get(task.id)?.attempts ?? 0) {
+              // Already tried compact-and-resume, skip reduced-prompt to prevent loops
             } else {
-              executorLog.log(`${task.id} context compaction failed — falling through to normal failure`);
-              await this.store.logEntry(task.id, "Context compaction failed — proceeding to failure path", undefined, this.currentRunContext);
+              executorLog.log(`${task.id} attempting reduced-prompt retry for context limit`);
+              await this.store.logEntry(task.id, "Context compaction unavailable — attempting reduced-prompt recovery", undefined, this.currentRunContext);
+
+              try {
+                this.options.stuckTaskDetector?.recordProgress(task.id);
+                // Build a reduced prompt that's simpler and shorter to avoid context overflow
+                const reducedPrompt = [
+                  "Your previous attempt hit the context window limit.",
+                  "Focus on completing the task efficiently with minimal context:",
+                  "1. Review git status and git log to see what's been done",
+                  "2. Identify the most critical remaining work",
+                  "3. Complete it with a simpler, more focused approach",
+                  "",
+                  "Do not repeat what's already been done. Just complete the task and call task_done.",
+                ].join("\n");
+
+                await promptWithFallback(activeEntry.session, reducedPrompt);
+                checkSessionError(activeEntry.session);
+
+                // Reduced-prompt retry succeeded — return to let the finally block clean up
+                // without marking the task as failed.
+                executorLog.log(`${task.id} reduced-prompt recovery succeeded — continuing`);
+                await this.store.logEntry(task.id, "Reduced-prompt recovery succeeded — continuing execution", undefined, this.currentRunContext);
+                return;
+              } catch (reducedErr: any) {
+                const reducedErrorMessage = reducedErr?.message ?? String(reducedErr);
+                executorLog.error(`${task.id} reduced-prompt recovery also failed: ${reducedErrorMessage}`);
+                await this.store.logEntry(task.id, `Reduced-prompt recovery failed: ${reducedErrorMessage}`, undefined, this.currentRunContext);
+                // Fall through to mark task as failed
+              }
             }
           }
-        } else if (this.options.usageLimitPauser && isUsageLimitError(err.message)) {
-          await this.options.usageLimitPauser.onUsageLimitHit("executor", task.id, err.message);
-        } else if (isTransientError(err.message)) {
+        } else if (this.options.usageLimitPauser && isUsageLimitError(errorMessage)) {
+          await this.options.usageLimitPauser.onUsageLimitHit("executor", task.id, errorMessage);
+        } else if (isTransientError(errorMessage)) {
           // Transient network/infrastructure error — use bounded recovery policy
           const decision = computeRecoveryDecision({
             recoveryRetryCount: task.recoveryRetryCount,
@@ -1858,9 +1903,9 @@ export class TaskExecutor {
             const attempt = decision.nextState.recoveryRetryCount;
             const delay = formatDelay(decision.delayMs);
             // Silent transient errors (e.g., "request was aborted") are noisy — skip logging
-            if (!isSilentTransientError(err.message)) {
-              executorLog.warn(`⚡ ${task.id} transient error — retry ${attempt}/${MAX_RECOVERY_RETRIES} in ${delay}: ${err.message}`);
-              await this.store.logEntry(task.id, `Transient error (retry ${attempt}/${MAX_RECOVERY_RETRIES} in ${delay}): ${err.message}`, undefined, this.currentRunContext);
+            if (!isSilentTransientError(errorMessage)) {
+              executorLog.warn(`⚡ ${task.id} transient error — retry ${attempt}/${MAX_RECOVERY_RETRIES} in ${delay}: ${errorMessage}`);
+              await this.store.logEntry(task.id, `Transient error (retry ${attempt}/${MAX_RECOVERY_RETRIES} in ${delay}): ${errorMessage}`, undefined, this.currentRunContext);
             }
             // Clean up the old worktree so the retry gets a fresh one
             if (worktreePath && existsSync(worktreePath)) {
@@ -1884,11 +1929,11 @@ export class TaskExecutor {
           }
 
           // Recovery budget exhausted — escalate to real failure
-          executorLog.error(`✗ ${task.id} transient error retries exhausted (${MAX_RECOVERY_RETRIES} attempts): ${err.message}`);
-          await this.store.logEntry(task.id, `Transient error retries exhausted after ${MAX_RECOVERY_RETRIES} attempts: ${err.message}`, undefined, this.currentRunContext);
+          executorLog.error(`✗ ${task.id} transient error retries exhausted (${MAX_RECOVERY_RETRIES} attempts): ${errorMessage}`);
+          await this.store.logEntry(task.id, `Transient error retries exhausted after ${MAX_RECOVERY_RETRIES} attempts: ${errorMessage}`, undefined, this.currentRunContext);
           await this.store.updateTask(task.id, {
             status: "failed",
-            error: err.message,
+            error: errorMessage,
             recoveryRetryCount: null,
             nextRecoveryAt: null,
           });
@@ -1897,9 +1942,9 @@ export class TaskExecutor {
           this.options.onError?.(task, err);
           return;
         }
-        executorLog.error(`✗ ${task.id} execution failed:`, err.message);
-        await this.store.logEntry(task.id, `Execution failed: ${err.message}`, undefined, this.currentRunContext);
-        await this.store.updateTask(task.id, { status: "failed", error: err.message });
+        executorLog.error(`✗ ${task.id} execution failed:`, errorMessage);
+        await this.store.logEntry(task.id, `Execution failed: ${errorMessage}`, undefined, this.currentRunContext);
+        await this.store.updateTask(task.id, { status: "failed", error: errorMessage });
         await this.store.moveTask(task.id, "in-review");
         executorLog.log(`✗ ${task.id} execution failed → in-review`);
         this.options.onError?.(task, err);
