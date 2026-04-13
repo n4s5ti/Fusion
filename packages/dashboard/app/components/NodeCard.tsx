@@ -1,6 +1,7 @@
 import { memo, useCallback, useMemo, useState } from "react";
 import { Activity, Server, Settings, Trash2 } from "lucide-react";
 import type { NodeInfo, ProjectInfo } from "../api";
+import { getProjectCountForNode } from "../utils/nodeProjectAssignment";
 
 export interface NodeCardProps {
   node: NodeInfo;
@@ -23,10 +24,6 @@ function truncateUrl(url: string, maxLength: number = 42): string {
   return `${url.slice(0, maxLength - 3)}...`;
 }
 
-function getAssignedProjectCount(projects: ProjectInfo[], nodeId: string): number {
-  return projects.filter((project) => project.nodeId === nodeId).length;
-}
-
 function areNodeCardPropsEqual(previous: NodeCardProps, next: NodeCardProps): boolean {
   const prevNode = previous.node;
   const nextNode = next.node;
@@ -40,8 +37,9 @@ function areNodeCardPropsEqual(previous: NodeCardProps, next: NodeCardProps): bo
   if (prevNode.updatedAt !== nextNode.updatedAt) return false;
   if (previous.isLoading !== next.isLoading) return false;
 
-  const previousCount = getAssignedProjectCount(previous.projects, prevNode.id);
-  const nextCount = getAssignedProjectCount(next.projects, nextNode.id);
+  // Compare project counts using the canonical counting function
+  const previousCount = getProjectCountForNode(previous.projects, prevNode);
+  const nextCount = getProjectCountForNode(next.projects, nextNode);
   return previousCount === nextCount;
 }
 
@@ -57,8 +55,8 @@ function NodeCardInner({
   const statusConfig = STATUS_CONFIG[node.status];
 
   const assignedProjectCount = useMemo(() => {
-    return getAssignedProjectCount(projects, node.id);
-  }, [projects, node.id]);
+    return getProjectCountForNode(projects, node);
+  }, [projects, node]);
 
   const handleOpenDetails = useCallback(() => {
     onEdit(node);

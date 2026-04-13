@@ -144,4 +144,48 @@ describe("NodeCard", () => {
     fireEvent.click(screen.getByLabelText("Confirm remove node"));
     expect(onRemove).toHaveBeenCalledWith(node.id);
   });
+
+  it("local node counts include unassigned projects", () => {
+    const localNode = makeNode({ id: "local-1", type: "local" });
+    const projects = [
+      makeProject({ id: "proj-1", nodeId: "local-1" }), // explicitly assigned
+      makeProject({ id: "proj-2", nodeId: undefined }), // unassigned - runs on local
+      makeProject({ id: "proj-3", nodeId: "remote-1" }), // assigned to remote - not counted
+    ];
+
+    render(
+      <NodeCard
+        node={localNode}
+        projects={projects}
+        onHealthCheck={vi.fn()}
+        onEdit={vi.fn()}
+        onRemove={vi.fn()}
+      />
+    );
+
+    // Local node should show 2 projects (explicitly assigned + unassigned)
+    expect(screen.getByText("2")).toBeDefined();
+  });
+
+  it("remote node counts exclude unassigned projects", () => {
+    const remoteNode = makeNode({ id: "remote-1", type: "remote" });
+    const projects = [
+      makeProject({ id: "proj-1", nodeId: "remote-1" }), // explicitly assigned
+      makeProject({ id: "proj-2", nodeId: undefined }), // unassigned - NOT counted for remote
+      makeProject({ id: "proj-3", nodeId: "local-1" }), // assigned to local - not counted
+    ];
+
+    render(
+      <NodeCard
+        node={remoteNode}
+        projects={projects}
+        onHealthCheck={vi.fn()}
+        onEdit={vi.fn()}
+        onRemove={vi.fn()}
+      />
+    );
+
+    // Remote node should show only 1 project (explicitly assigned only)
+    expect(screen.getByText("1")).toBeDefined();
+  });
 });

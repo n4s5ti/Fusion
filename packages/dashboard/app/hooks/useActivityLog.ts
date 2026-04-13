@@ -84,7 +84,7 @@ export function useActivityLog(options: UseActivityLogOptions = {}): UseActivity
         // Per-project: fetchActivityLog returns ActivityLogEntry[] which is a
         // subset of ActivityFeedEntry (missing projectId/projectName). Map to
         // the full shape so downstream consumers see a uniform interface.
-        const logEntries = await fetchActivityLog({ limit, type });
+        const logEntries = await fetchActivityLog({ limit, type, projectId });
         data = logEntries.map((entry) => ({
           ...entry,
           projectId: projectId ?? "",
@@ -125,6 +125,7 @@ export function useActivityLog(options: UseActivityLogOptions = {}): UseActivity
           limit,
           type,
           since: lastTimestampRef.current,
+          projectId,
         });
         data = logEntries.map((entry) => ({
           ...entry,

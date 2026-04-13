@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Activity, Pencil, Save, X } from "lucide-react";
 import type { NodeInfo, NodeUpdateInput, ProjectInfo } from "../api";
 import type { ToastType } from "../hooks/useToast";
+import { getProjectsForNode } from "../utils/nodeProjectAssignment";
 
 interface NodeDetailModalProps {
   isOpen: boolean;
@@ -65,7 +66,7 @@ export function NodeDetailModal({
 
   const assignedProjects = useMemo(() => {
     if (!node) return [];
-    return projects.filter((project) => project.nodeId === node.id);
+    return getProjectsForNode(projects, node);
   }, [node, projects]);
 
   const handleHealthCheck = useCallback(async () => {
@@ -244,9 +245,13 @@ export function NodeDetailModal({
           </section>
 
           <section className="node-detail-modal__section">
-            <h4>Assigned Projects ({assignedProjects.length})</h4>
+            <h4>{node.type === "local" ? "Projects" : "Assigned Projects"} ({assignedProjects.length})</h4>
             {assignedProjects.length === 0 ? (
-              <p className="node-detail-modal__empty">No projects are assigned to this node.</p>
+              <p className="node-detail-modal__empty">
+                {node.type === "local"
+                  ? "No projects are running on this node."
+                  : "No projects are assigned to this node."}
+              </p>
             ) : (
               <ul className="node-detail-modal__project-list">
                 {assignedProjects.map((project) => (

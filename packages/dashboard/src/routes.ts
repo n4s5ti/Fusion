@@ -3745,9 +3745,10 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
    * Returns GitHub remotes from the current git repository.
    * Response: Array of GitRemote objects [{ name: string, owner: string, repo: string, url: string }]
    */
-  router.get("/git/remotes", (_req, res) => {
+  router.get("/git/remotes", async (req, res) => {
     try {
-      const rootDir = store.getRootDir();
+      const scopedStore = await getScopedStore(req);
+      const rootDir = scopedStore.getRootDir();
       const remotes = getGitHubRemotes(rootDir);
       res.json(remotes);
     } catch (err: any) {
@@ -3763,9 +3764,10 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
    * Returns all git remotes with their fetch and push URLs.
    * Response: Array of GitRemoteDetailed objects [{ name: string, fetchUrl: string, pushUrl: string }]
    */
-  router.get("/git/remotes/detailed", (_req, res) => {
+  router.get("/git/remotes/detailed", async (req, res) => {
     try {
-      const rootDir = store.getRootDir();
+      const scopedStore = await getScopedStore(req);
+      const rootDir = scopedStore.getRootDir();
       if (!isGitRepo(rootDir)) {
         throw badRequest("Not a git repository");
       }
@@ -3786,7 +3788,8 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
    */
   router.post("/git/remotes", async (req, res) => {
     try {
-      const rootDir = store.getRootDir();
+      const scopedStore = await getScopedStore(req);
+      const rootDir = scopedStore.getRootDir();
       const { name, url } = req.body;
       if (!name || typeof name !== "string") {
         throw badRequest("name is required");
@@ -3827,7 +3830,8 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
    */
   router.delete("/git/remotes/:name", async (req, res) => {
     try {
-      const rootDir = store.getRootDir();
+      const scopedStore = await getScopedStore(req);
+      const rootDir = scopedStore.getRootDir();
       if (!isGitRepo(rootDir)) {
         throw badRequest("Not a git repository");
       }
@@ -3855,7 +3859,8 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
    */
   router.patch("/git/remotes/:name", async (req, res) => {
     try {
-      const rootDir = store.getRootDir();
+      const scopedStore = await getScopedStore(req);
+      const rootDir = scopedStore.getRootDir();
       if (!isGitRepo(rootDir)) {
         throw badRequest("Not a git repository");
       }
@@ -3889,7 +3894,8 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
    */
   router.put("/git/remotes/:name/url", async (req, res) => {
     try {
-      const rootDir = store.getRootDir();
+      const scopedStore = await getScopedStore(req);
+      const rootDir = scopedStore.getRootDir();
       if (!isGitRepo(rootDir)) {
         throw badRequest("Not a git repository");
       }
@@ -3919,9 +3925,10 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
    * Returns current git status: branch, commit hash, dirty state, ahead/behind counts.
    * Response: { branch: string, commit: string, isDirty: boolean, ahead: number, behind: number }
    */
-  router.get("/git/status", (_req, res) => {
+  router.get("/git/status", async (req, res) => {
     try {
-      const rootDir = store.getRootDir();
+      const scopedStore = await getScopedStore(req);
+      const rootDir = scopedStore.getRootDir();
       if (!isGitRepo(rootDir)) {
         throw badRequest("Not a git repository");
       }
@@ -3943,9 +3950,10 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
    * Returns recent commits (default 20, configurable via ?limit=).
    * Response: Array of GitCommit objects
    */
-  router.get("/git/commits", (req, res) => {
+  router.get("/git/commits", async (req, res) => {
     try {
-      const rootDir = store.getRootDir();
+      const scopedStore = await getScopedStore(req);
+      const rootDir = scopedStore.getRootDir();
       if (!isGitRepo(rootDir)) {
         throw badRequest("Not a git repository");
       }
@@ -3965,9 +3973,10 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
    * Returns diff for a specific commit (stat + patch).
    * Response: { stat: string, patch: string }
    */
-  router.get("/git/commits/:hash/diff", (req, res) => {
+  router.get("/git/commits/:hash/diff", async (req, res) => {
     try {
-      const rootDir = store.getRootDir();
+      const scopedStore = await getScopedStore(req);
+      const rootDir = scopedStore.getRootDir();
       if (!isGitRepo(rootDir)) {
         throw badRequest("Not a git repository");
       }
@@ -3994,9 +4003,10 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
    * Returns local commits ahead of the upstream tracking branch (commits that would be pushed).
    * Response: Array of GitCommit objects (empty when no upstream is configured)
    */
-  router.get("/git/commits/ahead", (_req, res) => {
+  router.get("/git/commits/ahead", async (req, res) => {
     try {
-      const rootDir = store.getRootDir();
+      const scopedStore = await getScopedStore(req);
+      const rootDir = scopedStore.getRootDir();
       if (!isGitRepo(rootDir)) {
         throw badRequest("Not a git repository");
       }
@@ -4019,7 +4029,8 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
    */
   router.get("/git/remotes/:name/commits", async (req, res) => {
     try {
-      const rootDir = store.getRootDir();
+      const scopedStore = await getScopedStore(req);
+      const rootDir = scopedStore.getRootDir();
       if (!isGitRepo(rootDir)) {
         throw badRequest("Not a git repository");
       }
@@ -4085,9 +4096,10 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
    * Returns all local branches with current indicator, remote tracking info, and last commit date.
    * Response: Array of GitBranch objects
    */
-  router.get("/git/branches", (_req, res) => {
+  router.get("/git/branches", async (req, res) => {
     try {
-      const rootDir = store.getRootDir();
+      const scopedStore = await getScopedStore(req);
+      const rootDir = scopedStore.getRootDir();
       if (!isGitRepo(rootDir)) {
         throw badRequest("Not a git repository");
       }
@@ -4107,9 +4119,10 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
    * Query params: limit (default 10, max 100)
    * Response: Array of GitCommit objects
    */
-  router.get("/git/branches/:name/commits", (req, res) => {
+  router.get("/git/branches/:name/commits", async (req, res) => {
     try {
-      const rootDir = store.getRootDir();
+      const scopedStore = await getScopedStore(req);
+      const rootDir = scopedStore.getRootDir();
       if (!isGitRepo(rootDir)) {
         throw badRequest("Not a git repository");
       }
@@ -4133,14 +4146,15 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
    * Returns all worktrees with path, branch, isMain, and associated task ID.
    * Response: Array of GitWorktree objects
    */
-  router.get("/git/worktrees", async (_req, res) => {
+  router.get("/git/worktrees", async (req, res) => {
     try {
-      const rootDir = store.getRootDir();
+      const scopedStore = await getScopedStore(req);
+      const rootDir = scopedStore.getRootDir();
       if (!isGitRepo(rootDir)) {
         throw badRequest("Not a git repository");
       }
       // Get tasks to correlate with worktrees
-      const tasks = await store.listTasks({ slim: true, includeArchived: false });
+      const tasks = await scopedStore.listTasks({ slim: true, includeArchived: false });
       const worktrees = getGitWorktrees(tasks, rootDir);
       res.json(worktrees);
     } catch (err: any) {
@@ -4160,7 +4174,8 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
    */
   router.post("/git/branches", async (req, res) => {
     try {
-      const rootDir = store.getRootDir();
+      const scopedStore = await getScopedStore(req);
+      const rootDir = scopedStore.getRootDir();
       if (!isGitRepo(rootDir)) {
         throw badRequest("Not a git repository");
       }
@@ -4190,7 +4205,8 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
    */
   router.post("/git/branches/:name/checkout", async (req, res) => {
     try {
-      const rootDir = store.getRootDir();
+      const scopedStore = await getScopedStore(req);
+      const rootDir = scopedStore.getRootDir();
       if (!isGitRepo(rootDir)) {
         throw badRequest("Not a git repository");
       }
@@ -4218,7 +4234,8 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
    */
   router.delete("/git/branches/:name", async (req, res) => {
     try {
-      const rootDir = store.getRootDir();
+      const scopedStore = await getScopedStore(req);
+      const rootDir = scopedStore.getRootDir();
       if (!isGitRepo(rootDir)) {
         throw badRequest("Not a git repository");
       }
@@ -4249,7 +4266,8 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
    */
   router.post("/git/fetch", async (req, res) => {
     try {
-      const rootDir = store.getRootDir();
+      const scopedStore = await getScopedStore(req);
+      const rootDir = scopedStore.getRootDir();
       if (!isGitRepo(rootDir)) {
         throw badRequest("Not a git repository");
       }
@@ -4274,9 +4292,10 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
    * POST /api/git/pull
    * Pull the current branch.
    */
-  router.post("/git/pull", async (_req, res) => {
+  router.post("/git/pull", async (req, res) => {
     try {
-      const rootDir = store.getRootDir();
+      const scopedStore = await getScopedStore(req);
+      const rootDir = scopedStore.getRootDir();
       if (!isGitRepo(rootDir)) {
         throw badRequest("Not a git repository");
       }
@@ -4299,9 +4318,10 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
    * POST /api/git/push
    * Push the current branch.
    */
-  router.post("/git/push", async (_req, res) => {
+  router.post("/git/push", async (req, res) => {
     try {
-      const rootDir = store.getRootDir();
+      const scopedStore = await getScopedStore(req);
+      const rootDir = scopedStore.getRootDir();
       if (!isGitRepo(rootDir)) {
         throw badRequest("Not a git repository");
       }
@@ -4327,9 +4347,10 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
    * GET /api/git/stashes
    * Returns list of stash entries.
    */
-  router.get("/git/stashes", (_req, res) => {
+  router.get("/git/stashes", async (req, res) => {
     try {
-      const rootDir = store.getRootDir();
+      const scopedStore = await getScopedStore(req);
+      const rootDir = scopedStore.getRootDir();
       if (!isGitRepo(rootDir)) {
         throw badRequest("Not a git repository");
       }
@@ -4350,7 +4371,8 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
    */
   router.post("/git/stashes", async (req, res) => {
     try {
-      const rootDir = store.getRootDir();
+      const scopedStore = await getScopedStore(req);
+      const rootDir = scopedStore.getRootDir();
       if (!isGitRepo(rootDir)) {
         throw badRequest("Not a git repository");
       }
@@ -4376,7 +4398,8 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
    */
   router.post("/git/stashes/:index/apply", async (req, res) => {
     try {
-      const rootDir = store.getRootDir();
+      const scopedStore = await getScopedStore(req);
+      const rootDir = scopedStore.getRootDir();
       if (!isGitRepo(rootDir)) {
         throw badRequest("Not a git repository");
       }
@@ -4401,7 +4424,8 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
    */
   router.delete("/git/stashes/:index", async (req, res) => {
     try {
-      const rootDir = store.getRootDir();
+      const scopedStore = await getScopedStore(req);
+      const rootDir = scopedStore.getRootDir();
       if (!isGitRepo(rootDir)) {
         throw badRequest("Not a git repository");
       }
@@ -4423,9 +4447,10 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
    * GET /api/git/diff
    * Returns working directory diff (unstaged changes).
    */
-  router.get("/git/diff", async (_req, res) => {
+  router.get("/git/diff", async (req, res) => {
     try {
-      const rootDir = store.getRootDir();
+      const scopedStore = await getScopedStore(req);
+      const rootDir = scopedStore.getRootDir();
       if (!isGitRepo(rootDir)) {
         throw badRequest("Not a git repository");
       }
@@ -4443,9 +4468,10 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
    * GET /api/git/changes
    * Returns file changes (staged and unstaged).
    */
-  router.get("/git/changes", async (_req, res) => {
+  router.get("/git/changes", async (req, res) => {
     try {
-      const rootDir = store.getRootDir();
+      const scopedStore = await getScopedStore(req);
+      const rootDir = scopedStore.getRootDir();
       if (!isGitRepo(rootDir)) {
         throw badRequest("Not a git repository");
       }
@@ -4466,7 +4492,8 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
    */
   router.post("/git/stage", async (req, res) => {
     try {
-      const rootDir = store.getRootDir();
+      const scopedStore = await getScopedStore(req);
+      const rootDir = scopedStore.getRootDir();
       if (!isGitRepo(rootDir)) {
         throw badRequest("Not a git repository");
       }
@@ -4491,7 +4518,8 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
    */
   router.post("/git/unstage", async (req, res) => {
     try {
-      const rootDir = store.getRootDir();
+      const scopedStore = await getScopedStore(req);
+      const rootDir = scopedStore.getRootDir();
       if (!isGitRepo(rootDir)) {
         throw badRequest("Not a git repository");
       }
@@ -4516,7 +4544,8 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
    */
   router.post("/git/commit", async (req, res) => {
     try {
-      const rootDir = store.getRootDir();
+      const scopedStore = await getScopedStore(req);
+      const rootDir = scopedStore.getRootDir();
       if (!isGitRepo(rootDir)) {
         throw badRequest("Not a git repository");
       }
@@ -4545,7 +4574,8 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
    */
   router.post("/git/discard", async (req, res) => {
     try {
-      const rootDir = store.getRootDir();
+      const scopedStore = await getScopedStore(req);
+      const rootDir = scopedStore.getRootDir();
       if (!isGitRepo(rootDir)) {
         throw badRequest("Not a git repository");
       }
@@ -5235,8 +5265,9 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
       return;
     }
 
-    // Find all matching tasks by badge URL
-    const tasks = await store.listTasks({ slim: true, includeArchived: false });
+    // Find all matching tasks by badge URL (use project-scoped store if projectId is provided)
+    const scopedStore = await getScopedStore(req);
+    const tasks = await scopedStore.listTasks({ slim: true, includeArchived: false });
     const matchingTasks: Array<{ id: string; resourceType: "pr" | "issue"; current: unknown }> = [];
 
     for (const task of tasks) {
@@ -5274,7 +5305,7 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
         const next = { ...(badgeData as Omit<PrInfo, "lastCheckedAt">), lastCheckedAt: checkedAt };
         const changed = hasPrBadgeFieldsChanged(current, badgeData as Omit<PrInfo, "lastCheckedAt">);
         if (changed || current.lastCheckedAt !== checkedAt) {
-          await store.updatePrInfo(match.id, next);
+          await scopedStore.updatePrInfo(match.id, next);
           if (changed) badgeFieldsChanged = true;
         }
       } else {
@@ -5282,7 +5313,7 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
         const next = { ...(badgeData as Omit<import("@fusion/core").IssueInfo, "lastCheckedAt">), lastCheckedAt: checkedAt };
         const changed = hasIssueBadgeFieldsChanged(current, badgeData as Omit<import("@fusion/core").IssueInfo, "lastCheckedAt">);
         if (changed || current.lastCheckedAt !== checkedAt) {
-          await store.updateIssueInfo(match.id, next);
+          await scopedStore.updateIssueInfo(match.id, next);
           if (changed) badgeFieldsChanged = true;
         }
       }
@@ -7912,7 +7943,8 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
     try {
       const { description, provider, modelId } = req.body;
       const ip = req.ip || req.socket.remoteAddress || "unknown";
-      const rootDir = store.getRootDir();
+      const scopedStore = await getScopedStore(req);
+      const rootDir = scopedStore.getRootDir();
 
       const {
         checkRateLimit,
@@ -7956,7 +7988,7 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
       // 3. Settings planningProvider + planningModelId
       // 4. Settings defaultProvider + defaultModelId
       // 5. Automatic model resolution (no explicit model)
-      const settings = await store.getSettings();
+      const settings = await scopedStore.getSettings();
 
       const resolvedProvider =
         (provider && modelId ? provider : undefined) ||
@@ -8562,6 +8594,7 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
    */
   router.get("/activity", async (req, res) => {
     try {
+      const scopedStore = await getScopedStore(req);
       const limitParam = req.query.limit;
       const sinceParam = req.query.since;
       const typeParam = req.query.type;
@@ -8588,7 +8621,7 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
         type: typeParam as ActivityEventType | undefined,
       };
 
-      const entries = await store.getActivityLog(options);
+      const entries = await scopedStore.getActivityLog(options);
       res.json(entries);
     } catch (err: any) {
       if (err instanceof ApiError) {
@@ -8603,9 +8636,10 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
    * Clear all activity log entries (maintenance endpoint).
    * Returns: { success: true }
    */
-  router.delete("/activity", async (_req, res) => {
+  router.delete("/activity", async (req, res) => {
     try {
-      await store.clearActivityLog();
+      const scopedStore = await getScopedStore(req);
+      await scopedStore.clearActivityLog();
       res.json({ success: true });
     } catch (err: any) {
       if (err instanceof ApiError) {

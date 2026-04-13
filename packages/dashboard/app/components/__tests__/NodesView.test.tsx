@@ -148,4 +148,33 @@ describe("NodesView", () => {
     fireEvent.click(nodeCard!);
     expect(screen.getByRole("dialog", { name: "Node details for Detail Node" })).toBeDefined();
   });
+
+  it("local node project count includes unassigned projects in detail modal", () => {
+    mockUseProjects.mockReturnValue({
+      projects: [
+        makeProject({ id: "proj-1", nodeId: "node-1" }), // explicitly assigned
+        makeProject({ id: "proj-2", nodeId: undefined }), // unassigned - runs on local
+      ],
+      loading: false,
+      error: null,
+      refresh: vi.fn().mockResolvedValue(undefined),
+      register: vi.fn(),
+      update: vi.fn(),
+      unregister: vi.fn(),
+    });
+
+    mockUseNodes.mockReturnValue(makeUseNodesResult({
+      nodes: [makeNode({ id: "node-1", name: "Local Node", type: "local" })],
+    }));
+
+    render(<NodesView addToast={vi.fn()} />);
+
+    // Click on the node card to open detail modal
+    const nodeCard = document.querySelector(".node-card");
+    expect(nodeCard).toBeInTheDocument();
+    fireEvent.click(nodeCard!);
+
+    // Modal should show "Projects (2)" - including the unassigned project
+    expect(screen.getByText("Projects (2)")).toBeDefined();
+  });
 });
