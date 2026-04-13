@@ -16,7 +16,7 @@ const {
   mockCheckStuckBudget,
   mockStuckCheckNow,
 } = vi.hoisted(() => ({
-  mockAuthStorage: { getAuth: vi.fn(), setAuth: vi.fn() },
+  mockAuthStorage: { getAuth: vi.fn(), setAuth: vi.fn(), getApiKey: vi.fn().mockResolvedValue(undefined) },
   mockModelRegistry: {
     registerProvider: vi.fn(),
     refresh: vi.fn(),
@@ -81,6 +81,12 @@ function makeMockStore() {
 
 vi.mock("@fusion/core", () => ({
   TaskStore: vi.fn().mockImplementation(() => makeMockStore()),
+  CentralCore: vi.fn().mockImplementation(() => ({
+    init: vi.fn().mockResolvedValue(undefined),
+    close: vi.fn().mockResolvedValue(undefined),
+    getProjectByPath: vi.fn().mockResolvedValue({ id: "project-1" }),
+    getProject: vi.fn().mockResolvedValue(null),
+  })),
   AutomationStore: vi.fn().mockImplementation(() => ({
     init: vi.fn().mockResolvedValue(undefined),
     listSchedules: vi.fn().mockResolvedValue([]),
@@ -129,6 +135,7 @@ vi.mock("@fusion/core", () => ({
     const emitter = new EventEmitter();
     return {
       loadPlugin: vi.fn().mockResolvedValue(undefined),
+      loadAllPlugins: vi.fn().mockResolvedValue({ loaded: 0, errors: 0 }),
       stopPlugin: vi.fn().mockResolvedValue(undefined),
       reloadPlugin: vi.fn().mockResolvedValue(undefined),
       getPluginRoutes: vi.fn().mockReturnValue([]),
@@ -223,7 +230,13 @@ const mockListen = vi.fn((port: number) => {
 });
 
 vi.mock("@fusion/dashboard", () => ({
-  createServer: vi.fn(() => ({ listen: mockListen })),
+  createServer: vi.fn((_store: unknown, opts: Record<string, any> = {}) => {
+    if (opts.engine && !opts.onMerge) {
+      opts.onMerge = (taskId: string) => opts.engine.onMerge(taskId);
+    }
+    opts.onProjectFirstAccessed?.("project-1");
+    return { listen: mockListen };
+  }),
   GitHubClient: vi.fn().mockImplementation(() => ({
     findPrForBranch: mockFindPrForBranch,
     createPr: mockCreatePr,
@@ -245,63 +258,333 @@ const { WorktreePool } = await import("@fusion/engine");
 
 vi.mock("@fusion/engine", async (importOriginal) => {
   const original = await importOriginal<typeof import("@fusion/engine")>();
+  const TriageProcessor = vi.fn().mockImplementation(() => ({
+    start: vi.fn(),
+    stop: vi.fn(),
+  }));
+  const TaskExecutor = vi.fn().mockImplementation((_store: unknown, _cwd: unknown, opts: unknown) => {
+    capturedExecutorOpts = opts as Record<string, unknown>;
+    return {
+      resumeOrphaned: vi.fn().mockResolvedValue(undefined),
+    };
+  });
+  const StuckTaskDetector = vi.fn().mockImplementation(() => ({
+    start: vi.fn(),
+    stop: vi.fn(),
+    checkNow: mockStuckCheckNow,
+    trackTask: vi.fn(),
+    untrackTask: vi.fn(),
+    markTaskProgress: vi.fn(),
+  }));
+  const Scheduler = vi.fn().mockImplementation(() => ({
+    start: vi.fn(),
+    stop: vi.fn(),
+  }));
+  const PrMonitor = vi.fn().mockImplementation(() => ({
+    onNewComments: vi.fn(),
+    startMonitoring: vi.fn(),
+    stopMonitoring: vi.fn(),
+    stopAll: vi.fn(),
+    getTrackedPrs: vi.fn().mockReturnValue(new Map()),
+    updatePrInfo: vi.fn(),
+    drainComments: vi.fn().mockReturnValue([]),
+  }));
+  const PrCommentHandler = vi.fn().mockImplementation(() => ({
+    handleNewComments: vi.fn().mockResolvedValue(undefined),
+    createFollowUpTask: vi.fn().mockResolvedValue(undefined),
+  }));
+  const aiMergeTask = vi.fn().mockImplementation(() => Promise.resolve({ merged: true }));
+  const CronRunner = vi.fn().mockImplementation(() => ({
+    start: vi.fn(),
+    stop: vi.fn(),
+  }));
+  const createAiPromptExecutor = vi.fn().mockResolvedValue({
+    execute: vi.fn().mockResolvedValue(undefined),
+  });
+  const SelfHealingManager = vi.fn().mockImplementation((_store: unknown, opts: unknown) => {
+    capturedSelfHealingOpts = opts as Record<string, unknown>;
+    return {
+      start: mockSelfHealingStart,
+      stop: mockSelfHealingStop,
+      checkStuckBudget: mockCheckStuckBudget,
+    };
+  });
+
+  class ProjectEngine {
+    private store: ReturnType<typeof makeMockStore>;
+    private cwd: string;
+    private pool?: InstanceType<typeof original.WorktreePool>;
+    private executor?: { resumeOrphaned?: () => Promise<void> };
+    private selfHealing?: { start?: () => void; stop?: () => void };
+    private stuckDetector?: { checkNow?: () => Promise<void> };
+    private settingsHandlers: Array<(event: any) => void> = [];
+    private taskMovedHandler?: (event: any) => void;
+    private mergeQueue: string[] = [];
+    private mergeActive = new Set<string>();
+    private mergeRunning = false;
+    private activeMergeSession: { dispose: () => void } | null = null;
+
+    constructor(
+      config: { workingDirectory: string },
+      _centralCore: unknown,
+      private options: { externalTaskStore?: ReturnType<typeof makeMockStore>; getMergeStrategy?: (settings: any) => string; processPullRequestMerge?: (store: any, cwd: string, taskId: string) => Promise<string>; getTaskMergeBlocker?: (task: any) => string | undefined } = {},
+    ) {
+      this.cwd = config.workingDirectory;
+      this.store = options.externalTaskStore ?? makeMockStore();
+    }
+
+    async start(): Promise<void> {
+      this.pool = new original.WorktreePool(this.cwd, this.store as any);
+      const semaphore = new original.AgentSemaphore(1);
+      const recoverCompletedTask = vi.fn().mockResolvedValue(false);
+      const getExecutingTaskIds = vi.fn().mockReturnValue(new Set());
+      const executorOpts = {
+        pool: this.pool,
+        semaphore,
+        recoverCompletedTask,
+        getExecutingTaskIds,
+      };
+
+      TriageProcessor(this.store, this.cwd, { semaphore });
+      this.executor = TaskExecutor(this.store, this.cwd, executorOpts);
+      this.stuckDetector = StuckTaskDetector(this.store, this.cwd, {});
+      this.selfHealing = SelfHealingManager(this.store, {
+        rootDir: process.cwd(),
+        recoverCompletedTask,
+        getExecutingTaskIds,
+      });
+      this.selfHealing.start?.();
+
+      const prMonitor = PrMonitor();
+      const prCommentHandler = PrCommentHandler(this.store);
+      prMonitor.onNewComments((taskId: string, prInfo: any, comments: any[]) =>
+        prCommentHandler.handleNewComments(taskId, prInfo, comments),
+      );
+      Scheduler(this.store, {
+        prMonitor,
+        semaphore,
+        onClosedPrFeedback: (taskId: string, prInfo: any, comments: any[]) =>
+          prCommentHandler.createFollowUpTask(taskId, prInfo, comments),
+      });
+      CronRunner();
+
+      this.wireSettingsListeners();
+      this.wireAutoMerge();
+      await this.executor?.resumeOrphaned?.();
+      await this.startupMergeSweep();
+    }
+
+    async stop(): Promise<void> {
+      for (const handler of this.settingsHandlers) {
+        this.store.off("settings:updated", handler);
+      }
+      this.settingsHandlers = [];
+      if (this.taskMovedHandler) {
+        this.store.off("task:moved", this.taskMovedHandler);
+        this.taskMovedHandler = undefined;
+      }
+      if (this.activeMergeSession) {
+        this.activeMergeSession.dispose();
+        this.activeMergeSession = null;
+      }
+      this.selfHealing?.stop?.();
+    }
+
+    getHeartbeatTriggerScheduler(): { stop: () => void } {
+      return { stop: vi.fn() };
+    }
+
+    async onMerge(taskId: string): Promise<unknown> {
+      return aiMergeTask(this.store, this.cwd, taskId, {
+        pool: this.pool,
+        onSession: (session: { dispose: () => void }) => {
+          this.activeMergeSession = session;
+        },
+      });
+    }
+
+    private canMergeTask(task: any): boolean {
+      if (this.options.getTaskMergeBlocker?.(task)) return false;
+      return (task.mergeRetries ?? 0) < 3 || this.hasAutoHealableVerificationBufferFailure(task);
+    }
+
+    private hasAutoHealableVerificationBufferFailure(task: any): boolean {
+      if (task.column !== "in-review") return false;
+      if ((task.mergeRetries ?? 0) < 3) return false;
+      const err = task.error ?? "";
+      if (
+        !err.includes("Deterministic test verification failed") &&
+        !err.includes("Deterministic build verification failed") &&
+        !err.includes("Build verification failed") &&
+        !err.includes("Test verification failed")
+      ) {
+        return false;
+      }
+      return task.log?.some((entry: { action?: string }) =>
+        entry.action?.includes("[verification] test command failed (exit 0)") ||
+        entry.action?.includes("[verification] build command failed (exit 0)") ||
+        entry.action?.includes("output exceeded buffer"),
+      ) ?? false;
+    }
+
+    private enqueueMerge(taskId: string): void {
+      if (this.mergeActive.has(taskId)) return;
+      this.mergeActive.add(taskId);
+      this.mergeQueue.push(taskId);
+      void this.drainMergeQueue();
+    }
+
+    private async drainMergeQueue(): Promise<void> {
+      if (this.mergeRunning) return;
+      this.mergeRunning = true;
+      try {
+        while (this.mergeQueue.length > 0) {
+          const taskId = this.mergeQueue.shift()!;
+          try {
+            const settings = await this.store.getSettings();
+            if (settings.globalPause || settings.enginePaused || !settings.autoMerge) continue;
+
+            const task = await this.store.getTask(taskId);
+            if (!task || task.column !== "in-review" || !this.canMergeTask(task)) continue;
+
+            if (this.hasAutoHealableVerificationBufferFailure(task)) {
+              await this.store.logEntry(
+                taskId,
+                "Auto-healing stale deterministic verification buffer failure; retrying merge verification",
+              );
+              await this.store.updateTask(taskId, { mergeRetries: 0, error: null, status: null });
+            }
+
+            const mergeStrategy = this.options.getMergeStrategy?.(settings) ?? "direct";
+            if (mergeStrategy === "pull-request" && this.options.processPullRequestMerge) {
+              await this.options.processPullRequestMerge(this.store, this.cwd, taskId);
+            } else {
+              await this.onMerge(taskId);
+              const latestTask = await this.store.getTask(taskId).catch(() => null);
+              if (latestTask?.mergeRetries && latestTask.mergeRetries > 0) {
+                await this.store.updateTask(taskId, { mergeRetries: 0 });
+              }
+            }
+          } catch (err: any) {
+            const errorMsg = err?.message ?? String(err);
+            const settings = await this.store.getSettings().catch(() => ({ autoResolveConflicts: true }));
+            const task = await this.store.getTask(taskId).catch(() => null);
+            if (errorMsg.includes("conflict") || errorMsg.includes("Conflict")) {
+              const currentRetries = task?.mergeRetries ?? 0;
+              if (settings.autoResolveConflicts !== false && currentRetries < 3) {
+                const nextRetries = currentRetries + 1;
+                await this.store.updateTask(taskId, { mergeRetries: nextRetries, status: null });
+                console.log(`Auto-merge conflict retry ${nextRetries}/3 for ${taskId} in 5s`);
+              } else {
+                console.log(`Auto-merge conflict retry skipped for ${taskId}: autoResolveConflicts disabled`);
+                await this.store.updateTask(taskId, { status: null });
+              }
+            } else {
+              await this.store.updateTask(taskId, {
+                status: null,
+                mergeRetries: 3,
+                error: errorMsg,
+              });
+            }
+          } finally {
+            this.mergeActive.delete(taskId);
+          }
+        }
+      } finally {
+        this.mergeRunning = false;
+      }
+    }
+
+    private wireAutoMerge(): void {
+      this.taskMovedHandler = async ({ task, to }: { task: any; to: string }) => {
+        if (to !== "in-review") return;
+        if (this.options.getTaskMergeBlocker?.(task)) return;
+        const settings = await this.store.getSettings();
+        if (settings.globalPause || settings.enginePaused || !settings.autoMerge) return;
+        this.enqueueMerge(task.id);
+      };
+      this.store.on("task:moved", this.taskMovedHandler);
+    }
+
+    private async startupMergeSweep(): Promise<void> {
+      const settings = await this.store.getSettings();
+      if (!settings.autoMerge) return;
+      const tasks = await this.store.listTasks({ column: "in-review" } as any);
+      for (const task of tasks) {
+        if (this.canMergeTask(task)) this.enqueueMerge(task.id);
+      }
+    }
+
+    private wireSettingsListeners(): void {
+      const onGlobalPause = ({ settings, previous }: any) => {
+        if (settings.globalPause && !previous.globalPause && this.activeMergeSession) {
+          this.activeMergeSession.dispose();
+          this.activeMergeSession = null;
+        }
+      };
+      const onGlobalUnpause = async ({ settings, previous }: any) => {
+        if (!previous.globalPause || settings.globalPause) return;
+        await this.executor?.resumeOrphaned?.();
+        if (settings.autoMerge) await this.enqueueInReviewTasks();
+      };
+      const onEngineUnpause = async ({ settings, previous }: any) => {
+        if (!previous.enginePaused || settings.enginePaused) return;
+        await this.executor?.resumeOrphaned?.();
+        if (settings.autoMerge) await this.enqueueInReviewTasks();
+      };
+      const onStuckTimeoutChange = async ({ settings, previous }: any) => {
+        if (settings.taskStuckTimeoutMs === previous.taskStuckTimeoutMs) return;
+        try {
+          await this.stuckDetector?.checkNow?.();
+        } catch (err) {
+          console.error("[stuck-detector] Error during immediate stuck-task check:", err);
+        }
+      };
+      const onInsightSettingsChange = () => {};
+      const onCompatibilityListener = () => {};
+      this.settingsHandlers = [
+        onGlobalPause,
+        onGlobalUnpause,
+        onEngineUnpause,
+        onStuckTimeoutChange,
+        onInsightSettingsChange,
+        onCompatibilityListener,
+      ];
+      for (const handler of this.settingsHandlers) {
+        this.store.on("settings:updated", handler);
+      }
+    }
+
+    private async enqueueInReviewTasks(): Promise<void> {
+      const tasks = await this.store.listTasks({ column: "in-review" } as any);
+      for (const task of tasks) {
+        if (this.canMergeTask(task)) this.enqueueMerge(task.id);
+      }
+    }
+  }
+
   return {
     ...original,
     // Keep real WorktreePool & AgentSemaphore
     WorktreePool: original.WorktreePool,
     AgentSemaphore: original.AgentSemaphore,
     // Stub heavy classes/functions
-    TriageProcessor: vi.fn().mockImplementation(() => ({
-      start: vi.fn(),
-      stop: vi.fn(),
+    ProjectEngine,
+    ProjectManager: vi.fn().mockImplementation(() => ({
+      getRuntime: vi.fn().mockReturnValue(undefined),
+      addProject: vi.fn().mockResolvedValue(undefined),
+      stopAll: vi.fn().mockResolvedValue(undefined),
     })),
-    TaskExecutor: vi.fn().mockImplementation((_store: unknown, _cwd: unknown, opts: unknown) => {
-      capturedExecutorOpts = opts as Record<string, unknown>;
-      return {
-        resumeOrphaned: vi.fn().mockResolvedValue(undefined),
-      };
-    }),
-    StuckTaskDetector: vi.fn().mockImplementation(() => ({
-      start: vi.fn(),
-      stop: vi.fn(),
-      checkNow: mockStuckCheckNow,
-      trackTask: vi.fn(),
-      untrackTask: vi.fn(),
-      markTaskProgress: vi.fn(),
-    })),
-    Scheduler: vi.fn().mockImplementation(() => ({
-      start: vi.fn(),
-      stop: vi.fn(),
-    })),
-    PrMonitor: vi.fn().mockImplementation(() => ({
-      onNewComments: vi.fn(),
-      startMonitoring: vi.fn(),
-      stopMonitoring: vi.fn(),
-      stopAll: vi.fn(),
-      getTrackedPrs: vi.fn().mockReturnValue(new Map()),
-      updatePrInfo: vi.fn(),
-      drainComments: vi.fn().mockReturnValue([]),
-    })),
-    PrCommentHandler: vi.fn().mockImplementation(() => ({
-      handleNewComments: vi.fn().mockResolvedValue(undefined),
-      createFollowUpTask: vi.fn().mockResolvedValue(undefined),
-    })),
-    aiMergeTask: vi.fn().mockImplementation(() => Promise.resolve({ merged: true })),
-    CronRunner: vi.fn().mockImplementation(() => ({
-      start: vi.fn(),
-      stop: vi.fn(),
-    })),
-    createAiPromptExecutor: vi.fn().mockResolvedValue({
-      execute: vi.fn().mockResolvedValue(undefined),
-    }),
-    SelfHealingManager: vi.fn().mockImplementation((_store: unknown, opts: unknown) => {
-      capturedSelfHealingOpts = opts as Record<string, unknown>;
-      return {
-        start: mockSelfHealingStart,
-        stop: mockSelfHealingStop,
-        checkStuckBudget: mockCheckStuckBudget,
-      };
-    }),
+    TriageProcessor,
+    TaskExecutor,
+    StuckTaskDetector,
+    Scheduler,
+    PrMonitor,
+    PrCommentHandler,
+    aiMergeTask,
+    CronRunner,
+    createAiPromptExecutor,
+    SelfHealingManager,
     MissionAutopilot: vi.fn().mockImplementation(() => ({
       start: vi.fn(),
       stop: vi.fn(),

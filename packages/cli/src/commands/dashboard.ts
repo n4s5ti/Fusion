@@ -3,12 +3,13 @@ import { TaskStore, AutomationStore, CentralCore, AgentStore, PluginStore, Plugi
 import { createServer, GitHubClient } from "@fusion/dashboard";
 import { aiMergeTask, MissionAutopilot, MissionExecutionLoop, HeartbeatMonitor, HeartbeatTriggerScheduler, type WakeContext, ProjectEngine, type ProjectEngineOptions, ProjectManager } from "@fusion/engine";
 import type { ProjectRuntimeConfig } from "@fusion/engine";
-import { AuthStorage, DefaultPackageManager, ModelRegistry, SettingsManager, discoverAndLoadExtensions, getAgentDir, createExtensionRuntime } from "@mariozechner/pi-coding-agent";
+import { AuthStorage, DefaultPackageManager, ModelRegistry, discoverAndLoadExtensions, getAgentDir, createExtensionRuntime } from "@mariozechner/pi-coding-agent";
 import {
   getMergeStrategy,
   processPullRequestMergeTask,
 } from "./task-lifecycle.js";
 import { promptForPort } from "./port-prompt.js";
+import { createReadOnlyProviderSettingsView } from "./provider-settings.js";
 
 // Re-export for backward compatibility with tests
 export { promptForPort };
@@ -296,6 +297,7 @@ export async function runDashboard(port: number, opts: { paused?: boolean; dev?:
     event: string | symbol;
     handler: (...args: any[]) => void;
   }> = [];
+  const disposeCallbacks: Array<() => void> = [];
   let disposed = false;
   let shutdownInProgress = false;
   const dashboardStartedAt = Date.now();
@@ -443,11 +445,10 @@ export async function runDashboard(port: number, opts: { paused?: boolean; dev?:
     // This picks up extensions like @howaboua/pi-glm-via-anthropic that
     // register custom providers (e.g. glm-5.1) via registerProvider().
     const agentDir = getAgentDir();
-    const piSettingsManager = SettingsManager.create(cwd, agentDir);
     const packageManager = new DefaultPackageManager({
       cwd,
       agentDir,
-      settingsManager: piSettingsManager,
+      settingsManager: createReadOnlyProviderSettingsView(cwd, agentDir) as any,
     });
     const resolvedPaths = await packageManager.resolve();
     const packageExtensionPaths = resolvedPaths.extensions
@@ -532,6 +533,9 @@ export async function runDashboard(port: number, opts: { paused?: boolean; dev?:
       target.off(event, handler);
     }
     handlers.length = 0;
+    for (const callback of disposeCallbacks.splice(0)) {
+      callback();
+    }
   }
 
   // ── createServer: deferred until engine is conditionally started ────
@@ -598,41 +602,53 @@ export async function runDashboard(port: number, opts: { paused?: boolean; dev?:
       // Non-fatal — engine uses fallback concurrency defaults
     }
 
+    // Engine is created here but started lazily on first access (see onProjectFirstAccessed below).
     const engine = new ProjectEngine(runtimeConfig, centralCoreForEngine, engineOptions);
-    await engine.start();
-
-    // Obtain TriggerScheduler from the engine for shutdown cleanup
-    triggerScheduler = engine.getHeartbeatTriggerScheduler();
+    let primaryEngineStarting = false;
 
     // ── Per-project engine manager ───────────────────────────────────────
     //
     // The dashboard can serve any number of registered projects via
     // ?projectId= query params on API/SSE routes. Each project needs its
     // own engine (Scheduler, TriageProcessor, TaskExecutor) to triage and
-    // execute tasks. We lazily start an InProcessRuntime for each project
-    // the first time it is accessed, reusing the same CentralCore.
+    // execute tasks. All projects — including the primary — start their
+    // engine lazily on first access, reusing the same CentralCore.
     //
-    // The primary project (cwd) is already covered by ProjectEngine above;
-    // all others are managed here by ProjectManager.
+    // Primary project: started via ProjectEngine (full subsystem set).
+    // Other projects:  started via ProjectManager (InProcessRuntime).
     //
     const perProjectManager = new ProjectManager(centralCoreForEngine);
+    disposeCallbacks.push(() => {
+      void perProjectManager.stopAll().catch(() => {});
+      void engine.stop().catch(() => {});
+      void centralCoreForEngine.close().catch(() => {});
+    });
 
     const onProjectFirstAccessed = (projectId: string): void => {
-      // The primary project's engine is already running via ProjectEngine
-      if (projectId === runtimeConfig.projectId) return;
-      // Fire-and-forget: start InProcessRuntime for this project
-      centralCoreForEngine.getProject(projectId).then(async (project) => {
-        if (!project) return;
-        if (perProjectManager.getRuntime(projectId)) return; // already running
-        await perProjectManager.addProject({
-          projectId: project.id,
-          workingDirectory: project.path,
-          isolationMode: (project.isolationMode as "in-process" | "child-process") ?? "in-process",
-          maxConcurrent: (project.settings as Record<string, unknown> | undefined)?.maxConcurrent as number ?? 4,
-          maxWorktrees: (project.settings as Record<string, unknown> | undefined)?.maxWorktrees as number ?? 10,
-        });
-        console.log(`[dashboard] Started engine for project ${project.name} (${projectId})`);
-      }).catch((err: unknown) => {
+      // Fire-and-forget: start engine for this project on first access
+      (async () => {
+        if (projectId === runtimeConfig.projectId) {
+          // Primary project: start via ProjectEngine (full subsystem set)
+          if (primaryEngineStarting) return;
+          primaryEngineStarting = true;
+          await engine.start();
+          triggerScheduler = engine.getHeartbeatTriggerScheduler();
+          console.log(`[dashboard] Started engine for primary project (${projectId})`);
+        } else {
+          // Non-primary projects: start via ProjectManager
+          const project = await centralCoreForEngine.getProject(projectId);
+          if (!project) return;
+          if (perProjectManager.getRuntime(projectId)) return; // already running
+          await perProjectManager.addProject({
+            projectId: project.id,
+            workingDirectory: project.path,
+            isolationMode: (project.isolationMode as "in-process" | "child-process") ?? "in-process",
+            maxConcurrent: (project.settings as Record<string, unknown> | undefined)?.maxConcurrent as number ?? 4,
+            maxWorktrees: (project.settings as Record<string, unknown> | undefined)?.maxWorktrees as number ?? 10,
+          });
+          console.log(`[dashboard] Started engine for project ${project.name} (${projectId})`);
+        }
+      })().catch((err: unknown) => {
         const message = err instanceof Error ? err.message : String(err);
         console.warn(`[dashboard] Failed to start engine for project ${projectId}: ${message}`);
       });

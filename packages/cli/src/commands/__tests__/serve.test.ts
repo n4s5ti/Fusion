@@ -29,6 +29,7 @@ const mocks = vi.hoisted(() => {
   const notifierInstances: any[] = [];
   const pluginStoreInstances: any[] = [];
   const pluginLoaderInstances: any[] = [];
+  const projectEngineInstances: any[] = [];
   const listenCalls: ListenCall[] = [];
 
   function createTaskStoreMock() {
@@ -253,6 +254,115 @@ const mocks = vi.hoisted(() => {
     refresh: vi.fn(),
   };
 
+  const agentSemaphoreCtor = vi.fn().mockImplementation(() => ({
+    _active: 0,
+    run: (fn: () => Promise<unknown>) => fn(),
+  }));
+
+  const heartbeatMonitorCtor = vi.fn().mockImplementation(() => ({
+    start: vi.fn(),
+    stop: vi.fn(),
+    startRun: vi.fn().mockResolvedValue({ id: "run-1" }),
+    executeHeartbeat: vi.fn().mockResolvedValue({ id: "run-1" }),
+    stopRun: vi.fn().mockResolvedValue(undefined),
+  }));
+
+  const heartbeatTriggerSchedulerCtor = vi.fn().mockImplementation(() => ({
+    start: vi.fn(),
+    stop: vi.fn(),
+    registerAgent: vi.fn(),
+    getRegisteredAgents: vi.fn().mockReturnValue([]),
+  }));
+
+  const createAiPromptExecutorMock = vi.fn().mockResolvedValue(vi.fn().mockResolvedValue("ok"));
+  const syncInsightExtractionAutomationMock = vi.fn().mockResolvedValue(undefined);
+  const processAndAuditInsightExtractionMock = vi.fn().mockResolvedValue({
+    generatedAt: new Date().toISOString(),
+    health: "healthy",
+    checks: [],
+    workingMemory: { exists: true, size: 100, sectionCount: 2 },
+    insightsMemory: { exists: true, size: 50, insightCount: 3, categories: {}, lastUpdated: "2026-04-09" },
+    extraction: { runAt: new Date().toISOString(), success: true, insightCount: 3, duplicateCount: 0, skippedCount: 0, summary: "Test" },
+    pruning: { applied: false },
+  });
+
+  const projectEngineCtor = vi.fn().mockImplementation((runtimeConfig: { workingDirectory: string }, _centralCore: unknown, options: { onInsightRunProcessed?: unknown }) => {
+    const store = taskStoreCtor(runtimeConfig.workingDirectory);
+    const automationStore = automationStoreCtor(runtimeConfig.workingDirectory);
+    const agentStore = agentStoreCtor();
+    const semaphore = agentSemaphoreCtor();
+    const heartbeatMonitor = heartbeatMonitorCtor({});
+    const heartbeatTriggerScheduler = heartbeatTriggerSchedulerCtor(agentStore, vi.fn(), store);
+    const missionAutopilot = missionAutopilotCtor();
+    const missionExecutionLoop = missionExecutionLoopCtor();
+    const triage = triageCtor(store, undefined, { semaphore });
+    const executor = executorCtor(store, undefined, { semaphore });
+    const scheduler = schedulerCtor(store, { semaphore });
+    const stuckDetector = stuckDetectorCtor();
+    const selfHealing = selfHealingCtor();
+    const cronRunner = cronRunnerCtor(store, automationStore, {
+      onScheduleRunProcessed: options.onInsightRunProcessed,
+    });
+    const notifier = notifierCtor();
+
+    const engine = {
+      start: vi.fn(async () => {
+        await store.init();
+        await automationStore.init();
+        await agentStore.init();
+        const settings = await store.getSettings();
+        try {
+          await syncInsightExtractionAutomationMock(automationStore, settings);
+        } catch (err) {
+          console.error(`[memory-audit] Failed to sync insight extraction: ${err instanceof Error ? err.message : String(err)}`);
+        }
+        store.on("settings:updated", async (event: { settings?: Record<string, unknown>; previous?: Record<string, unknown> }) => {
+          const watchedKeys = [
+            "insightExtractionEnabled",
+            "insightExtractionSchedule",
+            "insightExtractionTime",
+          ];
+          const changed = watchedKeys.some((key) => event.settings?.[key] !== event.previous?.[key]);
+          if (changed) {
+            await syncInsightExtractionAutomationMock(automationStore, { ...settings, ...event.settings });
+          }
+        });
+        triage.start();
+        scheduler.start();
+        missionAutopilot.start();
+        stuckDetector.start();
+        selfHealing.start();
+        cronRunner.start();
+        notifier.start();
+        heartbeatMonitor.start();
+        heartbeatTriggerScheduler.start();
+        await executor.resumeOrphaned();
+        await createAiPromptExecutorMock(runtimeConfig.workingDirectory);
+      }),
+      stop: vi.fn(async () => {
+        selfHealing.stop();
+        stuckDetector.stop();
+        missionAutopilot.stop();
+        triage.stop();
+        scheduler.stop();
+        cronRunner.stop();
+        notifier.stop();
+        heartbeatMonitor.stop();
+        heartbeatTriggerScheduler.stop();
+      }),
+      getTaskStore: vi.fn(() => store),
+      getAutomationStore: vi.fn(() => automationStore),
+      getRuntime: vi.fn(() => ({
+        getHeartbeatMonitor: () => heartbeatMonitor,
+        getMissionAutopilot: () => missionAutopilot,
+        getMissionExecutionLoop: () => missionExecutionLoop,
+      })),
+      onMerge: vi.fn().mockResolvedValue(undefined),
+    };
+    projectEngineInstances.push(engine);
+    return engine;
+  });
+
   return {
     taskStores,
     automationStores,
@@ -267,6 +377,7 @@ const mocks = vi.hoisted(() => {
     missionAutopilotInstances,
     missionExecutionLoopInstances,
     notifierInstances,
+    projectEngineInstances,
     listenCalls,
     taskStoreCtor,
     automationStoreCtor,
@@ -284,6 +395,13 @@ const mocks = vi.hoisted(() => {
     notifierCtor,
     pluginStoreCtor,
     pluginLoaderCtor,
+    projectEngineCtor,
+    agentSemaphoreCtor,
+    heartbeatMonitorCtor,
+    heartbeatTriggerSchedulerCtor,
+    createAiPromptExecutorMock,
+    syncInsightExtractionAutomationMock,
+    processAndAuditInsightExtractionMock,
     authStorage,
     modelRegistry,
     reset() {
@@ -302,7 +420,12 @@ const mocks = vi.hoisted(() => {
       notifierInstances.length = 0;
       pluginStoreInstances.length = 0;
       pluginLoaderInstances.length = 0;
+      projectEngineInstances.length = 0;
       listenCalls.length = 0;
+      syncInsightExtractionAutomationMock.mockReset();
+      syncInsightExtractionAutomationMock.mockResolvedValue(undefined);
+      processAndAuditInsightExtractionMock.mockClear();
+      createAiPromptExecutorMock.mockClear();
     },
   };
 });
@@ -315,16 +438,9 @@ vi.mock("@fusion/core", () => ({
   PluginStore: mocks.pluginStoreCtor,
   PluginLoader: mocks.pluginLoaderCtor,
   getTaskMergeBlocker: vi.fn().mockReturnValue(null),
-  syncInsightExtractionAutomation: vi.fn().mockResolvedValue(undefined),
+  syncInsightExtractionAutomation: mocks.syncInsightExtractionAutomationMock,
   INSIGHT_EXTRACTION_SCHEDULE_NAME: "Memory Insight Extraction",
-  processAndAuditInsightExtraction: vi.fn().mockResolvedValue({
-    generatedAt: new Date().toISOString(),
-    health: "healthy",
-    checks: [],
-    workingMemory: { exists: true, size: 100, sectionCount: 2 },
-    insightsMemory: { exists: true, size: 50, insightCount: 3, categories: {}, lastUpdated: "2026-04-09" },
-    extraction: { runAt: new Date().toISOString(), success: true, insightCount: 3, duplicateCount: 0, skippedCount: 0, summary: "Test" },
-  }),
+  processAndAuditInsightExtraction: mocks.processAndAuditInsightExtractionMock,
 }));
 
 vi.mock("@fusion/dashboard", () => ({
@@ -333,12 +449,11 @@ vi.mock("@fusion/dashboard", () => ({
 }));
 
 vi.mock("@fusion/engine", () => ({
+  ProjectEngine: mocks.projectEngineCtor,
   TriageProcessor: mocks.triageCtor,
   TaskExecutor: mocks.executorCtor,
   Scheduler: mocks.schedulerCtor,
-  AgentSemaphore: vi.fn().mockImplementation(() => ({
-    run: (fn: () => Promise<unknown>) => fn(),
-  })),
+  AgentSemaphore: mocks.agentSemaphoreCtor,
   WorktreePool: vi.fn().mockImplementation(() => ({
     rehydrate: vi.fn(),
   })),
@@ -360,18 +475,9 @@ vi.mock("@fusion/engine", () => ({
   SelfHealingManager: mocks.selfHealingCtor,
   MissionAutopilot: mocks.missionAutopilotCtor,
   MissionExecutionLoop: mocks.missionExecutionLoopCtor,
-  createAiPromptExecutor: vi.fn().mockResolvedValue(vi.fn().mockResolvedValue("ok")),
-  HeartbeatMonitor: vi.fn().mockImplementation(() => ({
-    start: vi.fn(),
-    stop: vi.fn(),
-    executeHeartbeat: vi.fn().mockResolvedValue({ id: "run-1" }),
-  })),
-  HeartbeatTriggerScheduler: vi.fn().mockImplementation(() => ({
-    start: vi.fn(),
-    stop: vi.fn(),
-    registerAgent: vi.fn(),
-    getRegisteredAgents: vi.fn().mockReturnValue([]),
-  })),
+  createAiPromptExecutor: mocks.createAiPromptExecutorMock,
+  HeartbeatMonitor: mocks.heartbeatMonitorCtor,
+  HeartbeatTriggerScheduler: mocks.heartbeatTriggerSchedulerCtor,
 }));
 
 vi.mock("@mariozechner/pi-coding-agent", () => ({

@@ -15,7 +15,10 @@ import {
   PluginStore,
   PluginLoader,
   getTaskMergeBlocker,
+  INSIGHT_EXTRACTION_SCHEDULE_NAME,
+  processAndAuditInsightExtraction,
 } from "@fusion/core";
+import type { AutomationRunResult, ScheduledTask } from "@fusion/core";
 import { createServer, GitHubClient } from "@fusion/dashboard";
 import { ProjectEngine } from "@fusion/engine";
 import type { ProjectEngineOptions, ProjectRuntimeConfig } from "@fusion/engine";
@@ -23,7 +26,6 @@ import {
   AuthStorage,
   DefaultPackageManager,
   ModelRegistry,
-  SettingsManager,
   discoverAndLoadExtensions,
   getAgentDir,
   createExtensionRuntime,
@@ -33,6 +35,7 @@ import {
   processPullRequestMergeTask,
 } from "./task-lifecycle.js";
 import { promptForPort } from "./port-prompt.js";
+import { createReadOnlyProviderSettingsView } from "./provider-settings.js";
 
 const DIAGNOSTIC_INTERVAL_MS = 30 * 60 * 1000; // 30 minutes
 let diagnosticIntervalHandle: ReturnType<typeof setInterval> | null = null;
@@ -368,11 +371,10 @@ export async function runServe(
 
   try {
     const agentDir = getAgentDir();
-    const piSettingsManager = SettingsManager.create(cwd, agentDir);
     const packageManager = new DefaultPackageManager({
       cwd,
       agentDir,
-      settingsManager: piSettingsManager,
+      settingsManager: createReadOnlyProviderSettingsView(cwd, agentDir) as any,
     });
     const resolvedPaths = await packageManager.resolve();
     const packageExtensionPaths = resolvedPaths.extensions
