@@ -247,21 +247,6 @@ describe("memory-backend", () => {
   // ── QmdMemoryBackend ─────────────────────────────────────────────
 
   describe("QmdMemoryBackend", () => {
-    // Mock the runCommandAsync function
-    const mockRunCommandAsync = vi.fn();
-
-    beforeEach(async () => {
-      vi.resetAllMocks();
-      // Mock the runCommandAsync import
-      vi.doMock("./run-command.js", () => ({
-        runCommandAsync: mockRunCommandAsync,
-      }));
-    });
-
-    afterEach(() => {
-      vi.restoreAllMocks();
-    });
-
     describe("type and name", () => {
       it("should have correct type", () => {
         const backend = new QmdMemoryBackend();
@@ -270,7 +255,7 @@ describe("memory-backend", () => {
 
       it("should have human-readable name", () => {
         const backend = new QmdMemoryBackend();
-        expect(backend.name).toBe("QMD (Quantized Memory Distillation)");
+        expect(backend.name).toBe("QMD (qmd index/query integration)");
       });
     });
 
@@ -297,304 +282,113 @@ describe("memory-backend", () => {
       });
     });
 
-    describe("read with QMD available", () => {
-      it("should read memory using QMD command", async () => {
-        // Re-import to get fresh module with mocked runCommandAsync
-        const { QmdMemoryBackend: QmdBackend } = await import("./memory-backend.js");
-        const backend = new QmdBackend();
+    describe("read", () => {
+      it("should read memory from filesystem and return qmd backend identifier", async () => {
+        const memoryPath = join(tempDir, ".fusion", "memory.md");
+        writeFileSync(memoryPath, "# Project Memory\n\nTest content", "utf-8");
 
-        mockRunCommandAsync.mockResolvedValueOnce({
-          stdout: "# Project Memory\n\nTest content",
-          stderr: "",
-          exitCode: 0,
-          signal: null,
-          bufferExceeded: false,
-          timedOut: false,
-        });
-
+        const backend = new QmdMemoryBackend();
         const result = await backend.read(tempDir);
 
         expect(result.content).toBe("# Project Memory\n\nTest content");
         expect(result.exists).toBe(true);
         expect(result.backend).toBe("qmd");
-        expect(mockRunCommandAsync).toHaveBeenCalledWith(
-          "qmd read --path " + join(tempDir, ".fusion", "memory.md"),
-          expect.objectContaining({ cwd: tempDir }),
-        );
       });
 
-      it("should return empty when QMD returns empty content", async () => {
-        const { QmdMemoryBackend: QmdBackend } = await import("./memory-backend.js");
-        const backend = new QmdBackend();
-
-        mockRunCommandAsync.mockResolvedValueOnce({
-          stdout: "",
-          stderr: "",
-          exitCode: 0,
-          signal: null,
-          bufferExceeded: false,
-          timedOut: false,
-        });
-
+      it("should return empty content when file does not exist", async () => {
+        const backend = new QmdMemoryBackend();
         const result = await backend.read(tempDir);
 
         expect(result.content).toBe("");
         expect(result.exists).toBe(false);
         expect(result.backend).toBe("qmd");
       });
-    });
 
-    describe("read with QMD unavailable (fallback)", () => {
-      it("should fall back to file when QMD binary not found", async () => {
-        const { QmdMemoryBackend: QmdBackend } = await import("./memory-backend.js");
-        const backend = new QmdBackend();
-
-        // Mock QMD not found
-        mockRunCommandAsync.mockResolvedValueOnce({
-          stdout: "",
-          stderr: "spawn qmd ENOENT",
-          exitCode: null,
-          signal: null,
-          bufferExceeded: false,
-          timedOut: false,
-          spawnError: new Error("spawn qmd ENOENT: No such file or directory"),
-        });
-
-        // Create file for fallback
+      it("should return empty content for empty file", async () => {
         const memoryPath = join(tempDir, ".fusion", "memory.md");
-        writeFileSync(memoryPath, "Fallback content", "utf-8");
+        writeFileSync(memoryPath, "", "utf-8");
 
+        const backend = new QmdMemoryBackend();
         const result = await backend.read(tempDir);
 
-        expect(result.content).toBe("Fallback content");
-        expect(result.exists).toBe(true);
-        expect(result.backend).toBe("qmd");
-      });
-
-      it("should fall back to file when QMD times out", async () => {
-        const { QmdMemoryBackend: QmdBackend } = await import("./memory-backend.js");
-        const backend = new QmdBackend();
-
-        mockRunCommandAsync.mockResolvedValueOnce({
-          stdout: "",
-          stderr: "",
-          exitCode: null,
-          signal: null,
-          bufferExceeded: false,
-          timedOut: true,
-        });
-
-        // Create file for fallback
-        const memoryPath = join(tempDir, ".fusion", "memory.md");
-        writeFileSync(memoryPath, "Timeout fallback", "utf-8");
-
-        const result = await backend.read(tempDir);
-
-        expect(result.content).toBe("Timeout fallback");
-        expect(result.backend).toBe("qmd");
-      });
-
-      it("should fall back to file when QMD exits with code 127", async () => {
-        const { QmdMemoryBackend: QmdBackend } = await import("./memory-backend.js");
-        const backend = new QmdBackend();
-
-        mockRunCommandAsync.mockResolvedValueOnce({
-          stdout: "",
-          stderr: "qmd: command not found",
-          exitCode: 127,
-          signal: null,
-          bufferExceeded: false,
-          timedOut: false,
-        });
-
-        // Create file for fallback
-        const memoryPath = join(tempDir, ".fusion", "memory.md");
-        writeFileSync(memoryPath, "Exit 127 fallback", "utf-8");
-
-        const result = await backend.read(tempDir);
-
-        expect(result.content).toBe("Exit 127 fallback");
-        expect(result.backend).toBe("qmd");
-      });
-
-      it("should fall back to file when QMD exits with code 1", async () => {
-        const { QmdMemoryBackend: QmdBackend } = await import("./memory-backend.js");
-        const backend = new QmdBackend();
-
-        mockRunCommandAsync.mockResolvedValueOnce({
-          stdout: "",
-          stderr: "QMD error",
-          exitCode: 1,
-          signal: null,
-          bufferExceeded: false,
-          timedOut: false,
-        });
-
-        // Create file for fallback
-        const memoryPath = join(tempDir, ".fusion", "memory.md");
-        writeFileSync(memoryPath, "Exit 1 fallback", "utf-8");
-
-        const result = await backend.read(tempDir);
-
-        expect(result.content).toBe("Exit 1 fallback");
+        expect(result.content).toBe("");
+        expect(result.exists).toBe(true); // File exists, just empty
         expect(result.backend).toBe("qmd");
       });
     });
 
-    describe("write with QMD available", () => {
-      it("should write memory using QMD command", async () => {
-        const { QmdMemoryBackend: QmdBackend } = await import("./memory-backend.js");
-        const backend = new QmdBackend();
-
-        mockRunCommandAsync.mockResolvedValueOnce({
-          stdout: "",
-          stderr: "",
-          exitCode: 0,
-          signal: null,
-          bufferExceeded: false,
-          timedOut: false,
-        });
-
+    describe("write", () => {
+      it("should write memory to filesystem and return qmd backend identifier", async () => {
+        const backend = new QmdMemoryBackend();
         const result = await backend.write(tempDir, "# Memory\n\nContent");
 
         expect(result.success).toBe(true);
         expect(result.backend).toBe("qmd");
-        expect(mockRunCommandAsync).toHaveBeenCalledWith(
-          "qmd write --path " + join(tempDir, ".fusion", "memory.md") + " --content # Memory\n\nContent",
-          expect.objectContaining({ cwd: tempDir }),
-        );
-      });
-    });
 
-    describe("write with QMD unavailable (fallback)", () => {
-      it("should fall back to file when QMD binary not found", async () => {
-        const { QmdMemoryBackend: QmdBackend } = await import("./memory-backend.js");
-        const backend = new QmdBackend();
-
-        mockRunCommandAsync.mockResolvedValueOnce({
-          stdout: "",
-          stderr: "spawn qmd ENOENT",
-          exitCode: null,
-          signal: null,
-          bufferExceeded: false,
-          timedOut: false,
-          spawnError: new Error("spawn qmd ENOENT"),
-        });
-
-        const result = await backend.write(tempDir, "# Fallback write");
-
-        expect(result.success).toBe(true);
-        expect(result.backend).toBe("qmd");
-
-        // Verify file was written
+        // Verify file was actually written
         const memoryPath = join(tempDir, ".fusion", "memory.md");
         expect(existsSync(memoryPath)).toBe(true);
-        expect(readFileSync(memoryPath, "utf-8")).toBe("# Fallback write");
+        expect(readFileSync(memoryPath, "utf-8")).toBe("# Memory\n\nContent");
       });
 
-      it("should fall back to file when QMD times out", async () => {
-        const { QmdMemoryBackend: QmdBackend } = await import("./memory-backend.js");
-        const backend = new QmdBackend();
-
-        mockRunCommandAsync.mockResolvedValueOnce({
-          stdout: "",
-          stderr: "",
-          exitCode: null,
-          signal: null,
-          bufferExceeded: false,
-          timedOut: true,
-        });
-
-        const result = await backend.write(tempDir, "# Timeout fallback");
-
-        expect(result.success).toBe(true);
-        expect(result.backend).toBe("qmd");
-
+      it("should overwrite existing content", async () => {
         const memoryPath = join(tempDir, ".fusion", "memory.md");
-        expect(readFileSync(memoryPath, "utf-8")).toBe("# Timeout fallback");
+        writeFileSync(memoryPath, "Original content", "utf-8");
+
+        const backend = new QmdMemoryBackend();
+        await backend.write(tempDir, "Updated content");
+
+        expect(readFileSync(memoryPath, "utf-8")).toBe("Updated content");
+      });
+
+      it("should create .fusion directory if missing", async () => {
+        const newDir = join(tempDir, "new-project");
+        await mkdir(newDir, { recursive: true });
+
+        const backend = new QmdMemoryBackend();
+        await backend.write(newDir, "# Memory");
+
+        const memoryPath = join(newDir, ".fusion", "memory.md");
+        expect(existsSync(memoryPath)).toBe(true);
+      });
+
+      it("should handle unicode content", async () => {
+        const backend = new QmdMemoryBackend();
+        const unicodeContent = "# プロジェクトメモリ\n\n日本語のテスト 🎉";
+        
+        await backend.write(tempDir, unicodeContent);
+        
+        const result = await backend.read(tempDir);
+        expect(result.content).toBe(unicodeContent);
       });
     });
 
     describe("exists", () => {
-      it("should return true when QMD reports content exists", async () => {
-        const { QmdMemoryBackend: QmdBackend } = await import("./memory-backend.js");
-        const backend = new QmdBackend();
+      it("should return true when memory file exists", async () => {
+        const memoryPath = join(tempDir, ".fusion", "memory.md");
+        writeFileSync(memoryPath, "Content", "utf-8");
 
-        mockRunCommandAsync.mockResolvedValueOnce({
-          stdout: "# Memory content",
-          stderr: "",
-          exitCode: 0,
-          signal: null,
-          bufferExceeded: false,
-          timedOut: false,
-        });
-
+        const backend = new QmdMemoryBackend();
         const result = await backend.exists(tempDir);
 
         expect(result).toBe(true);
       });
 
-      it("should return false when QMD returns empty content", async () => {
-        const { QmdMemoryBackend: QmdBackend } = await import("./memory-backend.js");
-        const backend = new QmdBackend();
-
-        mockRunCommandAsync.mockResolvedValueOnce({
-          stdout: "",
-          stderr: "",
-          exitCode: 0,
-          signal: null,
-          bufferExceeded: false,
-          timedOut: false,
-        });
-
+      it("should return false when memory file does not exist", async () => {
+        const backend = new QmdMemoryBackend();
         const result = await backend.exists(tempDir);
 
         expect(result).toBe(false);
       });
 
-      it("should fall back to file check when QMD unavailable", async () => {
-        const { QmdMemoryBackend: QmdBackend } = await import("./memory-backend.js");
-        const backend = new QmdBackend();
-
-        mockRunCommandAsync.mockResolvedValueOnce({
-          stdout: "",
-          stderr: "command not found",
-          exitCode: 127,
-          signal: null,
-          bufferExceeded: false,
-          timedOut: false,
-        });
-
-        // No file exists - should return false
-        const result = await backend.exists(tempDir);
-
-        expect(result).toBe(false);
-      });
-    });
-
-    describe("error codes", () => {
-      it("should throw BACKEND_UNAVAILABLE when QMD not found", async () => {
-        const { QmdMemoryBackend: QmdBackend } = await import("./memory-backend.js");
-        const backend = new QmdBackend();
-
-        mockRunCommandAsync.mockResolvedValueOnce({
-          stdout: "",
-          stderr: "spawn qmd ENOENT",
-          exitCode: null,
-          signal: null,
-          bufferExceeded: false,
-          timedOut: false,
-          spawnError: new Error("spawn qmd ENOENT"),
-        });
-
-        // Remove file so fallback also fails
+      it("should return true for empty file", async () => {
         const memoryPath = join(tempDir, ".fusion", "memory.md");
+        writeFileSync(memoryPath, "", "utf-8");
 
-        const result = await backend.read(tempDir);
+        const backend = new QmdMemoryBackend();
+        const result = await backend.exists(tempDir);
 
-        // Should return empty result when both QMD and fallback fail
-        expect(result.content).toBe("");
-        expect(result.exists).toBe(false);
+        expect(result).toBe(true);
       });
     });
   });

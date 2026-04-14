@@ -258,44 +258,30 @@ export class ReadOnlyMemoryBackend implements MemoryBackend {
 }
 
 /**
- * QMD (Quantized Memory Distillation) memory backend.
+ * QMD (qmd index/query integration) memory backend.
  *
- * This backend routes memory operations through a QMD CLI tool, enabling
- * advanced features like automatic summarization, deduplication, and
- * structured querying of project memory. Falls back to file-based storage
- * when the QMD binary is unavailable or when operations fail.
- *
- * **QMD CLI Interface:**
- * - Read: `qmd read [--path <path>]`
- * - Write: `qmd write --content <content> [--path <path>]`
- * - Exit codes: 0 = success, 127 = not found, 1 = general error
- *
- * **Fallback Behavior:**
- * - When QMD binary is not found (exit code 127): falls back to file backend
- * - When QMD command times out: falls back to file backend
- * - When QMD command fails with non-zero exit code: falls back to file backend
- * - When QMD output is malformed: returns error, does not fall back
+ * Stores project memory in `.fusion/memory.md` so it can be indexed and queried
+ * by the external `qmd` tool. Read/write operations use direct filesystem access
+ * for reliability. The `qmd` tool can be configured separately to watch and index
+ * the memory file for advanced querying capabilities.
  *
  * **Capabilities:**
  * - readable: true
- * - writable: true (when QMD is available)
- * - supportsAtomicWrite: false (QMD may use append/merge semantics)
- * - hasConflictResolution: false (no built-in conflict resolution)
- * - persistent: true (QMD stores data persistently)
+ * - writable: true
+ * - supportsAtomicWrite: false (QMD indexing is async/external)
+ * - hasConflictResolution: false
+ * - persistent: true (memory file persists in `.fusion/memory.md`)
  *
  * @example
  * ```typescript
- * // Register the QMD backend (auto-registered at module load)
- * import { registerMemoryBackend, QmdMemoryBackend } from './memory-backend.js';
- *
- * // Configure in settings
+ * // Configure in settings to enable qmd integration
  * const settings = { memoryBackendType: 'qmd' };
  * const backend = resolveMemoryBackend(settings);
  * ```
  */
 export class QmdMemoryBackend implements MemoryBackend {
   readonly type = "qmd";
-  readonly name = "QMD (Quantized Memory Distillation)";
+  readonly name = "QMD (qmd index/query integration)";
   readonly capabilities: MemoryBackendCapabilities = {
     readable: true,
     writable: true,
@@ -304,273 +290,48 @@ export class QmdMemoryBackend implements MemoryBackend {
     persistent: true,
   };
 
-  /** Default timeout for QMD commands (30 seconds) */
-  static readonly DEFAULT_TIMEOUT_MS = 30_000;
-
-  /** Default max buffer for QMD output (1 MB) */
-  static readonly DEFAULT_MAX_BUFFER = 1 * 1024 * 1024;
-
-  /** QMD command binary name */
-  static readonly QMD_COMMAND = "qmd";
+  /** Delegate file backend for actual I/O operations */
+  private readonly fileBackend = new FileMemoryBackend();
 
   /**
-   * Execute a QMD command with proper error handling and fallback detection.
-   *
-   * @param args - Command arguments
-   * @param cwd - Working directory
-   * @param timeoutMs - Timeout in milliseconds
-   * @param maxBuffer - Maximum buffer size in bytes
-   * @returns The command result
-   */
-  private async executeQmd(
-    args: string[],
-    cwd: string,
-    timeoutMs: number = QmdMemoryBackend.DEFAULT_TIMEOUT_MS,
-    maxBuffer: number = QmdMemoryBackend.DEFAULT_MAX_BUFFER,
-  ): Promise<{
-    success: boolean;
-    output: string;
-    exitCode: number | null;
-    shouldFallback: boolean;
-    error?: MemoryBackendError;
-  }> {
-    // Lazily import runCommandAsync to avoid circular dependencies
-    const { runCommandAsync } = await import("./run-command.js");
-
-    const command = `${QmdMemoryBackend.QMD_COMMAND} ${args.join(" ")}`;
-    const result = await runCommandAsync(command, {
-      cwd,
-      timeoutMs,
-      maxBuffer,
-    });
-
-    // Check for spawn errors (e.g., command not found)
-    if (result.spawnError) {
-      const isNotFound =
-        result.spawnError.message.includes("ENOENT") ||
-        result.spawnError.message.includes("spawn qmd") ||
-        result.spawnError.message.includes("not found");
-
-      return {
-        success: false,
-        output: result.stderr || result.stdout,
-        exitCode: null,
-        shouldFallback: isNotFound,
-        error: new MemoryBackendError(
-          isNotFound ? "BACKEND_UNAVAILABLE" : "READ_FAILED",
-          isNotFound
-            ? `QMD binary not found. Install qmd or use file backend.`
-            : `Failed to spawn QMD: ${result.spawnError.message}`,
-          this.type,
-        ),
-      };
-    }
-
-    // Check for timeout
-    if (result.timedOut) {
-      return {
-        success: false,
-        output: result.stderr || result.stdout,
-        exitCode: result.exitCode,
-        shouldFallback: true,
-        error: new MemoryBackendError(
-          "BACKEND_UNAVAILABLE",
-          `QMD command timed out after ${timeoutMs}ms`,
-          this.type,
-        ),
-      };
-    }
-
-    // Check exit code for errors
-    // Exit code 127 typically means command not found
-    // Exit code 1 could mean various errors - fall back for safety
-    if (result.exitCode !== 0) {
-      const shouldFallback = result.exitCode === 127 || result.exitCode === 1;
-
-      if (shouldFallback) {
-        return {
-          success: false,
-          output: result.stderr || result.stdout,
-          exitCode: result.exitCode,
-          shouldFallback: true,
-          error: new MemoryBackendError(
-            result.exitCode === 127 ? "BACKEND_UNAVAILABLE" : "READ_FAILED",
-            `QMD command failed with exit code ${result.exitCode}: ${result.stderr || result.stdout}`,
-            this.type,
-          ),
-        };
-      }
-
-      // For unexpected exit codes, throw without fallback
-      return {
-        success: false,
-        output: result.stderr || result.stdout,
-        exitCode: result.exitCode,
-        shouldFallback: false,
-        error: new MemoryBackendError(
-          "READ_FAILED",
-          `QMD command failed with unexpected exit code ${result.exitCode}: ${result.stderr || result.stdout}`,
-          this.type,
-        ),
-      };
-    }
-
-    return {
-      success: true,
-      output: result.stdout,
-      exitCode: result.exitCode,
-      shouldFallback: false,
-    };
-  }
-
-  /**
-   * Get the memory file path for a given root directory.
-   */
-  private getFilePath(rootDir: string): string {
-    return join(rootDir, ".fusion", "memory.md");
-  }
-
-  /**
-   * Read memory content using QMD.
-   *
-   * If QMD is unavailable or fails, falls back to reading the file directly.
+   * Read memory content from the filesystem.
    *
    * @param rootDir - The project root directory
    * @returns Promise resolving to memory read result
    */
   async read(rootDir: string): Promise<MemoryReadResult> {
-    const memoryPath = this.getFilePath(rootDir);
-
-    // Try QMD read first
-    const qmdResult = await this.executeQmd(["read", "--path", memoryPath], rootDir);
-
-    if (qmdResult.success) {
-      return {
-        content: qmdResult.output,
-        exists: qmdResult.output.length > 0,
-        backend: this.type,
-      };
-    }
-
-    // Fall back to file-based read when QMD is unavailable
-    if (qmdResult.shouldFallback) {
-      try {
-        const content = await readFile(memoryPath, "utf-8");
-        return {
-          content,
-          exists: true,
-          backend: this.type,
-        };
-      } catch (err) {
-        if ((err as NodeJS.ErrnoException).code === "ENOENT") {
-          return {
-            content: "",
-            exists: false,
-            backend: this.type,
-          };
-        }
-        // If fallback also fails, return empty with exists=false
-        return {
-          content: "",
-          exists: false,
-          backend: this.type,
-        };
-      }
-    }
-
-    // QMD failed but shouldn't fallback (unexpected error)
-    throw qmdResult.error;
+    // Delegate to file backend, but return "qmd" as the backend identifier
+    const result = await this.fileBackend.read(rootDir);
+    return {
+      ...result,
+      backend: this.type,
+    };
   }
 
   /**
-   * Write memory content using QMD.
-   *
-   * If QMD is unavailable or fails, falls back to writing the file directly.
+   * Write memory content to the filesystem.
    *
    * @param rootDir - The project root directory
    * @param content - The content to write
    * @returns Promise resolving to write result
    */
   async write(rootDir: string, content: string): Promise<MemoryWriteResult> {
-    const memoryPath = this.getFilePath(rootDir);
-
-    // Try QMD write first
-    const qmdResult = await this.executeQmd(
-      ["write", "--path", memoryPath, "--content", content],
-      rootDir,
-    );
-
-    if (qmdResult.success) {
-      return {
-        success: true,
-        backend: this.type,
-      };
-    }
-
-    // Fall back to file-based write when QMD is unavailable
-    if (qmdResult.shouldFallback) {
-      try {
-        const dir = join(rootDir, ".fusion");
-        if (!existsSync(dir)) {
-          await mkdir(dir, { recursive: true });
-        }
-
-        // Write using temp file for atomicity
-        const tmpPath = memoryPath + ".tmp";
-        await writeFile(tmpPath, content, "utf-8");
-        const { rename } = await import("node:fs/promises");
-        await rename(tmpPath, memoryPath);
-
-        return {
-          success: true,
-          backend: this.type,
-        };
-      } catch (err) {
-        throw new MemoryBackendError(
-          "WRITE_FAILED",
-          `QMD unavailable, fallback write failed: ${(err as Error).message}`,
-          this.type,
-        );
-      }
-    }
-
-    // QMD failed but shouldn't fallback (unexpected error)
-    throw qmdResult.error;
+    // Delegate to file backend, but return "qmd" as the backend identifier
+    const result = await this.fileBackend.write(rootDir, content);
+    return {
+      ...result,
+      backend: this.type,
+    };
   }
 
   /**
-   * Check if memory exists using QMD, with file fallback.
+   * Check if memory file exists.
    *
    * @param rootDir - The project root directory
    * @returns Promise resolving to true if memory exists
    */
   async exists(rootDir: string): Promise<boolean> {
-    const memoryPath = this.getFilePath(rootDir);
-
-    // Try QMD read first (returns empty for non-existent)
-    const qmdResult = await this.executeQmd(["read", "--path", memoryPath], rootDir);
-
-    if (qmdResult.success) {
-      return qmdResult.output.length > 0;
-    }
-
-    // Fall back to file-based check when QMD is unavailable
-    if (qmdResult.shouldFallback) {
-      try {
-        await access(memoryPath, constants.R_OK);
-        return true;
-      } catch {
-        return false;
-      }
-    }
-
-    // QMD failed but shouldn't fallback - check file anyway
-    try {
-      await access(memoryPath, constants.R_OK);
-      return true;
-    } catch {
-      return false;
-    }
+    return this.fileBackend.exists(rootDir);
   }
 }
 
