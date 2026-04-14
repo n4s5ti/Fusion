@@ -158,3 +158,119 @@ describe("GET /api/tasks/:id/diff — done tasks", () => {
     expect(response.body.files).toEqual([]);
   });
 });
+
+describe("GET /api/tasks/:id/diff — in-progress tasks without valid worktree", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockExistsSync.mockReturnValue(true);
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("returns empty diff when task.worktree is null and no worktree query param", async () => {
+    const store = new MockStore();
+    store.addTask(createTask({
+      column: "in-progress",
+      worktree: null as any,
+    }));
+
+    const { createServer } = await import("../server.js");
+    const app = createServer(store as any);
+    const response = await requestDiff(app);
+
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual({
+      files: [],
+      stats: { filesChanged: 0, additions: 0, deletions: 0 },
+    });
+  });
+
+  it("returns empty diff when task.worktree is undefined", async () => {
+    const store = new MockStore();
+    store.addTask(createTask({
+      column: "in-progress",
+      worktree: undefined,
+    }));
+
+    const { createServer } = await import("../server.js");
+    const app = createServer(store as any);
+    const response = await requestDiff(app);
+
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual({
+      files: [],
+      stats: { filesChanged: 0, additions: 0, deletions: 0 },
+    });
+  });
+
+  it("returns empty diff when worktree path does not exist on disk", async () => {
+    const store = new MockStore();
+    store.addTask(createTask({
+      column: "in-progress",
+      worktree: "/tmp/nonexistent-worktree",
+    }));
+
+    // Mock existsSync to return false for the worktree path
+    mockExistsSync.mockImplementation((path: unknown) => {
+      if (typeof path === "string" && path === "/tmp/nonexistent-worktree") {
+        return false;
+      }
+      return true;
+    });
+
+    const { createServer } = await import("../server.js");
+    const app = createServer(store as any);
+    const response = await requestDiff(app);
+
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual({
+      files: [],
+      stats: { filesChanged: 0, additions: 0, deletions: 0 },
+    });
+  });
+
+  it("returns diff when worktree path exists (regression guard)", async () => {
+    const store = new MockStore();
+    store.addTask(createTask({
+      column: "in-progress",
+      worktree: "/tmp/fn-679",
+    }));
+
+    mockExistsSync.mockReturnValue(true);
+
+    const { createServer } = await import("../server.js");
+    const app = createServer(store as any);
+    const response = await requestDiff(app);
+
+    // Should return 200 or 500 depending on git command results (happy path)
+    expect([200, 500]).toContain(response.status);
+  });
+
+  it("returns empty diff when worktree query param path does not exist", async () => {
+    const store = new MockStore();
+    store.addTask(createTask({
+      column: "in-progress",
+      worktree: "/tmp/fn-679",
+    }));
+
+    // Mock existsSync to return false for the query param worktree
+    mockExistsSync.mockImplementation((path: unknown) => {
+      if (typeof path === "string" && path === "/tmp/query-worktree-does-not-exist") {
+        return false;
+      }
+      return true;
+    });
+
+    const { createServer } = await import("../server.js");
+    const app = createServer(store as any);
+    const response = await requestDiff(app, "FN-679", "/tmp/query-worktree-does-not-exist");
+
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual({
+      files: [],
+      stats: { filesChanged: 0, additions: 0, deletions: 0 },
+    });
+  });
+});

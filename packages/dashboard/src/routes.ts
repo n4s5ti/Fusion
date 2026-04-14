@@ -13954,7 +13954,14 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
       }
 
       const worktree = typeof req.query.worktree === "string" ? req.query.worktree : undefined;
-      const cwd = worktree || task.worktree || scopedStore.getRootDir();
+      const resolvedWorktree = worktree || task.worktree;
+
+      if (!resolvedWorktree || !nodeFs.existsSync(resolvedWorktree)) {
+        res.json({ files: [], stats: { filesChanged: 0, additions: 0, deletions: 0 } });
+        return;
+      }
+
+      const cwd = resolvedWorktree;
 
       // Use resolveDiffBase for consistent diff base across all endpoints
       const diffBase = await resolveDiffBase(task, cwd);
