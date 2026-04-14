@@ -1420,11 +1420,14 @@ Use `useBadgeWebSocket()` when a UI surface needs live badge snapshots for speci
 - Always pair subscriptions with `unsubscribeFromBadge(taskId)` on unmount or when the card leaves the viewport.
 - Treat websocket payloads as **timestamped badge snapshots**. Merge them with task data using freshness comparisons so stale cached websocket data does not override newer SSE/task state.
 - Preserve omitted fields on partial updates; only treat explicit `null` payloads as badge clears.
+- The frontend does not pass `projectId` to the hook — the project context is resolved server-side from the connection scope.
 
 ### Server-side expectations
 
 - `/api/ws` is badge-specific; do **not** reuse it for general task updates.
 - Badge broadcasts should contain only `prInfo` / `issueInfo` snapshot data, never full task objects.
+- **Project-scoped channels**: connections are bound to scope keys derived from `projectId` (defaults to `"default"`). Channel keying uses `badge:{scopeKey}:{taskId}` to prevent collisions across projects with identical task IDs.
+- **Cross-instance delivery**: badge messages carry `projectId` metadata and are rebroadcast across instances via `BadgePubSub` (`badge-pubsub.ts`).
 - Badge updates are now **push-based via GitHub App webhooks** at `POST /api/github/webhooks`.
 - The server verifies webhook signatures using `FUSION_GITHUB_WEBHOOK_SECRET`, fetches canonical badge state with GitHub App installation tokens, and broadcasts updates via the existing `task:updated` → `/api/ws` bridge.
 - Keep the existing 5-minute refresh endpoints (`/api/tasks/:id/pr/status`, `/api/tasks/:id/issue/status`) as a fallback path when webhook delivery is unavailable.

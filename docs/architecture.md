@@ -285,9 +285,24 @@ Key server capabilities:
 ### Real-time channels
 - **SSE**: `/api/events` (`sse.ts`)
   - Emits `task:*`, mission events, AI session updates
+  - Project-scoped: resolves project context from query param or engine manager
+- **Task log stream**: `/api/tasks/:id/logs/stream` (`server.ts`)
+  - Server-Sent Events endpoint for live task log streaming
+  - **Project-scoped**: when `projectId` is provided, resolves scoped task store via `getScopedTaskStore()` (prefers `engineManager.getEngine(projectId)?.getTaskStore()`, falls back to `getOrCreateProjectStore(projectId)`, then defaults)
+  - Listeners are attached to the resolved scoped store and properly detached on connection close
+  - Unscoped requests fall back to the default store (backward compatible)
 - **Badge WebSocket**: `/api/ws` (`setupBadgeWebSocket` in `server.ts`, manager in `websocket.ts`)
-  - Broadcasts lightweight badge snapshots (`prInfo` / `issueInfo`)
-- **Terminal WebSocket**: `/api/terminal/ws` (also in `server.ts`)
+  - WebSocket endpoint for lightweight badge snapshot fan-out
+  - **Project-scoped channels**: each connection is bound to a scope key derived from `projectId` (defaults to `"default"` when omitted)
+  - **Channel keying**: `badge:{scopeKey}:{taskId}` instead of task-only `badge:{taskId}` to prevent collisions across projects with identical task IDs
+  - **Badge cache**: snapshot cache keys include project scope; broadcasts only reach subscribers in matching scope
+  - **Cross-instance delivery**: badge messages include `projectId` metadata and are rebroadcast across instances via `BadgePubSub`
+  - **Backward compatibility**: unscoped clients receive the default scope; unscoped messages default to `"default"` project
+- **Terminal WebSocket**: `/api/terminal/ws` (`server.ts`, `terminal-service.ts`)
+  - WebSocket endpoint for terminal sessions
+  - **Project-scoped service resolution**: when `projectId` is provided in URL query, resolves terminal service via `getTerminalService(scopedRootDir)` instead of unscoped fallback
+  - **Scope validation**: websocket attach validates session ownership against resolved project scope; wrong-scope sessions are rejected
+  - **Backward compatibility**: requests without `projectId` use safe fallback that does not reintroduce cross-project leakage
 
 ### Frontend SPA layer
 - App entry: `packages/dashboard/app/main.tsx`

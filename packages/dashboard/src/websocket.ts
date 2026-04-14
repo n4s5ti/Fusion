@@ -33,18 +33,23 @@ export type BadgeServerMessage = BadgeUpdatedMessage | WebSocketErrorMessage;
 export interface SubscribeMessage {
   type: "subscribe";
   taskId: string;
+  projectId?: string;
 }
 
 export interface UnsubscribeMessage {
   type: "unsubscribe";
   taskId: string;
+  projectId?: string;
 }
 
 export type BadgeClientMessage = SubscribeMessage | UnsubscribeMessage;
 
 interface ClientState {
   ws: WebSocket;
+  /** Subscribed channels (e.g., "badge:project-123:FN-001") */
   subscriptions: Set<string>;
+  /** The project scope this client is bound to */
+  projectId: string;
   isAlive: boolean;
   handlers: {
     pong: () => void;
@@ -57,7 +62,7 @@ interface ClientState {
 export interface WebSocketManagerEvents {
   "client:connected": [clientId: string, totalClients: number];
   "client:disconnected": [clientId: string, totalClients: number];
-  "subscription:changed": [taskId: string, subscriberCount: number];
+  "subscription:changed": [taskId: string, subscriberCount: number, projectId: string];
 }
 
 export interface WebSocketManagerOptions {
@@ -75,13 +80,20 @@ export class WebSocketManager extends EventEmitter<WebSocketManagerEvents> {
     this.heartbeatIntervalMs = options.heartbeatIntervalMs ?? 30_000;
   }
 
-  addClient(ws: WebSocket, clientId: string): void {
+  /**
+   * Add a new client to the manager.
+   * @param ws - The WebSocket connection
+   * @param clientId - Unique identifier for this client
+   * @param projectId - The project scope this client is bound to (defaults to "default")
+   */
+  addClient(ws: WebSocket, clientId: string, projectId: string = "default"): void {
     this.removeClient(clientId);
 
     const handlers = this.createClientHandlers(clientId);
     const state: ClientState = {
       ws,
       subscriptions: new Set<string>(),
+      projectId,
       isAlive: true,
       handlers,
     };
@@ -118,11 +130,19 @@ export class WebSocketManager extends EventEmitter<WebSocketManagerEvents> {
     this.emit("client:disconnected", clientId, this.clients.size);
   }
 
-  subscribe(clientId: string, taskId: string): void {
+  /**
+   * Subscribe a client to badge updates for a task within their project scope.
+   * @param clientId - The client ID to subscribe
+   * @param taskId - The task ID to subscribe to
+   * @param projectIdOverride - Optional project scope override (uses client's bound scope if not provided)
+   */
+  subscribe(clientId: string, taskId: string, projectIdOverride?: string): void {
     const state = this.clients.get(clientId);
     if (!state) return;
 
-    const channel = toBadgeChannel(taskId);
+    // Use client's bound scope by default, or override if explicitly provided
+    const scopeKey = projectIdOverride ?? state.projectId;
+    const channel = toBadgeChannel(scopeKey, taskId);
     if (state.subscriptions.has(channel)) return;
 
     state.subscriptions.add(channel);
@@ -134,16 +154,33 @@ export class WebSocketManager extends EventEmitter<WebSocketManagerEvents> {
     }
 
     subscribers.add(clientId);
-    this.emit("subscription:changed", taskId, subscribers.size);
+    this.emit("subscription:changed", taskId, subscribers.size, scopeKey);
   }
 
-  unsubscribe(clientId: string, taskId: string): void {
-    const channel = toBadgeChannel(taskId);
+  /**
+   * Unsubscribe a client from badge updates for a task.
+   * @param clientId - The client ID to unsubscribe
+   * @param taskId - The task ID to unsubscribe from
+   * @param projectIdOverride - Optional project scope override (uses client's bound scope if not provided)
+   */
+  unsubscribe(clientId: string, taskId: string, projectIdOverride?: string): void {
+    const state = this.clients.get(clientId);
+    if (!state) return;
+
+    const scopeKey = projectIdOverride ?? state.projectId;
+    const channel = toBadgeChannel(scopeKey, taskId);
     this.removeChannelSubscription(clientId, channel);
   }
 
-  broadcastBadgeUpdate(taskId: string, badgeData: BadgeUpdate): void {
-    const subscribers = this.channelSubscribers.get(toBadgeChannel(taskId));
+  /**
+   * Broadcast a badge update to all clients subscribed to the task within the scope.
+   * @param taskId - The task ID
+   * @param badgeData - The badge data to broadcast
+   * @param projectId - Optional project scope (defaults to "default")
+   */
+  broadcastBadgeUpdate(taskId: string, badgeData: BadgeUpdate, projectId?: string): void {
+    const scopeKey = projectId ?? "default";
+    const subscribers = this.channelSubscribers.get(toBadgeChannel(scopeKey, taskId));
     if (!subscribers || subscribers.size === 0) return;
 
     const message: BadgeUpdatedMessage = {
@@ -171,14 +208,26 @@ export class WebSocketManager extends EventEmitter<WebSocketManagerEvents> {
     return this.clients.size > 0;
   }
 
-  getSubscriptionCount(taskId: string): number {
-    return this.channelSubscribers.get(toBadgeChannel(taskId))?.size ?? 0;
+  /**
+   * Get subscription count for a task within a project scope.
+   * @param taskId - The task ID
+   * @param projectId - Optional project scope (defaults to "default")
+   */
+  getSubscriptionCount(taskId: string, projectId?: string): number {
+    const scopeKey = projectId ?? "default";
+    return this.channelSubscribers.get(toBadgeChannel(scopeKey, taskId))?.size ?? 0;
   }
 
-  getSubscribedTaskIds(): string[] {
+  /**
+   * Get all subscribed task IDs, optionally filtered by project scope.
+   * @param projectId - Optional project scope filter (returns all if not specified)
+   */
+  getSubscribedTaskIds(projectId?: string): string[] {
+    const scopeKey = projectId ?? "default";
+    const prefix = `badge:${scopeKey}:`;
     return [...this.channelSubscribers.entries()]
-      .filter(([, subscribers]) => subscribers.size > 0)
-      .map(([channel]) => fromBadgeChannel(channel));
+      .filter(([channel, subscribers]) => subscribers.size > 0 && channel.startsWith(prefix))
+      .map(([channel]) => fromBadgeChannel(scopeKey, channel));
   }
 
   dispose(): void {
@@ -223,11 +272,11 @@ export class WebSocketManager extends EventEmitter<WebSocketManagerEvents> {
     }
 
     if (parsed.value.type === "subscribe") {
-      this.subscribe(clientId, parsed.value.taskId);
+      this.subscribe(clientId, parsed.value.taskId, parsed.value.projectId);
       return;
     }
 
-    this.unsubscribe(clientId, parsed.value.taskId);
+    this.unsubscribe(clientId, parsed.value.taskId, parsed.value.projectId);
   }
 
   private removeChannelSubscription(clientId: string, channel: string): void {
@@ -241,14 +290,15 @@ export class WebSocketManager extends EventEmitter<WebSocketManagerEvents> {
 
     subscribers.delete(clientId);
 
-    const taskId = fromBadgeChannel(channel);
+    // Extract taskId and projectId from channel for the event
+    const { taskId, projectId } = extractPartsFromChannel(channel);
     if (subscribers.size === 0) {
       this.channelSubscribers.delete(channel);
-      this.emit("subscription:changed", taskId, 0);
+      this.emit("subscription:changed", taskId ?? "", 0, projectId ?? "default");
       return;
     }
 
-    this.emit("subscription:changed", taskId, subscribers.size);
+    this.emit("subscription:changed", taskId ?? "", subscribers.size, projectId ?? "default");
   }
 
   private safeSend(ws: WebSocket, message: BadgeServerMessage): boolean {
@@ -294,12 +344,43 @@ export class WebSocketManager extends EventEmitter<WebSocketManagerEvents> {
   }
 }
 
-function toBadgeChannel(taskId: string): string {
-  return `badge:${taskId}`;
+/**
+ * Create a badge channel key with project scope.
+ * Format: badge:{projectId}:{taskId}
+ */
+function toBadgeChannel(projectId: string, taskId: string): string {
+  return `badge:${projectId}:${taskId}`;
 }
 
-function fromBadgeChannel(channel: string): string {
-  return channel.replace(/^badge:/, "");
+/**
+ * Extract taskId from a badge channel key.
+ */
+function fromBadgeChannel(projectId: string, channel: string): string {
+  const prefix = `badge:${projectId}:`;
+  return channel.startsWith(prefix) ? channel.slice(prefix.length) : channel;
+}
+
+/**
+ * Extract taskId and projectId from any badge channel key.
+ */
+function extractPartsFromChannel(channel: string): { taskId: string | null; projectId: string | null } {
+  // Channel format: badge:{projectId}:{taskId}
+  const match = channel.match(/^badge:([^:]+):(.+)$/);
+  if (match) {
+    return { projectId: match[1], taskId: match[2] };
+  }
+  return { projectId: null, taskId: null };
+}
+
+/**
+ * Extract taskId from any badge channel key (without knowing the projectId).
+ * @deprecated Use extractPartsFromChannel instead
+ */
+function extractTaskIdFromChannel(channel: string): string | null {
+  // Channel format: badge:{projectId}:{taskId}
+  // We need to find the taskId after the second colon
+  const match = channel.match(/^badge:[^:]+:(.+)$/);
+  return match ? match[1] : null;
 }
 
 function parseClientMessage(raw: WebSocket.RawData):
@@ -324,11 +405,17 @@ function parseClientMessage(raw: WebSocket.RawData):
       return { ok: false, error: "taskId is required" };
     }
 
+    // projectId is optional - validates that it's a non-empty string if provided
+    if (value.projectId !== undefined && (typeof value.projectId !== "string" || value.projectId.trim().length === 0)) {
+      return { ok: false, error: "projectId must be a non-empty string" };
+    }
+
     return {
       ok: true,
       value: {
         type: value.type,
         taskId: value.taskId.trim(),
+        projectId: value.projectId?.trim(),
       },
     };
   } catch {

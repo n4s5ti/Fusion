@@ -66,6 +66,35 @@ process.on("beforeExit", () => {
   clearAiSessionCleanupInterval();
 });
 
+/**
+ * Module-level helper for resolving a scoped TaskStore.
+ * Mirrors /api/events semantics: prefer engine's store, fallback to resolver, fallback to default store.
+ * Used by realtime endpoints that need project-aware store resolution.
+ *
+ * @param projectId - The project ID to resolve, or undefined for the default store
+ * @param store - The default TaskStore to use when projectId is undefined
+ * @param engineManager - Optional engine manager for per-project engine store access
+ * @returns The resolved TaskStore
+ */
+export async function resolveScopedStore(
+  projectId: string | undefined,
+  store: TaskStore,
+  engineManager?: import("@fusion/engine").ProjectEngineManager,
+): Promise<TaskStore> {
+  if (!projectId) {
+    return store;
+  }
+
+  if (engineManager) {
+    const engine = engineManager.getEngine(projectId);
+    if (engine) {
+      return engine.getTaskStore();
+    }
+  }
+
+  return await getOrCreateProjectStore(projectId);
+}
+
 export interface ServerOptions {
   /** Optional ProjectEngine — when provided, subsystems (onMerge, automationStore,
    *  missionAutopilot, missionExecutionLoop, heartbeatMonitor) are derived from it.
@@ -320,9 +349,18 @@ export function createServer(store: TaskStore, options?: ServerOptions): ReturnT
     }
   });
 
+  /**
+   * Shared project-resolution helper for realtime endpoints.
+   * Uses module-level resolveScopedStore with current closure context.
+   */
+  async function resolveProjectScopedStore(projectId: string | undefined): Promise<TaskStore> {
+    return resolveScopedStore(projectId, store, options?.engineManager);
+  }
+
   // Per-task SSE endpoint for live agent log streaming
-  app.get("/api/tasks/:id/logs/stream", (req, res) => {
+  app.get("/api/tasks/:id/logs/stream", async (req, res) => {
     const taskId = req.params.id;
+    const projectId = typeof req.query.projectId === "string" ? req.query.projectId : undefined;
 
     res.setHeader("Content-Type", "text/event-stream");
     res.setHeader("Cache-Control", "no-cache");
@@ -332,23 +370,28 @@ export function createServer(store: TaskStore, options?: ServerOptions): ReturnT
 
     res.write(": connected\n\n");
 
-    // agent:log events are emitted by the in-process TaskExecutor via
-    // store.appendAgentLog(). The executor is always bound to the default
-    // `store` passed to createServer — never to a project-scoped store
-    // created by getOrCreateProjectStore — so we must listen on `store`
-    // directly. Using getOrCreateProjectStore here would attach the listener
-    // to a different EventEmitter instance that the executor never writes to,
-    // breaking real-time log streaming.
+    // Resolve the store for this request:
+    // - With projectId: use scoped store from engine or resolver (ensures multi-project isolation)
+    // - Without projectId: use default store (preserves existing single-project behavior)
     //
     // Per-entry text and detail fields are serialized in full — there is no
     // SSE-level truncation.  The 500-entry cap is applied client-side in the
     // React hooks (useAgentLogs / useMultiAgentLogs).
+    let scopedStore: TaskStore;
+    try {
+      scopedStore = await resolveProjectScopedStore(projectId);
+    } catch (err) {
+      res.write(`event: error\ndata: ${JSON.stringify({ message: "Failed to resolve project store" })}\n\n`);
+      res.end();
+      return;
+    }
+
     const onAgentLog = (entry: { taskId: string; text: string; type: string; timestamp: string }) => {
       if (entry.taskId !== taskId) return;
       res.write(`event: agent:log\ndata: ${JSON.stringify(entry)}\n\n`);
     };
 
-    store.on("agent:log", onAgentLog);
+    scopedStore.on("agent:log", onAgentLog);
 
     const heartbeat = setInterval(() => {
       res.write(": heartbeat\n\n");
@@ -356,7 +399,7 @@ export function createServer(store: TaskStore, options?: ServerOptions): ReturnT
 
     req.on("close", () => {
       clearInterval(heartbeat);
-      store.off("agent:log", onAgentLog);
+      scopedStore.off("agent:log", onAgentLog);
     });
   });
 
@@ -633,7 +676,7 @@ export function createServer(store: TaskStore, options?: ServerOptions): ReturnT
 
     if (!dashboardApp.__fnWebSocketsAttached) {
       dashboardApp.__fnWebSocketsAttached = true;
-      setupTerminalWebSocket(dashboardApp, server);
+      setupTerminalWebSocket(dashboardApp, server, store, options);
       setupBadgeWebSocket(dashboardApp, server, store, options);
     }
 
@@ -650,10 +693,13 @@ export function createServer(store: TaskStore, options?: ServerOptions): ReturnT
 export function setupTerminalWebSocket(
   app: ReturnType<typeof express>,
   server: import("http").Server,
+  store: TaskStore,
+  options?: ServerOptions,
 ): void {
-  const terminalService = getTerminalService();
-
   const wss = new WebSocketServer({ noServer: true });
+
+  // Default terminal service for stale eviction (uses default store's root dir)
+  const defaultTerminalService = getTerminalService(store.getRootDir());
 
   server.on("upgrade", (req, socket, head) => {
     const pathname = new URL(req.url || "", `http://${req.headers.host}`).pathname;
@@ -669,19 +715,49 @@ export function setupTerminalWebSocket(
   // Store reference on app for access
   (app as DashboardExpressApp).terminalWsServer = wss;
 
-  wss.on("connection", (ws: WebSocket, req) => {
+  wss.on("connection", async (ws: WebSocket, req) => {
     // Parse query params from URL
     const url = new URL(req.url || "", `http://${req.headers.host}`);
     const sessionId = url.searchParams.get("sessionId");
+    const projectId = url.searchParams.get("projectId") ?? undefined;
 
     if (!sessionId) {
       ws.close(4000, "Missing sessionId");
       return;
     }
 
+    // Resolve the scoped terminal service
+    let terminalService: ReturnType<typeof getTerminalService>;
+    let scopedRootDir: string;
+    
+    try {
+      if (projectId) {
+        // When projectId is provided, resolve the scoped store and get its root dir
+        const scopedStore = await resolveScopedStore(projectId, store, options?.engineManager);
+        scopedRootDir = scopedStore.getRootDir();
+        terminalService = getTerminalService(scopedRootDir);
+      } else {
+        // Without projectId, use the default store's root dir
+        scopedRootDir = store.getRootDir();
+        terminalService = getTerminalService(scopedRootDir);
+      }
+    } catch (err) {
+      console.error("[terminal] Failed to resolve project scope:", err);
+      ws.close(4510, "Failed to resolve project scope");
+      return;
+    }
+
     const session = terminalService.getSession(sessionId);
     if (!session) {
       ws.close(4004, "Session not found");
+      return;
+    }
+
+    // Security check: reject sessions that don't belong to this project's root
+    // Session cwd must be within the resolved project root
+    if (!session.cwd.startsWith(scopedRootDir)) {
+      console.warn(`[terminal] Session ${sessionId} cwd ${session.cwd} does not belong to project root ${scopedRootDir}`);
+      ws.close(4503, "Session does not belong to this project");
       return;
     }
 
@@ -818,7 +894,7 @@ export function setupTerminalWebSocket(
   // TerminalService (default 5 minutes of inactivity).
   const staleEvictionInterval = setInterval(() => {
     try {
-      terminalService.evictStaleSessions();
+      defaultTerminalService.evictStaleSessions();
     } catch {
       // Ignore errors during periodic eviction
     }
@@ -842,7 +918,8 @@ export function setupBadgeWebSocket(
   const wsManager = new WebSocketManager();
   
   // Structured badge snapshot cache for local subscriptions and pub/sub sync
-  // Maps taskId -> BadgeSnapshot with timestamp
+  // Maps "{projectId}:{taskId}" -> BadgeSnapshot with timestamp
+  // Uses "default" for unscoped/default project
   const badgeSnapshots = new Map<string, BadgeSnapshot>();
   
   // Server instance ID for pub/sub deduplication
@@ -852,10 +929,31 @@ export function setupBadgeWebSocket(
   const badgePubSub = options?.badgePubSub ?? createBadgePubSub({ sourceId: serverId });
   void badgePubSub.start();
 
-  // Prime cache with existing tasks
+  // Track scoped stores for multi-project support
+  const scopedStores = new Map<string, TaskStore>();
+  
+  // Helper to get or create a scoped store
+  const getScopedStore = async (projectId: string): Promise<TaskStore> => {
+    // Always use the default store for the "default" scope
+    if (projectId === "default") {
+      return store;
+    }
+    
+    let scopedStore = scopedStores.get(projectId);
+    if (scopedStore) {
+      return scopedStore;
+    }
+    
+    // Create scoped store
+    scopedStore = await resolveScopedStore(projectId, store, options?.engineManager);
+    scopedStores.set(projectId, scopedStore);
+    return scopedStore;
+  };
+
+  // Prime cache with existing tasks from default store
   void store.listTasks({ slim: true, includeArchived: false }).then((tasks) => {
     for (const task of tasks) {
-      badgeSnapshots.set(task.id, {
+      badgeSnapshots.set(`default:${task.id}`, {
         prInfo: task.prInfo ?? null,
         issueInfo: task.issueInfo ?? null,
         timestamp: new Date().toISOString(),
@@ -881,95 +979,165 @@ export function setupBadgeWebSocket(
   dashboardApp.badgeWsServer = wss;
   dashboardApp.badgeWsManager = wsManager;
 
-  const broadcastBadgeSnapshot = (taskId: string, snapshot: BadgeSnapshot): void => {
-    wsManager.broadcastBadgeUpdate(taskId, snapshot);
+  /**
+   * Broadcast a badge snapshot to subscribed clients within a project scope.
+   */
+  const broadcastBadgeSnapshot = (taskId: string, snapshot: BadgeSnapshot, projectId: string = "default"): void => {
+    wsManager.broadcastBadgeUpdate(taskId, snapshot, projectId);
   };
 
-  const onTaskUpdated = (task: Task) => {
-    const previousSnapshot = badgeSnapshots.get(task.id);
-    const nextSnapshot: BadgeSnapshot = {
-      prInfo: task.prInfo ?? null,
-      issueInfo: task.issueInfo ?? null,
-      timestamp: new Date().toISOString(),
-    };
-    
-    // Update local cache immediately
-    badgeSnapshots.set(task.id, nextSnapshot);
+  /**
+   * Get or create scoped store and attach badge listeners.
+   * Returns cleanup function.
+   */
+  const attachScopedListeners = async (
+    projectId: string,
+    scopedStore: TaskStore
+  ): Promise<() => void> => {
+    const scopeKey = projectId === "default" ? "default" : projectId;
 
-    // Check if badge data actually changed
-    if (snapshotsEqual(previousSnapshot, nextSnapshot)) {
+    const onTaskUpdated = (task: Task) => {
+      const cacheKey = `${scopeKey}:${task.id}`;
+      const previousSnapshot = badgeSnapshots.get(cacheKey);
+      const nextSnapshot: BadgeSnapshot = {
+        prInfo: task.prInfo ?? null,
+        issueInfo: task.issueInfo ?? null,
+        timestamp: new Date().toISOString(),
+      };
+      
+      // Update local cache immediately
+      badgeSnapshots.set(cacheKey, nextSnapshot);
+
+      // Check if badge data actually changed
+      if (snapshotsEqual(previousSnapshot, nextSnapshot)) {
+        return;
+      }
+
+      // Always publish to shared bus (even if no local subscribers)
+      // This ensures other instances receive the update
+      const pubSubMessage: BadgePubSubMessage = {
+        sourceId: serverId,
+        projectId,
+        taskId: task.id,
+        timestamp: nextSnapshot.timestamp,
+        prInfo: nextSnapshot.prInfo,
+        issueInfo: nextSnapshot.issueInfo,
+      };
+      void badgePubSub.publish(pubSubMessage);
+
+      // Broadcast to local websocket subscribers if any
+      if (wsManager.getSubscriptionCount(task.id, projectId) > 0) {
+        broadcastBadgeSnapshot(task.id, nextSnapshot, projectId);
+      }
+    };
+
+    const onTaskCreated = (task: Task) => {
+      const cacheKey = `${scopeKey}:${task.id}`;
+      badgeSnapshots.set(cacheKey, {
+        prInfo: task.prInfo ?? null,
+        issueInfo: task.issueInfo ?? null,
+        timestamp: new Date().toISOString(),
+      });
+    };
+
+    const onTaskDeleted = (task: Task) => {
+      const cacheKey = `${scopeKey}:${task.id}`;
+      badgeSnapshots.delete(cacheKey);
+    };
+
+    scopedStore.on("task:updated", onTaskUpdated);
+    scopedStore.on("task:created", onTaskCreated);
+    scopedStore.on("task:deleted", onTaskDeleted);
+
+    return () => {
+      scopedStore.off("task:updated", onTaskUpdated);
+      scopedStore.off("task:created", onTaskCreated);
+      scopedStore.off("task:deleted", onTaskDeleted);
+    };
+  };
+
+  // Store cleanup functions for scoped listeners
+  const scopedCleanups = new Map<string, () => void>();
+
+  // Attach listeners to default store
+  void (async () => {
+    const cleanup = await attachScopedListeners("default", store);
+    scopedCleanups.set("default", cleanup);
+  })();
+
+  /**
+   * Ensure scoped listeners are attached for a project.
+   */
+  const ensureScopedListeners = async (projectId: string): Promise<void> => {
+    if (scopedCleanups.has(projectId)) {
       return;
     }
-
-    // Always publish to shared bus (even if no local subscribers)
-    // This ensures other instances receive the update
-    const pubSubMessage: BadgePubSubMessage = {
-      sourceId: serverId,
-      taskId: task.id,
-      timestamp: nextSnapshot.timestamp,
-      prInfo: nextSnapshot.prInfo,
-      issueInfo: nextSnapshot.issueInfo,
-    };
-    void badgePubSub.publish(pubSubMessage);
-
-    // Broadcast to local websocket subscribers if any
-    if (wsManager.getSubscriptionCount(task.id) > 0) {
-      broadcastBadgeSnapshot(task.id, nextSnapshot);
-    }
+    
+    const scopedStore = await getScopedStore(projectId);
+    const cleanup = await attachScopedListeners(projectId, scopedStore);
+    scopedCleanups.set(projectId, cleanup);
   };
-
-  const onTaskCreated = (task: Task) => {
-    badgeSnapshots.set(task.id, {
-      prInfo: task.prInfo ?? null,
-      issueInfo: task.issueInfo ?? null,
-      timestamp: new Date().toISOString(),
-    });
-  };
-
-  const onTaskDeleted = (task: Task) => {
-    badgeSnapshots.delete(task.id);
-  };
-
-  store.on("task:updated", onTaskUpdated);
-  store.on("task:created", onTaskCreated);
-  store.on("task:deleted", onTaskDeleted);
 
   // Handle remote badge updates from other instances via pub/sub
   badgePubSub.on("message", (message: BadgePubSubMessage) => {
+    // Use provided projectId or default scope
+    const projectId = message.projectId ?? "default";
+    const cacheKey = `${projectId}:${message.taskId}`;
+    
     // Update local cache with remote snapshot
     const remoteSnapshot: BadgeSnapshot = {
       prInfo: message.prInfo,
       issueInfo: message.issueInfo,
       timestamp: message.timestamp,
     };
-    badgeSnapshots.set(message.taskId, remoteSnapshot);
+    badgeSnapshots.set(cacheKey, remoteSnapshot);
 
     // Rebroadcast to local websocket subscribers
     // (No need to check for echo - pub/sub adapter already filtered our own messages)
-    if (wsManager.getSubscriptionCount(message.taskId) > 0) {
-      broadcastBadgeSnapshot(message.taskId, remoteSnapshot);
+    if (wsManager.getSubscriptionCount(message.taskId, projectId) > 0) {
+      broadcastBadgeSnapshot(message.taskId, remoteSnapshot, projectId);
     }
   });
 
-  wsManager.on("subscription:changed", (taskId, subscriberCount) => {
+  wsManager.on("subscription:changed", (taskId, subscriberCount, projectId) => {
     // Send cached snapshot to late subscriber if available
     // This ensures a client subscribing after a remote update still sees the latest state
     if (subscriberCount > 0) {
-      const cachedSnapshot = badgeSnapshots.get(taskId);
+      const cacheKey = `${projectId}:${taskId}`;
+      const cachedSnapshot = badgeSnapshots.get(cacheKey);
       if (cachedSnapshot) {
-        broadcastBadgeSnapshot(taskId, cachedSnapshot);
+        broadcastBadgeSnapshot(taskId, cachedSnapshot, projectId);
       }
     }
   });
 
-  wss.on("connection", (ws: WebSocket) => {
-    wsManager.addClient(ws, randomUUID());
+  wss.on("connection", (ws: WebSocket, req) => {
+    // Parse projectId from URL query params
+    const url = new URL(req.url || "", `http://${req.headers.host}`);
+    const projectId = url.searchParams.get("projectId") ?? "default";
+    
+    // Ensure scoped listeners are attached for this project
+    void ensureScopedListeners(projectId);
+    
+    // Add client bound to this project scope
+    wsManager.addClient(ws, randomUUID(), projectId);
   });
 
   server.once("close", () => {
-    store.off("task:updated", onTaskUpdated);
-    store.off("task:created", onTaskCreated);
-    store.off("task:deleted", onTaskDeleted);
+    // Clean up all scoped listeners
+    for (const cleanup of scopedCleanups.values()) {
+      cleanup();
+    }
+    scopedCleanups.clear();
+
+    for (const scopedStore of scopedStores.values()) {
+      // Don't close the default store - it's managed externally
+      if (scopedStore !== store) {
+        scopedStore.stopWatching?.();
+        scopedStore.close?.();
+      }
+    }
+    scopedStores.clear();
 
     for (const client of wss.clients) {
       client.terminate();

@@ -304,10 +304,12 @@ describe("API Error Handling Middleware", () => {
 describe("Terminal WebSocket heartbeat", () => {
   let app: ReturnType<typeof express>;
   let server: http.Server;
+  let store: TaskStore;
 
   beforeEach(() => {
     app = express();
     server = http.createServer(app);
+    store = createMockStore();
     vi.useFakeTimers();
     vi.spyOn(console, "warn").mockImplementation(() => {});
     vi.spyOn(console, "info").mockImplementation(() => {});
@@ -349,7 +351,7 @@ describe("Terminal WebSocket heartbeat", () => {
 
   /** Setup terminal WebSocket and trigger a connection */
   function setupAndConnect(ws: any, req: any): void {
-    const wss = setupTerminalWebSocket(app, server);
+    const wss = setupTerminalWebSocket(app, server, store);
 
     // The function sets up wss on the server's upgrade event.
     // We need to access the WebSocketServer directly to emit a connection.
@@ -368,7 +370,7 @@ describe("Terminal WebSocket heartbeat", () => {
     mockTerminalService.getSession.mockReturnValue({
       id: "session-1",
       shell: "/bin/bash",
-      cwd: "/project",
+      cwd: "/fake/root",
       lastActivityAt: new Date(),
     });
 
@@ -394,7 +396,7 @@ describe("Terminal WebSocket heartbeat", () => {
     mockTerminalService.getSession.mockReturnValue({
       id: "session-2",
       shell: "/bin/bash",
-      cwd: "/project",
+      cwd: "/fake/root",
       lastActivityAt: new Date(),
     });
 
@@ -420,7 +422,7 @@ describe("Terminal WebSocket heartbeat", () => {
     mockTerminalService.getSession.mockReturnValue({
       id: "session-3",
       shell: "/bin/bash",
-      cwd: "/project",
+      cwd: "/fake/root",
       lastActivityAt: new Date(),
     });
 
@@ -457,7 +459,7 @@ describe("Terminal WebSocket heartbeat", () => {
     mockTerminalService.getSession.mockReturnValue({
       id: "stale-session",
       shell: "/bin/bash",
-      cwd: "/project",
+      cwd: "/fake/root",
       lastActivityAt: tenMinutesAgo,
     });
 
@@ -479,7 +481,7 @@ describe("Terminal WebSocket heartbeat", () => {
     mockTerminalService.getSession.mockReturnValue({
       id: "fresh-session",
       shell: "/bin/bash",
-      cwd: "/project",
+      cwd: "/fake/root",
       lastActivityAt: new Date(Date.now() - 60_000),
     });
 

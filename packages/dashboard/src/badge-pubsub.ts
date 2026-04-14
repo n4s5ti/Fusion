@@ -5,8 +5,8 @@ import type { IssueInfo, PrInfo } from "@fusion/core";
  * Badge snapshot message envelope for shared pub/sub.
  * 
  * This contract is used for cross-instance badge updates. Each message includes
- * a sourceId (server instance identifier), taskId, timestamp, and optional
- * prInfo/issueInfo snapshot data.
+ * a sourceId (server instance identifier), projectId (for cross-project isolation),
+ * taskId, timestamp, and optional prInfo/issueInfo snapshot data.
  * 
  * Explicit null values indicate a badge was removed; omitted fields mean no change
  * to that badge type's data.
@@ -14,6 +14,8 @@ import type { IssueInfo, PrInfo } from "@fusion/core";
 export interface BadgePubSubMessage {
   /** Unique identifier for the originating server instance (for deduplication) */
   sourceId: string;
+  /** Project scope key for cross-project isolation (e.g., project ID or "default") */
+  projectId?: string;
   /** Task identifier */
   taskId: string;
   /** ISO timestamp when the snapshot was captured */

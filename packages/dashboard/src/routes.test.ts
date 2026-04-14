@@ -8450,7 +8450,7 @@ describe("Terminal WebSocket close handler", () => {
     const getSessionMock = vi.fn().mockReturnValue({
       id: "term-ws-test",
       shell: "/bin/zsh",
-      cwd: "/test/project",
+      cwd: "/fake/root",
       scrollbackBuffer: "hello",
       lastActivityAt: new Date(),
     });
@@ -8474,8 +8474,9 @@ describe("Terminal WebSocket close handler", () => {
 
     const app = express();
     const server = http.createServer(app);
+    const store = createMockStore();
 
-    setupTerminalWebSocket(app, server);
+    setupTerminalWebSocket(app, server, store);
     class FakeWebSocket extends EventEmitter {
       send = vi.fn();
       close = vi.fn(() => this.emit("close"));
@@ -8504,7 +8505,7 @@ describe("Terminal WebSocket close handler", () => {
     const getSessionMock = vi.fn().mockReturnValue({
       id: "term-ws-err",
       shell: "/bin/zsh",
-      cwd: "/test/project",
+      cwd: "/fake/root",
       lastActivityAt: new Date(),
     });
     const getScrollbackAndClearPendingMock = vi.fn().mockReturnValue(null);
@@ -8527,8 +8528,9 @@ describe("Terminal WebSocket close handler", () => {
 
     const app = express();
     const server = http.createServer(app);
+    const store = createMockStore();
 
-    setupTerminalWebSocket(app, server);
+    setupTerminalWebSocket(app, server, store);
     class FakeWebSocket extends EventEmitter {
       send = vi.fn();
       close = vi.fn(() => this.emit("close"));
@@ -8561,7 +8563,7 @@ describe("Terminal WebSocket close handler", () => {
     const getSessionMock = vi.fn().mockReturnValue({
       id: "term-ws-unsub",
       shell: "/bin/zsh",
-      cwd: "/test/project",
+      cwd: "/fake/root",
       lastActivityAt: new Date(),
     });
     const getScrollbackAndClearPendingMock = vi.fn().mockReturnValue(null);
@@ -8584,8 +8586,9 @@ describe("Terminal WebSocket close handler", () => {
 
     const app = express();
     const server = http.createServer(app);
+    const store = createMockStore();
 
-    setupTerminalWebSocket(app, server);
+    setupTerminalWebSocket(app, server, store);
     class FakeWebSocket extends EventEmitter {
       send = vi.fn();
       close = vi.fn(() => this.emit("close"));
