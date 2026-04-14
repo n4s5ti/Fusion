@@ -353,8 +353,8 @@ export function ModelSelectorTab({ task, addToast, onTaskUpdated, settings }: Mo
     async (value: string) => {
       const requestTaskId = task.id;
       const previousThinking = savedThinking;
-      // Value "off" means clear override (null)
-      const nextValue = value === "off" ? null : value;
+      // Empty string means clear override (null)
+      const nextValue = value === "" ? null : value;
 
       setSelectedThinking(nextValue);
       setSavingTarget("thinking");
@@ -547,12 +547,13 @@ export function ModelSelectorTab({ task, addToast, onTaskUpdated, settings }: Mo
             </div>
             <select
               id="thinkingLevel"
-              value={selectedThinking ?? "off"}
+              value={selectedThinking ?? ""}
               onChange={(e) => handleThinkingChange(e.target.value)}
               disabled={isSaving}
               className="thinking-level-select"
             >
-              <option value="off">Off (default)</option>
+              <option value="">Default ({settings?.defaultThinkingLevel ?? "off"})</option>
+              <option value="off">Off</option>
               <option value="minimal">Minimal</option>
               <option value="low">Low</option>
               <option value="medium">Medium</option>

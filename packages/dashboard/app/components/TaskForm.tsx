@@ -109,7 +109,7 @@ export function TaskForm({
     executorModel !== "" ||
     validatorModel !== "" ||
     (planningModel || "") !== "" ||
-    (thinkingLevel || "off") !== "off";
+    (thinkingLevel || "") !== "";
 
   const [showDepDropdown, setShowDepDropdown] = useState(false);
   const [showMoreOptions, setShowMoreOptions] = useState(hasInitialMoreOptions);
@@ -169,7 +169,7 @@ export function TaskForm({
     executorModel !== "" ||
     validatorModel !== "" ||
     (planningModel || "") !== "" ||
-    (thinkingLevel || "off") !== "off";
+    (thinkingLevel || "") !== "";
 
   // Auto-select preset by size (create mode only)
   useEffect(() => {
@@ -926,11 +926,12 @@ export function TaskForm({
                 <label htmlFor="thinking-level" className="model-select-label">Thinking</label>
                 <select
                   id="thinking-level"
-                  value={thinkingLevel || "off"}
+                  value={thinkingLevel || ""}
                   onChange={(e) => onThinkingLevelChange(e.target.value)}
                   disabled={disabled || presetMode === "preset"}
                 >
-                  <option value="off">Off (default)</option>
+                  <option value="">Default ({settings?.defaultThinkingLevel ?? "off"})</option>
+                  <option value="off">Off</option>
                   <option value="minimal">Minimal</option>
                   <option value="low">Low</option>
                   <option value="medium">Medium</option>

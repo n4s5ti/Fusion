@@ -25,7 +25,7 @@ export function NewTaskModal({ isOpen, onClose, projectId, tasks, onCreateTask, 
   const [executorModel, setExecutorModel] = useState("");
   const [validatorModel, setValidatorModel] = useState("");
   const [planningModel, setPlanningModel] = useState("");
-  const [thinkingLevel, setThinkingLevel] = useState<string>("off");
+  const [thinkingLevel, setThinkingLevel] = useState<string>("");
   const [selectedPresetId, setSelectedPresetId] = useState<string>("");
   const [presetMode, setPresetMode] = useState<"default" | "preset" | "custom">("default");
   const [hasDirtyState, setHasDirtyState] = useState(false);
@@ -94,7 +94,7 @@ export function NewTaskModal({ isOpen, onClose, projectId, tasks, onCreateTask, 
       executorModel !== "" ||
       validatorModel !== "" ||
       planningModel !== "" ||
-      thinkingLevel !== "off" ||
+      thinkingLevel !== "" ||
       selectedWorkflowSteps.length > 0 ||
       selectedAgentId !== null;
     setHasDirtyState(isDirty);
@@ -113,7 +113,7 @@ export function NewTaskModal({ isOpen, onClose, projectId, tasks, onCreateTask, 
     setExecutorModel("");
     setValidatorModel("");
     setPlanningModel("");
-    setThinkingLevel("off");
+    setThinkingLevel("");
     setSelectedPresetId("");
     setPresetMode("default");
     setSelectedWorkflowSteps([]);
@@ -150,7 +150,7 @@ export function NewTaskModal({ isOpen, onClose, projectId, tasks, onCreateTask, 
         validatorModelId: validatorModel && validatorSlashIdx !== -1 ? validatorModel.slice(validatorSlashIdx + 1) : undefined,
         planningModelProvider: planningModel && planningSlashIdx !== -1 ? planningModel.slice(0, planningSlashIdx) : undefined,
         planningModelId: planningModel && planningSlashIdx !== -1 ? planningModel.slice(planningSlashIdx + 1) : undefined,
-        thinkingLevel: thinkingLevel !== "off" ? thinkingLevel as "minimal" | "low" | "medium" | "high" : undefined,
+        thinkingLevel: thinkingLevel !== "" ? thinkingLevel as "minimal" | "low" | "medium" | "high" : undefined,
       });
 
       // Upload pending images as attachments
@@ -176,7 +176,7 @@ export function NewTaskModal({ isOpen, onClose, projectId, tasks, onCreateTask, 
       setExecutorModel("");
       setValidatorModel("");
       setPlanningModel("");
-      setThinkingLevel("off");
+      setThinkingLevel("");
       setSelectedPresetId("");
       setPresetMode("default");
       setSelectedWorkflowSteps([]);

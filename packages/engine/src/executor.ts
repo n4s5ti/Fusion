@@ -1412,9 +1412,7 @@ export class TaskExecutor {
           : settings.defaultModelId;
         const executorFallbackProvider = settings.fallbackProvider;
         const executorFallbackModelId = settings.fallbackModelId;
-        const executorThinkingLevel = detail.thinkingLevel
-          ? detail.thinkingLevel
-          : settings.defaultThinkingLevel;
+        const executorThinkingLevel = detail.thinkingLevel ?? settings.defaultThinkingLevel;
 
         // Determine whether we're resuming a previous session (pause/resume)
         // or starting fresh. Use file-based sessions so conversation state

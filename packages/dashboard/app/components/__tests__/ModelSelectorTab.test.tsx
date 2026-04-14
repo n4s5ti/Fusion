@@ -990,14 +990,14 @@ describe("ModelSelectorTab", () => {
   });
 
   describe("thinkingLevel selector", () => {
-    it("renders thinking level selector with default 'off'", async () => {
+    it("renders thinking level selector with empty string default", async () => {
       render(<ModelSelectorTab task={FAKE_TASK} addToast={mockAddToast} />);
 
       await waitForSelectors();
 
       const select = screen.getByLabelText("Thinking Level");
       expect(select).toBeInTheDocument();
-      expect((select as HTMLSelectElement).value).toBe("off");
+      expect((select as HTMLSelectElement).value).toBe("");
     });
 
     it("renders current thinking level from task", async () => {
@@ -1068,7 +1068,8 @@ describe("ModelSelectorTab", () => {
 
       await waitForSelectors();
 
-      await user.selectOptions(screen.getByLabelText("Thinking Level"), "off");
+      // Select the "Default (...)" option (empty string) to clear the override
+      await user.selectOptions(screen.getByLabelText("Thinking Level"), "");
 
       await waitFor(() => {
         expect(mockUpdateTask).toHaveBeenCalledWith("FN-001", {
@@ -1145,7 +1146,8 @@ describe("ModelSelectorTab", () => {
 
       await waitForSelectors();
 
-      await user.selectOptions(screen.getByLabelText("Thinking Level"), "off");
+      // Select the "Default (...)" option (empty string) to clear the override
+      await user.selectOptions(screen.getByLabelText("Thinking Level"), "");
 
       await waitFor(() => {
         expect(mockUpdateTask).toHaveBeenCalledWith("FN-001", {
@@ -1182,11 +1184,41 @@ describe("ModelSelectorTab", () => {
 
       await waitForSelectors();
 
-      await user.selectOptions(screen.getByLabelText("Thinking Level"), "off");
+      // Select the "Default (...)" option (empty string) to clear the override
+      await user.selectOptions(screen.getByLabelText("Thinking Level"), "");
 
       await waitFor(() => {
         expect(mockAddToast).toHaveBeenCalledWith(
           "Thinking level set to default (off)",
+          "success",
+        );
+      });
+    });
+
+    it("saves 'off' explicitly as a real override when selected", async () => {
+      const taskWithThinking = { ...FAKE_TASK, thinkingLevel: "high" as const };
+      mockUpdateTask.mockImplementation(async (_id: string, updates: Record<string, unknown>) => ({
+        ...FAKE_TASK,
+        ...updates,
+      }));
+
+      const user = userEvent.setup();
+      render(<ModelSelectorTab task={taskWithThinking} addToast={mockAddToast} />);
+
+      await waitForSelectors();
+
+      // Select "off" explicitly (not the default clear option)
+      await user.selectOptions(screen.getByLabelText("Thinking Level"), "off");
+
+      await waitFor(() => {
+        expect(mockUpdateTask).toHaveBeenCalledWith("FN-001", {
+          thinkingLevel: "off",
+        });
+      });
+
+      await waitFor(() => {
+        expect(mockAddToast).toHaveBeenCalledWith(
+          "Thinking level set to off",
           "success",
         );
       });

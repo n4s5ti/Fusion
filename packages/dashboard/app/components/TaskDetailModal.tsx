@@ -294,6 +294,7 @@ export function TaskDetailModal({
   const [editExecutorModel, setEditExecutorModel] = useState("");
   const [editValidatorModel, setEditValidatorModel] = useState("");
   const [editPlanningModel, setEditPlanningModel] = useState("");
+  const [editThinkingLevel, setEditThinkingLevel] = useState("");
   const [editPresetMode, setEditPresetMode] = useState<"default" | "preset" | "custom">("default");
   const [editSelectedPresetId, setEditSelectedPresetId] = useState("");
   const [editSelectedWorkflowSteps, setEditSelectedWorkflowSteps] = useState<string[]>(task.enabledWorkflowSteps || []);
@@ -468,6 +469,7 @@ export function TaskDetailModal({
     setEditExecutorModel(execModel);
     setEditValidatorModel(valModel);
     setEditPlanningModel(planModel);
+    setEditThinkingLevel(task.thinkingLevel ?? "");
     setEditPresetMode(execModel || valModel || planModel ? "custom" : "default");
     setEditSelectedPresetId("");
     setEditSelectedWorkflowSteps(task.enabledWorkflowSteps || []);
@@ -502,6 +504,7 @@ export function TaskDetailModal({
         validatorModelId: editValidatorModel && validatorSlashIdx !== -1 ? editValidatorModel.slice(validatorSlashIdx + 1) : null,
         planningModelProvider: editPlanningModel && planningSlashIdx !== -1 ? editPlanningModel.slice(0, planningSlashIdx) : null,
         planningModelId: editPlanningModel && planningSlashIdx !== -1 ? editPlanningModel.slice(planningSlashIdx + 1) : null,
+        thinkingLevel: editThinkingLevel !== "" ? (editThinkingLevel as "minimal" | "low" | "medium" | "high") : null,
       };
 
       await updateTask(task.id, updates, projectId);
@@ -534,7 +537,7 @@ export function TaskDetailModal({
         setIsSaving(false);
       }
     }
-  }, [task.id, editTitle, editDescription, editDependencies, editExecutorModel, editValidatorModel, editPlanningModel, editSelectedWorkflowSteps, editPendingImages, addToast, projectId]);
+  }, [task.id, editTitle, editDescription, editDependencies, editExecutorModel, editValidatorModel, editPlanningModel, editThinkingLevel, editSelectedWorkflowSteps, editPendingImages, addToast, projectId]);
 
   const handleAutoSaveDescription = useCallback(async (description: string) => {
     try {
@@ -1040,6 +1043,8 @@ export function TaskDetailModal({
                 onValidatorModelChange={setEditValidatorModel}
                 planningModel={editPlanningModel}
                 onPlanningModelChange={setEditPlanningModel}
+                thinkingLevel={editThinkingLevel}
+                onThinkingLevelChange={setEditThinkingLevel}
                 presetMode={editPresetMode}
                 onPresetModeChange={setEditPresetMode}
                 selectedPresetId={editSelectedPresetId}
