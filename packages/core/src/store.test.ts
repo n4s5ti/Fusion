@@ -1210,6 +1210,7 @@ describe("TaskStore", () => {
 
       const settings = await store.getSettings();
       // Note: updateSettings merges experimentalFeatures, preserving existing features
+      // To replace entirely, pass null for experimentalFeatures first, then the new object
       expect(settings.experimentalFeatures).toEqual({ "feature-a": true, "feature-b": true });
     });
 
