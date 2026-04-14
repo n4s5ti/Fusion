@@ -117,6 +117,16 @@ export function ExecutorStatusBar({ tasks, projectId, taskStuckTimeoutMs, backgr
         </>
       )}
 
+      {/* Queued tasks */}
+      <div className="executor-status-bar__segment">
+        <span className="executor-status-bar__indicator executor-status-bar__indicator--queued" aria-hidden="true" />
+        <span className="executor-status-bar__label">Queued</span>
+        <span className="executor-status-bar__count">{stats.queuedTaskCount}</span>
+      </div>
+
+      {/* Separator */}
+      <span className="executor-status-bar__divider" aria-hidden="true" />
+
       {/* Running tasks */}
       <div className="executor-status-bar__segment">
         <span
@@ -127,21 +137,6 @@ export function ExecutorStatusBar({ tasks, projectId, taskStuckTimeoutMs, backgr
         <span className="executor-status-bar__count">{stats.runningTaskCount}</span>
         <span className="executor-status-bar__separator" aria-hidden="true">/</span>
         <span className="executor-status-bar__max">{stats.maxConcurrent}</span>
-      </div>
-
-      {/* Separator */}
-      <span className="executor-status-bar__divider" aria-hidden="true" />
-
-      {/* Blocked tasks */}
-      <div className="executor-status-bar__segment">
-        <span
-          className={`executor-status-bar__indicator executor-status-bar__indicator--blocked ${stats.blockedTaskCount > 0 ? "executor-status-bar__indicator--active" : ""}`}
-          aria-hidden="true"
-        />
-        <span className="executor-status-bar__label">Blocked</span>
-        <span className={`executor-status-bar__count ${stats.blockedTaskCount > 0 ? "executor-status-bar__count--warning" : ""}`}>
-          {stats.blockedTaskCount}
-        </span>
       </div>
 
       {/* Separator */}
@@ -159,11 +154,16 @@ export function ExecutorStatusBar({ tasks, projectId, taskStuckTimeoutMs, backgr
         </>
       )}
 
-      {/* Queued tasks */}
+      {/* Blocked tasks */}
       <div className="executor-status-bar__segment">
-        <span className="executor-status-bar__indicator executor-status-bar__indicator--queued" aria-hidden="true" />
-        <span className="executor-status-bar__label">Queued</span>
-        <span className="executor-status-bar__count">{stats.queuedTaskCount}</span>
+        <span
+          className={`executor-status-bar__indicator executor-status-bar__indicator--blocked ${stats.blockedTaskCount > 0 ? "executor-status-bar__indicator--active" : ""}`}
+          aria-hidden="true"
+        />
+        <span className="executor-status-bar__label">Blocked</span>
+        <span className={`executor-status-bar__count ${stats.blockedTaskCount > 0 ? "executor-status-bar__count--warning" : ""}`}>
+          {stats.blockedTaskCount}
+        </span>
       </div>
 
       {/* Separator */}
