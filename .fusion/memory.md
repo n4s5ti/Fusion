@@ -407,6 +407,16 @@ The token-based approach allows all bottom-layout consumers to be updated togeth
 
 ## Agent Skills
 
+### Engine Skill Selection (FN-1795)
+
+The `createKbAgent` function in `packages/engine/src/pi.ts` supports a `skills?: string[]` convenience parameter for skill filtering:
+
+- **Convenience parameter**: `AgentOptions.skills` accepts an array of skill names and auto-derives a `SkillSelectionContext`
+- **Precedence**: Explicit `skillSelection` takes precedence over `skills` when both are provided
+- **Logging**: When using the convenience path, a log message is emitted: `[pi] Using skills from convenience parameter: [skill1, skill2]`
+- **Engine integration**: All 5 engine paths (executor, triage, reviewer, merger, heartbeat) use `buildSessionSkillContext` to derive skill selection from agent metadata, which then flows through to `createKbAgent` via the `skillSelection` option
+- **Skill resolver**: `resolveSessionSkills` and `createSkillsOverrideFromSelection` handle the actual skill filtering based on project settings
+
 ### create-fusion-plugin Skill (FN-1134)
 
 The `create-fusion-plugin` skill teaches agents how to create Fusion plugins. Located at `.pi/agent/skills/create-fusion-plugin/`.

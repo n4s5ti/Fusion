@@ -151,6 +151,10 @@ export interface AgentOptions {
    *  caller-requested skill names. Omit to use default skill discovery
    *  (all discovered skills included). */
   skillSelection?: SkillSelectionContext;
+  /** Convenience: skill names to include in the session. When provided
+   *  (and `skillSelection` is not), auto-constructs a SkillSelectionContext
+   *  from the cwd and these names. Ignored when `skillSelection` is set. */
+  skills?: string[];
 }
 
 function resolveConfiguredModel(
@@ -482,19 +486,30 @@ export async function createKbAgent(options: AgentOptions): Promise<AgentResult>
     options.fallbackModelId,
   );
 
+  // Resolve skill selection: explicit skillSelection wins over convenience `skills`
+  let effectiveSkillSelection: SkillSelectionContext | undefined = options.skillSelection;
+  if (!effectiveSkillSelection && options.skills && options.skills.length > 0) {
+    console.error(`[pi] Using skills from convenience parameter: [${options.skills.join(", ")}]`);
+    effectiveSkillSelection = {
+      projectRootDir: options.cwd,
+      requestedSkillNames: options.skills,
+      sessionPurpose: "executor",
+    };
+  }
+
   // Resolve skill selection if provided
   let skillsOverrideFn: ReturnType<typeof createSkillsOverrideFromSelection> | undefined;
-  if (options.skillSelection) {
-    const selectionResult = resolveSessionSkills(options.skillSelection);
+  if (effectiveSkillSelection) {
+    const selectionResult = resolveSessionSkills(effectiveSkillSelection);
     if (selectionResult.diagnostics.length > 0) {
-      const purpose = options.skillSelection.sessionPurpose ?? "skills";
+      const purpose = effectiveSkillSelection.sessionPurpose ?? "skills";
       for (const diag of selectionResult.diagnostics) {
         console.error(`[pi] [skills] [${purpose}] ${diag.type}: ${diag.message}`);
       }
     }
     skillsOverrideFn = createSkillsOverrideFromSelection(selectionResult, {
-      requestedSkillNames: options.skillSelection.requestedSkillNames,
-      sessionPurpose: options.skillSelection.sessionPurpose,
+      requestedSkillNames: effectiveSkillSelection.requestedSkillNames,
+      sessionPurpose: effectiveSkillSelection.sessionPurpose,
     });
   }
 

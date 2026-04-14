@@ -1,6 +1,71 @@
-import { describe, it, expect } from "vitest";
-import { describeModel, compactSessionContext, COMPACTION_FALLBACK_INSTRUCTIONS } from "./pi.js";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { describeModel, compactSessionContext, COMPACTION_FALLBACK_INSTRUCTIONS, createKbAgent, type AgentOptions } from "./pi.js";
 import type { AgentSession } from "@mariozechner/pi-coding-agent";
+
+// Mock skill resolver functions - define inside factory to avoid hoisting issues
+vi.mock("./skill-resolver.js", () => {
+  const resolveSessionSkillsMock = vi.fn();
+  const createSkillsOverrideFromSelectionMock = vi.fn();
+  return {
+    resolveSessionSkills: resolveSessionSkillsMock,
+    createSkillsOverrideFromSelection: createSkillsOverrideFromSelectionMock,
+    // Export mock functions for test assertions
+    __getMocks: () => ({
+      resolveSessionSkills: resolveSessionSkillsMock,
+      createSkillsOverrideFromSelection: createSkillsOverrideFromSelectionMock,
+    }),
+  };
+});
+
+// Mock pi-coding-agent imports
+vi.mock("@mariozechner/pi-coding-agent", () => ({
+  AuthStorage: {
+    create: vi.fn(() => ({
+      getCredentials: vi.fn().mockResolvedValue({}),
+    })),
+  },
+  createAgentSession: vi.fn(async () => ({
+    session: {
+      model: { provider: "test", id: "test" },
+      subscribe: vi.fn(),
+      prompt: vi.fn(),
+      sessionFile: undefined,
+    },
+  })),
+  createCodingTools: vi.fn(() => []),
+  createReadOnlyTools: vi.fn(() => []),
+  createExtensionRuntime: vi.fn(),
+  DefaultResourceLoader: vi.fn().mockImplementation(() => ({
+    reload: vi.fn().mockResolvedValue(undefined),
+    skillsOverride: undefined,
+  })),
+  DefaultPackageManager: vi.fn(),
+  discoverAndLoadExtensions: vi.fn().mockResolvedValue({ errors: [], runtime: { pendingProviderRegistrations: [] } }),
+  getAgentDir: vi.fn(() => "/test/agent-dir"),
+  ModelRegistry: vi.fn().mockImplementation(() => ({
+    find: vi.fn().mockReturnValue({ provider: "test", id: "test-model" }),
+    getAll: vi.fn().mockReturnValue([]),
+    registerProvider: vi.fn(),
+    refresh: vi.fn(),
+  })),
+  SessionManager: {
+    inMemory: vi.fn(() => ({})),
+  },
+  SettingsManager: {
+    inMemory: vi.fn(() => ({})),
+  },
+}));
+
+// Import mock accessors after mocking (must use dynamic import for hoisted mocks)
+let resolveSessionSkillsMock: ReturnType<typeof vi.fn>;
+let createSkillsOverrideFromSelectionMock: ReturnType<typeof vi.fn>;
+
+// Initialize mocks before first test
+beforeEach(() => {
+  // Access mocks from the mocked module
+  const mocks = (vi.mocked({ resolveSessionSkills: vi.fn(), createSkillsOverrideFromSelection: vi.fn() }));
+  // We need to re-mock in beforeEach to ensure they're fresh
+});
 
 describe("describeModel", () => {
   it('returns "provider/modelId" when session has a model', () => {
@@ -113,5 +178,135 @@ describe("compactSessionContext", () => {
 
     // Should still return a result with empty summary since the guard checks for object
     expect(result).toEqual({ summary: "", tokensBefore: 0 });
+  });
+});
+
+describe("createKbAgent skills parameter", () => {
+  let consoleErrorSpy: ReturnType<typeof vi.spyOn>;
+  let mockResolveSessionSkills: ReturnType<typeof vi.fn>;
+  let mockCreateSkillsOverride: ReturnType<typeof vi.fn>;
+
+  beforeEach(async () => {
+    consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    
+    // Access the mocked module to get/set mocks
+    const skillResolver = await import("./skill-resolver.js");
+    mockResolveSessionSkills = vi.mocked(skillResolver.resolveSessionSkills);
+    mockCreateSkillsOverride = vi.mocked(skillResolver.createSkillsOverrideFromSelection);
+    
+    mockResolveSessionSkills.mockReturnValue({
+      allowedSkillPaths: new Set(),
+      excludedSkillPaths: new Set(),
+      diagnostics: [],
+      filterActive: true,
+    });
+    mockCreateSkillsOverride.mockReturnValue(() => ({
+      skills: [],
+      diagnostics: [],
+    }));
+  });
+
+  afterEach(() => {
+    consoleErrorSpy.mockRestore();
+    vi.clearAllMocks();
+  });
+
+  it("skills parameter auto-derives SkillSelectionContext", async () => {
+    const options: AgentOptions = {
+      cwd: "/test/project",
+      systemPrompt: "Test",
+      skills: ["review", "fusion"],
+    };
+
+    await createKbAgent(options);
+
+    // Verify resolveSessionSkills was called with auto-derived context
+    expect(mockResolveSessionSkills).toHaveBeenCalledTimes(1);
+    const callArgs = mockResolveSessionSkills.mock.calls[0]![0];
+    expect(callArgs.projectRootDir).toBe("/test/project");
+    expect(callArgs.requestedSkillNames).toEqual(["review", "fusion"]);
+    expect(callArgs.sessionPurpose).toBe("executor");
+  });
+
+  it("skillSelection takes precedence over skills", async () => {
+    const options: AgentOptions = {
+      cwd: "/test/project",
+      systemPrompt: "Test",
+      skills: ["review"],
+      skillSelection: {
+        projectRootDir: "/other",
+        requestedSkillNames: ["triage"],
+        sessionPurpose: "triage",
+      },
+    };
+
+    await createKbAgent(options);
+
+    // Verify resolveSessionSkills was called with explicit skillSelection (not auto-derived)
+    expect(mockResolveSessionSkills).toHaveBeenCalledTimes(1);
+    const callArgs = mockResolveSessionSkills.mock.calls[0]![0];
+    expect(callArgs.projectRootDir).toBe("/other");
+    expect(callArgs.requestedSkillNames).toEqual(["triage"]);
+    expect(callArgs.sessionPurpose).toBe("triage");
+
+    // Verify the convenience log was NOT emitted (skillSelection takes precedence)
+    expect(consoleErrorSpy).not.toHaveBeenCalledWith(
+      expect.stringContaining("Using skills from convenience parameter")
+    );
+  });
+
+  it("empty skills array is treated as unset", async () => {
+    const options: AgentOptions = {
+      cwd: "/test/project",
+      systemPrompt: "Test",
+      skills: [],
+    };
+
+    await createKbAgent(options);
+
+    // Verify no skill resolution occurred
+    expect(mockResolveSessionSkills).not.toHaveBeenCalled();
+    expect(mockCreateSkillsOverride).not.toHaveBeenCalled();
+  });
+
+  it("skills auto-derivation logs the convenience parameter", async () => {
+    const options: AgentOptions = {
+      cwd: "/test/project",
+      systemPrompt: "Test",
+      skills: ["review", "fusion"],
+    };
+
+    await createKbAgent(options);
+
+    // Verify the log message includes the skill names
+    expect(consoleErrorSpy).toHaveBeenCalledWith(
+      expect.stringContaining("[pi] Using skills from convenience parameter: [review, fusion]")
+    );
+  });
+
+  it("skills without corresponding discovered skills produces diagnostics", async () => {
+    // Mock to return diagnostics for missing skill
+    mockResolveSessionSkills.mockReturnValue({
+      allowedSkillPaths: new Set(),
+      excludedSkillPaths: new Set(),
+      diagnostics: [
+        { type: "warning" as const, message: 'Requested skill "nonexistent-skill" not found in discovered skills' },
+      ],
+      filterActive: true,
+    });
+
+    const options: AgentOptions = {
+      cwd: "/test/project",
+      systemPrompt: "Test",
+      skills: ["nonexistent-skill"],
+    };
+
+    await createKbAgent(options);
+
+    // The diagnostics should be logged
+    expect(mockResolveSessionSkills).toHaveBeenCalled();
+    expect(consoleErrorSpy).toHaveBeenCalledWith(
+      expect.stringContaining("warning")
+    );
   });
 });
