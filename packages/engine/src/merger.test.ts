@@ -118,6 +118,7 @@ function createMockStore(taskOverrides: Partial<Task> = {}, allTasks: Task[] = [
     appendAgentLog: vi.fn().mockResolvedValue(undefined),
     updateSettings: vi.fn().mockResolvedValue({}),
     getSettings: vi.fn().mockResolvedValue({ ...DEFAULT_SETTINGS }),
+    getActiveMergingTask: vi.fn().mockReturnValue(null),
     emit: vi.fn(),
     on: vi.fn(),
   } as unknown as TaskStore;
