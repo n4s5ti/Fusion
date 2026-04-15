@@ -120,7 +120,18 @@ Reference: `useProjectHealth` in `packages/dashboard/app/hooks/useProjectHealth.
   - The `api()` function in `app/api.ts` only passes `headers: { "Content-Type": "application/json" }` when no `opts.method` is specified — GET requests don't include `method: "GET"` in the fetch options
   - URL-encoded parameter values (like `%20`) are valid values — they're decoded at the URL level, not parameter level
   - Mock setups for successful responses should return 200 status to avoid triggering error paths
-- In the flat ESLint config, put global `ignores` first and include test-only support files (`app/test/**`, `vitest.setup.ts`) when running `eslint .` from a git worktree; later per-file `ignores` do not stop the base recommended configs from linting those files.
+- **ESLint flat-config ordering (FN-1756)**: In `eslint.config.mjs`, global `ignores` must come FIRST before any recommended configs. This ensures ignored paths are filtered before base config evaluation. The correct order is:
+  1. Global `ignores` — files never linted (must be first)
+  2. Base recommendations — eslint/recommended + typescript-eslint/recommended
+  3. Context-specific overrides — test-support, production, Node, SW, etc.
+  - When running `eslint .` from a git worktree, include test-only support files (`app/test/**`, `vitest.setup.ts`) in global ignores or test-support config blocks
+  - Later per-file `ignores` do not stop the base recommended configs from linting those files if they're not ignored globally first
+
+- **API mock export parity (FN-1756)**: When dashboard components or routes import new API symbols or `@fusion/core` exports, the corresponding test mocks must be updated. This is a common source of test failures after refactoring:
+  - **Component tests** (`app/components/__tests__/*.test.tsx`): Update `vi.mock("../../api")` export list to include new API functions
+  - **Route tests** (`src/*.test.ts`, `src/__tests__/*.test.ts`): Update `vi.mock("@fusion/core")` and `vi.mock("@fusion/engine")` export lists to include new exports
+  - Missing mock exports cause cascading runtime failures with "No 'X' export is defined" errors
+  - Example: When `parseCompanyArchive` is added to `@fusion/core` exports, add it to the mock export list in `routes.test.ts`
 - Dashboard Express routers should normalize `req.params.*` through a string validator/helper before passing values into typed store methods; under strict tsconfig, route params can surface as `string | string[]` and break package typecheck if used directly.
 
 ## Color Theme System
