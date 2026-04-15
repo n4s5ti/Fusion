@@ -460,6 +460,39 @@ describe("Header", () => {
     expect(roadmapsBtn.getAttribute("aria-pressed")).toBe("false");
   });
 
+  // ── Insights View Toggle ─────────────────────────────────────────
+
+  it("renders insights view button in view toggle when onChangeView is provided", () => {
+    const onChangeView = vi.fn();
+    render(<Header view="board" onChangeView={onChangeView} />);
+    const insightsBtn = screen.getByTitle("Insights view");
+    expect(insightsBtn).toBeDefined();
+  });
+
+  it("calls onChangeView with 'insights' when insights view button is clicked", () => {
+    const onChangeView = vi.fn();
+    render(<Header view="board" onChangeView={onChangeView} />);
+    const insightsBtn = screen.getByTitle("Insights view");
+    fireEvent.click(insightsBtn);
+    expect(onChangeView).toHaveBeenCalledWith("insights");
+  });
+
+  it("marks insights view button as active when view is 'insights'", () => {
+    const onChangeView = vi.fn();
+    render(<Header view="insights" onChangeView={onChangeView} />);
+    const insightsBtn = screen.getByTitle("Insights view");
+    expect(insightsBtn.className).toContain("active");
+    expect(insightsBtn.getAttribute("aria-pressed")).toBe("true");
+  });
+
+  it("does not mark insights view button as active when view is 'board'", () => {
+    const onChangeView = vi.fn();
+    render(<Header view="board" onChangeView={onChangeView} />);
+    const insightsBtn = screen.getByTitle("Insights view");
+    expect(insightsBtn.className).not.toContain("active");
+    expect(insightsBtn.getAttribute("aria-pressed")).toBe("false");
+  });
+
   // ── Search Visibility by View ─────────────────────────────────────
 
   it("shows search toggle when view is 'board' on desktop", () => {

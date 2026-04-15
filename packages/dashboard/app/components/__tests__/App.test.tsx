@@ -1215,6 +1215,86 @@ describe("App view switching", () => {
 
     localStorage.removeItem(taskViewStorageKey());
   });
+
+  // ── Insights View ──────────────────────────────────────────────────
+
+  it("renders InsightsView when insights view is selected", async () => {
+    render(<App />);
+
+    // Wait for the header to render
+    await waitFor(() => {
+      expect(screen.getByTitle("Insights view")).toBeTruthy();
+    });
+
+    // Click to switch to insights view
+    fireEvent.click(screen.getByTitle("Insights view"));
+
+    // Insights view should be rendered (it has a insights-view container)
+    await waitFor(() => {
+      expect(document.querySelector(".insights-view")).toBeTruthy();
+    });
+
+    // Should NOT show board, list, or agents view
+    expect(document.querySelector(".board")).toBeNull();
+    expect(document.querySelector(".list-view")).toBeNull();
+    expect(document.querySelector(".agents-view")).toBeNull();
+  });
+
+  it("persists insights view preference to localStorage", async () => {
+    localStorage.removeItem(taskViewStorageKey());
+
+    render(<App />);
+
+    await waitFor(() => {
+      expect(screen.getByTitle("Insights view")).toBeTruthy();
+    });
+
+    fireEvent.click(screen.getByTitle("Insights view"));
+
+    await waitFor(() => {
+      expect(localStorage.getItem(taskViewStorageKey())).toBe("insights");
+    });
+  });
+
+  it("initializes insights view from localStorage if saved", async () => {
+    localStorage.setItem(taskViewStorageKey(), "insights");
+
+    render(<App />);
+
+    await waitFor(() => {
+      expect(document.querySelector(".insights-view")).toBeTruthy();
+    });
+
+    expect(screen.getByTitle("Insights view").className).toContain("active");
+
+    localStorage.removeItem(taskViewStorageKey());
+  });
+
+  it("project switch rehydrates each project's own scoped task-view", async () => {
+    const projectA = { id: "proj_a", name: "Project A", path: "/a", status: "active" as const, isolationMode: "in-process" as const, createdAt: "", updatedAt: "" };
+    const projectB = { id: "proj_b", name: "Project B", path: "/b", status: "active" as const, isolationMode: "in-process" as const, createdAt: "", updatedAt: "" };
+
+    // Set different views for each project
+    localStorage.setItem("kb:proj_a:kb-dashboard-task-view", "insights");
+    localStorage.setItem("kb:proj_b:kb-dashboard-task-view", "agents");
+
+    mockProjectsState.projects = [projectA, projectB];
+    mockCurrentProjectState.currentProject = projectA;
+
+    render(<App />);
+
+    // Wait for project A's insights view to load
+    await waitFor(() => {
+      expect(document.querySelector(".insights-view")).toBeTruthy();
+    });
+
+    // Verify insights is active
+    expect(screen.getByTitle("Insights view").className).toContain("active");
+
+    // Cleanup
+    localStorage.removeItem("kb:proj_a:kb-dashboard-task-view");
+    localStorage.removeItem("kb:proj_b:kb-dashboard-task-view");
+  });
 });
 
 describe("App GitHub import", () => {

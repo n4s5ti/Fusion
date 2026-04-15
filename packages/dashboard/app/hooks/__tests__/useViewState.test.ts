@@ -164,4 +164,134 @@ describe("useViewState", () => {
     expect(openSetupWizard).toHaveBeenCalledTimes(1);
     vi.useRealTimers();
   });
+
+  // ── Insights view persistence ─────────────────────────────────────
+
+  it("reads saved insights taskView from scoped localStorage on init", async () => {
+    // Set up scoped storage for project
+    localStorage.setItem("kb:proj_123:kb-dashboard-task-view", "insights");
+
+    const { result } = renderHook(() =>
+      useViewState(
+        createOptions({
+          currentProject: PROJECT,
+        }),
+      ),
+    );
+
+    await waitFor(() => {
+      expect(result.current.taskView).toBe("insights");
+    });
+  });
+
+  it("persists insights taskView changes to scoped localStorage", async () => {
+    const { result } = renderHook(() =>
+      useViewState(
+        createOptions({
+          currentProject: PROJECT,
+        }),
+      ),
+    );
+
+    await act(async () => {
+      result.current.setTaskView("insights");
+    });
+
+    expect(localStorage.getItem("kb:proj_123:kb-dashboard-task-view")).toBe("insights");
+  });
+
+  it("restores legacy views (board/list/agents/missions/chat) from scoped storage", async () => {
+    const legacyViews = ["board", "list", "agents", "missions", "chat"] as const;
+
+    for (const view of legacyViews) {
+      localStorage.clear();
+      localStorage.setItem(`kb:proj_123:kb-dashboard-task-view`, view);
+
+      const { result } = renderHook(() =>
+        useViewState(
+          createOptions({
+            currentProject: PROJECT,
+          }),
+        ),
+      );
+
+      await waitFor(() => {
+        expect(result.current.taskView).toBe(view);
+      });
+    }
+  });
+
+  // ── Project-switch scoped rehydration ─────────────────────────────
+
+  it("project A reads its own scoped task-view and project B reads its own", async () => {
+    const projectA: ProjectInfo = { ...PROJECT, id: "proj_a", name: "Project A" };
+    const projectB: ProjectInfo = { ...PROJECT, id: "proj_b", name: "Project B" };
+
+    // Set different views for each project
+    localStorage.setItem("kb:proj_a:kb-dashboard-task-view", "insights");
+    localStorage.setItem("kb:proj_b:kb-dashboard-task-view", "agents");
+
+    // Start with project A
+    const { result, rerender } = renderHook(
+      ({ project }) => useViewState(createOptions({ currentProject: project })),
+      { initialProps: { project: projectA } },
+    );
+
+    await waitFor(() => {
+      expect(result.current.taskView).toBe("insights");
+    });
+
+    // Switch to project B
+    rerender({ project: projectB });
+
+    await waitFor(() => {
+      expect(result.current.taskView).toBe("agents");
+    });
+
+    // Switch back to project A - should restore A's view
+    rerender({ project: projectA });
+
+    await waitFor(() => {
+      expect(result.current.taskView).toBe("insights");
+    });
+  });
+
+  it("no cross-project bleed when switching projects", async () => {
+    const projectA: ProjectInfo = { ...PROJECT, id: "proj_a", name: "Project A" };
+    const projectB: ProjectInfo = { ...PROJECT, id: "proj_b", name: "Project B" };
+
+    // Only set view for project A, project B has no saved view
+    localStorage.setItem("kb:proj_a:kb-dashboard-task-view", "insights");
+    // Ensure project B has no scoped storage
+    localStorage.removeItem("kb:proj_b:kb-dashboard-task-view");
+
+    // Load project A
+    const { result: resultA } = renderHook(() =>
+      useViewState(
+        createOptions({
+          currentProject: projectA,
+        }),
+      ),
+    );
+
+    await waitFor(() => {
+      expect(resultA.current.taskView).toBe("insights");
+    });
+
+    // Load project B (no saved view - should default to board)
+    const { result: resultB } = renderHook(() =>
+      useViewState(
+        createOptions({
+          currentProject: projectB,
+        }),
+      ),
+    );
+
+    await waitFor(() => {
+      expect(resultB.current.taskView).toBe("board");
+    });
+
+    // Project A's view should still be insights (not affected by project B load)
+    expect(resultA.current.taskView).toBe("insights");
+  });
 });

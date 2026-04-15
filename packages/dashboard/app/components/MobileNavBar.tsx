@@ -16,6 +16,7 @@ import {
   MoreHorizontal,
   Play,
   Settings,
+  Sparkles,
   Target,
   Terminal,
   Workflow,
@@ -27,9 +28,9 @@ import { useViewportMode } from "./Header";
 
 export interface MobileNavBarProps {
   /** Current task view mode */
-  view: "board" | "list" | "agents" | "missions" | "chat" | "roadmaps" | "skills" | "mailbox";
+  view: "board" | "list" | "agents" | "missions" | "chat" | "roadmaps" | "skills" | "mailbox" | "insights";
   /** Change task view handler */
-  onChangeView: (view: "board" | "list" | "agents" | "missions" | "chat" | "roadmaps" | "skills" | "mailbox") => void;
+  onChangeView: (view: "board" | "list" | "agents" | "missions" | "chat" | "roadmaps" | "skills" | "mailbox" | "insights") => void;
   /** Whether the ExecutorStatusBar footer is visible */
   footerVisible: boolean;
   /** Whether any full-screen modal is currently open (hides the tab bar) */
@@ -265,6 +266,18 @@ export function MobileNavBar({
 
         <button
           type="button"
+          className={`mobile-nav-tab${view === "insights" ? " mobile-nav-tab--active" : ""}`}
+          data-testid="mobile-nav-tab-insights"
+          role="tab"
+          aria-selected={view === "insights"}
+          onClick={() => onChangeView("insights")}
+        >
+          <Sparkles />
+          <span className="mobile-nav-tab-label">Insights</span>
+        </button>
+
+        <button
+          type="button"
           className="mobile-nav-tab"
           data-testid="mobile-nav-tab-more"
           role="tab"
@@ -496,6 +509,16 @@ export function MobileNavBar({
             >
               <Map />
               <span>Roadmaps</span>
+            </button>
+
+            <button
+              type="button"
+              className="mobile-more-item"
+              data-testid="mobile-more-item-insights"
+              onClick={() => handleMoreAction(() => onChangeView("insights"))}
+            >
+              <Sparkles />
+              <span>Insights</span>
             </button>
 
             <div className="mobile-more-separator" />

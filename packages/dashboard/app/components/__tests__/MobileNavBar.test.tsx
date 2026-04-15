@@ -56,7 +56,7 @@ describe("MobileNavBar", () => {
     mockViewport("mobile");
   });
 
-  it("renders eight tab buttons (tasks + agents + missions + chat + mailbox + skills + roadmaps + more)", () => {
+  it("renders nine tab buttons (tasks + agents + missions + chat + mailbox + skills + roadmaps + insights + more)", () => {
     render(<MobileNavBar {...createDefaultProps()} />);
 
     expect(screen.getByTestId("mobile-nav-tab-tasks")).toBeDefined();
@@ -66,6 +66,7 @@ describe("MobileNavBar", () => {
     expect(screen.getByTestId("mobile-nav-tab-mailbox")).toBeDefined();
     expect(screen.getByTestId("mobile-nav-tab-skills")).toBeDefined();
     expect(screen.getByTestId("mobile-nav-tab-roadmaps")).toBeDefined();
+    expect(screen.getByTestId("mobile-nav-tab-insights")).toBeDefined();
     expect(screen.getByTestId("mobile-nav-tab-more")).toBeDefined();
   });
 
@@ -169,6 +170,26 @@ describe("MobileNavBar", () => {
     expect(screen.getByTestId("mobile-nav-tab-skills").className).not.toContain("mobile-nav-tab--active");
   });
 
+  // ── Insights tab ──────────────────────────────────────────────────
+
+  it("insights tab calls onChangeView with 'insights'", () => {
+    const props = createDefaultProps();
+    render(<MobileNavBar {...props} view="board" />);
+
+    fireEvent.click(screen.getByTestId("mobile-nav-tab-insights"));
+    expect(props.onChangeView).toHaveBeenCalledWith("insights");
+  });
+
+  it("insights tab is active when view is 'insights'", () => {
+    render(<MobileNavBar {...createDefaultProps()} view="insights" />);
+    expect(screen.getByTestId("mobile-nav-tab-insights").className).toContain("mobile-nav-tab--active");
+  });
+
+  it("insights tab is not active when view is 'board'", () => {
+    render(<MobileNavBar {...createDefaultProps()} view="board" />);
+    expect(screen.getByTestId("mobile-nav-tab-insights").className).not.toContain("mobile-nav-tab--active");
+  });
+
   it("opens and toggles the more sheet", () => {
     const props = createDefaultProps();
     const { container } = render(<MobileNavBar {...props} />);
@@ -196,7 +217,20 @@ describe("MobileNavBar", () => {
     expect(screen.getByTestId("mobile-more-item-usage")).toBeDefined();
     expect(screen.getByTestId("mobile-more-item-projects")).toBeDefined();
     expect(screen.getByTestId("mobile-more-item-chat")).toBeDefined();
+    expect(screen.getByTestId("mobile-more-item-roadmaps")).toBeDefined();
+    expect(screen.getByTestId("mobile-more-item-insights")).toBeDefined();
     expect(screen.getByTestId("mobile-more-item-settings")).toBeDefined();
+  });
+
+  it("insights item in more sheet calls onChangeView with 'insights'", () => {
+    const props = createDefaultProps();
+    const { container } = render(<MobileNavBar {...props} />);
+
+    fireEvent.click(screen.getByTestId("mobile-nav-tab-more"));
+    fireEvent.click(screen.getByTestId("mobile-more-item-insights"));
+
+    expect(container.querySelector(".mobile-more-sheet")).toBeNull();
+    expect(props.onChangeView).toHaveBeenCalledWith("insights");
   });
 
   it("activity log item in more sheet calls onOpenActivityLog", () => {

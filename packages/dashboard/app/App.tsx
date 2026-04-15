@@ -5,6 +5,7 @@ import { Board } from "./components/Board";
 import { ListView } from "./components/ListView";
 import { ProjectOverview } from "./components/ProjectOverview";
 import { AgentsView } from "./components/AgentsView";
+import { InsightsView } from "./components/InsightsView";
 import { MissionManager } from "./components/MissionManager";
 import { NodesView } from "./components/NodesView";
 import { ChatView } from "./components/ChatView";
@@ -403,6 +404,18 @@ function AppInner() {
       );
     }
 
+    if (taskView === "insights") {
+      return (
+        <PageErrorBoundary>
+          <InsightsView
+            projectId={currentProject?.id}
+            addToast={addToast}
+            onClose={() => handleChangeTaskView("board")}
+          />
+        </PageErrorBoundary>
+      );
+    }
+
     if (taskView === "board") {
       return (
         <PageErrorBoundary>
@@ -579,7 +592,7 @@ function AppInner() {
         onOpenQuickChat={() => setQuickChatOpen(true)}
         projectId={currentProject?.id}
       />
-      {viewMode === "project" && currentProject && taskView !== "chat" && taskView !== "mailbox" && (
+      {viewMode === "project" && currentProject && taskView !== "chat" && taskView !== "mailbox" && taskView !== "insights" && (
         <QuickChatFAB
           projectId={currentProject.id}
           addToast={addToast}
