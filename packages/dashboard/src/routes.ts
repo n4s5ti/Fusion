@@ -43,6 +43,13 @@ import { getMissionInterviewSession, cleanupMissionInterviewSession } from "./mi
 import { getTargetInterviewSession, cleanupTargetInterviewSession } from "./milestone-slice-interview.js";
 import { writeSSEEvent } from "./sse-buffer.js";
 import {
+  generateMilestoneSuggestions,
+  validateSuggestionInput,
+  ValidationError as SuggestionValidationError,
+  ParseError as SuggestionParseError,
+  ServiceUnavailableError as SuggestionServiceUnavailableError,
+} from "./roadmap-suggestions.js";
+import {
   ApiError,
   badRequest,
   conflict,
@@ -2712,6 +2719,63 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
         throw err;
       }
       rethrowAsApiError(err, "Failed to move feature");
+    }
+  });
+
+  // ── Roadmap Milestone Suggestions ───────────────────────────────────────
+
+  // Generate milestone suggestions from a goal prompt
+  router.post("/roadmaps/:roadmapId/suggestions/milestones", async (req, res) => {
+    try {
+      const { store: scopedStore } = await getProjectContext(req);
+      const roadmapStore = scopedStore.getRoadmapStore();
+      const { roadmapId } = req.params;
+
+      // Check if roadmap exists
+      const roadmap = roadmapStore.getRoadmap(roadmapId);
+      if (!roadmap) {
+        throw notFound(`Roadmap ${roadmapId} not found`);
+      }
+
+      // Validate input
+      let input: { goalPrompt: string; count?: number };
+      try {
+        validateSuggestionInput(req.body);
+        input = req.body as { goalPrompt: string; count?: number };
+      } catch (err) {
+        if (err instanceof SuggestionValidationError) {
+          throw badRequest(err.message);
+        }
+        throw err;
+      }
+
+      // Get project root directory for AI context
+      const rootDir = scopedStore.getRootDir();
+
+      // Generate suggestions
+      try {
+        const suggestions = await generateMilestoneSuggestions(
+          input.goalPrompt,
+          input.count,
+          rootDir
+        );
+
+        res.json({ suggestions });
+      } catch (err) {
+        if (err instanceof SuggestionParseError) {
+          throw internalError(err.message);
+        }
+        if (err instanceof SuggestionServiceUnavailableError) {
+          res.status(503).json({ error: err.message });
+          return;
+        }
+        throw err;
+      }
+    } catch (err: any) {
+      if (err instanceof ApiError) {
+        throw err;
+      }
+      rethrowAsApiError(err, "Failed to generate milestone suggestions");
     }
   });
 

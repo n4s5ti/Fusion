@@ -783,7 +783,16 @@ export function RoadmapsView({ projectId, addToast }: RoadmapsViewProps) {
     reorderMilestones,
     reorderFeatures,
     moveFeature,
+    milestoneSuggestions,
+    isGeneratingSuggestions,
+    generateMilestoneSuggestions,
+    acceptMilestoneSuggestion,
+    acceptAllMilestoneSuggestions,
+    clearMilestoneSuggestions,
   } = useRoadmaps({ projectId });
+
+  // Goal prompt state for milestone suggestion generation
+  const [goalPrompt, setGoalPrompt] = useState("");
 
   // Inline edit states
   const [roadmapEdit, setRoadmapEdit] = useState<InlineEditState>({
@@ -1232,6 +1241,55 @@ export function RoadmapsView({ projectId, addToast }: RoadmapsViewProps) {
     [deleteFeature, addToast]
   );
 
+  // Milestone suggestion handlers
+  const handleGenerateSuggestions = useCallback(
+    async () => {
+      if (!goalPrompt.trim()) return;
+      try {
+        await generateMilestoneSuggestions(goalPrompt, 5, {
+          onError: (err) => addToast(err.message, "error"),
+        });
+      } catch {
+        // Error handled in callback
+      }
+    },
+    [goalPrompt, generateMilestoneSuggestions, addToast]
+  );
+
+  const handleAcceptSuggestion = useCallback(
+    async (index: number) => {
+      try {
+        await acceptMilestoneSuggestion(index, {
+          onError: (err) => addToast(err.message, "error"),
+        });
+        addToast("Milestone added", "success");
+      } catch {
+        // Error handled in callback
+      }
+    },
+    [acceptMilestoneSuggestion, addToast]
+  );
+
+  const handleAcceptAllSuggestions = useCallback(
+    async () => {
+      try {
+        await acceptAllMilestoneSuggestions({
+          onError: (err) => addToast(err.message, "error"),
+        });
+        addToast(`${milestoneSuggestions.length} milestones added`, "success");
+        setGoalPrompt("");
+      } catch {
+        // Error handled in callback
+      }
+    },
+    [acceptAllMilestoneSuggestions, milestoneSuggestions.length, addToast]
+  );
+
+  const handleClearSuggestions = useCallback(() => {
+    clearMilestoneSuggestions();
+    setGoalPrompt("");
+  }, [clearMilestoneSuggestions]);
+
   const handleCreateFeature = useCallback(
     async (milestoneId: string, input: RoadmapFeatureCreateInput) => {
       try {
@@ -1393,6 +1451,81 @@ export function RoadmapsView({ projectId, addToast }: RoadmapsViewProps) {
                     <p className="roadmaps-view__roadmap-desc">{selectedRoadmap.description}</p>
                   )}
                 </>
+              )}
+            </div>
+
+            {/* Milestone Suggestions Section */}
+            <div className="roadmap-suggestion-section">
+              <div className="roadmap-suggestion-header">
+                <h3 className="roadmap-suggestion-title">Generate Milestone Ideas</h3>
+              </div>
+              <div className="roadmap-suggestion-form">
+                <textarea
+                  className="roadmap-suggestion-input"
+                  value={goalPrompt}
+                  onChange={(e) => setGoalPrompt(e.target.value)}
+                  placeholder="Describe your roadmap goal (e.g., 'Build a user authentication system with OAuth, profiles, and admin dashboard')"
+                  rows={2}
+                  disabled={isGeneratingSuggestions || !selectedRoadmapId}
+                  data-testid="goal-prompt-input"
+                />
+                <div className="roadmap-suggestion-actions">
+                  <button
+                    className="roadmap-suggestion-generate-btn"
+                    onClick={handleGenerateSuggestions}
+                    disabled={!goalPrompt.trim() || isGeneratingSuggestions || !selectedRoadmapId}
+                    data-testid="generate-suggestions-btn"
+                  >
+                    {isGeneratingSuggestions ? "Generating..." : "Generate Milestones"}
+                  </button>
+                  {milestoneSuggestions.length > 0 && (
+                    <>
+                      <button
+                        className="roadmap-suggestion-accept-all-btn"
+                        onClick={handleAcceptAllSuggestions}
+                        data-testid="accept-all-suggestions-btn"
+                      >
+                        Accept All ({milestoneSuggestions.length})
+                      </button>
+                      <button
+                        className="roadmap-suggestion-clear-btn"
+                        onClick={handleClearSuggestions}
+                        title="Clear suggestions"
+                        aria-label="Clear suggestions"
+                        data-testid="clear-suggestions-btn"
+                      >
+                        <X size={14} />
+                      </button>
+                    </>
+                  )}
+                </div>
+              </div>
+
+              {/* Suggestion Cards */}
+              {milestoneSuggestions.length > 0 && (
+                <div className="roadmap-suggestion-list">
+                  {milestoneSuggestions.map((suggestion, index) => (
+                    <div key={index} className="roadmap-suggestion-card" data-testid={`suggestion-card-${index}`}>
+                      <div className="roadmap-suggestion-card-content">
+                        <span className="roadmap-suggestion-card-title">{suggestion.title}</span>
+                        {suggestion.description && (
+                          <span className="roadmap-suggestion-card-desc">{suggestion.description}</span>
+                        )}
+                      </div>
+                      <div className="roadmap-suggestion-card-actions">
+                        <button
+                          className="roadmap-suggestion-accept-btn"
+                          onClick={() => handleAcceptSuggestion(index)}
+                          title="Accept this milestone"
+                          aria-label="Accept this milestone"
+                          data-testid={`accept-suggestion-${index}`}
+                        >
+                          <Check size={14} />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
               )}
             </div>
 

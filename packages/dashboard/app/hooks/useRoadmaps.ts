@@ -13,6 +13,12 @@ import type {
 } from "@fusion/core";
 import * as api from "../api";
 
+/** A suggested milestone from AI generation */
+export interface MilestoneSuggestion {
+  title: string;
+  description?: string;
+}
+
 export interface UseRoadmapsOptions {
   /** When provided, fetches roadmaps for this project */
   projectId?: string;
@@ -70,6 +76,20 @@ export interface UseRoadmapsResult {
   /** Move a feature to a different milestone or position */
   moveFeature: (featureId: string, targetMilestoneId: string, targetIndex: number, opts?: { onSuccess?: () => void; onError?: (err: Error) => void }) => Promise<void>;
 
+  // Milestone suggestion callbacks
+  /** Current pending milestone suggestions (ephemeral, in-memory only) */
+  milestoneSuggestions: MilestoneSuggestion[];
+  /** Whether suggestions are currently being generated */
+  isGeneratingSuggestions: boolean;
+  /** Generate milestone suggestions from a goal prompt */
+  generateMilestoneSuggestions: (goalPrompt: string, count?: number, opts?: { onSuccess?: () => void; onError?: (err: Error) => void }) => Promise<void>;
+  /** Accept a single milestone suggestion and create it as a milestone */
+  acceptMilestoneSuggestion: (index: number, opts?: { onSuccess?: () => void; onError?: (err: Error) => void }) => Promise<void>;
+  /** Accept all milestone suggestions and create them as milestones (sequentially) */
+  acceptAllMilestoneSuggestions: (opts?: { onSuccess?: () => void; onError?: (err: Error) => void }) => Promise<void>;
+  /** Clear all pending milestone suggestions */
+  clearMilestoneSuggestions: () => void;
+
   /** Refresh all roadmaps */
   refresh: () => Promise<void>;
 }
@@ -84,8 +104,14 @@ export function useRoadmaps(options?: UseRoadmapsOptions): UseRoadmapsResult {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<Error | null>(null);
 
+  // Ephemeral milestone suggestion state (in-memory only, not persisted)
+  const [milestoneSuggestions, setMilestoneSuggestions] = useState<MilestoneSuggestion[]>([]);
+  const [isGeneratingSuggestions, setIsGeneratingSuggestions] = useState(false);
+
   // Track previous projectId to detect changes
   const previousProjectIdRef = useRef<string | undefined>(projectId);
+  // Project context version for stale-response protection
+  const projectContextVersionRef = useRef(0);
   // Refs to access latest state in callbacks
   const roadmapsRef = useRef(roadmaps);
   const selectedRoadmapIdRef = useRef(selectedRoadmapId);
@@ -99,14 +125,18 @@ export function useRoadmaps(options?: UseRoadmapsOptions): UseRoadmapsResult {
   featuresByMilestoneIdRef.current = featuresByMilestoneId;
   projectIdRef.current = projectId;
 
-  // Clear selection when project changes
+  // Clear selection and suggestions when project changes
   useEffect(() => {
     if (previousProjectIdRef.current !== projectId) {
       previousProjectIdRef.current = projectId;
+      projectContextVersionRef.current++;
       setSelectedRoadmapId(null);
       setSelectedRoadmap(null);
       setMilestones([]);
       setFeaturesByMilestoneId({});
+      // Clear ephemeral suggestion state
+      setMilestoneSuggestions([]);
+      setIsGeneratingSuggestions(false);
     }
   }, [projectId]);
 
@@ -507,6 +537,188 @@ export function useRoadmaps(options?: UseRoadmapsOptions): UseRoadmapsResult {
     }
   }, [fetchSelectedRoadmap, projectId]);
 
+  // ── Milestone Suggestion Actions (Ephemeral) ───────────────────────────────────
+
+  const generateMilestoneSuggestions = useCallback(async (
+    goalPrompt: string,
+    count: number = 5,
+    opts?: { onSuccess?: () => void; onError?: (err: Error) => void }
+  ) => {
+    const currentRoadmapId = selectedRoadmapIdRef.current;
+    if (!currentRoadmapId) {
+      const error = new Error("No roadmap selected");
+      opts?.onError?.(error);
+      throw error;
+    }
+
+    // Capture project context version for stale-response protection
+    const contextVersionAtStart = projectContextVersionRef.current;
+    const requestProjectId = projectIdRef.current;
+
+    setIsGeneratingSuggestions(true);
+
+    try {
+      const response = await api.generateMilestoneSuggestions(
+        currentRoadmapId,
+        goalPrompt,
+        count,
+        requestProjectId
+      );
+
+      // Check for stale response
+      if (projectContextVersionRef.current !== contextVersionAtStart) {
+        // Project context changed during fetch - discard response
+        return;
+      }
+
+      setMilestoneSuggestions(response.suggestions);
+      opts?.onSuccess?.();
+    } catch (err) {
+      // Check for stale response
+      if (projectContextVersionRef.current !== contextVersionAtStart) {
+        // Project context changed during fetch - discard error
+        return;
+      }
+
+      const error = err instanceof Error ? err : new Error("Failed to generate suggestions");
+      opts?.onError?.(error);
+      throw error;
+    } finally {
+      // Only clear loading state if context hasn't changed
+      if (projectContextVersionRef.current === contextVersionAtStart) {
+        setIsGeneratingSuggestions(false);
+      }
+    }
+  }, []);
+
+  const acceptMilestoneSuggestion = useCallback(async (
+    index: number,
+    opts?: { onSuccess?: () => void; onError?: (err: Error) => void }
+  ) => {
+    const currentRoadmapId = selectedRoadmapIdRef.current;
+    if (!currentRoadmapId) {
+      const error = new Error("No roadmap selected");
+      opts?.onError?.(error);
+      throw error;
+    }
+
+    // Capture state for stale-response protection
+    const contextVersionAtStart = projectContextVersionRef.current;
+    const currentSuggestions = milestoneSuggestions;
+
+    if (index < 0 || index >= currentSuggestions.length) {
+      const error = new Error("Invalid suggestion index");
+      opts?.onError?.(error);
+      throw error;
+    }
+
+    const suggestion = currentSuggestions[index];
+
+    // Optimistic update: remove from suggestions immediately
+    setMilestoneSuggestions((prev) => prev.filter((_, i) => i !== index));
+
+    try {
+      await api.createRoadmapMilestone(
+        currentRoadmapId,
+        { title: suggestion.title, description: suggestion.description },
+        projectIdRef.current
+      );
+
+      // Check for stale response
+      if (projectContextVersionRef.current !== contextVersionAtStart) {
+        // Project context changed - re-add to suggestions (optimistic rollback)
+        setMilestoneSuggestions((prev) => {
+          const updated = [...prev];
+          updated.splice(index, 0, suggestion);
+          return updated;
+        });
+        return;
+      }
+
+      // Refresh the roadmap to get the new milestone
+      if (selectedRoadmapIdRef.current) {
+        void fetchSelectedRoadmap(selectedRoadmapIdRef.current);
+      }
+
+      opts?.onSuccess?.();
+    } catch (err) {
+      // Rollback: re-add to suggestions
+      setMilestoneSuggestions((prev) => {
+        const updated = [...prev];
+        updated.splice(index, 0, suggestion);
+        return updated;
+      });
+
+      const error = err instanceof Error ? err : new Error("Failed to accept suggestion");
+      opts?.onError?.(error);
+      throw error;
+    }
+  }, [milestoneSuggestions, fetchSelectedRoadmap]);
+
+  const acceptAllMilestoneSuggestions = useCallback(async (
+    opts?: { onSuccess?: () => void; onError?: (err: Error) => void }
+  ) => {
+    const currentRoadmapId = selectedRoadmapIdRef.current;
+    if (!currentRoadmapId) {
+      const error = new Error("No roadmap selected");
+      opts?.onError?.(error);
+      throw error;
+    }
+
+    // Capture current suggestions (they will be cleared sequentially)
+    const suggestionsToAccept = [...milestoneSuggestions];
+    if (suggestionsToAccept.length === 0) {
+      return;
+    }
+
+    // Clear suggestions immediately (optimistic)
+    setMilestoneSuggestions([]);
+
+    // Capture state for stale-response protection
+    const contextVersionAtStart = projectContextVersionRef.current;
+
+    // Accept sequentially to preserve order
+    for (let i = 0; i < suggestionsToAccept.length; i++) {
+      // Check for stale response
+      if (projectContextVersionRef.current !== contextVersionAtStart) {
+        // Project context changed - stop accepting
+        break;
+      }
+
+      const suggestion = suggestionsToAccept[i];
+
+      try {
+        await api.createRoadmapMilestone(
+          currentRoadmapId,
+          { title: suggestion.title, description: suggestion.description },
+          projectIdRef.current
+        );
+      } catch (err) {
+        // On error, stop accepting and report
+        const error = err instanceof Error ? err : new Error("Failed to accept all suggestions");
+        opts?.onError?.(error);
+        throw error;
+      }
+    }
+
+    // Check for stale response
+    if (projectContextVersionRef.current !== contextVersionAtStart) {
+      return;
+    }
+
+    // Refresh the roadmap to get all new milestones
+    if (selectedRoadmapIdRef.current) {
+      void fetchSelectedRoadmap(selectedRoadmapIdRef.current);
+    }
+
+    opts?.onSuccess?.();
+  }, [milestoneSuggestions, fetchSelectedRoadmap]);
+
+  const clearMilestoneSuggestions = useCallback(() => {
+    setMilestoneSuggestions([]);
+    setIsGeneratingSuggestions(false);
+  }, []);
+
   const refresh = useCallback(async () => {
     await fetchRoadmaps();
     if (selectedRoadmapIdRef.current) {
@@ -535,6 +747,12 @@ export function useRoadmaps(options?: UseRoadmapsOptions): UseRoadmapsResult {
     deleteFeature,
     reorderFeatures,
     moveFeature,
+    milestoneSuggestions,
+    isGeneratingSuggestions,
+    generateMilestoneSuggestions,
+    acceptMilestoneSuggestion,
+    acceptAllMilestoneSuggestions,
+    clearMilestoneSuggestions,
     refresh,
   };
 }

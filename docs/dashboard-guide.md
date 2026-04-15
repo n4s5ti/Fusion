@@ -224,6 +224,28 @@ Milestones and features can be reordered using native drag-and-drop:
 - Use the header buttons to edit or delete the selected roadmap
 - Delete requires confirmation and removes all associated milestones and features
 
+### AI Milestone Suggestions
+
+Roadmaps View includes one-click AI-powered milestone generation to help you quickly create milestone ideas from a goal prompt.
+
+**How to use:**
+
+1. Select a roadmap from the sidebar
+2. In the "Generate Milestone Ideas" section, describe your roadmap goal in the text area
+3. Click **Generate Milestones** to create AI suggestions
+4. Review the suggested milestones:
+   - Click the **check icon** on any suggestion to accept it as a milestone
+   - Click **Accept All** to add all suggestions as milestones (in order)
+   - Click the **X** button to clear all suggestions
+
+**Key features:**
+
+- Suggestions are generated using AI and include both titles and descriptions
+- Accepted milestones appear immediately in your roadmap
+- Milestones are created in the order displayed in the suggestion list
+- Suggestions are ephemeral (in-memory only) and don't persist to the database
+- The generate button is disabled when no roadmap is selected or prompt is empty
+
 ### Empty States
 
 - **No roadmaps**: "No roadmaps yet. Click + to create one."

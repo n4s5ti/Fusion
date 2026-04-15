@@ -4566,6 +4566,33 @@ export function moveRoadmapFeature(
   });
 }
 
+/** Response from milestone suggestion generation */
+export interface MilestoneSuggestionsResponse {
+  suggestions: Array<{
+    title: string;
+    description?: string;
+  }>;
+}
+
+/** Generate milestone suggestions from a goal prompt */
+export function generateMilestoneSuggestions(
+  roadmapId: string,
+  goalPrompt: string,
+  count?: number,
+  projectId?: string
+): Promise<MilestoneSuggestionsResponse> {
+  return api<MilestoneSuggestionsResponse>(
+    withProjectId(`/roadmaps/${encodeURIComponent(roadmapId)}/suggestions/milestones`, projectId),
+    {
+      method: "POST",
+      body: JSON.stringify({
+        goalPrompt: goalPrompt.trim(),
+        ...(count !== undefined ? { count } : {}),
+      }),
+    }
+  );
+}
+
 // ── AI Sessions (Background Tasks) ─────────────────────────────────────────
 
 export interface AiSessionSummary {
