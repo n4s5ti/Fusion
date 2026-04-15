@@ -93,22 +93,22 @@ describe("Mobile Feature Access Regression Guard", () => {
     const props = createDefaultMobileNavProps();
     render(<MobileNavBar {...props} view="board" />);
 
-    const listTab = screen.getByTestId("mobile-nav-tab-list");
-    expect(listTab.textContent).toContain("List");
+    const tasksTab = screen.getByTestId("mobile-nav-tab-tasks");
+    expect(tasksTab.textContent).toContain("Tasks");
 
-    fireEvent.click(listTab);
-    expect(props.onChangeView).toHaveBeenCalledWith("list");
+    fireEvent.click(tasksTab);
+    expect(props.onChangeView).toHaveBeenCalledWith("board");
   });
 
   it("board view is accessible via mobile nav bar", () => {
     const props = createDefaultMobileNavProps();
-    render(<MobileNavBar {...props} view="board" />);
+    render(<MobileNavBar {...props} view="list" />);
 
-    const boardTab = screen.getByTestId("mobile-nav-tab-board");
-    expect(boardTab.textContent).toContain("Board");
+    const tasksTab = screen.getByTestId("mobile-nav-tab-tasks");
+    expect(tasksTab.textContent).toContain("Tasks");
 
-    fireEvent.click(boardTab);
-    expect(props.onChangeView).toHaveBeenCalledWith("board");
+    fireEvent.click(tasksTab);
+    expect(props.onChangeView).toHaveBeenCalledWith("list");
   });
 
   it("agents view is accessible via mobile nav bar", () => {
@@ -214,7 +214,7 @@ describe("Mobile Feature Access Regression Guard", () => {
       />,
     );
 
-    fireEvent.click(screen.getByTestId("mobile-nav-tab-board"));
+    fireEvent.click(screen.getByTestId("mobile-nav-tab-tasks"));
     fireEvent.click(screen.getByTestId("mobile-nav-tab-agents"));
 
     expect(mobileNavOnChangeView).toHaveBeenCalledWith("board");

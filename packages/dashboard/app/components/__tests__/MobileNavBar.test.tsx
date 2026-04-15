@@ -56,11 +56,10 @@ describe("MobileNavBar", () => {
     mockViewport("mobile");
   });
 
-  it("renders nine tab buttons (board + list + agents + missions + chat + mailbox + skills + roadmaps + more)", () => {
+  it("renders eight tab buttons (tasks + agents + missions + chat + mailbox + skills + roadmaps + more)", () => {
     render(<MobileNavBar {...createDefaultProps()} />);
 
-    expect(screen.getByTestId("mobile-nav-tab-board")).toBeDefined();
-    expect(screen.getByTestId("mobile-nav-tab-list")).toBeDefined();
+    expect(screen.getByTestId("mobile-nav-tab-tasks")).toBeDefined();
     expect(screen.getByTestId("mobile-nav-tab-agents")).toBeDefined();
     expect(screen.getByTestId("mobile-nav-tab-missions")).toBeDefined();
     expect(screen.getByTestId("mobile-nav-tab-chat")).toBeDefined();
@@ -95,38 +94,43 @@ describe("MobileNavBar", () => {
     expect(screen.getByTestId("mobile-nav-tab-agents").className).toContain("mobile-nav-tab--active");
   });
 
-  it("board tab calls onChangeView with 'board'", () => {
+  it("tasks tab calls onChangeView with 'board' when coming from a non-tasks view", () => {
     const props = createDefaultProps();
-    render(<MobileNavBar {...props} view="list" />);
+    render(<MobileNavBar {...props} view="agents" />);
 
-    fireEvent.click(screen.getByTestId("mobile-nav-tab-board"));
+    fireEvent.click(screen.getByTestId("mobile-nav-tab-tasks"));
     expect(props.onChangeView).toHaveBeenCalledWith("board");
   });
 
-  it("list tab calls onChangeView with 'list'", () => {
+  it("tasks tab calls onChangeView with 'board' when already on board", () => {
     const props = createDefaultProps();
     render(<MobileNavBar {...props} view="board" />);
 
-    fireEvent.click(screen.getByTestId("mobile-nav-tab-list"));
+    fireEvent.click(screen.getByTestId("mobile-nav-tab-tasks"));
+    expect(props.onChangeView).toHaveBeenCalledWith("board");
+  });
+
+  it("tasks tab calls onChangeView with 'list' when already on list", () => {
+    const props = createDefaultProps();
+    render(<MobileNavBar {...props} view="list" />);
+
+    fireEvent.click(screen.getByTestId("mobile-nav-tab-tasks"));
     expect(props.onChangeView).toHaveBeenCalledWith("list");
   });
 
-  it("board tab is active when view is 'board'", () => {
+  it("tasks tab is active when view is 'board'", () => {
     render(<MobileNavBar {...createDefaultProps()} view="board" />);
-    expect(screen.getByTestId("mobile-nav-tab-board").className).toContain("mobile-nav-tab--active");
-    expect(screen.getByTestId("mobile-nav-tab-list").className).not.toContain("mobile-nav-tab--active");
+    expect(screen.getByTestId("mobile-nav-tab-tasks").className).toContain("mobile-nav-tab--active");
   });
 
-  it("list tab is active when view is 'list'", () => {
+  it("tasks tab is active when view is 'list'", () => {
     render(<MobileNavBar {...createDefaultProps()} view="list" />);
-    expect(screen.getByTestId("mobile-nav-tab-list").className).toContain("mobile-nav-tab--active");
-    expect(screen.getByTestId("mobile-nav-tab-board").className).not.toContain("mobile-nav-tab--active");
+    expect(screen.getByTestId("mobile-nav-tab-tasks").className).toContain("mobile-nav-tab--active");
   });
 
-  it("board and list tabs are not active when view is 'agents'", () => {
+  it("tasks tab is not active when view is 'agents'", () => {
     render(<MobileNavBar {...createDefaultProps()} view="agents" />);
-    expect(screen.getByTestId("mobile-nav-tab-board").className).not.toContain("mobile-nav-tab--active");
-    expect(screen.getByTestId("mobile-nav-tab-list").className).not.toContain("mobile-nav-tab--active");
+    expect(screen.getByTestId("mobile-nav-tab-tasks").className).not.toContain("mobile-nav-tab--active");
   });
 
   it("missions tab calls onChangeView with 'missions'", () => {

@@ -921,10 +921,74 @@ describe("Header", () => {
       expect(screen.getByTitle("List view")).toBeDefined();
     });
 
-    it("hides view toggle when mobileNavEnabled is true", () => {
+    it("hides desktop view toggle when mobileNavEnabled is true (mobile view toggle shown separately)", () => {
+      // When mobileNavEnabled, the full desktop-style view toggle (with agents, missions, etc.)
+      // should be hidden. Instead, a compact board/list-only toggle appears via mobile-view-toggle.
       render(<Header view="board" onChangeView={vi.fn()} mobileNavEnabled={true} />);
-      expect(screen.queryByTitle("Board view")).toBeNull();
-      expect(screen.queryByTitle("List view")).toBeNull();
+      // The full desktop toggle is hidden
+      expect(screen.queryByTitle("Agents view")).toBeNull();
+      expect(screen.queryByTitle("Missions view")).toBeNull();
+      // But the mobile compact toggle is shown
+      expect(screen.getByTestId("mobile-view-toggle")).toBeDefined();
+    });
+
+    it("renders mobile view toggle when mobileNavEnabled and view is board", () => {
+      const onChangeView = vi.fn();
+      render(<Header view="board" onChangeView={onChangeView} mobileNavEnabled={true} />);
+      expect(screen.getByTestId("mobile-view-toggle")).toBeDefined();
+      expect(screen.getByTestId("mobile-view-toggle-board")).toBeDefined();
+      expect(screen.getByTestId("mobile-view-toggle-list")).toBeDefined();
+    });
+
+    it("renders mobile view toggle when mobileNavEnabled and view is list", () => {
+      render(<Header view="list" onChangeView={vi.fn()} mobileNavEnabled={true} />);
+      expect(screen.getByTestId("mobile-view-toggle")).toBeDefined();
+      expect(screen.getByTestId("mobile-view-toggle-board")).toBeDefined();
+      expect(screen.getByTestId("mobile-view-toggle-list")).toBeDefined();
+    });
+
+    it("does not render mobile view toggle when mobileNavEnabled and view is agents", () => {
+      render(<Header view="agents" onChangeView={vi.fn()} mobileNavEnabled={true} />);
+      expect(screen.queryByTestId("mobile-view-toggle")).toBeNull();
+    });
+
+    it("does not render mobile view toggle when mobileNavEnabled and view is missions", () => {
+      render(<Header view="missions" onChangeView={vi.fn()} mobileNavEnabled={true} />);
+      expect(screen.queryByTestId("mobile-view-toggle")).toBeNull();
+    });
+
+    it("mobile view toggle board button calls onChangeView('board')", () => {
+      const onChangeView = vi.fn();
+      render(<Header view="list" onChangeView={onChangeView} mobileNavEnabled={true} />);
+      fireEvent.click(screen.getByTestId("mobile-view-toggle-board"));
+      expect(onChangeView).toHaveBeenCalledWith("board");
+    });
+
+    it("mobile view toggle list button calls onChangeView('list')", () => {
+      const onChangeView = vi.fn();
+      render(<Header view="board" onChangeView={onChangeView} mobileNavEnabled={true} />);
+      fireEvent.click(screen.getByTestId("mobile-view-toggle-list"));
+      expect(onChangeView).toHaveBeenCalledWith("list");
+    });
+
+    it("mobile view toggle board button is active when view is board", () => {
+      render(<Header view="board" onChangeView={vi.fn()} mobileNavEnabled={true} />);
+      const boardBtn = screen.getByTestId("mobile-view-toggle-board");
+      const listBtn = screen.getByTestId("mobile-view-toggle-list");
+      expect(boardBtn.className).toContain("active");
+      expect(boardBtn.getAttribute("aria-pressed")).toBe("true");
+      expect(listBtn.className).not.toContain("active");
+      expect(listBtn.getAttribute("aria-pressed")).toBe("false");
+    });
+
+    it("mobile view toggle list button is active when view is list", () => {
+      render(<Header view="list" onChangeView={vi.fn()} mobileNavEnabled={true} />);
+      const boardBtn = screen.getByTestId("mobile-view-toggle-board");
+      const listBtn = screen.getByTestId("mobile-view-toggle-list");
+      expect(listBtn.className).toContain("active");
+      expect(listBtn.getAttribute("aria-pressed")).toBe("true");
+      expect(boardBtn.className).not.toContain("active");
+      expect(boardBtn.getAttribute("aria-pressed")).toBe("false");
     });
 
     it("hides overflow trigger when mobileNavEnabled is true", () => {

@@ -588,6 +588,32 @@ export function Header({
       </div>
 
       <div className="header-actions">
+        {/* Mobile View Toggle - compact board/list switcher in header when mobile nav is active */}
+        {hideFullNav && onChangeView && (view === "board" || view === "list") && (
+          <div className="view-toggle" data-testid="mobile-view-toggle">
+            <button
+              className={`view-toggle-btn${view === "board" ? " active" : ""}`}
+              onClick={() => onChangeView("board")}
+              title="Board view"
+              aria-label="Board view"
+              aria-pressed={view === "board"}
+              data-testid="mobile-view-toggle-board"
+            >
+              <LayoutGrid size={16} />
+            </button>
+            <button
+              className={`view-toggle-btn${view === "list" ? " active" : ""}`}
+              onClick={() => onChangeView("list")}
+              title="List view"
+              aria-label="List view"
+              aria-pressed={view === "list"}
+              data-testid="mobile-view-toggle-list"
+            >
+              <List size={16} />
+            </button>
+          </div>
+        )}
+
         {/* Mobile Search Trigger - only on mobile, show trigger button in header */}
         {onSearchChange && isMobile && (hideFullNav || view === "board" || view === "list") && !shouldShowMobileSearch && (
           <button

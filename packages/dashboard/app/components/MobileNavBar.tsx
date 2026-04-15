@@ -9,7 +9,6 @@ import {
   GitBranch,
   Grid3X3,
   LayoutGrid,
-  List,
   Lightbulb,
   Loader2,
   Mail,
@@ -172,25 +171,21 @@ export function MobileNavBar({
       >
         <button
           type="button"
-          className={`mobile-nav-tab${view === "board" ? " mobile-nav-tab--active" : ""}`}
-          data-testid="mobile-nav-tab-board"
+          className={`mobile-nav-tab${view === "board" || view === "list" ? " mobile-nav-tab--active" : ""}`}
+          data-testid="mobile-nav-tab-tasks"
           role="tab"
-          aria-selected={view === "board"}
-          onClick={() => onChangeView("board")}
+          aria-selected={view === "board" || view === "list"}
+          onClick={() => {
+            // If already on a tasks view, stay there; otherwise go to board
+            if (view === "board" || view === "list") {
+              onChangeView(view);
+            } else {
+              onChangeView("board");
+            }
+          }}
         >
           <LayoutGrid />
-          <span className="mobile-nav-tab-label">Board</span>
-        </button>
-        <button
-          type="button"
-          className={`mobile-nav-tab${view === "list" ? " mobile-nav-tab--active" : ""}`}
-          data-testid="mobile-nav-tab-list"
-          role="tab"
-          aria-selected={view === "list"}
-          onClick={() => onChangeView("list")}
-        >
-          <List />
-          <span className="mobile-nav-tab-label">List</span>
+          <span className="mobile-nav-tab-label">Tasks</span>
         </button>
 
         <button

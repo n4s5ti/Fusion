@@ -6683,6 +6683,20 @@ body {
     padding-right: max(var(--space-md), env(safe-area-inset-right, 0px));
   }
 
+  /* Mobile view toggle in header — compact 2-button board/list switcher */
+  .header-actions > .view-toggle {
+    height: 32px;
+    gap: 2px;
+    padding: 2px;
+  }
+
+  .header-actions > .view-toggle .view-toggle-btn {
+    width: 28px;
+    height: 28px;
+    min-width: unset;
+    min-height: unset;
+  }
+
   /* Modal: full-screen on mobile */
   .modal-overlay {
     padding-top: 0;
