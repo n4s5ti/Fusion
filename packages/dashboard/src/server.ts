@@ -41,6 +41,7 @@ import {
 } from "./milestone-slice-interview.js";
 import { ChatManager } from "./chat.js";
 import type { SkillsAdapter } from "./skills-adapter.js";
+import { createAuthMiddleware } from "./auth-middleware.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -192,6 +193,9 @@ export interface ServerOptions {
   onProjectFirstAccessed?: (projectId: string) => void;
   /** Optional SkillsAdapter for skills discovery, execution toggling, and catalog fetching */
   skillsAdapter?: SkillsAdapter;
+  /** Daemon mode configuration with bearer token authentication.
+   *  When provided, all API requests (except /api/health) require valid bearer token. */
+  daemon?: { token: string };
 }
 
 type DashboardExpressApp = ReturnType<typeof express> & {
@@ -300,6 +304,14 @@ export function createServer(store: TaskStore, options?: ServerOptions): ReturnT
 
   // Standard JSON parsing for all other routes
   app.use(express.json());
+
+  // Daemon mode: bearer token authentication middleware
+  // Auth is enabled when daemon option is provided OR FUSION_DAEMON_TOKEN env var is set
+  // The middleware itself exempts /api/health for liveness probes
+  const daemonToken = options?.daemon?.token ?? process.env.FUSION_DAEMON_TOKEN;
+  if (daemonToken) {
+    app.use(createAuthMiddleware(daemonToken));
+  }
 
   // Initialize terminal service with project root
   getTerminalService(store.getRootDir());

@@ -40,6 +40,7 @@ if (isBunBinary) {
 // Dynamic imports so the pi-coding-agent config module sees PI_PACKAGE_DIR
 const { runDashboard } = await import("./commands/dashboard.js");
 const { runServe } = await import("./commands/serve.js");
+const { runDaemon } = await import("./commands/daemon.js");
 const { runDesktop } = await import("./commands/desktop.js");
 const { runTaskCreate, runTaskList, runTaskMove, runTaskMerge, runTaskUpdate, runTaskLog, runTaskLogs, runTaskShow, runTaskAttach, runTaskPause, runTaskUnpause, runTaskImportFromGitHub, runTaskDuplicate, runTaskArchive, runTaskUnarchive, runTaskRefine, runTaskPlan, runTaskDelete, runTaskRetry, runTaskComment, runTaskComments, runTaskSteer, runTaskPrCreate } = await import("./commands/task.js");
 const { runSettingsShow, runSettingsSet } = await import("./commands/settings.js");
@@ -69,6 +70,8 @@ Usage:
   fn dashboard --interactive          Start with interactive port selection
   fn serve [--port <port>] [--host <host>] [--paused]
                                       Start Fusion as a headless node (API + engine, no UI)
+  fn daemon [--port <port>] [--host <host>] [--token <token>] [--paused] [--token-only]
+                                      Start Fusion daemon (API + engine, auth required)
   fn desktop                          Launch the Fusion desktop app (Electron)
   fn desktop --dev                    Launch with hot-reload (connects to Vite dev server)
   fn desktop --paused                 Launch with automation paused
@@ -325,6 +328,22 @@ async function main() {
         const hostIdx = args.indexOf("--host");
         const host = hostIdx !== -1 && hostIdx + 1 < args.length ? args[hostIdx + 1] : undefined;
         await runServe(port, { paused, interactive, host });
+        break;
+      }
+
+      case "daemon": {
+        const portIdx = args.indexOf("--port");
+        const portIdxShort = args.indexOf("-p");
+        const pi = portIdx !== -1 ? portIdx : portIdxShort;
+        const port = pi !== -1 ? parseInt(args[pi + 1], 10) : 0;
+        const paused = args.includes("--paused");
+        const interactive = args.includes("--interactive");
+        const hostIdx = args.indexOf("--host");
+        const host = hostIdx !== -1 && hostIdx + 1 < args.length ? args[hostIdx + 1] : undefined;
+        const tokenIdx = args.indexOf("--token");
+        const token = tokenIdx !== -1 && tokenIdx + 1 < args.length ? args[tokenIdx + 1] : undefined;
+        const tokenOnly = args.includes("--token-only");
+        await runDaemon({ port, paused, interactive, host, token, tokenOnly });
         break;
       }
 

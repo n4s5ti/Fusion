@@ -4,6 +4,7 @@ const runTaskCreate = vi.fn();
 const runTaskList = vi.fn();
 const runDesktop = vi.fn();
 const runServe = vi.fn();
+const runDaemon = vi.fn();
 const runTaskPlan = vi.fn();
 const runTaskImportFromGitHub = vi.fn();
 const runSettingsShow = vi.fn();
@@ -48,6 +49,10 @@ vi.mock("../commands/desktop.js", () => ({
 
 vi.mock("../commands/serve.js", () => ({
   runServe,
+}));
+
+vi.mock("../commands/daemon.js", () => ({
+  runDaemon,
 }));
 
 vi.mock("../commands/task.js", () => ({
@@ -323,6 +328,32 @@ describe("bin", () => {
       paused: true,
       interactive: true,
       host: "127.0.0.1",
+    });
+  });
+
+  it("routes daemon command with port, host, token, paused, and token-only flags", async () => {
+    await runBin(["daemon", "--port", "4040", "--host", "127.0.0.1", "--token", "fn_abc123", "--paused", "--token-only"]);
+
+    expect(runDaemon).toHaveBeenCalledWith({
+      port: 4040,
+      paused: true,
+      interactive: false,
+      host: "127.0.0.1",
+      token: "fn_abc123",
+      tokenOnly: true,
+    });
+  });
+
+  it("routes daemon command with default port 0 for random assignment", async () => {
+    await runBin(["daemon"]);
+
+    expect(runDaemon).toHaveBeenCalledWith({
+      port: 0,
+      paused: false,
+      interactive: false,
+      host: undefined,
+      token: undefined,
+      tokenOnly: false,
     });
   });
 

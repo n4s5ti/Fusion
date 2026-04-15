@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const commandMocks = vi.hoisted(() => ({
   runDashboard: vi.fn(),
   runServe: vi.fn(),
+  runDaemon: vi.fn(),
   runDesktop: vi.fn(),
   runInit: vi.fn(),
 
@@ -84,6 +85,7 @@ const commandMocks = vi.hoisted(() => ({
 
 vi.mock("./commands/dashboard.js", () => ({ runDashboard: commandMocks.runDashboard }));
 vi.mock("./commands/serve.js", () => ({ runServe: commandMocks.runServe }));
+vi.mock("./commands/daemon.js", () => ({ runDaemon: commandMocks.runDaemon }));
 vi.mock("./commands/desktop.js", () => ({ runDesktop: commandMocks.runDesktop }));
 vi.mock("./commands/init.js", () => ({ runInit: commandMocks.runInit }));
 
@@ -486,6 +488,32 @@ describe("bin command routing and fallbacks", () => {
   it("routes mission activate-slice", async () => {
     await runBin(["mission", "activate-slice", "SL-001"]);
     expect(commandMocks.runMissionActivateSlice).toHaveBeenCalledWith("SL-001", undefined);
+  });
+
+  it("routes daemon command with all flags", async () => {
+    await runBin(["daemon", "--port", "4040", "--host", "127.0.0.1", "--token", "fn_abc123", "--paused", "--token-only"]);
+
+    expect(commandMocks.runDaemon).toHaveBeenCalledWith({
+      port: 4040,
+      paused: true,
+      interactive: false,
+      host: "127.0.0.1",
+      token: "fn_abc123",
+      tokenOnly: true,
+    });
+  });
+
+  it("routes daemon command with defaults", async () => {
+    await runBin(["daemon"]);
+
+    expect(commandMocks.runDaemon).toHaveBeenCalledWith({
+      port: 0,
+      paused: false,
+      interactive: false,
+      host: undefined,
+      token: undefined,
+      tokenOnly: false,
+    });
   });
 
   it("routes desktop flags to runDesktop", async () => {
