@@ -308,7 +308,7 @@ describe("ModelOnboardingModal", () => {
 
       await navigateToGitHubStep();
 
-      expect(screen.getByText(/GitHub integration is not configured/)).toBeTruthy();
+      expect(screen.getByText(/GitHub integration isn't set up yet/)).toBeTruthy();
       expect(screen.getByText("Continue without GitHub →")).toBeTruthy();
     });
 
@@ -1179,7 +1179,7 @@ describe("ModelOnboardingModal", () => {
       });
 
       // Helper text should be visible when no providers are authenticated
-      expect(screen.getByText("You can add API keys or log in to providers later from Settings.")).toBeTruthy();
+      expect(screen.getByText("Skip this step if you'd like — you can always add providers later from Settings.")).toBeTruthy();
     });
 
     it("does not show helper text on AI Setup when a provider is authenticated", async () => {
@@ -1198,7 +1198,7 @@ describe("ModelOnboardingModal", () => {
       });
 
       // Helper text should NOT be visible when a provider is authenticated
-      expect(screen.queryByText("You can add API keys or log in to providers later from Settings.")).toBeNull();
+      expect(screen.queryByText("Skip this step if you'd like — you can always add providers later from Settings.")).toBeNull();
     });
 
     it("shows helper text on GitHub step when GitHub is available but not connected", async () => {
@@ -1214,7 +1214,7 @@ describe("ModelOnboardingModal", () => {
       await navigateToGitHubStep();
 
       // Helper text should be visible when GitHub is available but not connected
-      expect(screen.getByText("You can connect GitHub later from Settings → Authentication.")).toBeTruthy();
+      expect(screen.getByText("No worries if you're not ready — connect GitHub anytime from Settings → Authentication.")).toBeTruthy();
     });
 
     it("does not show helper text on GitHub step when GitHub is connected", async () => {
@@ -1230,7 +1230,7 @@ describe("ModelOnboardingModal", () => {
       await navigateToGitHubStep();
 
       // Helper text should NOT be visible when GitHub is connected
-      expect(screen.queryByText("You can connect GitHub later from Settings → Authentication.")).toBeNull();
+      expect(screen.queryByText("No worries if you're not ready — connect GitHub anytime from Settings → Authentication.")).toBeNull();
     });
   });
 

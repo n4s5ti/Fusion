@@ -641,14 +641,15 @@ export function ModelOnboardingModal({
           {step === "ai-setup" && (
             <div className="model-onboarding-ai-setup">
               <p className="model-onboarding-description">
-                Connect an AI provider and choose a default model. You can
-                authenticate via OAuth or enter an API key.
+                Fusion uses AI models to plan, write, and review code for you.
+                Connect an AI provider below to get started — you can use a hosted
+                service or enter an API key.
               </p>
 
               {/* Show helper text when providers exist but none are authenticated */}
               {authProviders.length > 0 && !authProviders.some((p) => p.authenticated) && (
                 <p className="onboarding-helper-text">
-                  You can add API keys or log in to providers later from Settings.
+                  Skip this step if you'd like — you can always add providers later from Settings.
                 </p>
               )}
 
@@ -805,13 +806,13 @@ export function ModelOnboardingModal({
                   Default Model (Optional)
                 </h3>
                 <p className="model-onboarding-description">
-                  Select a default model for AI tasks. You can change this later
-                  in Settings.
+                  Pick a default model for AI tasks, or leave this blank to choose
+                  later. Models vary in speed, capability, and cost.
                 </p>
 
                 {availableModels.length === 0 ? (
                   <div className="model-onboarding-empty">
-                    No models available. Please configure a provider first.
+                    No models available yet. Connect a provider above to see model options.
                   </div>
                 ) : (
                   <div className="onboarding-model-selector">
@@ -841,15 +842,16 @@ export function ModelOnboardingModal({
           {step === "github" && (
             <div className="model-onboarding-github">
               <p className="model-onboarding-description">
-                Connect GitHub to import issues and manage pull requests. This is
-                optional — you can still use Fusion without GitHub.
+                Linking GitHub lets you import issues as tasks and keep pull
+                requests in sync with your work. This is entirely optional —
+                Fusion works without it.
               </p>
 
               {!hasGithubProvider ? (
                 <div className="model-onboarding-github-optional">
                   <GitPullRequest size={48} className="optional-icon" />
                   <p>
-                    GitHub integration is not configured. You can set it up later
+                    GitHub integration isn't set up yet. You can enable it later
                     in Settings → Authentication.
                   </p>
                   <button
@@ -923,7 +925,7 @@ export function ModelOnboardingModal({
                   </div>
                   {!isGithubAuthenticated && (
                     <p className="onboarding-helper-text">
-                      You can connect GitHub later from Settings → Authentication.
+                      No worries if you're not ready — connect GitHub anytime from Settings → Authentication.
                     </p>
                   )}
                 </>
@@ -934,7 +936,7 @@ export function ModelOnboardingModal({
           {step === "first-task" && (
             <div className="model-onboarding-first-task">
               <p className="model-onboarding-description">
-                You're all set! What would you like to do first?
+                Your workspace is ready. Here's how to get started:
               </p>
 
               <div className="onboarding-cta-options">
@@ -948,7 +950,7 @@ export function ModelOnboardingModal({
                   </div>
                   <div className="cta-content">
                     <strong>Create a New Task</strong>
-                    <span>Describe a task and let AI handle the rest</span>
+                    <span>Describe what you need built and AI will work on it</span>
                   </div>
                 </button>
 
@@ -962,14 +964,14 @@ export function ModelOnboardingModal({
                   </div>
                   <div className="cta-content">
                     <strong>Import from GitHub</strong>
-                    <span>Bring in issues from your repositories</span>
+                    <span>Turn GitHub issues into tasks you can track here</span>
                   </div>
                 </button>
               </div>
 
               <p className="onboarding-skip-note">
-                You can always create tasks later from the board or use{" "}
-                <code>fn task create</code> from the CLI.
+                You can create tasks anytime from the board, or use{" "}
+                <code>fn task create</code> in the terminal.
               </p>
             </div>
           )}
@@ -978,8 +980,8 @@ export function ModelOnboardingModal({
             <div className="model-onboarding-complete">
               <CheckCircle size={48} className="success-icon" />
               <p>
-                You're ready to start using Fusion! Check out the dashboard to
-                create your first task.
+                Setup complete! Head to the board to create your first task, or
+                explore the dashboard to see what's available.
               </p>
             </div>
           )}
