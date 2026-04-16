@@ -15604,6 +15604,140 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
     }
   });
 
+  /**
+   * Generic wildcard proxy route — forwards any HTTP request to a remote node.
+   * Matches /api/proxy/:nodeId/*
+   */
+  router.all("/proxy/:nodeId/*splat", async (req: Request, res: Response) => {
+    const nodeId = req.params.nodeId as string;
+    // Splat is an array of path segments (e.g., ["browse-directory", "path"] for /browse-directory/path)
+    const splat = req.params.splat as string | string[];
+    const remainingPath = Array.isArray(splat) ? splat.join("/") : splat;
+
+    const { CentralCore } = await import("@fusion/core");
+    const central = new CentralCore(store.getFusionDir());
+
+    try {
+      await central.init();
+
+      const node = await central.getNode(nodeId);
+      if (!node) {
+        res.status(404).json({ error: "Node not found" });
+        return;
+      }
+
+      if (!node.url) {
+        res.status(400).json({ error: "Node has no URL" });
+        return;
+      }
+
+      // Build target URL: node.url + remainingPath + queryString
+      const parsedUrl = new URL(req.url ?? "/", "http://localhost");
+      const queryString = parsedUrl.search;
+      const targetPath = `/${remainingPath}${queryString}`;
+      const targetUrl = new URL(targetPath, node.url).toString();
+
+      // Build headers
+      const headers: Record<string, string> = {};
+      // Forward Content-Type if present
+      if (typeof req.headers['content-type'] === "string") {
+        headers['Content-Type'] = req.headers['content-type'];
+      }
+      // Inject Authorization if apiKey is present
+      if (node.apiKey) {
+        headers['Authorization'] = `Bearer ${node.apiKey}`;
+      }
+
+      // Collect request body for non-GET/HEAD methods
+      let body: Buffer | undefined;
+      if (req.method !== "GET" && req.method !== "HEAD") {
+        const chunks: Buffer[] = [];
+        // Check if body was already collected (e.g., by multer or raw body middleware)
+        if (req.rawBody && req.rawBody.length > 0) {
+          body = req.rawBody;
+        } else {
+          await new Promise<void>((resolve, reject) => {
+            req.on("data", (chunk: Buffer) => chunks.push(chunk));
+            req.on("end", resolve);
+            req.on("error", reject);
+          });
+          if (chunks.length > 0) {
+            body = Buffer.concat(chunks);
+          }
+        }
+      }
+
+      const response = await fetch(targetUrl, {
+        method: req.method,
+        headers,
+        // TypeScript is strict about BodyInit types; Buffer is binary-safe but not in the type definition
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        body: body as any,
+        signal: AbortSignal.timeout(30_000),
+      });
+
+      // Filter hop-by-hop headers
+      const hopByHopHeaders = new Set([
+        "connection",
+        "keep-alive",
+        "transfer-encoding",
+        "upgrade",
+        "proxy-authenticate",
+        "proxy-authorization",
+        "te",
+        "trailer",
+      ]);
+
+      response.headers.forEach((value, key) => {
+        if (!hopByHopHeaders.has(key.toLowerCase())) {
+          res.setHeader(key, value);
+        }
+      });
+
+      res.status(response.status);
+
+      if (!response.body) {
+        res.end();
+        return;
+      }
+
+      const { Readable } = await import("node:stream");
+      const nodeStream = Readable.fromWeb(response.body as import("node:stream/web").ReadableStream);
+
+      nodeStream.on("data", (chunk: Buffer) => {
+        res.write(chunk);
+      });
+
+      nodeStream.on("end", () => {
+        res.end();
+      });
+
+      nodeStream.on("error", (err: Error) => {
+        console.error(`[proxy] Stream error for node ${nodeId}:`, err.message);
+        if (!res.writableEnded) {
+          res.end();
+        }
+      });
+    } catch (err: unknown) {
+      if (res.headersSent) {
+        return;
+      }
+      // Check for AbortError by name property (works for both native Error and jsdom DOMException)
+      const errorObj = err as { name?: string } | null;
+      const isAbortError = errorObj?.name === "AbortError";
+      if (isAbortError) {
+        res.status(504).json({ error: "Gateway Timeout" });
+      } else if (err instanceof TypeError) {
+        res.status(502).json({ error: "Bad Gateway" });
+      } else {
+        console.error(`[proxy] Unexpected error for node ${nodeId}:`, err);
+        res.status(502).json({ error: "Bad Gateway" });
+      }
+    } finally {
+      await central.close();
+    }
+  });
+
   return router;
 }
 
