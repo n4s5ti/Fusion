@@ -604,4 +604,327 @@ describe("AgentPromptsManager", () => {
       expect(newOverrides["executor-welcome"]).toBeNull();
     });
   });
+
+  describe("Fullscreen Expansion", () => {
+    describe("Overrides tab fullscreen", () => {
+      it("shows fullscreen button when override is expanded", async () => {
+        const user = userEvent.setup();
+        render(
+          <AgentPromptsManager
+            value={defaultConfig}
+            onChange={onChange}
+            promptOverrides={{}}
+            onPromptOverridesChange={onPromptOverridesChange}
+          />,
+        );
+
+        // Click Overrides tab
+        fireEvent.click(screen.getByTestId("tab-overrides"));
+
+        // Expand the override
+        await user.click(screen.getByTestId("expand-executor-welcome"));
+        await waitFor(() => {
+          expect(screen.getByTestId("override-input-executor-welcome")).toBeTruthy();
+        });
+
+        // Fullscreen button should be visible
+        expect(screen.getByTestId("fullscreen-executor-welcome")).toBeTruthy();
+      });
+
+      it("clicking fullscreen button opens fullscreen view", async () => {
+        const user = userEvent.setup();
+        render(
+          <AgentPromptsManager
+            value={defaultConfig}
+            onChange={onChange}
+            promptOverrides={{}}
+            onPromptOverridesChange={onPromptOverridesChange}
+          />,
+        );
+
+        // Click Overrides tab
+        fireEvent.click(screen.getByTestId("tab-overrides"));
+
+        // Expand and click fullscreen
+        await user.click(screen.getByTestId("expand-executor-welcome"));
+        await waitFor(() => {
+          expect(screen.getByTestId("override-input-executor-welcome")).toBeTruthy();
+        });
+
+        await user.click(screen.getByTestId("fullscreen-executor-welcome"));
+
+        // Fullscreen container should be visible
+        await waitFor(() => {
+          expect(screen.getByTestId("override-input-fullscreen-executor-welcome")).toBeTruthy();
+          expect(screen.getByTestId("collapse-fullscreen-executor-welcome")).toBeTruthy();
+        });
+      });
+
+      it("fullscreen textarea contains current override value", async () => {
+        const user = userEvent.setup();
+        render(
+          <AgentPromptsManager
+            value={defaultConfig}
+            onChange={onChange}
+            promptOverrides={{
+              "executor-welcome": "My custom welcome message",
+            }}
+            onPromptOverridesChange={onPromptOverridesChange}
+          />,
+        );
+
+        // Click Overrides tab
+        fireEvent.click(screen.getByTestId("tab-overrides"));
+
+        // Expand and go fullscreen
+        await user.click(screen.getByTestId("expand-executor-welcome"));
+        await waitFor(() => {
+          expect(screen.getByTestId("override-input-executor-welcome")).toBeTruthy();
+        });
+
+        await user.click(screen.getByTestId("fullscreen-executor-welcome"));
+
+        // Verify fullscreen textarea has the value
+        await waitFor(() => {
+          const textarea = screen.getByTestId("override-input-fullscreen-executor-welcome") as HTMLTextAreaElement;
+          expect(textarea.value).toBe("My custom welcome message");
+        });
+      });
+
+      it("clicking collapse button exits fullscreen", async () => {
+        const user = userEvent.setup();
+        render(
+          <AgentPromptsManager
+            value={defaultConfig}
+            onChange={onChange}
+            promptOverrides={{}}
+            onPromptOverridesChange={onPromptOverridesChange}
+          />,
+        );
+
+        // Click Overrides tab
+        fireEvent.click(screen.getByTestId("tab-overrides"));
+
+        // Expand, go fullscreen, and collapse
+        await user.click(screen.getByTestId("expand-executor-welcome"));
+        await waitFor(() => {
+          expect(screen.getByTestId("override-input-executor-welcome")).toBeTruthy();
+        });
+
+        await user.click(screen.getByTestId("fullscreen-executor-welcome"));
+        await waitFor(() => {
+          expect(screen.getByTestId("override-input-fullscreen-executor-welcome")).toBeTruthy();
+        });
+
+        await user.click(screen.getByTestId("collapse-fullscreen-executor-welcome"));
+
+        // Fullscreen should be gone, but accordion should still be expanded
+        await waitFor(() => {
+          expect(screen.queryByTestId("override-input-fullscreen-executor-welcome")).toBeNull();
+          expect(screen.getByTestId("override-input-executor-welcome")).toBeTruthy();
+        });
+      });
+
+      it("Escape key exits fullscreen", async () => {
+        const user = userEvent.setup();
+        render(
+          <AgentPromptsManager
+            value={defaultConfig}
+            onChange={onChange}
+            promptOverrides={{}}
+            onPromptOverridesChange={onPromptOverridesChange}
+          />,
+        );
+
+        // Click Overrides tab
+        fireEvent.click(screen.getByTestId("tab-overrides"));
+
+        // Expand, go fullscreen
+        await user.click(screen.getByTestId("expand-executor-welcome"));
+        await waitFor(() => {
+          expect(screen.getByTestId("override-input-executor-welcome")).toBeTruthy();
+        });
+
+        await user.click(screen.getByTestId("fullscreen-executor-welcome"));
+        await waitFor(() => {
+          expect(screen.getByTestId("override-input-fullscreen-executor-welcome")).toBeTruthy();
+        });
+
+        // Press Escape
+        const textarea = screen.getByTestId("override-input-fullscreen-executor-welcome") as HTMLTextAreaElement;
+        fireEvent.keyDown(textarea, { key: "Escape" });
+
+        // Fullscreen should be gone
+        await waitFor(() => {
+          expect(screen.queryByTestId("override-input-fullscreen-executor-welcome")).toBeNull();
+        });
+      });
+
+      it("editing in fullscreen fires onPromptOverridesChange", async () => {
+        const user = userEvent.setup();
+        render(
+          <AgentPromptsManager
+            value={defaultConfig}
+            onChange={onChange}
+            promptOverrides={{}}
+            onPromptOverridesChange={onPromptOverridesChange}
+          />,
+        );
+
+        // Click Overrides tab
+        fireEvent.click(screen.getByTestId("tab-overrides"));
+
+        // Expand, go fullscreen, and type
+        await user.click(screen.getByTestId("expand-executor-welcome"));
+        await waitFor(() => {
+          expect(screen.getByTestId("override-input-executor-welcome")).toBeTruthy();
+        });
+
+        await user.click(screen.getByTestId("fullscreen-executor-welcome"));
+        await waitFor(() => {
+          expect(screen.getByTestId("override-input-fullscreen-executor-welcome")).toBeTruthy();
+        });
+
+        const textarea = screen.getByTestId("override-input-fullscreen-executor-welcome") as HTMLTextAreaElement;
+        fireEvent.change(textarea, { target: { value: "Fullscreen edit" } });
+
+        // Verify onPromptOverridesChange was called with updated value
+        await waitFor(() => {
+          expect(onPromptOverridesChange).toHaveBeenCalled();
+          const lastCall = onPromptOverridesChange.mock.calls[onPromptOverridesChange.mock.calls.length - 1];
+          const newOverrides = lastCall[0];
+          expect(newOverrides["executor-welcome"]).toBe("Fullscreen edit");
+        });
+      });
+    });
+
+    describe("Templates tab fullscreen", () => {
+      it("shows fullscreen button in template editor", async () => {
+        const user = userEvent.setup();
+        render(
+          <AgentPromptsManager
+            value={defaultConfig}
+            onChange={onChange}
+            promptOverrides={{}}
+            onPromptOverridesChange={onPromptOverridesChange}
+          />,
+        );
+
+        // Open template editor
+        await user.click(screen.getByTestId("add-template-btn"));
+
+        // Fullscreen button should be visible
+        expect(screen.getByTestId("template-prompt-fullscreen")).toBeTruthy();
+      });
+
+      it("clicking fullscreen button opens fullscreen view for template prompt", async () => {
+        const user = userEvent.setup();
+        render(
+          <AgentPromptsManager
+            value={defaultConfig}
+            onChange={onChange}
+            promptOverrides={{}}
+            onPromptOverridesChange={onPromptOverridesChange}
+          />,
+        );
+
+        // Open template editor
+        await user.click(screen.getByTestId("add-template-btn"));
+
+        // Click fullscreen button
+        await user.click(screen.getByTestId("template-prompt-fullscreen"));
+
+        // Fullscreen container should be visible
+        await waitFor(() => {
+          expect(screen.getByTestId("template-prompt-input-fullscreen")).toBeTruthy();
+          expect(screen.getByTestId("template-prompt-collapse")).toBeTruthy();
+        });
+      });
+
+      it("Escape key exits template prompt fullscreen", async () => {
+        const user = userEvent.setup();
+        render(
+          <AgentPromptsManager
+            value={defaultConfig}
+            onChange={onChange}
+            promptOverrides={{}}
+            onPromptOverridesChange={onPromptOverridesChange}
+          />,
+        );
+
+        // Open template editor and go fullscreen
+        await user.click(screen.getByTestId("add-template-btn"));
+        await user.click(screen.getByTestId("template-prompt-fullscreen"));
+        await waitFor(() => {
+          expect(screen.getByTestId("template-prompt-input-fullscreen")).toBeTruthy();
+        });
+
+        // Press Escape
+        const textarea = screen.getByTestId("template-prompt-input-fullscreen") as HTMLTextAreaElement;
+        fireEvent.keyDown(textarea, { key: "Escape" });
+
+        // Fullscreen should be gone
+        await waitFor(() => {
+          expect(screen.queryByTestId("template-prompt-input-fullscreen")).toBeNull();
+        });
+      });
+
+      it("saving template resets fullscreen state", async () => {
+        const user = userEvent.setup();
+        render(
+          <AgentPromptsManager
+            value={defaultConfig}
+            onChange={onChange}
+            promptOverrides={{}}
+            onPromptOverridesChange={onPromptOverridesChange}
+          />,
+        );
+
+        // Open template editor and go fullscreen
+        await user.click(screen.getByTestId("add-template-btn"));
+        await user.click(screen.getByTestId("template-prompt-fullscreen"));
+        await waitFor(() => {
+          expect(screen.getByTestId("template-prompt-input-fullscreen")).toBeTruthy();
+        });
+
+        // Fill in name and save
+        await user.type(screen.getByTestId("template-name-input"), "My Template");
+        await user.click(screen.getByTestId("save-template-btn"));
+
+        // Verify fullscreen is gone after save
+        await waitFor(() => {
+          expect(screen.queryByTestId("template-prompt-input-fullscreen")).toBeNull();
+          expect(screen.queryByTestId("template-editor")).toBeNull();
+        });
+      });
+
+      it("canceling template edit resets fullscreen state", async () => {
+        const user = userEvent.setup();
+        render(
+          <AgentPromptsManager
+            value={defaultConfig}
+            onChange={onChange}
+            promptOverrides={{}}
+            onPromptOverridesChange={onPromptOverridesChange}
+          />,
+        );
+
+        // Open template editor and go fullscreen
+        await user.click(screen.getByTestId("add-template-btn"));
+        await user.click(screen.getByTestId("template-prompt-fullscreen"));
+        await waitFor(() => {
+          expect(screen.getByTestId("template-prompt-input-fullscreen")).toBeTruthy();
+        });
+
+        // Cancel
+        await user.click(screen.getByTestId("cancel-template-btn"));
+
+        // Verify fullscreen is gone after cancel
+        await waitFor(() => {
+          expect(screen.queryByTestId("template-prompt-input-fullscreen")).toBeNull();
+          expect(screen.queryByTestId("template-editor")).toBeNull();
+        });
+      });
+    });
+  });
 });

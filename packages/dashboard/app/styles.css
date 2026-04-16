@@ -15950,6 +15950,136 @@ html .column.drag-over * {
   color: var(--text-muted);
 }
 
+/* === Prompt Override Fullscreen === */
+
+/* Header actions container for expand + fullscreen buttons */
+.prompt-override-header-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+}
+
+/* Expand button in override header (only visible when expanded) */
+.prompt-override-fullscreen-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+  transition: color var(--transition-fast), background var(--transition-fast);
+}
+
+.prompt-override-fullscreen-btn:hover {
+  color: var(--text);
+  background: var(--surface);
+}
+
+/* Fullscreen container — fixed position overlay */
+.prompt-override-fullscreen {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 10000;
+  background: var(--surface);
+  padding: var(--space-lg);
+  display: flex;
+  flex-direction: column;
+}
+
+.prompt-override-fullscreen-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: var(--space-md);
+  flex-shrink: 0;
+}
+
+.prompt-override-fullscreen-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+}
+
+.prompt-override-fullscreen-close {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-xs);
+  padding: var(--space-xs) var(--space-sm);
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 12px;
+  transition: all var(--transition-fast);
+}
+
+.prompt-override-fullscreen-close:hover {
+  color: var(--text);
+  border-color: var(--text-muted);
+}
+
+/* Fullscreen textarea fills remaining space */
+.prompt-override-fullscreen textarea {
+  flex: 1;
+  min-height: unset;
+  resize: none;
+  border-radius: var(--radius-md);
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+/* Fullscreen footer at bottom */
+.prompt-override-fullscreen .prompt-override-footer {
+  flex-shrink: 0;
+  padding-top: var(--space-sm);
+}
+
+/* Template prompt label row with fullscreen button */
+.prompt-template-prompt-label-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  margin-bottom: var(--space-xs);
+}
+
+.prompt-template-prompt-label-row label {
+  display: block;
+}
+
+/* Template prompt fullscreen button */
+.prompt-template-fullscreen-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+  transition: color var(--transition-fast), background var(--transition-fast);
+  vertical-align: middle;
+  margin-left: var(--space-xs);
+}
+
+.prompt-template-fullscreen-btn:hover {
+  color: var(--text);
+  background: var(--surface);
+}
+
 /* Responsive */
 @media (max-width: 768px) {
   .prompt-manager-tabs {
@@ -15978,6 +16108,15 @@ html .column.drag-over * {
 
   .prompt-template-editor-actions .btn {
     width: 100%;
+  }
+
+  /* Fullscreen prompt editor mobile overrides */
+  .prompt-override-fullscreen {
+    padding: var(--space-md);
+  }
+
+  .prompt-override-fullscreen textarea {
+    font-size: 16px; /* Prevent iOS zoom */
   }
 }
 

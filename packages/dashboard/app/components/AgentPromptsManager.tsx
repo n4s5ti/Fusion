@@ -2,7 +2,7 @@ import { useState, useCallback } from "react";
 import { BUILTIN_AGENT_PROMPTS, PROMPT_KEY_CATALOG } from "../utils/builtinPrompts";
 import type { AgentPromptTemplate, AgentPromptsConfig, AgentCapability } from "@fusion/core";
 import type { PromptKey } from "@fusion/core";
-import { X, Plus, Pencil, Trash2, BookOpen, Users, Settings2, ChevronDown, ChevronUp } from "lucide-react";
+import { X, Plus, Pencil, Trash2, BookOpen, Users, Settings2, ChevronDown, ChevronUp, Maximize2, Minimize2 } from "lucide-react";
 
 /**
  * Props for the AgentPromptsManager component.
@@ -135,6 +135,12 @@ export function AgentPromptsManager({
   // Override expanded state for accordion behavior
   const [expandedOverrides, setExpandedOverrides] = useState<Set<PromptKey>>(new Set());
 
+  // Fullscreen state for overrides tab
+  const [fullscreenOverrideKey, setFullscreenOverrideKey] = useState<PromptKey | null>(null);
+
+  // Fullscreen state for templates tab
+  const [isTemplatePromptFullscreen, setIsTemplatePromptFullscreen] = useState(false);
+
   // Get custom templates from current config
   const customTemplates = value?.templates ?? [];
 
@@ -178,6 +184,7 @@ export function AgentPromptsManager({
     setIsCreating(false);
     setTemplateForm(EMPTY_TEMPLATE_FORM);
     setTemplateIdError(null);
+    setIsTemplatePromptFullscreen(false);
   }, []);
 
   // Handle saving a template (create or update)
@@ -333,6 +340,16 @@ export function AgentPromptsManager({
     });
   }, []);
 
+  // Toggle fullscreen for an override
+  const toggleFullscreenOverride = useCallback((key: PromptKey) => {
+    setFullscreenOverrideKey((prev) => (prev === key ? null : key));
+  }, []);
+
+  // Toggle fullscreen for template prompt
+  const toggleTemplatePromptFullscreen = useCallback(() => {
+    setIsTemplatePromptFullscreen((prev) => !prev);
+  }, []);
+
   // Check if a template ID collides with built-in
   const isBuiltinId = (id: string): boolean => {
     return BUILTIN_AGENT_PROMPTS.some((t) => t.id === id);
@@ -431,18 +448,72 @@ export function AgentPromptsManager({
                   </div>
 
                   <div className="prompt-template-field">
-                    <label htmlFor="template-prompt">Prompt</label>
-                    <textarea
-                      id="template-prompt"
-                      value={templateForm.prompt}
-                      onChange={(e) =>
-                        setTemplateForm((f) => ({ ...f, prompt: e.target.value }))
-                      }
-                      placeholder="Enter the system prompt for this template..."
-                      rows={8}
-                      className="prompt-template-prompt-textarea"
-                      data-testid="template-prompt-input"
-                    />
+                    <div className="prompt-template-prompt-label-row">
+                      <label htmlFor="template-prompt">Prompt</label>
+                      <button
+                        type="button"
+                        className="prompt-template-fullscreen-btn"
+                        onClick={toggleTemplatePromptFullscreen}
+                        aria-label="Expand prompt to fullscreen"
+                        data-testid="template-prompt-fullscreen"
+                      >
+                        <Maximize2 size={14} />
+                      </button>
+                    </div>
+                    {isTemplatePromptFullscreen ? (
+                      <div
+                        className="prompt-override-fullscreen"
+                        onKeyDown={(e) => {
+                          if (e.key === "Escape") {
+                            e.preventDefault();
+                            setIsTemplatePromptFullscreen(false);
+                          }
+                        }}
+                      >
+                        <div className="prompt-override-fullscreen-header">
+                          <div className="prompt-override-fullscreen-title">Edit Prompt</div>
+                          <button
+                            type="button"
+                            className="prompt-override-fullscreen-close"
+                            onClick={() => setIsTemplatePromptFullscreen(false)}
+                            data-testid="template-prompt-collapse"
+                          >
+                            <Minimize2 size={14} />
+                            Collapse
+                          </button>
+                        </div>
+                        <textarea
+                          id="template-prompt-fullscreen"
+                          aria-label="Template prompt - fullscreen"
+                          className="prompt-template-prompt-textarea"
+                          value={templateForm.prompt}
+                          onChange={(e) =>
+                            setTemplateForm((f) => ({ ...f, prompt: e.target.value }))
+                          }
+                          placeholder="Enter the system prompt for this template..."
+                          rows={30}
+                          autoFocus
+                          data-testid="template-prompt-input-fullscreen"
+                        />
+                        <div className="prompt-override-footer">
+                          <small className="prompt-override-hint">
+                            {templateForm.prompt.length} characters
+                          </small>
+                        </div>
+                      </div>
+                    ) : (
+                      <textarea
+                        id="template-prompt"
+                        value={templateForm.prompt}
+                        onChange={(e) =>
+                          setTemplateForm((f) => ({ ...f, prompt: e.target.value }))
+                        }
+                        placeholder="Enter the system prompt for this template..."
+                        rows={8}
+                        className="prompt-template-prompt-textarea"
+                        data-testid="template-prompt-input"
+                      />
+                    )}
                   </div>
 
                   {templateIdError && (
@@ -722,18 +793,18 @@ export function AgentPromptsManager({
                     className="prompt-override-item"
                     data-testid={`override-${key}`}
                   >
-                    <div
-                      className="prompt-override-header"
-                      onClick={() => toggleOverrideExpanded(key)}
-                      role="button"
-                      tabIndex={0}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter" || e.key === " ") {
-                          toggleOverrideExpanded(key);
-                        }
-                      }}
-                    >
-                      <div className="prompt-override-info">
+                    <div className="prompt-override-header">
+                      <div
+                        className="prompt-override-info"
+                        onClick={() => toggleOverrideExpanded(key)}
+                        role="button"
+                        tabIndex={0}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter" || e.key === " ") {
+                            toggleOverrideExpanded(key);
+                          }
+                        }}
+                      >
                         <span className="prompt-override-name">
                           {promptMeta.name}
                         </span>
@@ -742,53 +813,130 @@ export function AgentPromptsManager({
                           <span className="prompt-override-badge">customized</span>
                         )}
                       </div>
-                      <button
-                        className="prompt-override-expand-btn"
-                        aria-label={isExpanded ? "Collapse" : "Expand"}
-                        data-testid={`expand-${key}`}
-                      >
-                        {isExpanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
-                      </button>
+                      <div className="prompt-override-header-actions">
+                        {isExpanded && (
+                          <button
+                            className="prompt-override-fullscreen-btn"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              toggleFullscreenOverride(key);
+                            }}
+                            aria-label="Expand to fullscreen"
+                            data-testid={`fullscreen-${key}`}
+                          >
+                            <Maximize2 size={14} />
+                          </button>
+                        )}
+                        <button
+                          className="prompt-override-expand-btn"
+                          aria-label={isExpanded ? "Collapse" : "Expand"}
+                          data-testid={`expand-${key}`}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            toggleOverrideExpanded(key);
+                          }}
+                        >
+                          {isExpanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+                        </button>
+                      </div>
                     </div>
                     <p className="prompt-override-description">
                       {promptMeta.description}
                     </p>
 
                     {isExpanded && (
-                      <div className="prompt-override-editor">
-                        <textarea
-                          id={`prompt-${key}`}
-                          aria-label={`${promptMeta.name} prompt override (${key})`}
-                          className="prompt-override-textarea"
-                          value={currentOverride}
-                          onChange={(e) => {
-                            handlePromptOverrideChange(key, e.target.value);
+                      fullscreenOverrideKey === key ? (
+                        <div
+                          className="prompt-override-fullscreen"
+                          onKeyDown={(e) => {
+                            if (e.key === "Escape") {
+                              e.preventDefault();
+                              setFullscreenOverrideKey(null);
+                            }
                           }}
-                          placeholder={`Default: ${promptMeta.defaultContent.slice(0, 100)}${promptMeta.defaultContent.length > 100 ? "..." : ""}`}
-                          rows={4}
-                          data-testid={`override-input-${key}`}
-                        />
-                        <div className="prompt-override-footer">
-                          {hasOverride && (
+                        >
+                          <div className="prompt-override-fullscreen-header">
+                            <div className="prompt-override-fullscreen-title">
+                              {promptMeta.name}
+                              <code className="prompt-override-key">{key}</code>
+                            </div>
                             <button
                               type="button"
-                              className="btn btn-ghost btn-sm"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleResetOverride(key);
-                              }}
-                              data-testid={`reset-${key}`}
+                              className="prompt-override-fullscreen-close"
+                              onClick={() => setFullscreenOverrideKey(null)}
+                              data-testid={`collapse-fullscreen-${key}`}
                             >
-                              Reset
+                              <Minimize2 size={14} />
+                              Collapse
                             </button>
-                          )}
-                          <small className="prompt-override-hint">
-                            {hasOverride
-                              ? "Custom override active. Click Reset to restore default."
-                              : `No override set. Using built-in default (${promptMeta.defaultContent.length} chars).`}
-                          </small>
+                          </div>
+                          <textarea
+                            id={`prompt-${key}-fullscreen`}
+                            aria-label={`${promptMeta.name} prompt override (${key}) - fullscreen`}
+                            className="prompt-override-textarea"
+                            value={currentOverride}
+                            onChange={(e) => {
+                              handlePromptOverrideChange(key, e.target.value);
+                            }}
+                            placeholder={`Default: ${promptMeta.defaultContent.slice(0, 100)}${promptMeta.defaultContent.length > 100 ? "..." : ""}`}
+                            rows={30}
+                            autoFocus
+                            data-testid={`override-input-fullscreen-${key}`}
+                          />
+                          <div className="prompt-override-footer">
+                            {hasOverride && (
+                              <button
+                                type="button"
+                                className="btn btn-ghost btn-sm"
+                                onClick={() => handleResetOverride(key)}
+                                data-testid={`reset-fullscreen-${key}`}
+                              >
+                                Reset
+                              </button>
+                            )}
+                            <small className="prompt-override-hint">
+                              {hasOverride
+                                ? "Custom override active. Click Reset to restore default."
+                                : `No override set. Using built-in default (${promptMeta.defaultContent.length} chars).`}
+                            </small>
+                          </div>
                         </div>
-                      </div>
+                      ) : (
+                        <div className="prompt-override-editor">
+                          <textarea
+                            id={`prompt-${key}`}
+                            aria-label={`${promptMeta.name} prompt override (${key})`}
+                            className="prompt-override-textarea"
+                            value={currentOverride}
+                            onChange={(e) => {
+                              handlePromptOverrideChange(key, e.target.value);
+                            }}
+                            placeholder={`Default: ${promptMeta.defaultContent.slice(0, 100)}${promptMeta.defaultContent.length > 100 ? "..." : ""}`}
+                            rows={4}
+                            data-testid={`override-input-${key}`}
+                          />
+                          <div className="prompt-override-footer">
+                            {hasOverride && (
+                              <button
+                                type="button"
+                                className="btn btn-ghost btn-sm"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleResetOverride(key);
+                                }}
+                                data-testid={`reset-${key}`}
+                              >
+                                Reset
+                              </button>
+                            )}
+                            <small className="prompt-override-hint">
+                              {hasOverride
+                                ? "Custom override active. Click Reset to restore default."
+                                : `No override set. Using built-in default (${promptMeta.defaultContent.length} chars).`}
+                            </small>
+                          </div>
+                        </div>
+                      )
                     )}
                   </div>
                 );
