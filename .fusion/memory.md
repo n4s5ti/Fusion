@@ -645,6 +645,43 @@ Three example plugins demonstrate different plugin capabilities:
 - Plugin context API reference
 - Testing patterns and publishing guide
 
+## Plugin UI Slots (FN-1914/FN-1916)
+
+Plugins can register UI components that render at named mount points in the Fusion dashboard.
+
+### Type Definition
+
+`PluginUiSlotDefinition` (in `packages/core/src/plugin-types.ts`):
+- `slotId: string` — Unique slot identifier matching a dashboard mount point
+- `label: string` — Human-readable label
+- `icon?: string` — Optional lucide-react icon name
+- `componentPath: string` — Path to component module, relative to plugin root
+
+### Available Slot IDs
+
+| Slot ID | Location | Status |
+|---------|----------|--------|
+| `task-detail-tab` | Task detail modal — tab in task detail view | Available (tested in FN-1914) |
+| `header-action` | Dashboard header — action button in toolbar | Available (tested in FN-1914) |
+| `settings-section` | Settings modal — custom settings section | Available (tested in FN-1914) |
+| `task-card-badge` | Task card on the board — badge on task cards | Planned (FN-1926) |
+| `board-column-footer` | Board column — footer below last card | Planned (FN-1926) |
+
+### Architecture
+
+- **PluginLoader.getPluginUiSlots()** — Aggregates `uiSlots` from all loaded plugins, returns `Array<{ pluginId, slot }>`
+- **PluginRunner.getPluginUiSlots()** — Cached access with invalidation on plugin state changes
+- **GET /api/plugins/ui-slots** — API endpoint returning aggregated UI slot definitions
+- **PluginSlot component** (`packages/dashboard/app/components/PluginSlot.tsx`) — Generic React component that takes `slotId` prop and renders matching plugin slots
+- **usePluginUiSlots hook** (`packages/dashboard/app/hooks/usePluginUiSlots.ts`) — Fetches and caches UI slots with 60s TTL, provides `getSlotsForId(slotId)` lookup
+
+### Current Implementation Status
+
+- Types, loader, runner, and API endpoint are implemented (FN-1914)
+- Frontend data layer (hook + component) implemented (FN-1925)
+- Dashboard view integration in progress (FN-1926)
+- Dynamic component loading is a future iteration — currently renders placeholder divs with `data-plugin-slot` attributes
+
 ## TUI Package (FN-1471)
 
 The `@fusion/tui` package provides Ink-based React components for terminal UI.
