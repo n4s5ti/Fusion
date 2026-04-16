@@ -1743,12 +1743,13 @@ export function RoadmapsView({ projectId, addToast }: RoadmapsViewProps) {
 
   // Roadmap handlers
   const handleStartRoadmapEdit = useCallback((roadmap: Roadmap) => {
+    selectRoadmap(roadmap.id);
     setRoadmapEdit({
       roadmapId: roadmap.id,
       field: "title",
       value: roadmap.title,
     });
-  }, []);
+  }, [selectRoadmap]);
 
   const handleCancelRoadmapEdit = useCallback(() => {
     setRoadmapEdit({ roadmapId: null, field: null, value: "" });

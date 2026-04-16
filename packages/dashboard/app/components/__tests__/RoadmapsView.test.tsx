@@ -666,6 +666,26 @@ describe("RoadmapsView", () => {
       const editButtons = screen.queryAllByRole("button", { name: /edit/i });
       expect(editButtons.length).toBeGreaterThan(0);
     });
+
+    it("sidebar edit pencil selects the roadmap and shows inline edit", async () => {
+      render(<RoadmapsView addToast={mockAddToast} />);
+
+      await waitFor(() => {
+        expect(screen.getByText("Q2 Roadmap")).toBeInTheDocument();
+      });
+
+      // No roadmap selected yet — main content shows empty state
+      expect(screen.getByText("Select a roadmap from the sidebar to view its milestones.")).toBeInTheDocument();
+
+      // Click the edit pencil on RM-001 in the sidebar
+      const editBtn = screen.getByTestId("roadmap-edit-RM-001");
+      fireEvent.click(editBtn);
+
+      // Roadmap should be selected and inline edit should appear
+      await waitFor(() => {
+        expect(screen.getByTestId("roadmap-title-input")).toBeInTheDocument();
+      });
+    });
   });
 
   describe("Mobile roadmap controls", () => {
@@ -842,6 +862,24 @@ describe("RoadmapsView", () => {
       expect(screen.getByTestId("mobile-header-edit-btn")).toBeInTheDocument();
       expect(screen.getByTestId("mobile-header-delete-btn")).toBeInTheDocument();
       expect(screen.getByTestId("mobile-back-btn")).toBeInTheDocument();
+    });
+
+    it("mobile edit pencil selects the roadmap and shows inline edit", async () => {
+      render(<RoadmapsView addToast={mockAddToast} />);
+
+      await waitFor(() => {
+        expect(screen.getByTestId("mobile-roadmap-item-RM-001")).toBeInTheDocument();
+      });
+
+      // Click the edit pencil on RM-001 in mobile list
+      const editBtn = screen.getByTestId("mobile-roadmap-edit-RM-001");
+      fireEvent.click(editBtn);
+
+      // Should show the mobile header (roadmap selected) and inline edit
+      await waitFor(() => {
+        expect(screen.getByTestId("roadmaps-view__mobile-header")).toBeInTheDocument();
+        expect(screen.getByTestId("roadmap-title-input")).toBeInTheDocument();
+      });
     });
   });
 });
