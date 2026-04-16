@@ -5,10 +5,14 @@ import * as api from "../../api";
 import type { ProjectInfo } from "../../api";
 
 vi.mock("../../api", () => ({
+  pauseProject: vi.fn(),
+  resumeProject: vi.fn(),
   updateProject: vi.fn(),
   unregisterProject: vi.fn(),
 }));
 
+const mockPauseProject = vi.mocked(api.pauseProject);
+const mockResumeProject = vi.mocked(api.resumeProject);
 const mockUpdateProject = vi.mocked(api.updateProject);
 const mockUnregisterProject = vi.mocked(api.unregisterProject);
 
@@ -43,6 +47,8 @@ function createOptions(overrides: Partial<Parameters<typeof useProjectActions>[0
 describe("useProjectActions", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockPauseProject.mockResolvedValue(PROJECT);
+    mockResumeProject.mockResolvedValue(PROJECT);
     mockUpdateProject.mockResolvedValue(PROJECT);
     mockUnregisterProject.mockResolvedValue(undefined);
   });
@@ -86,7 +92,7 @@ describe("useProjectActions", () => {
     expect(options.refreshProjects).toHaveBeenCalledTimes(1);
   });
 
-  it("handlePauseProject calls updateProject and shows success toast", async () => {
+  it("handlePauseProject calls pauseProject and shows success toast", async () => {
     const options = createOptions();
     const { result } = renderHook(() => useProjectActions(options));
 
@@ -94,12 +100,12 @@ describe("useProjectActions", () => {
       await result.current.handlePauseProject(PROJECT);
     });
 
-    expect(mockUpdateProject).toHaveBeenCalledWith(PROJECT.id, { status: "paused" });
+    expect(mockPauseProject).toHaveBeenCalledWith(PROJECT.id);
     expect(options.addToast).toHaveBeenCalledWith("Project Demo paused", "success");
     expect(options.refreshProjects).toHaveBeenCalledTimes(1);
   });
 
-  it("handleResumeProject calls updateProject and shows success toast", async () => {
+  it("handleResumeProject calls resumeProject and shows success toast", async () => {
     const options = createOptions();
     const { result } = renderHook(() => useProjectActions(options));
 
@@ -107,7 +113,7 @@ describe("useProjectActions", () => {
       await result.current.handleResumeProject(PROJECT);
     });
 
-    expect(mockUpdateProject).toHaveBeenCalledWith(PROJECT.id, { status: "active" });
+    expect(mockResumeProject).toHaveBeenCalledWith(PROJECT.id);
     expect(options.addToast).toHaveBeenCalledWith("Project Demo resumed", "success");
     expect(options.refreshProjects).toHaveBeenCalledTimes(1);
   });

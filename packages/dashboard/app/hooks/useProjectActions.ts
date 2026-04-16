@@ -1,5 +1,5 @@
 import { useCallback } from "react";
-import { updateProject, unregisterProject } from "../api";
+import { pauseProject, resumeProject, unregisterProject } from "../api";
 import type { ProjectInfo } from "../api";
 import type { ViewMode } from "./useViewState";
 import type { ToastType } from "./useToast";
@@ -81,7 +81,7 @@ export function useProjectActions(options: UseProjectActionsOptions): UseProject
 
   const handlePauseProject = useCallback(async (project: ProjectInfo) => {
     try {
-      await updateProject(project.id, { status: "paused" });
+      await pauseProject(project.id);
       addToast(`Project ${project.name} paused`, "success");
       await refreshProjects();
     } catch {
@@ -91,7 +91,7 @@ export function useProjectActions(options: UseProjectActionsOptions): UseProject
 
   const handleResumeProject = useCallback(async (project: ProjectInfo) => {
     try {
-      await updateProject(project.id, { status: "active" });
+      await resumeProject(project.id);
       addToast(`Project ${project.name} resumed`, "success");
       await refreshProjects();
     } catch {

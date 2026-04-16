@@ -110,6 +110,49 @@ export class ProjectEngineManager {
     return this.engines.has(projectId) || this.starting.has(projectId);
   }
 
+  // ── Pause / Resume ────────────────────────────────────────────────────
+
+  /**
+   * Pause a project: update its status in CentralCore and stop its engine.
+   * This prevents the reconciliation loop from restarting the engine.
+   */
+  async pauseProject(projectId: string): Promise<void> {
+    if (this.stopped) throw new Error("ProjectEngineManager is stopped");
+
+    runtimeLog.log(`Pausing project ${projectId}`);
+
+    // Update CentralCore status
+    await this.centralCore.updateProject(projectId, { status: "paused" });
+    await this.centralCore.updateProjectHealth(projectId, { status: "paused" });
+
+    // Stop the engine if running
+    const engine = this.engines.get(projectId);
+    if (engine) {
+      await engine.stop();
+      this.engines.delete(projectId);
+      runtimeLog.log(`Stopped engine for paused project ${projectId}`);
+    }
+
+    // Remove from starting set to prevent a stalled start from completing
+    this.starting.delete(projectId);
+  }
+
+  /**
+   * Resume a paused project: update its status in CentralCore and start its engine.
+   */
+  async resumeProject(projectId: string): Promise<void> {
+    if (this.stopped) throw new Error("ProjectEngineManager is stopped");
+
+    runtimeLog.log(`Resuming project ${projectId}`);
+
+    // Update CentralCore status
+    await this.centralCore.updateProject(projectId, { status: "active" });
+    await this.centralCore.updateProjectHealth(projectId, { status: "active" });
+
+    // Start the engine
+    await this.ensureEngine(projectId);
+  }
+
   // ── Lifecycle ──
 
   /**
@@ -122,6 +165,12 @@ export class ProjectEngineManager {
     overrides?: Partial<ProjectEngineOptions>,
   ): Promise<ProjectEngine> {
     if (this.stopped) throw new Error("ProjectEngineManager is stopped");
+
+    // Check if the project is paused before starting
+    const project = await this.centralCore.getProject(projectId);
+    if (project && (project.status as string) === "paused") {
+      throw new Error(`Project ${projectId} is paused`);
+    }
 
     const existing = this.engines.get(projectId);
     if (existing) return existing;
@@ -283,8 +332,11 @@ export class ProjectEngineManager {
       const projects = await this.centralCore.listProjects();
       if (projects.length === 0) return;
 
+      // Filter out paused projects — they should not have engines started
+      const activeProjects = projects.filter((p) => (p.status as string) !== "paused");
+
       // Find projects that don't have running or pending engines
-      const missing = projects.filter((p) => !this.has(p.id));
+      const missing = activeProjects.filter((p) => !this.has(p.id));
       if (missing.length === 0) return;
 
       runtimeLog.log(
@@ -316,6 +368,11 @@ export class ProjectEngineManager {
     const project = await this.centralCore.getProject(projectId);
     if (!project) {
       throw new Error(`Project ${projectId} not found in CentralCore`);
+    }
+
+    // Prevent starting engines for paused projects
+    if ((project.status as string) === "paused") {
+      throw new Error(`Project ${projectId} is paused`);
     }
 
     const runtimeConfig = this.buildRuntimeConfig(project);

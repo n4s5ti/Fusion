@@ -38,6 +38,8 @@ function createMockCentralCore(projects: RegisteredProject[]): CentralCore {
     getProjectByPath: vi.fn().mockImplementation((path: string) =>
       Promise.resolve(projects.find((p) => p.path === path) ?? null),
     ),
+    updateProject: vi.fn().mockResolvedValue(undefined),
+    updateProjectHealth: vi.fn().mockResolvedValue(undefined),
   } as unknown as CentralCore;
 }
 
@@ -291,6 +293,100 @@ describe("ProjectEngineManager", () => {
     });
   });
 
+  describe("pauseProject", () => {
+    it("calls updateProject and updateProjectHealth with 'paused'", async () => {
+      const manager = new ProjectEngineManager(centralCore);
+      await manager.pauseProject("proj_aaa");
+
+      expect(centralCore.updateProject).toHaveBeenCalledWith("proj_aaa", { status: "paused" });
+      expect(centralCore.updateProjectHealth).toHaveBeenCalledWith("proj_aaa", { status: "paused" });
+    });
+
+    it("stops engine if running and removes it from getEngine", async () => {
+      const manager = new ProjectEngineManager(centralCore);
+      const engine = await manager.ensureEngine("proj_aaa");
+
+      await manager.pauseProject("proj_aaa");
+
+      expect(engine.stop).toHaveBeenCalledOnce();
+      expect(manager.getEngine("proj_aaa")).toBeUndefined();
+    });
+
+    it("removes from starting set to prevent stalled starts from completing", async () => {
+      const manager = new ProjectEngineManager(centralCore);
+
+      // Start an engine (await it to ensure it's in the starting map)
+      const enginePromise = manager.ensureEngine("proj_aaa");
+      
+      // Wait for the engine to be added to starting set
+      await vi.waitFor(() => {
+        expect(manager.has("proj_aaa")).toBe(true);
+      });
+      
+      // Now pause - this should remove from starting set
+      await manager.pauseProject("proj_aaa");
+
+      // The engine should not be running
+      expect(manager.getEngine("proj_aaa")).toBeUndefined();
+      expect(manager.has("proj_aaa")).toBe(false);
+
+      // The pending promise should resolve but engine should not exist
+      await enginePromise.catch(() => {});
+    });
+
+    it("throws if manager is stopped", async () => {
+      const manager = new ProjectEngineManager(centralCore);
+      await manager.stopAll();
+
+      await expect(manager.pauseProject("proj_aaa")).rejects.toThrow(
+        "ProjectEngineManager is stopped",
+      );
+    });
+  });
+
+  describe("resumeProject", () => {
+    it("calls updateProject and updateProjectHealth with 'active'", async () => {
+      const manager = new ProjectEngineManager(centralCore);
+      await manager.resumeProject("proj_aaa");
+
+      expect(centralCore.updateProject).toHaveBeenCalledWith("proj_aaa", { status: "active" });
+      expect(centralCore.updateProjectHealth).toHaveBeenCalledWith("proj_aaa", { status: "active" });
+    });
+
+    it("starts engine via ensureEngine", async () => {
+      const manager = new ProjectEngineManager(centralCore);
+      await manager.resumeProject("proj_aaa");
+
+      expect(manager.getEngine("proj_aaa")).toBeDefined();
+      expect(ProjectEngine).toHaveBeenCalledTimes(1);
+    });
+
+    it("throws if manager is stopped", async () => {
+      const manager = new ProjectEngineManager(centralCore);
+      await manager.stopAll();
+
+      await expect(manager.resumeProject("proj_aaa")).rejects.toThrow(
+        "ProjectEngineManager is stopped",
+      );
+    });
+  });
+
+  describe("ensureEngine with paused projects", () => {
+    it("rejects when project status is 'paused'", async () => {
+      const manager = new ProjectEngineManager(centralCore);
+
+      // Mock getProject to return a paused project
+      (centralCore.getProject as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+        ...projectA,
+        status: "paused",
+      });
+
+      await expect(manager.ensureEngine("proj_aaa")).rejects.toThrow(
+        "Project proj_aaa is paused",
+      );
+    });
+  });
+
   describe("onProjectAccessed", () => {
     it("starts engine in background for unknown project", async () => {
       const manager = new ProjectEngineManager(centralCore);
@@ -388,6 +484,41 @@ describe("ProjectEngineManager", () => {
       await vi.waitFor(() => {
         expect(manager.getEngine("proj_aaa")).toBeDefined();
       });
+
+      manager.stopReconciliation();
+    });
+
+    it("skips paused projects during reconciliation", async () => {
+      const manager = new ProjectEngineManager(centralCore);
+
+      // Make projectA paused
+      const pausedProjectA = { ...projectA, status: "paused" as const };
+      
+      // Mock getProject to return paused status for projectA
+      (centralCore.getProject as ReturnType<typeof vi.fn>).mockImplementation((id: string) => {
+        if (id === "proj_aaa") {
+          return Promise.resolve(pausedProjectA);
+        }
+        return Promise.resolve([projectA, projectB, projectC].find((p) => p.id === id) ?? null);
+      });
+      
+      // Mock listProjects to return all projects including the paused one
+      (centralCore.listProjects as ReturnType<typeof vi.fn>).mockResolvedValueOnce([
+        pausedProjectA,
+        projectB,
+        projectC,
+      ]);
+
+      manager.startReconciliation(1000);
+
+      // Advance time to trigger reconciliation
+      await vi.advanceTimersByTimeAsync(1000);
+
+      // projectA should NOT have an engine (it's paused)
+      expect(manager.getEngine("proj_aaa")).toBeUndefined();
+      // projectB and projectC should have engines (they're active)
+      expect(manager.getEngine("proj_bbb")).toBeDefined();
+      expect(manager.getEngine("proj_ccc")).toBeDefined();
 
       manager.stopReconciliation();
     });

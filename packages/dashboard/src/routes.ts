@@ -13290,14 +13290,32 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
    */
   router.post("/projects/:id/pause", async (req, res) => {
     try {
-      const { CentralCore } = await import("@fusion/core");
-      const central = new CentralCore();
+      const projectId = req.params.id;
+
+      // Use engineManager if available (production mode)
+      if (options?.engineManager) {
+        await options.engineManager.pauseProject(projectId);
+      } else {
+        // Fallback: update CentralCore directly (dev mode)
+        const { CentralCore } = await import("@fusion/core");
+        const central = new CentralCore();
+        await central.init();
+        await central.updateProject(projectId, { status: "paused" });
+        await central.updateProjectHealth(projectId, { status: "paused" });
+        await central.close();
+      }
+
+      // Fetch and return the updated project
+      const { CentralCore: CentralCore2 } = await import("@fusion/core");
+      const central = new CentralCore2();
       await central.init();
-      
-      const project = await central.updateProject(req.params.id, { status: "paused" });
-      await central.updateProjectHealth(req.params.id, { status: "paused" });
+      const project = await central.getProject(projectId);
       await central.close();
-      
+
+      if (!project) {
+        throw new ApiError(404, `Project ${projectId} not found`);
+      }
+
       res.json(project);
     } catch (err: any) {
       if (err instanceof ApiError) {
@@ -13314,14 +13332,32 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
    */
   router.post("/projects/:id/resume", async (req, res) => {
     try {
-      const { CentralCore } = await import("@fusion/core");
-      const central = new CentralCore();
+      const projectId = req.params.id;
+
+      // Use engineManager if available (production mode)
+      if (options?.engineManager) {
+        await options.engineManager.resumeProject(projectId);
+      } else {
+        // Fallback: update CentralCore directly (dev mode)
+        const { CentralCore } = await import("@fusion/core");
+        const central = new CentralCore();
+        await central.init();
+        await central.updateProject(projectId, { status: "active" });
+        await central.updateProjectHealth(projectId, { status: "active" });
+        await central.close();
+      }
+
+      // Fetch and return the updated project
+      const { CentralCore: CentralCore2 } = await import("@fusion/core");
+      const central = new CentralCore2();
       await central.init();
-      
-      const project = await central.updateProject(req.params.id, { status: "active" });
-      await central.updateProjectHealth(req.params.id, { status: "active" });
+      const project = await central.getProject(projectId);
       await central.close();
-      
+
+      if (!project) {
+        throw new ApiError(404, `Project ${projectId} not found`);
+      }
+
       res.json(project);
     } catch (err: any) {
       if (err instanceof ApiError) {

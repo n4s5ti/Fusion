@@ -14262,3 +14262,6 @@ describe("POST /api/ai/refine-text with projectId scoping", () => {
     expect(res.body.error).toContain("not exceed 2000 characters");
   });
 });
+
+// Note: Project pause/resume route tests are in src/__tests__/project-pause-resume-routes.test.ts
+// to avoid test isolation issues with vi.restoreAllMocks() from other tests in routes.test.ts
