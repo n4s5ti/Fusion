@@ -5,14 +5,15 @@ import {
   ExternalLink, CheckCircle, XCircle, Loader2, GitBranch, ListChecks,
   ChevronDown, ChevronRight, BarChart3, Star, BookOpen
 } from "lucide-react";
-import type { AgentDetail, AgentState, AgentHeartbeatRun, AgentBudgetStatus } from "../api";
-import { fetchAgent, updateAgent, updateAgentState, deleteAgent, fetchAgentLogsWithMeta, fetchAgentRunLogs, fetchAgentChildren, fetchAgentRuns, fetchAgentRunDetail, startAgentRun, stopAgentRun, updateAgentInstructions, updateAgentSoul, updateAgentMemory, fetchAgentTasks, fetchChainOfCommand, fetchAgentBudgetStatus, resetAgentBudget, fetchWorkspaceFileContent, saveWorkspaceFileContent } from "../api";
+import type { AgentDetail, AgentState, AgentHeartbeatRun, AgentBudgetStatus, ModelInfo } from "../api";
+import { fetchAgent, updateAgent, updateAgentState, deleteAgent, fetchAgentLogsWithMeta, fetchAgentRunLogs, fetchAgentChildren, fetchAgentRuns, fetchAgentRunDetail, startAgentRun, stopAgentRun, updateAgentInstructions, updateAgentSoul, updateAgentMemory, fetchAgentTasks, fetchChainOfCommand, fetchAgentBudgetStatus, resetAgentBudget, fetchWorkspaceFileContent, saveWorkspaceFileContent, fetchModels } from "../api";
 import type { Agent } from "../api";
 import type { AgentLogEntry, Task } from "@fusion/core";
 import { AgentLogViewer } from "./AgentLogViewer";
 import { AgentReflectionsTab } from "./AgentReflectionsTab";
 import { getAgentHealthStatus } from "../utils/agentHealth";
 import { SkillMultiselect } from "./SkillMultiselect";
+import { CustomModelDropdown } from "./CustomModelDropdown";
 
 /**
  * Simple className utility - joins class names conditionally
@@ -574,6 +575,18 @@ function DashboardTab({
   const [isLoadingChainOfCommand, setIsLoadingChainOfCommand] = useState(true);
   const [budgetStatus, setBudgetStatus] = useState<AgentBudgetStatus | null>(null);
 
+  const modelDisplay = (() => {
+    const rc = agent.runtimeConfig ?? {};
+    if (rc.modelProvider && rc.modelId) {
+      return `${rc.modelProvider}/${rc.modelId}`;
+    }
+    if (typeof rc.model === "string" && rc.model.includes("/")) {
+      const slashIdx = rc.model.indexOf("/");
+      return rc.model.slice(slashIdx + 1);
+    }
+    return null;
+  })();
+
   // Fetch budget status on mount
   useEffect(() => {
     fetchAgentBudgetStatus(agent.id, projectId)
@@ -685,6 +698,12 @@ function DashboardTab({
               {health.label}
             </span>
           </div>
+          {modelDisplay && (
+            <div className="info-item">
+              <span className="info-label">Model</span>
+              <span className="info-value">{modelDisplay}</span>
+            </div>
+          )}
           {budgetStatus?.budgetLimit != null && (
             <div className="info-item">
               <span className="info-label">Budget</span>
@@ -2305,6 +2324,33 @@ function ConfigTab({
     Array.isArray(agent.metadata?.skills) ? agent.metadata.skills as string[] : []
   );
 
+  // Model dropdown state
+  const [availableModels, setAvailableModels] = useState<ModelInfo[]>([]);
+  const [modelsLoading, setModelsLoading] = useState(false);
+
+  const initialModelValue = (() => {
+    const rc = agent.runtimeConfig ?? {};
+    if (rc.modelProvider && rc.modelId) {
+      return `${rc.modelProvider}/${rc.modelId}`;
+    }
+    if (typeof rc.model === "string" && rc.model.includes("/")) {
+      return rc.model;
+    }
+    return "";
+  })();
+  const [modelValue, setModelValue] = useState(initialModelValue);
+
+  // Load available models on mount
+  useEffect(() => {
+    setModelsLoading(true);
+    fetchModels()
+      .then((response) => setAvailableModels(response.models))
+      .catch(() => {
+        // Gracefully handle unavailable models endpoint
+      })
+      .finally(() => setModelsLoading(false));
+  }, []);
+
   // Budget status for progress bar display
   const [budgetStatus, setBudgetStatus] = useState<AgentBudgetStatus | null>(null);
   const [isResettingBudget, setIsResettingBudget] = useState(false);
@@ -2383,6 +2429,9 @@ function ConfigTab({
     // Check skills
     const persistedSkills = Array.isArray(agent.metadata?.skills) ? agent.metadata.skills as string[] : [];
     if (JSON.stringify(selectedSkills) !== JSON.stringify(persistedSkills)) return true;
+
+    // Check model override
+    if (modelValue !== initialModelValue) return true;
 
     return false;
   })();
@@ -2535,6 +2584,20 @@ function ConfigTab({
       delete newRuntimeConfig.messageResponseMode;
     } else {
       newRuntimeConfig.messageResponseMode = messageResponseMode;
+    }
+
+    // Model override: parse "provider/modelId" into separate fields
+    if (modelValue.trim()) {
+      const slashIdx = modelValue.indexOf("/");
+      if (slashIdx !== -1) {
+        newRuntimeConfig.modelProvider = modelValue.slice(0, slashIdx);
+        newRuntimeConfig.modelId = modelValue.slice(slashIdx + 1);
+        newRuntimeConfig.model = modelValue.trim();
+      }
+    } else {
+      delete newRuntimeConfig.modelProvider;
+      delete newRuntimeConfig.modelId;
+      delete newRuntimeConfig.model;
     }
 
     // Build budgetConfig payload — only include non-empty values
@@ -2691,6 +2754,26 @@ function ConfigTab({
               value={selectedSkills}
               onChange={setSelectedSkills}
               projectId={projectId}
+            />
+          </div>
+        </div>
+      </div>
+
+      <div className="config-section">
+        <h3>Model</h3>
+        <p className="config-description">
+          Override the AI model used by this agent. Leave empty to use the global default model.
+        </p>
+
+        <div className="config-fields">
+          <div className="config-field">
+            <CustomModelDropdown
+              models={availableModels}
+              value={modelValue}
+              onChange={setModelValue}
+              placeholder="Use global default"
+              label="Agent Model"
+              disabled={modelsLoading}
             />
           </div>
         </div>

@@ -12,6 +12,7 @@ vi.mock("../../api", () => ({
   updateAgentState: vi.fn(),
   deleteAgent: vi.fn(),
   fetchAgentLogs: vi.fn(),
+  fetchAgentLogsWithMeta: vi.fn(),
   fetchAgentRunLogs: vi.fn(),
   fetchAgentChildren: vi.fn(),
   fetchAgentRuns: vi.fn(),
@@ -27,6 +28,7 @@ vi.mock("../../api", () => ({
   fetchWorkspaceFileContent: vi.fn(),
   saveWorkspaceFileContent: vi.fn(),
   fetchDiscoveredSkills: vi.fn(),
+  fetchModels: vi.fn(),
 }));
 
 vi.mock("../AgentLogViewer", () => ({
@@ -35,6 +37,42 @@ vi.mock("../AgentLogViewer", () => ({
       {entries.map((e, i) => <span key={i}>{e.text}</span>)}
     </div>
   ),
+}));
+
+vi.mock("../CustomModelDropdown", () => ({
+  CustomModelDropdown: ({ models, value, onChange, disabled, label, placeholder, id }: {
+    models: Array<{ provider: string; id: string }> ;
+    value: string;
+    onChange: (v: string) => void;
+    disabled?: boolean;
+    label: string;
+    placeholder?: string;
+    id?: string;
+  }) => {
+    const selectId = id ?? "custom-model-dropdown";
+    return (
+      <div data-testid="custom-model-dropdown">
+        <label htmlFor={selectId}>{label}</label>
+        <select
+          id={selectId}
+          aria-label={label}
+          value={value}
+          disabled={disabled}
+          onChange={(e) => onChange(e.target.value)}
+        >
+          <option value="">{placeholder ?? "Use default"}</option>
+          {models.map((model) => {
+            const modelValue = `${model.provider}/${model.id}`;
+            return (
+              <option key={modelValue} value={modelValue}>
+                {modelValue}
+              </option>
+            );
+          })}
+        </select>
+      </div>
+    );
+  },
 }));
 
 // Mock SkillMultiselect
@@ -48,7 +86,7 @@ vi.mock("../SkillMultiselect", () => ({
   ),
 }));
 
-import { fetchAgent, updateAgent, updateAgentState, fetchAgentChildren, fetchAgentRunLogs, fetchAgentRuns, fetchAgentRunDetail, fetchAgentTasks, fetchChainOfCommand, fetchAgentBudgetStatus, resetAgentBudget, updateAgentInstructions, fetchWorkspaceFileContent, saveWorkspaceFileContent, fetchDiscoveredSkills } from "../../api";
+import { fetchAgent, updateAgent, updateAgentState, fetchAgentChildren, fetchAgentRunLogs, fetchAgentRuns, fetchAgentRunDetail, fetchAgentTasks, fetchChainOfCommand, fetchAgentBudgetStatus, resetAgentBudget, updateAgentInstructions, fetchWorkspaceFileContent, saveWorkspaceFileContent, fetchDiscoveredSkills, fetchModels, fetchAgentLogsWithMeta } from "../../api";
 
 const mockFetchAgent = vi.mocked(fetchAgent);
 const mockUpdateAgent = vi.mocked(updateAgent);
@@ -65,6 +103,8 @@ const mockUpdateAgentInstructions = vi.mocked(updateAgentInstructions);
 const mockFetchWorkspaceFileContent = vi.mocked(fetchWorkspaceFileContent);
 const mockSaveWorkspaceFileContent = vi.mocked(saveWorkspaceFileContent);
 const mockFetchDiscoveredSkills = vi.mocked(fetchDiscoveredSkills);
+const mockFetchModels = vi.mocked(fetchModels);
+const mockFetchAgentLogsWithMeta = vi.mocked(fetchAgentLogsWithMeta);
 
 const MOCK_SKILLS = [
   { id: "skill-1", name: "Skill One", path: "/path/skill-1", relativePath: "skills/skill-1", enabled: true, metadata: { source: "*", scope: "user" as const, origin: "top-level" as const } },
@@ -125,6 +165,7 @@ describe("AgentDetailView", () => {
     mockFetchAgentChildren.mockResolvedValue([]);
     mockFetchAgentTasks.mockResolvedValue([]);
     mockFetchChainOfCommand.mockResolvedValue([mockAgent]);
+    mockFetchAgentLogsWithMeta.mockResolvedValue({ entries: [], truncated: false, hasMore: false });
     // Default: no budget limit configured
     mockFetchAgentBudgetStatus.mockResolvedValue({
       agentId: "agent-001",
@@ -144,6 +185,14 @@ describe("AgentDetailView", () => {
     mockUpdateAgentInstructions.mockResolvedValue({} as any);
     // Default: return skills
     mockFetchDiscoveredSkills.mockResolvedValue(MOCK_SKILLS);
+    mockFetchModels.mockResolvedValue({
+      models: [
+        { provider: "openai", id: "gpt-4o", name: "gpt-4o", reasoning: false, contextWindow: 128000 },
+        { provider: "anthropic", id: "claude-3-7-sonnet", name: "claude-3-7-sonnet", reasoning: true, contextWindow: 200000 },
+      ],
+      favoriteProviders: [],
+      favoriteModels: [],
+    });
   });
 
   it("shows loading state initially", () => {
@@ -633,6 +682,49 @@ describe("AgentDetailView", () => {
     });
   });
 
+  it("shows model override in Agent Information when runtimeConfig modelProvider/modelId is set", async () => {
+    mockFetchAgent.mockResolvedValue(createMockAgent({
+      runtimeConfig: {
+        modelProvider: "openai",
+        modelId: "gpt-4o",
+      },
+    }));
+
+    render(
+      <AgentDetailView
+        agentId="agent-001"
+        onClose={vi.fn()}
+        addToast={vi.fn()}
+      />
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText("Model")).toBeInTheDocument();
+      expect(screen.getByText("openai/gpt-4o")).toBeInTheDocument();
+    });
+  });
+
+  it("shows legacy model override using model id when runtimeConfig.model is set", async () => {
+    mockFetchAgent.mockResolvedValue(createMockAgent({
+      runtimeConfig: {
+        model: "anthropic/claude-3-7-sonnet",
+      },
+    }));
+
+    render(
+      <AgentDetailView
+        agentId="agent-001"
+        onClose={vi.fn()}
+        addToast={vi.fn()}
+      />
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText("Model")).toBeInTheDocument();
+      expect(screen.getByText("claude-3-7-sonnet")).toBeInTheDocument();
+    });
+  });
+
   describe("Chain of Command", () => {
     it("renders chain-of-command section and displays agents in order", async () => {
       mockFetchChainOfCommand.mockResolvedValue([
@@ -902,6 +994,109 @@ describe("AgentDetailView", () => {
         expect(screen.getByLabelText("Max Retries")).toBeInTheDocument();
         expect(screen.getByLabelText("Task Timeout (ms)")).toBeInTheDocument();
         expect(screen.getByLabelText("Log Level")).toBeInTheDocument();
+      });
+    });
+
+    it("renders model settings section and pre-fills dropdown from runtimeConfig", async () => {
+      mockFetchAgent.mockResolvedValue(createMockAgent({
+        runtimeConfig: {
+          modelProvider: "openai",
+          modelId: "gpt-4o",
+        },
+      }));
+
+      const user = userEvent.setup();
+      render(
+        <AgentDetailView
+          agentId="agent-001"
+          onClose={vi.fn()}
+          addToast={vi.fn()}
+        />
+      );
+
+      await navigateToSettings(user);
+
+      await waitFor(() => {
+        expect(screen.getByText("Model")).toBeInTheDocument();
+      });
+
+      const modelSelect = await screen.findByLabelText("Agent Model") as HTMLSelectElement;
+      expect(modelSelect.value).toBe("openai/gpt-4o");
+    });
+
+    it("saves selected model override as modelProvider/modelId/model in runtimeConfig", async () => {
+      mockUpdateAgent.mockResolvedValue(createMockAgent() as any);
+
+      const user = userEvent.setup();
+      render(
+        <AgentDetailView
+          agentId="agent-001"
+          onClose={vi.fn()}
+          addToast={vi.fn()}
+        />
+      );
+
+      await navigateToSettings(user);
+
+      const modelSelect = await screen.findByLabelText("Agent Model");
+      await user.selectOptions(modelSelect, "anthropic/claude-3-7-sonnet");
+
+      await user.click(screen.getByText("Save Settings"));
+
+      await waitFor(() => {
+        expect(mockUpdateAgent).toHaveBeenCalledWith(
+          "agent-001",
+          expect.objectContaining({
+            runtimeConfig: expect.objectContaining({
+              modelProvider: "anthropic",
+              modelId: "claude-3-7-sonnet",
+              model: "anthropic/claude-3-7-sonnet",
+            }),
+          }),
+          undefined,
+        );
+      });
+    });
+
+    it("clears model override from runtimeConfig when selecting global default", async () => {
+      mockFetchAgent.mockResolvedValue(createMockAgent({
+        runtimeConfig: {
+          modelProvider: "openai",
+          modelId: "gpt-4o",
+          model: "openai/gpt-4o",
+          heartbeatIntervalMs: 30000,
+        },
+      }));
+      mockUpdateAgent.mockResolvedValue(createMockAgent() as any);
+
+      const user = userEvent.setup();
+      render(
+        <AgentDetailView
+          agentId="agent-001"
+          onClose={vi.fn()}
+          addToast={vi.fn()}
+        />
+      );
+
+      await navigateToSettings(user);
+
+      const modelSelect = await screen.findByLabelText("Agent Model");
+      await user.selectOptions(modelSelect, "");
+
+      await user.click(screen.getByText("Save Settings"));
+
+      await waitFor(() => {
+        expect(mockUpdateAgent).toHaveBeenCalledWith(
+          "agent-001",
+          expect.objectContaining({
+            runtimeConfig: expect.not.objectContaining({
+              modelProvider: expect.anything(),
+              modelId: expect.anything(),
+              model: expect.anything(),
+            }),
+          }),
+          undefined,
+        );
       });
     });
 
