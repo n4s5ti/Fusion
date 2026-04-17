@@ -511,6 +511,51 @@ describe("ChatStore", () => {
         expect(result.has(session.id)).toBe(true);
       });
     });
+
+    describe("deleteMessage", () => {
+      it("deletes an existing message and returns true", () => {
+        const session = createTestSession(store);
+        const message = store.addMessage(session.id, { role: "user", content: "Hello" });
+
+        expect(store.getMessage(message.id)).toBeDefined();
+
+        const result = store.deleteMessage(message.id);
+
+        expect(result).toBe(true);
+        expect(store.getMessage(message.id)).toBeUndefined();
+      });
+
+      it("returns false for non-existent message", () => {
+        const result = store.deleteMessage("msg-nonexistent");
+        expect(result).toBe(false);
+      });
+
+      it("removes message from session's message list", () => {
+        const session = createTestSession(store);
+        store.addMessage(session.id, { role: "user", content: "Hello" });
+        const msg2 = store.addMessage(session.id, { role: "assistant", content: "Hi" });
+
+        expect(store.getMessages(session.id)).toHaveLength(2);
+
+        store.deleteMessage(msg2.id);
+
+        expect(store.getMessages(session.id)).toHaveLength(1);
+        expect(store.getMessages(session.id)[0].content).toBe("Hello");
+      });
+
+      it("does not delete messages from other sessions", () => {
+        const session1 = createTestSession(store);
+        const session2 = createTestSession(store);
+        const msg1 = store.addMessage(session1.id, { role: "user", content: "Session 1" });
+        store.addMessage(session2.id, { role: "user", content: "Session 2" });
+
+        store.deleteMessage(msg1.id);
+
+        expect(store.getMessages(session1.id)).toHaveLength(0);
+        expect(store.getMessages(session2.id)).toHaveLength(1);
+        expect(store.getMessages(session2.id)[0].content).toBe("Session 2");
+      });
+    });
   });
 
   // ── Event Emission Tests ─────────────────────────────────────────
@@ -566,6 +611,29 @@ describe("ChatStore", () => {
 
       expect(handler).toHaveBeenCalledTimes(1);
       expect(handler).toHaveBeenCalledWith(message);
+    });
+
+    it("deleteMessage emits chat:message:deleted", () => {
+      const handler = vi.fn();
+      store.on("chat:message:deleted", handler);
+
+      const session = createTestSession(store);
+      const message = store.addMessage(session.id, { role: "user", content: "Hello" });
+      handler.mockClear();
+
+      store.deleteMessage(message.id);
+
+      expect(handler).toHaveBeenCalledTimes(1);
+      expect(handler).toHaveBeenCalledWith(message.id);
+    });
+
+    it("deleteMessage does NOT emit for non-existent message", () => {
+      const handler = vi.fn();
+      store.on("chat:message:deleted", handler);
+
+      store.deleteMessage("msg-nonexistent");
+
+      expect(handler).not.toHaveBeenCalled();
     });
 
     it("archiveSession emits chat:session:updated", () => {

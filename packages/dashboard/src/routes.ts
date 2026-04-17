@@ -9176,9 +9176,11 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
         throw notFound(`Message ${messageId} not found`);
       }
 
-      // Note: ChatStore currently doesn't have deleteMessage, but we can add it
-      // For now, return success if session exists (the message check is a bonus)
-      // TODO: Add deleteMessage to ChatStore if not already present
+      // Delete the message
+      const deleted = chatStore.deleteMessage(messageId);
+      if (!deleted) {
+        throw notFound(`Message ${messageId} not found`);
+      }
       res.json({ success: true });
     } catch (err: unknown) {
       if (err instanceof ApiError) {

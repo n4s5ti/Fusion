@@ -36,6 +36,8 @@ export interface ChatStoreEvents {
   "chat:session:deleted": [sessionId: string];
   /** Emitted when a message is added to a session */
   "chat:message:added": [message: ChatMessage];
+  /** Emitted when a message is deleted from a session */
+  "chat:message:deleted": [messageId: string];
 }
 
 // ── ChatStore Class ─────────────────────────────────────────────────
@@ -373,5 +375,21 @@ export class ChatStore extends EventEmitter<ChatStoreEvents> {
       result.set(message.sessionId, message);
     }
     return result;
+  }
+
+  /**
+   * Delete a message by ID.
+   *
+   * @param id - Message ID
+   * @returns true if deleted, false if not found
+   */
+  deleteMessage(id: string): boolean {
+    const existing = this.getMessage(id);
+    if (!existing) return false;
+
+    this.db.prepare("DELETE FROM chat_messages WHERE id = ?").run(id);
+    this.db.bumpLastModified();
+    this.emit("chat:message:deleted", id);
+    return true;
   }
 }

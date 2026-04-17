@@ -192,6 +192,7 @@ const mockAddMessage = vi.fn();
 const mockGetMessages = vi.fn();
 const mockGetMessage = vi.fn();
 const mockGetLastMessageForSessions = vi.fn().mockReturnValue(new Map());
+const mockDeleteMessage = vi.fn();
 
 // Mock AgentStore
 const mockAgentStoreInit = vi.fn().mockResolvedValue(undefined);
@@ -211,6 +212,7 @@ vi.mock("@fusion/core", () => {
       getMessages = mockGetMessages;
       getMessage = mockGetMessage;
       getLastMessageForSessions = mockGetLastMessageForSessions;
+      deleteMessage = mockDeleteMessage;
     },
     AgentStore: class MockAgentStore {
       init = mockAgentStoreInit;
@@ -315,6 +317,7 @@ const mockChatStoreInstance = {
   getMessages: mockGetMessages,
   getMessage: mockGetMessage,
   getLastMessageForSessions: mockGetLastMessageForSessions,
+  deleteMessage: mockDeleteMessage,
   emit: vi.fn(),
   on: vi.fn(),
   off: vi.fn(),
@@ -366,6 +369,7 @@ describe("Chat API Routes", () => {
     mockGetMessages.mockReset();
     mockGetMessage.mockReset();
     mockGetLastMessageForSessions.mockReset();
+    mockDeleteMessage.mockReset();
     mockSendMessage.mockReset();
     mockAgentStoreInit.mockResolvedValue(undefined);
     mockAgentStoreGetAgent.mockReset();
@@ -887,6 +891,7 @@ describe("Chat API Routes", () => {
     it("deletes message when session exists", async () => {
       mockGetSession.mockReturnValue(sampleSession);
       mockGetMessage.mockReturnValue(sampleMessage);
+      mockDeleteMessage.mockReturnValue(true);
 
       const response = await request(
         app,
@@ -896,6 +901,7 @@ describe("Chat API Routes", () => {
 
       expect(response.status).toBe(200);
       expect((response.body as any).success).toBe(true);
+      expect(mockDeleteMessage).toHaveBeenCalledWith("msg-xyz789");
     });
 
     it("returns 404 when session not found", async () => {
