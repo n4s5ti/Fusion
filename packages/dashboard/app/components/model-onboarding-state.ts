@@ -22,6 +22,8 @@ interface OnboardingState {
   stepData: Partial<Record<OnboardingStep, Record<string, unknown>>>;
   /** Legacy field: ISO-8601 timestamp when onboarding was marked complete */
   completedAt?: string;
+  /** ISO-8601 timestamp when post-onboarding recommendations were dismissed */
+  postOnboardingDismissedAt?: string;
 }
 
 const STORAGE_KEY = "fusion_model_onboarding_state";
@@ -34,6 +36,7 @@ const DEFAULT_SKIPPED_STEPS: OnboardingStep[] = [];
 const DEFAULT_DISMISSED = false;
 const DEFAULT_COMPLETED = false;
 const DEFAULT_STEP_DATA: Partial<Record<OnboardingStep, Record<string, unknown>>> = {};
+const DEFAULT_POST_ONBOARDING_DISMISSED_AT: string | undefined = undefined;
 
 /**
  * Step labels for display in the resume card.
@@ -79,6 +82,8 @@ export function getOnboardingState(): OnboardingState | null {
  * Apply default values for backward compatibility with partial/legacy state objects.
  */
 function applyStateDefaults(state: OnboardingState): OnboardingState {
+  const postOnboardingDismissedAt = state.postOnboardingDismissedAt ?? DEFAULT_POST_ONBOARDING_DISMISSED_AT;
+
   return {
     ...state,
     completedSteps: state.completedSteps ?? DEFAULT_COMPLETED_STEPS,
@@ -86,6 +91,7 @@ function applyStateDefaults(state: OnboardingState): OnboardingState {
     dismissed: state.dismissed ?? DEFAULT_DISMISSED,
     completed: state.completed ?? DEFAULT_COMPLETED,
     stepData: state.stepData ?? DEFAULT_STEP_DATA,
+    ...(postOnboardingDismissedAt ? { postOnboardingDismissedAt } : {}),
   };
 }
 
@@ -369,6 +375,71 @@ export function isOnboardingCompleted(): boolean {
 
   // Fall back to legacy timestamp field
   return typeof state.completedAt === "string" && state.completedAt.length > 0;
+}
+
+/**
+ * Mark the post-onboarding recommendations as dismissed.
+ */
+export function dismissPostOnboardingRecommendations(): void {
+  if (typeof window === "undefined") return;
+
+  try {
+    const existing = getOnboardingState();
+    const now = new Date().toISOString();
+
+    const state: OnboardingState = existing
+      ? {
+          ...existing,
+          updatedAt: now,
+          postOnboardingDismissedAt: now,
+        }
+      : {
+          currentStep: "complete",
+          updatedAt: now,
+          completedSteps: DEFAULT_COMPLETED_STEPS,
+          skippedSteps: DEFAULT_SKIPPED_STEPS,
+          dismissed: false,
+          completed: false,
+          stepData: DEFAULT_STEP_DATA,
+          postOnboardingDismissedAt: now,
+        };
+
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  } catch {
+    // Storage quota exceeded or private browsing - fail silently
+  }
+}
+
+/**
+ * Whether post-onboarding recommendations were dismissed.
+ */
+export function isPostOnboardingDismissed(): boolean {
+  const state = getOnboardingState();
+  if (!state) return false;
+
+  return typeof state.postOnboardingDismissedAt === "string" && state.postOnboardingDismissedAt.length > 0;
+}
+
+/**
+ * Remove persisted post-onboarding dismissal state.
+ */
+export function clearPostOnboardingDismissal(): void {
+  if (typeof window === "undefined") return;
+
+  try {
+    const existing = getOnboardingState();
+    if (!existing) return;
+
+    const { postOnboardingDismissedAt: _postOnboardingDismissedAt, ...stateWithoutDismissal } = existing;
+    const state: OnboardingState = {
+      ...stateWithoutDismissal,
+      updatedAt: new Date().toISOString(),
+    };
+
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  } catch {
+    // Storage quota exceeded or private browsing - fail silently
+  }
 }
 
 /**

@@ -19,7 +19,13 @@ import { DashboardLoader, type DashboardLoaderStage } from "./components/Dashboa
 import { ExecutorStatusBar } from "./components/ExecutorStatusBar";
 import { SessionNotificationBanner } from "./components/SessionNotificationBanner";
 import { OnboardingResumeCard } from "./components/OnboardingResumeCard";
-import { isOnboardingResumable } from "./components/model-onboarding-state";
+import { PostOnboardingRecommendations } from "./components/PostOnboardingRecommendations";
+import {
+  isOnboardingCompleted,
+  isOnboardingResumable,
+  isPostOnboardingDismissed,
+} from "./components/model-onboarding-state";
+import type { SectionId } from "./components/SettingsModal";
 import { MobileNavBar } from "./components/MobileNavBar";
 import { QuickChatFAB } from "./components/QuickChatFAB";
 import { ToastContainer } from "./components/ToastContainer";
@@ -503,6 +509,13 @@ function AppInner() {
     );
   }
 
+  const showOnboardingResumeCard = !modalManager.modelOnboardingOpen && isOnboardingResumable();
+  const showPostOnboardingRecommendations =
+    !modalManager.modelOnboardingOpen &&
+    !showOnboardingResumeCard &&
+    isOnboardingCompleted() &&
+    !isPostOnboardingDismissed();
+
   return (
     <>
       <Header
@@ -559,8 +572,14 @@ function AppInner() {
           onDismissAll={handleDismissAllNeedingInputSessions}
         />
       )}
-      {viewMode === "project" && currentProject && !modalManager.modelOnboardingOpen && isOnboardingResumable() && (
+      {viewMode === "project" && currentProject && showOnboardingResumeCard && (
         <OnboardingResumeCard onResume={modalManager.openModelOnboarding} />
+      )}
+      {viewMode === "project" && currentProject && showPostOnboardingRecommendations && (
+        <PostOnboardingRecommendations
+          onOpenModelOnboarding={modalManager.openModelOnboarding}
+          onOpenSettings={(section) => modalManager.openSettings(section as SectionId)}
+        />
       )}
       <div
         className={`project-content${viewMode === "project" && currentProject ? " project-content--with-footer" : ""}${isMobile ? " project-content--with-mobile-nav" : ""}`}

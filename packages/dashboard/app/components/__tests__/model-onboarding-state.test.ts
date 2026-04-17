@@ -3,6 +3,9 @@ import {
   getOnboardingState,
   saveOnboardingState,
   clearOnboardingState,
+  dismissPostOnboardingRecommendations,
+  isPostOnboardingDismissed,
+  clearPostOnboardingDismissal,
   isOnboardingResumable,
   getOnboardingResumeStep,
   markOnboardingCompleted,
@@ -354,6 +357,37 @@ describe("model-onboarding-state", () => {
       clearOnboardingState({ preserveProgress: false });
 
       expect(mockStore[STORAGE_KEY]).toBeUndefined();
+    });
+  });
+
+  describe("post-onboarding dismissal", () => {
+    it("dismissPostOnboardingRecommendations sets postOnboardingDismissedAt", () => {
+      saveOnboardingState("complete", { completed: true });
+
+      dismissPostOnboardingRecommendations();
+
+      const stored = mockStore[STORAGE_KEY];
+      const parsed = JSON.parse(stored);
+      expect(parsed.postOnboardingDismissedAt).toBeDefined();
+    });
+
+    it("isPostOnboardingDismissed returns true after dismissal", () => {
+      dismissPostOnboardingRecommendations();
+      expect(isPostOnboardingDismissed()).toBe(true);
+    });
+
+    it("isPostOnboardingDismissed returns false when not dismissed", () => {
+      saveOnboardingState("complete", { completed: true });
+      expect(isPostOnboardingDismissed()).toBe(false);
+    });
+
+    it("clearPostOnboardingDismissal removes the dismissal field", () => {
+      dismissPostOnboardingRecommendations();
+      clearPostOnboardingDismissal();
+
+      const state = getOnboardingState();
+      expect(state?.postOnboardingDismissedAt).toBeUndefined();
+      expect(isPostOnboardingDismissed()).toBe(false);
     });
   });
 
