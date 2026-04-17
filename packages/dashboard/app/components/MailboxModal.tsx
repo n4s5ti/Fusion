@@ -320,6 +320,15 @@ export function MailboxModal({
             )}
           </div>
           <div className="mailbox-header-actions">
+            <button
+              className="btn-sm btn-primary"
+              onClick={handleOpenCompose}
+              title="Compose message"
+              data-testid="mailbox-header-compose"
+            >
+              <MessageSquare size={14} />
+              <span>Compose</span>
+            </button>
             {activeTab === "inbox" && unreadCount > 0 && (
               <button
                 className="btn-sm btn-secondary"
@@ -631,17 +640,6 @@ export function MailboxModal({
           )}
         </div>
 
-        {/* Compose FAB (only when viewing inbox/outbox, not in detail view or agents tab) */}
-        {!selectedMessage && !showComposer && activeTab !== "agents" && (
-          <button
-            className="mailbox-compose-fab"
-            onClick={handleOpenCompose}
-            title="Compose message"
-            data-testid="mailbox-compose-fab"
-          >
-            <MessageSquare size={20} />
-          </button>
-        )}
       </div>
     </div>
   );

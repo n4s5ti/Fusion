@@ -28409,31 +28409,6 @@ html .column.drag-over * {
   gap: 2px;
 }
 
-/* Compose FAB */
-.mailbox-compose-fab {
-  position: absolute;
-  bottom: 24px;
-  right: 24px;
-  width: 44px;
-  height: 44px;
-  border-radius: 50%;
-  border: none;
-  background: var(--fab-bg);
-  color: var(--fab-text);
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
-  transition: background-color 0.15s, transform 0.15s;
-  z-index: 10;
-}
-
-.mailbox-compose-fab:hover {
-  background: color-mix(in srgb, var(--fab-bg) 80%, var(--fab-text));
-  transform: scale(1.05);
-}
-
 /* Skeleton loading */
 .mailbox-skeleton {
   display: flex;
@@ -28565,11 +28540,6 @@ html .column.drag-over * {
     min-height: 200px;
   }
 
-  .mailbox-modal .mailbox-compose-fab {
-    bottom: 16px;
-    right: 16px;
-  }
-
   .mailbox-modal .mailbox-empty {
     padding: 32px 12px;
   }
@@ -28636,11 +28606,6 @@ html .column.drag-over * {
 
   .mailbox-view .mailbox-agents {
     min-height: 200px;
-  }
-
-  .mailbox-view .mailbox-compose-fab {
-    bottom: calc(var(--mobile-nav-height) + env(safe-area-inset-bottom, 0px) + var(--standalone-bottom-gap) + var(--space-lg));
-    right: var(--space-lg);
   }
 
   .mailbox-view .mailbox-empty {

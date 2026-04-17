@@ -361,7 +361,7 @@ describe("MailboxView", () => {
     });
   });
 
-  it("shows compose FAB in inbox tab", async () => {
+  it("shows compose button in header on inbox tab", async () => {
     mockFetchInbox.mockResolvedValue({
       messages: [],
       unreadCount: 0,
@@ -370,11 +370,11 @@ describe("MailboxView", () => {
     render(<MailboxView {...defaultProps} />);
 
     await waitFor(() => {
-      expect(screen.getByTestId("mailbox-compose-fab")).toBeDefined();
+      expect(screen.getByTestId("mailbox-header-compose")).toBeDefined();
     });
   });
 
-  it("does not show compose FAB in agents tab", async () => {
+  it("shows compose button in header on agents tab", async () => {
     mockFetchInbox.mockResolvedValue({
       messages: [],
       unreadCount: 0,
@@ -388,7 +388,7 @@ describe("MailboxView", () => {
     });
 
     await waitFor(() => {
-      expect(screen.queryByTestId("mailbox-compose-fab")).toBeNull();
+      expect(screen.getByTestId("mailbox-header-compose")).toBeDefined();
     });
   });
 
@@ -446,7 +446,7 @@ describe("MailboxView", () => {
     });
   });
 
-  it("shows MessageComposer with agents when clicking compose FAB from inbox tab", async () => {
+  it("shows MessageComposer with agents when clicking compose button from header", async () => {
     mockFetchInbox.mockResolvedValue({
       messages: [],
       unreadCount: 0,
@@ -454,14 +454,14 @@ describe("MailboxView", () => {
 
     render(<MailboxView {...defaultProps} />);
 
-    // Verify compose FAB is visible in inbox tab
+    // Verify compose button is visible in header
     await waitFor(() => {
-      expect(screen.getByTestId("mailbox-compose-fab")).toBeDefined();
+      expect(screen.getByTestId("mailbox-header-compose")).toBeDefined();
     });
 
-    // Click compose FAB
+    // Click compose button
     await act(async () => {
-      fireEvent.click(screen.getByTestId("mailbox-compose-fab"));
+      fireEvent.click(screen.getByTestId("mailbox-header-compose"));
     });
 
     // Verify MessageComposer is shown
@@ -516,7 +516,6 @@ describe("MailboxView", () => {
       expect(mailboxMobileSection).toContain(".mailbox-view .mailbox-header");
       expect(mailboxMobileSection).toContain(".mailbox-view .mailbox-tabs");
       expect(mailboxMobileSection).toContain(".mailbox-view .mailbox-content");
-      expect(mailboxMobileSection).toContain(".mailbox-view .mailbox-compose-fab");
       expect(mailboxMobileSection).toContain(".mailbox-view .mailbox-empty");
     });
 
@@ -542,13 +541,6 @@ describe("MailboxView", () => {
       // Content should have padding-bottom accounting for mobile nav
       expect(contentRuleMatch![0]).toContain("padding-bottom");
 
-      // FAB should account for mobile nav height
-      expect(mailboxMobileSection).toContain(".mailbox-view .mailbox-compose-fab");
-      const fabRuleMatch = mailboxMobileSection.match(/\.mailbox-view\s+\.mailbox-compose-fab\s*\{[^}]*\}/);
-      expect(fabRuleMatch).toBeTruthy();
-      expect(fabRuleMatch![0]).toContain("--mobile-nav-height");
-      expect(fabRuleMatch![0]).toContain("safe-area-inset-bottom");
-      expect(fabRuleMatch![0]).toContain("--standalone-bottom-gap");
     });
 
     it("renders structural elements that mobile CSS targets", async () => {

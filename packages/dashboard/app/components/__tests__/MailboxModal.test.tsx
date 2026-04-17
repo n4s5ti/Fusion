@@ -329,18 +329,18 @@ describe("MailboxModal", () => {
     });
   });
 
-  it("shows compose FAB in inbox tab", async () => {
+  it("shows compose button in header on inbox tab", async () => {
     render(<MailboxModal {...defaultProps} />);
     await waitFor(() => {
-      expect(screen.getByTestId("mailbox-compose-fab")).toBeDefined();
+      expect(screen.getByTestId("mailbox-header-compose")).toBeDefined();
     });
   });
 
-  it("does not show compose FAB in agents tab", async () => {
+  it("shows compose button in header on agents tab", async () => {
     render(<MailboxModal {...defaultProps} />);
     fireEvent.click(screen.getByTestId("mailbox-tab-agents"));
     await waitFor(() => {
-      expect(screen.queryByTestId("mailbox-compose-fab")).toBeNull();
+      expect(screen.getByTestId("mailbox-header-compose")).toBeDefined();
     });
   });
 
@@ -516,9 +516,6 @@ describe("MailboxModal", () => {
       expect(mailboxMobileSection).toContain("max-width: 100%;");
       expect(mailboxMobileSection).toContain(".mailbox-modal .mailbox-agents");
       expect(mailboxMobileSection).toContain("min-height: 200px;");
-      expect(mailboxMobileSection).toContain(".mailbox-modal .mailbox-compose-fab");
-      expect(mailboxMobileSection).toContain("bottom: 16px;");
-      expect(mailboxMobileSection).toContain("right: 16px;");
       expect(mailboxMobileSection).toContain(".mailbox-modal .mailbox-empty");
       expect(mailboxMobileSection).toContain("padding: 32px 12px;");
     });
@@ -562,21 +559,6 @@ describe("MailboxModal", () => {
       expect(blockMatch).toBeTruthy();
       expect(blockMatch![1]).toContain("var(--fab-text)");
       expect(blockMatch![1]).not.toContain("color: white");
-    });
-
-    it("mailbox compose FAB uses theme-aware tokens", () => {
-      const blockMatch = css.match(/\.mailbox-compose-fab\s*\{([^}]*)\}/);
-      expect(blockMatch).toBeTruthy();
-      expect(blockMatch![1]).toContain("var(--fab-bg)");
-      expect(blockMatch![1]).toContain("var(--fab-text)");
-      expect(blockMatch![1]).not.toContain("background: var(--todo)");
-      expect(blockMatch![1]).not.toContain("color: white");
-
-      // Check hover state
-      const hoverMatch = css.match(/\.mailbox-compose-fab:hover\s*\{([^}]*)\}/);
-      expect(hoverMatch).toBeTruthy();
-      expect(hoverMatch![1]).toContain("var(--fab-bg)");
-      expect(hoverMatch![1]).toContain("var(--fab-text)");
     });
 
     it("mission event type error uses CSS custom properties", () => {
