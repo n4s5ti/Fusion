@@ -34903,10 +34903,6 @@ html .column.drag-over * {
     margin: var(--space-md);
   }
 
-  .roadmap-suggestion-expand-btn {
-    margin: var(--space-md);
-  }
-
   .roadmap-suggestion-actions {
     flex-wrap: wrap;
   }
