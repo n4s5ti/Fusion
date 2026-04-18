@@ -86,7 +86,7 @@ vi.mock("../SkillMultiselect", () => ({
   ),
 }));
 
-import { fetchAgent, updateAgent, updateAgentState, fetchAgentChildren, fetchAgentRunLogs, fetchAgentRuns, fetchAgentRunDetail, fetchAgentTasks, fetchChainOfCommand, fetchAgentBudgetStatus, resetAgentBudget, updateAgentInstructions, fetchWorkspaceFileContent, saveWorkspaceFileContent, fetchDiscoveredSkills, fetchModels, fetchAgentLogsWithMeta } from "../../api";
+import { fetchAgent, updateAgent, updateAgentState, fetchAgentChildren, fetchAgentRunLogs, fetchAgentRuns, fetchAgentRunDetail, fetchAgentTasks, fetchChainOfCommand, fetchAgentBudgetStatus, resetAgentBudget, updateAgentInstructions, updateAgentSoul, updateAgentMemory, fetchWorkspaceFileContent, saveWorkspaceFileContent, fetchDiscoveredSkills, fetchModels, fetchAgentLogsWithMeta } from "../../api";
 
 const mockFetchAgent = vi.mocked(fetchAgent);
 const mockUpdateAgent = vi.mocked(updateAgent);
@@ -100,6 +100,8 @@ const mockFetchChainOfCommand = vi.mocked(fetchChainOfCommand);
 const mockFetchAgentBudgetStatus = vi.mocked(fetchAgentBudgetStatus);
 const mockResetAgentBudget = vi.mocked(resetAgentBudget);
 const mockUpdateAgentInstructions = vi.mocked(updateAgentInstructions);
+const mockUpdateAgentSoul = vi.mocked(updateAgentSoul);
+const mockUpdateAgentMemory = vi.mocked(updateAgentMemory);
 const mockFetchWorkspaceFileContent = vi.mocked(fetchWorkspaceFileContent);
 const mockSaveWorkspaceFileContent = vi.mocked(saveWorkspaceFileContent);
 const mockFetchDiscoveredSkills = vi.mocked(fetchDiscoveredSkills);
@@ -2630,6 +2632,514 @@ describe("AgentDetailView", () => {
           }),
           "proj_456",
         );
+      });
+    });
+
+    it("toggles between edit and preview mode for inline instructions", async () => {
+      mockFetchAgent.mockResolvedValue(createMockAgent({
+        instructionsText: "# Test\n\nThis is a test.",
+      }));
+
+      const user = userEvent.setup();
+      render(
+        <AgentDetailView
+          agentId="agent-001"
+          onClose={vi.fn()}
+          addToast={vi.fn()}
+        />
+      );
+
+      await navigateToInstructions(user);
+
+      // Default: edit mode should be active - verify textarea is present
+      await waitFor(() => {
+        expect(screen.getByLabelText("Inline Instructions")).toBeInTheDocument();
+      });
+
+      // Find and verify the toggle buttons exist
+      const previewBtn = screen.getByTestId("instructions-preview-toggle");
+      expect(previewBtn).toBeInTheDocument();
+
+      // Click Preview button
+      await user.click(previewBtn);
+
+      // After clicking, the textarea should be gone and preview should appear
+      await waitFor(() => {
+        expect(screen.queryByLabelText("Inline Instructions")).not.toBeInTheDocument();
+      });
+
+      // Check for markdown preview
+      const preview = document.querySelector(".markdown-body");
+      expect(preview).toBeInTheDocument();
+
+      // Click Edit button to go back
+      const editBtn = screen.getByTestId("instructions-edit-toggle");
+      await user.click(editBtn);
+
+      // Should be back in edit mode
+      await waitFor(() => {
+        expect(screen.getByLabelText("Inline Instructions")).toBeInTheDocument();
+      });
+    });
+
+    it("renders markdown content in preview mode for inline instructions", async () => {
+      mockFetchAgent.mockResolvedValue(createMockAgent({
+        instructionsText: "# Test Instructions\n\nThis is **bold** and this is _italic_.",
+      }));
+
+      const user = userEvent.setup();
+      render(
+        <AgentDetailView
+          agentId="agent-001"
+          onClose={vi.fn()}
+          addToast={vi.fn()}
+        />
+      );
+
+      await navigateToInstructions(user);
+
+      // Click Preview button
+      await user.click(screen.getByTestId("instructions-preview-toggle"));
+
+      await waitFor(() => {
+        // Should render markdown elements
+        expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("Test Instructions");
+        expect(document.querySelector(".markdown-body")).toBeInTheDocument();
+      });
+    });
+
+    it("shows placeholder when inline instructions are empty in preview mode", async () => {
+      const user = userEvent.setup();
+      render(
+        <AgentDetailView
+          agentId="agent-001"
+          onClose={vi.fn()}
+          addToast={vi.fn()}
+        />
+      );
+
+      await navigateToInstructions(user);
+
+      // Click Preview button when instructions are empty
+      await user.click(screen.getByTestId("instructions-preview-toggle"));
+
+      await waitFor(() => {
+        expect(screen.getByText("No inline instructions defined yet. Switch to Edit mode to add instructions.")).toBeInTheDocument();
+      });
+    });
+
+    it("hides save button when in preview mode for inline instructions", async () => {
+      const user = userEvent.setup();
+      render(
+        <AgentDetailView
+          agentId="agent-001"
+          onClose={vi.fn()}
+          addToast={vi.fn()}
+        />
+      );
+
+      await navigateToInstructions(user);
+
+      // Save button should be visible in edit mode
+      await waitFor(() => {
+        expect(screen.getByText("Save Instructions")).toBeInTheDocument();
+      });
+
+      // Click Preview button
+      await user.click(screen.getByTestId("instructions-preview-toggle"));
+
+      // Save button should be hidden
+      await waitFor(() => {
+        expect(screen.queryByText("Save Instructions")).not.toBeInTheDocument();
+      });
+    });
+
+    it("does not affect file path section when toggling inline instructions preview", async () => {
+      mockFetchAgent.mockResolvedValue(createMockAgent({
+        instructionsPath: ".fusion/agents/test-agent.md",
+      }));
+
+      const user = userEvent.setup();
+      render(
+        <AgentDetailView
+          agentId="agent-001"
+          onClose={vi.fn()}
+          addToast={vi.fn()}
+        />
+      );
+
+      await navigateToInstructions(user);
+
+      // File path section should be visible
+      await waitFor(() => {
+        expect(screen.getByLabelText("Instructions File Path")).toBeInTheDocument();
+      });
+
+      // Toggle to preview mode
+      await user.click(screen.getByTestId("instructions-preview-toggle"));
+
+      // File path should still be visible
+      await waitFor(() => {
+        expect(screen.getByLabelText("Instructions File Path")).toBeInTheDocument();
+      });
+
+      // Toggle back to edit mode
+      await user.click(screen.getByTestId("instructions-edit-toggle"));
+
+      // File path should still be visible
+      await waitFor(() => {
+        expect(screen.getByLabelText("Instructions File Path")).toBeInTheDocument();
+      });
+    });
+  });
+
+  // ── Soul Tab ────────────────────────────────────────────────────────────────
+
+  describe("Soul Tab", () => {
+    const navigateToSoul = async (user: ReturnType<typeof userEvent.setup>) => {
+      await waitFor(() => {
+        expect(screen.getByText("Soul")).toBeInTheDocument();
+      });
+      await user.click(screen.getByText("Soul"));
+    };
+
+    it("renders Soul tab with textarea by default", async () => {
+      const user = userEvent.setup();
+      render(
+        <AgentDetailView
+          agentId="agent-001"
+          onClose={vi.fn()}
+          addToast={vi.fn()}
+        />
+      );
+
+      await navigateToSoul(user);
+
+      await waitFor(() => {
+        expect(screen.getByLabelText("Agent Soul")).toBeInTheDocument();
+        expect(screen.getByText("Edit")).toBeInTheDocument();
+        expect(screen.getByText("Preview")).toBeInTheDocument();
+      });
+    });
+
+    it("toggles between edit and preview mode", async () => {
+      mockFetchAgent.mockResolvedValue(createMockAgent({
+        soul: "# Agent Soul\n\nThis agent is **helpful** and _creative_.",
+      }));
+
+      const user = userEvent.setup();
+      render(
+        <AgentDetailView
+          agentId="agent-001"
+          onClose={vi.fn()}
+          addToast={vi.fn()}
+        />
+      );
+
+      await navigateToSoul(user);
+
+      // Default: edit mode
+      await waitFor(() => {
+        expect(screen.getByLabelText("Agent Soul")).toBeInTheDocument();
+      });
+
+      // Click Preview
+      await user.click(screen.getByText("Preview"));
+
+      await waitFor(() => {
+        expect(screen.queryByLabelText("Agent Soul")).not.toBeInTheDocument();
+        expect(document.querySelector(".markdown-body")).toBeInTheDocument();
+        expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("Agent Soul");
+      });
+
+      // Click Edit
+      await user.click(screen.getByText("Edit"));
+
+      await waitFor(() => {
+        expect(screen.getByLabelText("Agent Soul")).toBeInTheDocument();
+      });
+    });
+
+    it("shows placeholder when soul is empty in preview mode", async () => {
+      const user = userEvent.setup();
+      render(
+        <AgentDetailView
+          agentId="agent-001"
+          onClose={vi.fn()}
+          addToast={vi.fn()}
+        />
+      );
+
+      await navigateToSoul(user);
+
+      await user.click(screen.getByText("Preview"));
+
+      await waitFor(() => {
+        expect(screen.getByText("No soul defined yet. Switch to Edit mode to define the agent's personality.")).toBeInTheDocument();
+      });
+    });
+
+    it("hides save button when in preview mode", async () => {
+      const user = userEvent.setup();
+      render(
+        <AgentDetailView
+          agentId="agent-001"
+          onClose={vi.fn()}
+          addToast={vi.fn()}
+        />
+      );
+
+      await navigateToSoul(user);
+
+      await waitFor(() => {
+        expect(screen.getByText("Save Soul")).toBeInTheDocument();
+      });
+
+      await user.click(screen.getByText("Preview"));
+
+      await waitFor(() => {
+        expect(screen.queryByText("Save Soul")).not.toBeInTheDocument();
+      });
+    });
+
+    it("calls updateAgentSoul when saving soul", async () => {
+      const addToast = vi.fn();
+      mockUpdateAgentSoul.mockResolvedValue({} as any);
+
+      const user = userEvent.setup();
+      render(
+        <AgentDetailView
+          agentId="agent-001"
+          onClose={vi.fn()}
+          addToast={addToast}
+        />
+      );
+
+      await navigateToSoul(user);
+
+      const textarea = await screen.findByLabelText("Agent Soul");
+      await user.clear(textarea);
+      await user.type(textarea, "This is the agent's new soul");
+
+      await user.click(screen.getByText("Save Soul"));
+
+      await waitFor(() => {
+        expect(mockUpdateAgentSoul).toHaveBeenCalledWith("agent-001", "This is the agent's new soul", undefined);
+        expect(addToast).toHaveBeenCalledWith("Soul saved", "success");
+      });
+    });
+  });
+
+  // ── Memory Tab ─────────────────────────────────────────────────────────────
+
+  describe("Memory Tab", () => {
+    const navigateToMemory = async (user: ReturnType<typeof userEvent.setup>) => {
+      await waitFor(() => {
+        expect(screen.getByText("Agent Memory")).toBeInTheDocument();
+      });
+      await user.click(screen.getByText("Agent Memory"));
+    };
+
+    it("renders Memory tab with textarea by default", async () => {
+      const user = userEvent.setup();
+      render(
+        <AgentDetailView
+          agentId="agent-001"
+          onClose={vi.fn()}
+          addToast={vi.fn()}
+        />
+      );
+
+      await navigateToMemory(user);
+
+      await waitFor(() => {
+        expect(screen.getByLabelText("Agent Memory")).toBeInTheDocument();
+        expect(screen.getByText("Edit")).toBeInTheDocument();
+        expect(screen.getByText("Preview")).toBeInTheDocument();
+      });
+    });
+
+    it("toggles between edit and preview mode", async () => {
+      mockFetchAgent.mockResolvedValue(createMockAgent({
+        memory: "# Agent Memory\n\n- Item 1\n- Item 2",
+      }));
+
+      const user = userEvent.setup();
+      render(
+        <AgentDetailView
+          agentId="agent-001"
+          onClose={vi.fn()}
+          addToast={vi.fn()}
+        />
+      );
+
+      await navigateToMemory(user);
+
+      // Default: edit mode
+      await waitFor(() => {
+        expect(screen.getByLabelText("Agent Memory")).toBeInTheDocument();
+      });
+
+      // Click Preview
+      await user.click(screen.getByText("Preview"));
+
+      await waitFor(() => {
+        expect(screen.queryByLabelText("Agent Memory")).not.toBeInTheDocument();
+        expect(document.querySelector(".markdown-body")).toBeInTheDocument();
+      });
+
+      // Click Edit
+      await user.click(screen.getByText("Edit"));
+
+      await waitFor(() => {
+        expect(screen.getByLabelText("Agent Memory")).toBeInTheDocument();
+      });
+    });
+
+    it("shows placeholder when memory is empty in preview mode", async () => {
+      const user = userEvent.setup();
+      render(
+        <AgentDetailView
+          agentId="agent-001"
+          onClose={vi.fn()}
+          addToast={vi.fn()}
+        />
+      );
+
+      await navigateToMemory(user);
+
+      await user.click(screen.getByText("Preview"));
+
+      await waitFor(() => {
+        expect(screen.getByText("No agent memory defined yet. Switch to Edit mode to add memory content.")).toBeInTheDocument();
+      });
+    });
+
+    it("hides save button when in preview mode", async () => {
+      const user = userEvent.setup();
+      render(
+        <AgentDetailView
+          agentId="agent-001"
+          onClose={vi.fn()}
+          addToast={vi.fn()}
+        />
+      );
+
+      await navigateToMemory(user);
+
+      await waitFor(() => {
+        expect(screen.getByText("Save Memory")).toBeInTheDocument();
+      });
+
+      await user.click(screen.getByText("Preview"));
+
+      await waitFor(() => {
+        expect(screen.queryByText("Save Memory")).not.toBeInTheDocument();
+      });
+    });
+
+    it("hides Edit button when agent is running", async () => {
+      mockFetchAgent.mockResolvedValue(createMockAgent({
+        state: "running",
+        memory: "This agent has memory.",
+      }));
+
+      const user = userEvent.setup();
+      render(
+        <AgentDetailView
+          agentId="agent-001"
+          onClose={vi.fn()}
+          addToast={vi.fn()}
+        />
+      );
+
+      await navigateToMemory(user);
+
+      // Preview button should be visible, Edit button should be hidden
+      await waitFor(() => {
+        expect(screen.getByText("Preview")).toBeInTheDocument();
+        // Edit button should not be in the DOM (not just disabled, hidden)
+        expect(screen.queryByRole("button", { name: /Edit/i })).not.toBeInTheDocument();
+      });
+    });
+
+    it("shows Preview button but not Edit when agent is running", async () => {
+      mockFetchAgent.mockResolvedValue(createMockAgent({
+        state: "running",
+        memory: "Agent memory content",
+      }));
+
+      const user = userEvent.setup();
+      render(
+        <AgentDetailView
+          agentId="agent-001"
+          onClose={vi.fn()}
+          addToast={vi.fn()}
+        />
+      );
+
+      await navigateToMemory(user);
+
+      await waitFor(() => {
+        // Preview button is visible
+        const previewBtn = screen.getByRole("button", { name: /Preview/i });
+        expect(previewBtn).toBeInTheDocument();
+        // Edit button should be hidden
+        expect(screen.queryByRole("button", { name: /Edit/i })).not.toBeInTheDocument();
+        // Since Edit is hidden and default is edit mode, the textarea should still be visible
+        // but user needs to click Preview to see the markdown render
+      });
+    });
+
+    it("can switch to preview mode when agent is running", async () => {
+      mockFetchAgent.mockResolvedValue(createMockAgent({
+        state: "running",
+        memory: "Agent memory content",
+      }));
+
+      const user = userEvent.setup();
+      render(
+        <AgentDetailView
+          agentId="agent-001"
+          onClose={vi.fn()}
+          addToast={vi.fn()}
+        />
+      );
+
+      await navigateToMemory(user);
+
+      // Click Preview button
+      await user.click(screen.getByText("Preview"));
+
+      await waitFor(() => {
+        expect(document.querySelector(".markdown-body")).toBeInTheDocument();
+      });
+    });
+
+    it("calls updateAgentMemory when saving memory", async () => {
+      const addToast = vi.fn();
+      mockUpdateAgentMemory.mockResolvedValue({} as any);
+
+      const user = userEvent.setup();
+      render(
+        <AgentDetailView
+          agentId="agent-001"
+          onClose={vi.fn()}
+          addToast={addToast}
+        />
+      );
+
+      await navigateToMemory(user);
+
+      const textarea = await screen.findByLabelText("Agent Memory");
+      await user.clear(textarea);
+      await user.type(textarea, "This is the agent's new memory");
+
+      await user.click(screen.getByText("Save Memory"));
+
+      await waitFor(() => {
+        expect(mockUpdateAgentMemory).toHaveBeenCalledWith("agent-001", "This is the agent's new memory", undefined);
+        expect(addToast).toHaveBeenCalledWith("Memory saved", "success");
       });
     });
   });

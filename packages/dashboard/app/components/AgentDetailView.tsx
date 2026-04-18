@@ -3,8 +3,10 @@ import {
   Bot, Heart, Activity, Pause, Play, Square, Trash2, RefreshCw, 
   Settings, FileText, ActivitySquare, X, Copy, 
   ExternalLink, CheckCircle, XCircle, Loader2, GitBranch, ListChecks,
-  ChevronDown, ChevronRight, BarChart3, Star, BookOpen
+  ChevronDown, ChevronRight, BarChart3, Star, BookOpen, Eye, FileEdit
 } from "lucide-react";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import type { AgentDetail, AgentState, AgentHeartbeatRun, AgentBudgetStatus, ModelInfo } from "../api";
 import { fetchAgent, updateAgent, updateAgentState, deleteAgent, fetchAgentLogsWithMeta, fetchAgentRunLogs, fetchAgentChildren, fetchAgentRuns, fetchAgentRunDetail, startAgentRun, stopAgentRun, updateAgentInstructions, updateAgentSoul, updateAgentMemory, fetchAgentTasks, fetchChainOfCommand, fetchAgentBudgetStatus, resetAgentBudget, fetchWorkspaceFileContent, saveWorkspaceFileContent, fetchModels } from "../api";
 import type { Agent } from "../api";
@@ -1559,10 +1561,12 @@ function SoulTab({
   const [soul, setSoul] = useState(agent.soul ?? "");
   const [isSaving, setIsSaving] = useState(false);
   const [justSaved, setJustSaved] = useState(false);
+  const [showPreview, setShowPreview] = useState(false);
 
   useEffect(() => {
     setSoul(agent.soul ?? "");
     setJustSaved(false);
+    setShowPreview(false);
   }, [agent.id, agent.soul]);
 
   const hasChanges = soul !== (agent.soul ?? "");
@@ -1598,47 +1602,87 @@ function SoulTab({
         <div className="config-fields">
           <div className="config-field">
             <label htmlFor="agent-soul">Agent Soul</label>
-            <textarea
-              id="agent-soul"
-              className="input"
-              rows={12}
-              placeholder="Describe this agent's personality, tone, and behavioral traits..."
-              value={soul}
-              onChange={(e) => {
-                setSoul(e.target.value);
-                setJustSaved(false);
-              }}
-              style={{ fontFamily: "monospace", fontSize: "0.875rem", resize: "vertical" }}
-            />
-            <span className="config-hint">Defines the agent&apos;s character and identity. Max 10,000 characters.</span>
+            <div className="agent-content-toolbar">
+              <div className="agent-content-mode-toggle">
+                <button
+                  className={`btn btn-sm ${!showPreview ? "btn-primary" : ""}`}
+                  onClick={() => setShowPreview(false)}
+                  disabled={!showPreview}
+                  aria-label="Edit mode"
+                >
+                  <FileEdit size={14} />
+                  Edit
+                </button>
+                <button
+                  className={`btn btn-sm ${showPreview ? "btn-primary" : ""}`}
+                  onClick={() => setShowPreview(true)}
+                  disabled={showPreview}
+                  aria-label="Preview mode"
+                >
+                  <Eye size={14} />
+                  Preview
+                </button>
+              </div>
+            </div>
+            {showPreview ? (
+              soul.trim() ? (
+                <div className="agent-content-preview markdown-body">
+                  <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                    {soul}
+                  </ReactMarkdown>
+                </div>
+              ) : (
+                <div className="agent-content-preview agent-content-placeholder">
+                  No soul defined yet. Switch to Edit mode to define the agent&apos;s personality.
+                </div>
+              )
+            ) : (
+              <textarea
+                id="agent-soul"
+                className="input"
+                rows={12}
+                placeholder="Describe this agent's personality, tone, and behavioral traits..."
+                value={soul}
+                onChange={(e) => {
+                  setSoul(e.target.value);
+                  setJustSaved(false);
+                }}
+                style={{ fontFamily: "monospace", fontSize: "0.875rem", resize: "vertical" }}
+              />
+            )}
+            {!showPreview && (
+              <span className="config-hint">Defines the agent&apos;s character and identity. Max 10,000 characters.</span>
+            )}
           </div>
         </div>
 
-        <div className="config-actions">
-          <button
-            className="btn btn--primary"
-            disabled={!hasChanges || isSaving}
-            onClick={() => void handleSave()}
-          >
-            {isSaving ? (
-              <>
-                <Loader2 size={16} className="animate-spin" />
-                Saving…
-              </>
-            ) : (
-              <>
-                <CheckCircle size={16} />
-                Save Soul
-              </>
+        {!showPreview && (
+          <div className="config-actions">
+            <button
+              className="btn btn--primary"
+              disabled={!hasChanges || isSaving}
+              onClick={() => void handleSave()}
+            >
+              {isSaving ? (
+                <>
+                  <Loader2 size={16} className="animate-spin" />
+                  Saving…
+                </>
+              ) : (
+                <>
+                  <CheckCircle size={16} />
+                  Save Soul
+                </>
+              )}
+            </button>
+            {!hasChanges && justSaved && (
+              <span className="config-saved-indicator">
+                <CheckCircle size={14} />
+                Soul saved
+              </span>
             )}
-          </button>
-          {!hasChanges && justSaved && (
-            <span className="config-saved-indicator">
-              <CheckCircle size={14} />
-              Soul saved
-            </span>
-          )}
-        </div>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -1658,10 +1702,12 @@ function MemoryTab({
   const [memory, setMemory] = useState(agent.memory ?? "");
   const [isSaving, setIsSaving] = useState(false);
   const [justSaved, setJustSaved] = useState(false);
+  const [showPreview, setShowPreview] = useState(false);
 
   useEffect(() => {
     setMemory(agent.memory ?? "");
     setJustSaved(false);
+    setShowPreview(false);
   }, [agent.id, agent.memory]);
 
   const isReadOnly = agent.state === "running";
@@ -1703,48 +1749,90 @@ function MemoryTab({
         <div className="config-fields">
           <div className="config-field">
             <label htmlFor="agent-memory">Agent Memory</label>
-            <textarea
-              id="agent-memory"
-              className="input"
-              rows={15}
-              placeholder="Durable preferences, operating habits, and context this agent should carry across tasks..."
-              value={memory}
-              readOnly={isReadOnly}
-              onChange={(e) => {
-                setMemory(e.target.value);
-                setJustSaved(false);
-              }}
-              style={{ fontFamily: "monospace", fontSize: "0.875rem", resize: "vertical" }}
-            />
-            <span className="config-hint">This is injected as Agent Memory in the prompt and kept separate from workspace Project Memory. Max 50,000 characters.</span>
+            <div className="agent-content-toolbar">
+              <div className="agent-content-mode-toggle">
+                {!isReadOnly && (
+                  <button
+                    className={`btn btn-sm ${!showPreview ? "btn-primary" : ""}`}
+                    onClick={() => setShowPreview(false)}
+                    disabled={!showPreview}
+                    aria-label="Edit mode"
+                  >
+                    <FileEdit size={14} />
+                    Edit
+                  </button>
+                )}
+                <button
+                  className={`btn btn-sm ${showPreview ? "btn-primary" : ""}`}
+                  onClick={() => setShowPreview(true)}
+                  disabled={showPreview}
+                  aria-label="Preview mode"
+                >
+                  <Eye size={14} />
+                  Preview
+                </button>
+              </div>
+            </div>
+            {showPreview ? (
+              memory.trim() ? (
+                <div className="agent-content-preview markdown-body">
+                  <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                    {memory}
+                  </ReactMarkdown>
+                </div>
+              ) : (
+                <div className="agent-content-preview agent-content-placeholder">
+                  No agent memory defined yet. Switch to Edit mode to add memory content.
+                </div>
+              )
+            ) : (
+              <textarea
+                id="agent-memory"
+                className="input"
+                rows={15}
+                placeholder="Durable preferences, operating habits, and context this agent should carry across tasks..."
+                value={memory}
+                readOnly={isReadOnly}
+                onChange={(e) => {
+                  setMemory(e.target.value);
+                  setJustSaved(false);
+                }}
+                style={{ fontFamily: "monospace", fontSize: "0.875rem", resize: "vertical" }}
+              />
+            )}
+            {!showPreview && (
+              <span className="config-hint">This is injected as Agent Memory in the prompt and kept separate from workspace Project Memory. Max 50,000 characters.</span>
+            )}
           </div>
         </div>
 
-        <div className="config-actions">
-          <button
-            className="btn btn--primary"
-            disabled={!hasChanges || isSaving || isReadOnly}
-            onClick={() => void handleSave()}
-          >
-            {isSaving ? (
-              <>
-                <Loader2 size={16} className="animate-spin" />
-                Saving…
-              </>
-            ) : (
-              <>
-                <CheckCircle size={16} />
-                Save Memory
-              </>
+        {!showPreview && (
+          <div className="config-actions">
+            <button
+              className="btn btn--primary"
+              disabled={!hasChanges || isSaving || isReadOnly}
+              onClick={() => void handleSave()}
+            >
+              {isSaving ? (
+                <>
+                  <Loader2 size={16} className="animate-spin" />
+                  Saving…
+                </>
+              ) : (
+                <>
+                  <CheckCircle size={16} />
+                  Save Memory
+                </>
+              )}
+            </button>
+            {!hasChanges && justSaved && (
+              <span className="config-saved-indicator">
+                <CheckCircle size={14} />
+                Memory saved
+              </span>
             )}
-          </button>
-          {!hasChanges && justSaved && (
-            <span className="config-saved-indicator">
-              <CheckCircle size={14} />
-              Memory saved
-            </span>
-          )}
-        </div>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -1764,6 +1852,7 @@ function InstructionsTab({
   // Inline instructions state
   const [instructionsText, setInstructionsText] = useState(agent.instructionsText ?? "");
   const [instructionsPath, setInstructionsPath] = useState(agent.instructionsPath ?? "");
+  const [showPreview, setShowPreview] = useState(false);
 
   // File content state (when instructionsPath is set)
   const [fileContent, setFileContent] = useState("");
@@ -1812,6 +1901,7 @@ function InstructionsTab({
     setInstructionsPath(agent.instructionsPath ?? "");
     setJustSaved(false);
     setJustSavedFile(false);
+    setShowPreview(false);
   }, [agent.id, agent.instructionsText, agent.instructionsPath]);
 
   const hasInstructionsChanges = (() => {
@@ -1878,19 +1968,59 @@ function InstructionsTab({
         <div className="config-fields">
           <div className="config-field">
             <label htmlFor="instructions-text">Inline Instructions</label>
-            <textarea
-              id="instructions-text"
-              className="input"
-              rows={10}
-              placeholder="Enter custom instructions to append to this agent's system prompt..."
-              value={instructionsText}
-              onChange={(e) => {
-                setInstructionsText(e.target.value);
-                setJustSaved(false);
-              }}
-              style={{ fontFamily: "monospace", fontSize: "0.875rem", resize: "vertical" }}
-            />
-            <span className="config-hint">Markdown formatting supported. Max 50,000 characters.</span>
+            <div className="agent-content-toolbar">
+              <div className="agent-content-mode-toggle">
+                <button
+                  className={`btn btn-sm ${!showPreview ? "btn-primary" : ""}`}
+                  onClick={() => setShowPreview(false)}
+                  disabled={!showPreview}
+                  aria-label="Edit mode"
+                  data-testid="instructions-edit-toggle"
+                >
+                  <FileEdit size={14} />
+                  Edit
+                </button>
+                <button
+                  className={`btn btn-sm ${showPreview ? "btn-primary" : ""}`}
+                  onClick={() => setShowPreview(true)}
+                  disabled={showPreview}
+                  aria-label="Preview mode"
+                  data-testid="instructions-preview-toggle"
+                >
+                  <Eye size={14} />
+                  Preview
+                </button>
+              </div>
+            </div>
+            {showPreview ? (
+              instructionsText.trim() ? (
+                <div className="agent-content-preview markdown-body">
+                  <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                    {instructionsText}
+                  </ReactMarkdown>
+                </div>
+              ) : (
+                <div className="agent-content-preview agent-content-placeholder">
+                  No inline instructions defined yet. Switch to Edit mode to add instructions.
+                </div>
+              )
+            ) : (
+              <textarea
+                id="instructions-text"
+                className="input"
+                rows={10}
+                placeholder="Enter custom instructions to append to this agent's system prompt..."
+                value={instructionsText}
+                onChange={(e) => {
+                  setInstructionsText(e.target.value);
+                  setJustSaved(false);
+                }}
+                style={{ fontFamily: "monospace", fontSize: "0.875rem", resize: "vertical" }}
+              />
+            )}
+            {!showPreview && (
+              <span className="config-hint">Markdown formatting supported. Max 50,000 characters.</span>
+            )}
           </div>
 
           <div className="config-field">
@@ -1910,31 +2040,33 @@ function InstructionsTab({
           </div>
         </div>
 
-        <div className="config-actions">
-          <button
-            className="btn btn--primary"
-            disabled={!hasInstructionsChanges || isSaving}
-            onClick={() => void handleSaveInstructions()}
-          >
-            {isSaving ? (
-              <>
-                <Loader2 size={16} className="animate-spin" />
-                Saving…
-              </>
-            ) : (
-              <>
-                <CheckCircle size={16} />
-                Save Instructions
-              </>
+        {!showPreview && (
+          <div className="config-actions">
+            <button
+              className="btn btn--primary"
+              disabled={!hasInstructionsChanges || isSaving}
+              onClick={() => void handleSaveInstructions()}
+            >
+              {isSaving ? (
+                <>
+                  <Loader2 size={16} className="animate-spin" />
+                  Saving…
+                </>
+              ) : (
+                <>
+                  <CheckCircle size={16} />
+                  Save Instructions
+                </>
+              )}
+            </button>
+            {!hasInstructionsChanges && justSaved && (
+              <span className="config-saved-indicator">
+                <CheckCircle size={14} />
+                Instructions saved
+              </span>
             )}
-          </button>
-          {!hasInstructionsChanges && justSaved && (
-            <span className="config-saved-indicator">
-              <CheckCircle size={14} />
-              Instructions saved
-            </span>
-          )}
-        </div>
+          </div>
+        )}
       </div>
 
       {hasFilePath && (
