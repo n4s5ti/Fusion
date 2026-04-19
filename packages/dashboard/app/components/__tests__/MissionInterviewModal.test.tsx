@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { render, screen, waitFor, fireEvent, act } from "@testing-library/react";
+import { render, screen, waitFor, fireEvent, act, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { PlanningQuestion } from "@fusion/core";
 import { MissionInterviewModal } from "../MissionInterviewModal";
@@ -90,6 +90,17 @@ describe("MissionInterviewModal", () => {
     streamHandlers = undefined;
 
     vi.spyOn(window, "confirm").mockReturnValue(true);
+    Object.defineProperty(window, "matchMedia", {
+      writable: true,
+      value: vi.fn().mockImplementation((query: string) => ({
+        matches: query === "(prefers-color-scheme: dark)",
+        media: query,
+        onchange: null,
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+        dispatchEvent: vi.fn(),
+      })),
+    });
 
     mockStartMissionInterview.mockResolvedValue({ sessionId: "mission-session-1" });
     mockRespondToMissionInterview.mockResolvedValue({ type: "question", data: sampleQuestionSingle });
@@ -482,11 +493,8 @@ describe("MissionInterviewModal", () => {
       });
     });
 
-    it.skip("rolls back local state on updateGlobalSettings failure", async () => {
-      // This test is skipped because the component does not automatically call updateGlobalSettings
-      // during render - it only calls it when the user interacts with the favorite toggles.
-      // The test was incorrectly written expecting automatic behavior that doesn't exist.
-      mockUpdateGlobalSettings.mockRejectedValueOnce(new Error("Network error"));
+    it("rolls back local favorite state when updateGlobalSettings fails", async () => {
+      vi.mocked(api.updateGlobalSettings).mockRejectedValueOnce(new Error("Network error"));
 
       renderModal();
 
@@ -494,9 +502,21 @@ describe("MissionInterviewModal", () => {
         expect(mockFetchModels).toHaveBeenCalled();
       });
 
-      // The toggle should have been attempted
-      // After error, local state should be rolled back (verifiable by checking state doesn't include the failed toggle)
-      expect(mockUpdateGlobalSettings).toHaveBeenCalled();
+      fireEvent.click(screen.getByRole("button", { name: "Planning Model" }));
+
+      await waitFor(() => {
+        expect(document.body.querySelector('[data-testid="model-combobox-portal"]')).not.toBeNull();
+      });
+
+      const portal = document.body.querySelector('[data-testid="model-combobox-portal"]')!;
+      fireEvent.click(within(portal).getByRole("button", { name: "Remove anthropic from favorites" }));
+
+      await waitFor(() => {
+        expect(api.updateGlobalSettings).toHaveBeenCalled();
+      });
+
+      const portalAfterRollback = document.body.querySelector('[data-testid="model-combobox-portal"]')!;
+      expect(within(portalAfterRollback).getByRole("button", { name: "Remove anthropic from favorites" })).toBeTruthy();
     });
   });
 });

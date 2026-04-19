@@ -26,7 +26,23 @@ vi.mock("../SkillMultiselect", () => ({
 
 // Mock CustomModelDropdown to simplify interaction testing
 vi.mock("../CustomModelDropdown", () => ({
-  CustomModelDropdown: ({ value, onChange, label }: { value: string; onChange: (v: string) => void; label: string }) => (
+  CustomModelDropdown: ({
+    value,
+    onChange,
+    label,
+    favoriteProviders = [],
+    favoriteModels = [],
+    onToggleFavorite,
+    onToggleModelFavorite,
+  }: {
+    value: string;
+    onChange: (v: string) => void;
+    label: string;
+    favoriteProviders?: string[];
+    favoriteModels?: string[];
+    onToggleFavorite?: (provider: string) => void;
+    onToggleModelFavorite?: (modelId: string) => void;
+  }) => (
     <div data-testid="custom-model-dropdown">
       <span data-testid="dropdown-label">{label}</span>
       <span data-testid="dropdown-value">{value}</span>
@@ -42,6 +58,24 @@ vi.mock("../CustomModelDropdown", () => ({
       >
         Use default
       </button>
+      {favoriteProviders.map((provider) => (
+        <button
+          key={`fav-provider-${provider}`}
+          aria-label={`Remove ${provider} from favorites`}
+          onClick={() => onToggleFavorite?.(provider)}
+        >
+          ★ {provider}
+        </button>
+      ))}
+      {favoriteModels.map((model) => (
+        <button
+          key={`fav-model-${model}`}
+          aria-label={`Remove ${model} from favorites`}
+          onClick={() => onToggleModelFavorite?.(model)}
+        >
+          ★ {model}
+        </button>
+      ))}
     </div>
   ),
 }));
@@ -1138,11 +1172,8 @@ describe("NewAgentDialog", () => {
       });
     });
 
-    it.skip("rolls back local state on updateGlobalSettings failure", async () => {
-      // This test is skipped because the component does not automatically call updateGlobalSettings
-      // during render - it only calls it when the user interacts with the favorite toggles.
-      // The test was incorrectly written expecting automatic behavior that doesn't exist.
-      mockUpdateGlobalSettings.mockRejectedValueOnce(new Error("Network error"));
+    it("rolls back local favorite state when updateGlobalSettings fails", async () => {
+      vi.mocked(apiModule.updateGlobalSettings).mockRejectedValueOnce(new Error("Network error"));
 
       render(
         <NewAgentDialog isOpen={true} onClose={mockOnClose} onCreated={mockOnCreated} />,
@@ -1150,8 +1181,18 @@ describe("NewAgentDialog", () => {
 
       await waitFor(() => expect(mockFetchModels).toHaveBeenCalledOnce());
 
-      // The toggle should have been attempted
-      expect(mockUpdateGlobalSettings).toHaveBeenCalled();
+      const user = userEvent.setup();
+      const nameInput = screen.getByLabelText(/Name/);
+      await user.type(nameInput, "Test Agent");
+      await user.click(screen.getByText("Next"));
+
+      fireEvent.click(screen.getByRole("button", { name: "Remove anthropic from favorites" }));
+
+      await waitFor(() => {
+        expect(apiModule.updateGlobalSettings).toHaveBeenCalled();
+      });
+
+      expect(screen.getByRole("button", { name: "Remove anthropic from favorites" })).toBeTruthy();
     });
   });
 
