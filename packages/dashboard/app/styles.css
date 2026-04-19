@@ -9908,17 +9908,18 @@ body {
 }
 
 /*
- * Keep xterm's helper textarea tiny and hidden off-screen.
+ * Keep xterm's helper textarea tiny and inside terminal bounds.
  *
- * The textarea is still focusable via pointer/touch handlers in TerminalModal,
- * which is required for mobile keyboard activation.
+ * Mobile browsers are more likely to honor focus for keyboard activation when
+ * the focused element is not placed far off-screen.
  */
 .terminal-xterm .xterm .xterm-helper-textarea {
   left: 0 !important;
-  top: -9999px !important;
+  top: 0 !important;
   width: 1px !important;
   height: 1px !important;
-  opacity: 0 !important;
+  opacity: 0.01 !important;
+  pointer-events: none !important;
   z-index: 1 !important;
 }
 
