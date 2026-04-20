@@ -1,8 +1,11 @@
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { AgentPromptsManager } from "../AgentPromptsManager";
-import type { AgentPromptsConfig, AgentPromptTemplate } from "@fusion/core";
+import { BUILTIN_AGENT_PROMPTS } from "../../utils/builtinPrompts";
+import type { AgentPromptsConfig } from "@fusion/core";
 
 // Mock the builtinPrompts utility to avoid importing the large prompt texts
 vi.mock("../../utils/builtinPrompts", () => ({
@@ -12,7 +15,7 @@ vi.mock("../../utils/builtinPrompts", () => ({
       name: "Default Executor",
       description: "Standard task execution agent with full tooling.",
       role: "executor",
-      prompt: "You are a task execution agent...",
+      prompt: "You are a task execution agent responsible for implementing scoped tasks with precision. Always read PROMPT.md, run tests, keep git history clean, and verify lint, tests, and build pass before calling task_done.",
       builtIn: true,
     },
     {
@@ -63,8 +66,19 @@ const defaultConfig: AgentPromptsConfig = {};
 const onChange = vi.fn();
 const onPromptOverridesChange = vi.fn();
 
+const stylesPath = resolve(__dirname, "../../styles.css");
+const stylesContent = readFileSync(stylesPath, "utf8");
+const testStylesId = "agent-prompts-manager-test-styles";
+
 beforeEach(() => {
   vi.clearAllMocks();
+
+  if (!document.getElementById(testStylesId)) {
+    const styleElement = document.createElement("style");
+    styleElement.id = testStylesId;
+    styleElement.textContent = stylesContent;
+    document.head.appendChild(styleElement);
+  }
 });
 
 describe("AgentPromptsManager", () => {
@@ -153,6 +167,50 @@ describe("AgentPromptsManager", () => {
       expect(screen.getAllByText("Triage Agent").length).toBe(1);
       expect(screen.getAllByText("Reviewer Agent").length).toBe(1);
       expect(screen.getAllByText("Merger Agent").length).toBe(1);
+    });
+
+    it("template preview shows full prompt text (not truncated)", () => {
+      const defaultExecutorTemplate = BUILTIN_AGENT_PROMPTS.find(
+        (template) => template.id === "default-executor",
+      );
+
+      if (!defaultExecutorTemplate) {
+        throw new Error("default-executor template is required for this test");
+      }
+
+      render(
+        <AgentPromptsManager
+          value={defaultConfig}
+          onChange={onChange}
+          promptOverrides={{}}
+          onPromptOverridesChange={onPromptOverridesChange}
+        />,
+      );
+
+      const card = screen.getByTestId("builtin-template-default-executor");
+      const previewCode = card.querySelector(".prompt-template-card-preview code");
+
+      expect(previewCode).toBeTruthy();
+      expect(previewCode?.textContent).toBe(defaultExecutorTemplate.prompt);
+      expect(defaultExecutorTemplate.prompt.length).toBeGreaterThan(200);
+    });
+
+    it("template preview area has scrollable overflow", () => {
+      render(
+        <AgentPromptsManager
+          value={defaultConfig}
+          onChange={onChange}
+          promptOverrides={{}}
+          onPromptOverridesChange={onPromptOverridesChange}
+        />,
+      );
+
+      const card = screen.getByTestId("builtin-template-default-executor");
+      const previewCode = card.querySelector(".prompt-template-card-preview code") as HTMLElement | null;
+
+      expect(previewCode).toBeTruthy();
+      expect(window.getComputedStyle(previewCode!).maxHeight).toBe("120px");
+      expect(window.getComputedStyle(previewCode!).overflowY).toBe("auto");
     });
 
     it("shows custom templates section", () => {
@@ -799,6 +857,209 @@ describe("AgentPromptsManager", () => {
     });
 
     describe("Templates tab fullscreen", () => {
+      it("each built-in template card has an expand button", () => {
+        render(
+          <AgentPromptsManager
+            value={defaultConfig}
+            onChange={onChange}
+            promptOverrides={{}}
+            onPromptOverridesChange={onPromptOverridesChange}
+          />,
+        );
+
+        for (const template of BUILTIN_AGENT_PROMPTS) {
+          expect(screen.getByTestId(`expand-view-${template.id}`)).toBeTruthy();
+        }
+      });
+
+      it("clicking expand button opens fullscreen view", async () => {
+        const user = userEvent.setup();
+        const defaultExecutorTemplate = BUILTIN_AGENT_PROMPTS.find(
+          (template) => template.id === "default-executor",
+        );
+
+        if (!defaultExecutorTemplate) {
+          throw new Error("default-executor template is required for this test");
+        }
+
+        render(
+          <AgentPromptsManager
+            value={defaultConfig}
+            onChange={onChange}
+            promptOverrides={{}}
+            onPromptOverridesChange={onPromptOverridesChange}
+          />,
+        );
+
+        await user.click(screen.getByTestId("expand-view-default-executor"));
+
+        await waitFor(() => {
+          expect(screen.getByTestId("collapse-view-default-executor")).toBeTruthy();
+          expect(screen.getByRole("dialog").textContent).toContain(defaultExecutorTemplate.prompt);
+        });
+      });
+
+      it("clicking collapse button exits fullscreen", async () => {
+        const user = userEvent.setup();
+        render(
+          <AgentPromptsManager
+            value={defaultConfig}
+            onChange={onChange}
+            promptOverrides={{}}
+            onPromptOverridesChange={onPromptOverridesChange}
+          />,
+        );
+
+        await user.click(screen.getByTestId("expand-view-default-executor"));
+        await waitFor(() => {
+          expect(screen.getByTestId("collapse-view-default-executor")).toBeTruthy();
+        });
+
+        await user.click(screen.getByTestId("collapse-view-default-executor"));
+
+        await waitFor(() => {
+          expect(screen.queryByTestId("collapse-view-default-executor")).toBeNull();
+        });
+      });
+
+      it("Escape key exits fullscreen", async () => {
+        const user = userEvent.setup();
+        render(
+          <AgentPromptsManager
+            value={defaultConfig}
+            onChange={onChange}
+            promptOverrides={{}}
+            onPromptOverridesChange={onPromptOverridesChange}
+          />,
+        );
+
+        await user.click(screen.getByTestId("expand-view-default-executor"));
+        await waitFor(() => {
+          expect(screen.getByTestId("collapse-view-default-executor")).toBeTruthy();
+        });
+
+        fireEvent.keyDown(screen.getByRole("dialog"), { key: "Escape" });
+
+        await waitFor(() => {
+          expect(screen.queryByTestId("collapse-view-default-executor")).toBeNull();
+        });
+      });
+
+      it("custom template card has expand button", () => {
+        const config: AgentPromptsConfig = {
+          templates: [
+            {
+              id: "my-custom-template",
+              name: "My Custom Template",
+              description: "Custom template for testing",
+              role: "executor",
+              prompt: "Custom prompt content",
+              builtIn: false,
+            },
+          ],
+        };
+
+        render(
+          <AgentPromptsManager
+            value={config}
+            onChange={onChange}
+            promptOverrides={{}}
+            onPromptOverridesChange={onPromptOverridesChange}
+          />,
+        );
+
+        expect(screen.getByTestId("expand-view-my-custom-template")).toBeTruthy();
+      });
+
+      it("only one template fullscreen at a time", async () => {
+        const user = userEvent.setup();
+        render(
+          <AgentPromptsManager
+            value={defaultConfig}
+            onChange={onChange}
+            promptOverrides={{}}
+            onPromptOverridesChange={onPromptOverridesChange}
+          />,
+        );
+
+        await user.click(screen.getByTestId("expand-view-default-executor"));
+        await waitFor(() => {
+          expect(screen.getByTestId("collapse-view-default-executor")).toBeTruthy();
+        });
+
+        await user.click(screen.getByTestId("expand-view-default-triage"));
+
+        await waitFor(() => {
+          expect(screen.queryByTestId("collapse-view-default-executor")).toBeNull();
+          expect(screen.getByTestId("collapse-view-default-triage")).toBeTruthy();
+        });
+      });
+
+      it("fullscreen view remains singular when custom template overrides a built-in ID", async () => {
+        const user = userEvent.setup();
+        const config: AgentPromptsConfig = {
+          templates: [
+            {
+              id: "default-executor",
+              name: "Custom Override Executor",
+              description: "Overrides built-in template",
+              role: "executor",
+              prompt: "Custom override prompt body for executor role.",
+              builtIn: false,
+            },
+          ],
+        };
+
+        render(
+          <AgentPromptsManager
+            value={config}
+            onChange={onChange}
+            promptOverrides={{}}
+            onPromptOverridesChange={onPromptOverridesChange}
+          />,
+        );
+
+        const expandButtons = screen.getAllByTestId("expand-view-default-executor");
+        expect(expandButtons.length).toBe(2);
+
+        await user.click(expandButtons[0]);
+        await waitFor(() => {
+          expect(screen.getAllByRole("dialog").length).toBe(1);
+          expect(screen.getByRole("dialog").textContent).toContain("Default Executor");
+        });
+
+        await user.click(expandButtons[1]);
+        await waitFor(() => {
+          expect(screen.getAllByRole("dialog").length).toBe(1);
+          expect(screen.getByRole("dialog").textContent).toContain("Custom Override Executor");
+        });
+      });
+
+      it("opening template card fullscreen closes template editor fullscreen", async () => {
+        const user = userEvent.setup();
+        render(
+          <AgentPromptsManager
+            value={defaultConfig}
+            onChange={onChange}
+            promptOverrides={{}}
+            onPromptOverridesChange={onPromptOverridesChange}
+          />,
+        );
+
+        await user.click(screen.getByTestId("add-template-btn"));
+        await user.click(screen.getByTestId("template-prompt-fullscreen"));
+        await waitFor(() => {
+          expect(screen.getByTestId("template-prompt-input-fullscreen")).toBeTruthy();
+        });
+
+        await user.click(screen.getByTestId("expand-view-default-executor"));
+
+        await waitFor(() => {
+          expect(screen.queryByTestId("template-prompt-input-fullscreen")).toBeNull();
+          expect(screen.getByTestId("collapse-view-default-executor")).toBeTruthy();
+        });
+      });
+
       it("shows fullscreen button in template editor", async () => {
         const user = userEvent.setup();
         render(

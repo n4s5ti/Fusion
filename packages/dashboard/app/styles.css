@@ -16094,8 +16094,8 @@ html .column.drag-over * {
   white-space: pre-wrap;
   word-break: break-word;
   display: block;
-  max-height: 60px;
-  overflow: hidden;
+  max-height: 120px;
+  overflow-y: auto;
 }
 
 .prompt-template-empty {
@@ -16498,6 +16498,11 @@ html .column.drag-over * {
   border-color: var(--text-muted);
 }
 
+.prompt-override-fullscreen-close:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring-strong);
+}
+
 /* Fullscreen textarea fills remaining space */
 .prompt-override-fullscreen textarea {
   flex: 1;
@@ -16506,6 +16511,22 @@ html .column.drag-over * {
   border-radius: var(--radius-md);
   font-size: 14px;
   line-height: 1.6;
+}
+
+.prompt-template-fullscreen-pre {
+  flex: 1;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--text);
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow-y: auto;
+  padding: var(--space-md);
+  background: var(--bg);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border);
+  margin: 0;
 }
 
 /* Fullscreen footer at bottom */
@@ -16528,24 +16549,11 @@ html .column.drag-over * {
 
 /* Template prompt fullscreen button */
 .prompt-template-fullscreen-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 22px;
-  height: 22px;
-  background: none;
-  border: none;
-  color: var(--text-muted);
-  cursor: pointer;
-  border-radius: var(--radius-sm);
-  transition: color var(--transition-fast), background var(--transition-fast);
   vertical-align: middle;
-  margin-left: var(--space-xs);
 }
 
-.prompt-template-fullscreen-btn:hover {
-  color: var(--text);
-  background: var(--surface);
+.prompt-template-prompt-label-row .prompt-template-fullscreen-btn {
+  margin-left: var(--space-xs);
 }
 
 /* Responsive */

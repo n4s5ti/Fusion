@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import { BUILTIN_AGENT_PROMPTS, PROMPT_KEY_CATALOG } from "../utils/builtinPrompts";
 import type { AgentPromptTemplate, AgentPromptsConfig, AgentCapability } from "@fusion/core";
 import type { PromptKey } from "@fusion/core";
@@ -66,6 +66,11 @@ const EMPTY_TEMPLATE_FORM: TemplateFormData = {
   prompt: "",
 };
 
+type FullscreenTemplateView = {
+  source: "builtin" | "custom";
+  id: string;
+};
+
 /**
  * Generate a kebab-case ID from a template name.
  * If collision exists with built-in or existing custom IDs, append -2, -3, etc.
@@ -97,14 +102,6 @@ function generateTemplateId(
   }
 
   return `${baseId}-${counter}`;
-}
-
-/**
- * Truncate text to a specified length with ellipsis.
- */
-function truncate(text: string, maxLength: number): string {
-  if (text.length <= maxLength) return text;
-  return text.slice(0, maxLength - 3) + "...";
 }
 
 /**
@@ -140,12 +137,21 @@ export function AgentPromptsManager({
 
   // Fullscreen state for templates tab
   const [isTemplatePromptFullscreen, setIsTemplatePromptFullscreen] = useState(false);
+  const [fullscreenViewTemplate, setFullscreenViewTemplate] = useState<FullscreenTemplateView | null>(null);
+  const fullscreenViewContainerRef = useRef<HTMLDivElement | null>(null);
 
   // Get custom templates from current config
   const customTemplates = value?.templates ?? [];
 
   // Get role assignments from current config
   const roleAssignments = value?.roleAssignments ?? {};
+
+  const fullscreenTemplate =
+    fullscreenViewTemplate === null
+      ? null
+      : fullscreenViewTemplate.source === "builtin"
+        ? BUILTIN_AGENT_PROMPTS.find((template) => template.id === fullscreenViewTemplate.id)
+        : customTemplates.find((template) => template.id === fullscreenViewTemplate.id);
 
   // Get templates for a specific role (both built-in and custom)
   const getTemplatesForRole = useCallback(
@@ -157,12 +163,19 @@ export function AgentPromptsManager({
     [customTemplates],
   );
 
+  useEffect(() => {
+    if (fullscreenViewTemplate !== null) {
+      fullscreenViewContainerRef.current?.focus();
+    }
+  }, [fullscreenViewTemplate]);
+
   // Handle starting template creation
   const handleStartCreate = useCallback(() => {
     setIsCreating(true);
     setEditingTemplateId(null);
     setTemplateForm(EMPTY_TEMPLATE_FORM);
     setTemplateIdError(null);
+    setFullscreenViewTemplate(null);
   }, []);
 
   // Handle starting template edit
@@ -176,6 +189,7 @@ export function AgentPromptsManager({
       prompt: template.prompt,
     });
     setTemplateIdError(null);
+    setFullscreenViewTemplate(null);
   }, []);
 
   // Handle canceling template edit
@@ -184,6 +198,7 @@ export function AgentPromptsManager({
     setIsCreating(false);
     setTemplateForm(EMPTY_TEMPLATE_FORM);
     setTemplateIdError(null);
+    setFullscreenViewTemplate(null);
     setIsTemplatePromptFullscreen(false);
   }, []);
 
@@ -345,8 +360,17 @@ export function AgentPromptsManager({
     setFullscreenOverrideKey((prev) => (prev === key ? null : key));
   }, []);
 
+  const openTemplateViewFullscreen = useCallback(
+    (source: FullscreenTemplateView["source"], id: string) => {
+      setIsTemplatePromptFullscreen(false);
+      setFullscreenViewTemplate({ source, id });
+    },
+    [],
+  );
+
   // Toggle fullscreen for template prompt
   const toggleTemplatePromptFullscreen = useCallback(() => {
+    setFullscreenViewTemplate(null);
     setIsTemplatePromptFullscreen((prev) => !prev);
   }, []);
 
@@ -452,7 +476,7 @@ export function AgentPromptsManager({
                       <label htmlFor="template-prompt">Prompt</label>
                       <button
                         type="button"
-                        className="prompt-template-fullscreen-btn"
+                        className="btn-icon prompt-template-fullscreen-btn"
                         onClick={toggleTemplatePromptFullscreen}
                         aria-label="Expand prompt to fullscreen"
                         data-testid="template-prompt-fullscreen"
@@ -568,17 +592,32 @@ export function AgentPromptsManager({
                         </span>
                         <span
                           className="prompt-template-badge-role"
-                          style={{ backgroundColor: ROLE_COLORS[template.role] + "20", color: ROLE_COLORS[template.role] }}
+                          style={{
+                            backgroundColor: ROLE_COLORS[template.role] + "20",
+                            color: ROLE_COLORS[template.role],
+                          }}
                         >
                           {ROLE_LABELS[template.role]}
                         </span>
+                      </div>
+                      <div className="prompt-template-card-actions">
+                        <button
+                          type="button"
+                          className="btn-icon prompt-template-fullscreen-btn"
+                          onClick={() => openTemplateViewFullscreen("builtin", template.id)}
+                          title="View full prompt"
+                          aria-label={`View full prompt for ${template.name}`}
+                          data-testid={`expand-view-${template.id}`}
+                        >
+                          <Maximize2 size={14} />
+                        </button>
                       </div>
                     </div>
                     <p className="prompt-template-card-description">
                       {template.description}
                     </p>
                     <div className="prompt-template-card-preview">
-                      <code>{truncate(template.prompt, 200)}</code>
+                      <code>{template.prompt}</code>
                     </div>
                   </div>
                 ))}
@@ -654,6 +693,16 @@ export function AgentPromptsManager({
                             </div>
                             <div className="prompt-template-card-actions">
                               <button
+                                type="button"
+                                className="btn-icon prompt-template-fullscreen-btn"
+                                onClick={() => openTemplateViewFullscreen("custom", template.id)}
+                                title="View full prompt"
+                                aria-label={`View full prompt for ${template.name}`}
+                                data-testid={`expand-view-${template.id}`}
+                              >
+                                <Maximize2 size={14} />
+                              </button>
+                              <button
                                 className="btn-icon"
                                 onClick={() => handleStartEdit(template)}
                                 title="Edit"
@@ -677,7 +726,7 @@ export function AgentPromptsManager({
                             {template.description}
                           </p>
                           <div className="prompt-template-card-preview">
-                            <code>{truncate(template.prompt, 200)}</code>
+                            <code>{template.prompt}</code>
                           </div>
                         </>
                       )}
@@ -698,6 +747,47 @@ export function AgentPromptsManager({
                 </button>
               )}
             </div>
+
+            {fullscreenTemplate && (
+              <div
+                ref={fullscreenViewContainerRef}
+                className="prompt-override-fullscreen"
+                role="dialog"
+                aria-modal="true"
+                tabIndex={-1}
+                onKeyDown={(e) => {
+                  if (e.key === "Escape") {
+                    e.preventDefault();
+                    setFullscreenViewTemplate(null);
+                  }
+                }}
+              >
+                <div className="prompt-override-fullscreen-header">
+                  <div className="prompt-override-fullscreen-title">
+                    {fullscreenTemplate.name}
+                    <span
+                      className="prompt-template-badge-role"
+                      style={{
+                        backgroundColor: ROLE_COLORS[fullscreenTemplate.role] + "20",
+                        color: ROLE_COLORS[fullscreenTemplate.role],
+                      }}
+                    >
+                      {ROLE_LABELS[fullscreenTemplate.role]}
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    className="prompt-override-fullscreen-close"
+                    onClick={() => setFullscreenViewTemplate(null)}
+                    data-testid={`collapse-view-${fullscreenTemplate.id}`}
+                  >
+                    <Minimize2 size={14} />
+                    Collapse
+                  </button>
+                </div>
+                <pre className="prompt-template-fullscreen-pre">{fullscreenTemplate.prompt}</pre>
+              </div>
+            )}
           </div>
         )}
 
