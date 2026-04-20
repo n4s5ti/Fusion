@@ -252,6 +252,7 @@ function AppInner() {
 
   const skillsEnabled = experimentalFeatures.skillsView === true;
   const nodesEnabled = experimentalFeatures.nodesView === true;
+  const devServerEnabled = experimentalFeatures.devServerView === true;
   const agentsEnabled = true;
 
   // Redirect to board if feature-gated views are disabled.
@@ -270,7 +271,10 @@ function AppInner() {
     if (taskView === "memory" && !memoryEnabled) {
       handleChangeTaskView("board");
     }
-  }, [taskView, insightsEnabled, roadmapEnabled, experimentalFeatures, handleChangeTaskView, agentsEnabled, memoryEnabled]);
+    if (taskView === "dev-server" && !devServerEnabled) {
+      handleChangeTaskView("board");
+    }
+  }, [taskView, insightsEnabled, roadmapEnabled, experimentalFeatures, handleChangeTaskView, agentsEnabled, memoryEnabled, devServerEnabled]);
 
   // Auto-close nodes overlay if feature flag is toggled off while overlay is open
   useEffect(() => {
@@ -544,7 +548,7 @@ function AppInner() {
     if (taskView === "dev-server") {
       return (
         <PageErrorBoundary>
-          <DevServerView projectId={currentProject?.id} />
+          <DevServerView addToast={addToast} projectId={currentProject?.id} />
         </PageErrorBoundary>
       );
     }
@@ -680,7 +684,7 @@ function AppInner() {
           }
         }}
         isRemote={isRemote}
-        experimentalFeatures={{ insights: insightsEnabled, roadmap: roadmapEnabled, memoryView: memoryEnabled }}
+        experimentalFeatures={{ insights: insightsEnabled, roadmap: roadmapEnabled, memoryView: memoryEnabled, devServerView: devServerEnabled }}
       />
       {viewMode === "project" && currentProject && !nodesOpen && taskView !== "missions" && !modalManager.isPlanningOpen && (
         <SessionNotificationBanner
@@ -749,7 +753,7 @@ function AppInner() {
         onOpenQuickChat={() => setQuickChatOpen(true)}
         projectId={currentProject?.id}
         showSkillsTab={skillsEnabled}
-        experimentalFeatures={{ insights: insightsEnabled, roadmap: roadmapEnabled, memoryView: memoryEnabled }}
+        experimentalFeatures={{ insights: insightsEnabled, roadmap: roadmapEnabled, memoryView: memoryEnabled, devServerView: devServerEnabled }}
       />
       {viewMode === "project" && currentProject && taskView !== "chat" && taskView !== "mailbox" && taskView !== "insights" && taskView !== "dev-server" && (
         <QuickChatFAB

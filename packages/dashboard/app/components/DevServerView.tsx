@@ -1,350 +1,461 @@
-import { useEffect, useMemo, useRef, useState } from "react";
-import { ExternalLink, RefreshCw, Server, Square, Play } from "lucide-react";
-import { fetchScripts } from "../api";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { ExternalLink, Loader2, Monitor, Play, RotateCw, Square } from "lucide-react";
 import { useDevServer } from "../hooks/useDevServer";
+import type { DevServerCandidate } from "../api";
+import type { ToastType } from "../hooks/useToast";
 
 interface DevServerViewProps {
+  addToast: (msg: string, type?: ToastType) => void;
   projectId?: string;
 }
 
-function formatTimestamp(value: string | null): string {
-  if (!value) {
-    return "—";
-  }
+type PreviewMode = "embedded" | "external";
 
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) {
-    return value;
-  }
-
-  return date.toLocaleString();
+interface StatusBadgeConfig {
+  className: string;
+  label: string;
 }
 
-export function DevServerView({ projectId }: DevServerViewProps) {
+const STATUS_BADGE_CONFIG: Record<"stopped" | "starting" | "running" | "failed", StatusBadgeConfig> = {
+  stopped: { className: "dev-server-status-badge--stopped", label: "Stopped" },
+  starting: { className: "dev-server-status-badge--starting", label: "Starting..." },
+  running: { className: "dev-server-status-badge--running", label: "Running" },
+  failed: { className: "dev-server-status-badge--failed", label: "Failed" },
+};
+
+function sanitizeLogLine(line: string): string {
+  return line.replace(/\x1b\[[0-9;]*m/g, "");
+}
+
+function candidateKey(candidate: DevServerCandidate): string {
+  return `${candidate.cwd}::${candidate.scriptName}::${candidate.command}`;
+}
+
+function normalizeError(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+export function DevServerView({ addToast, projectId }: DevServerViewProps) {
   const {
-    state,
+    candidates,
+    serverState,
     logs,
-    loading,
-    error,
-    connectionState,
     start,
     stop,
     restart,
-    refresh,
-    manualPreviewUrl,
-    setManualPreviewUrl,
-    effectivePreviewUrl,
+    setPreviewUrl,
+    loading,
+    error,
   } = useDevServer(projectId);
 
-  const [scripts, setScripts] = useState<Record<string, string>>({});
-  const [scriptName, setScriptName] = useState<string>("");
-  const [command, setCommand] = useState("");
-  const [actionPending, setActionPending] = useState<"start" | "stop" | "restart" | null>(null);
-  const [iframeBlocked, setIframeBlocked] = useState(false);
-  const previewLoadedRef = useRef(false);
+  const status = serverState?.status ?? "stopped";
+  const statusBadge = STATUS_BADGE_CONFIG[status] ?? STATUS_BADGE_CONFIG.stopped;
+  const previewUrl = serverState?.manualPreviewUrl ?? serverState?.previewUrl ?? null;
 
-  useEffect(() => {
-    let cancelled = false;
+  const [selectedCandidateId, setSelectedCandidateId] = useState("");
+  const [commandInput, setCommandInput] = useState("");
+  const [previewInput, setPreviewInput] = useState("");
+  const [actionInFlight, setActionInFlight] = useState<"start" | "stop" | "restart" | "preview" | null>(null);
 
-    fetchScripts(projectId)
-      .then((result) => {
-        if (!cancelled) {
-          setScripts(result);
-        }
-      })
-      .catch(() => {
-        if (!cancelled) {
-          setScripts({});
-        }
-      });
+  const [previewMode, setPreviewMode] = useState<PreviewMode>("embedded");
+  const [iframeLoading, setIframeLoading] = useState(false);
+  const [iframeError, setIframeError] = useState(false);
 
-    return () => {
-      cancelled = true;
-    };
-  }, [projectId]);
+  const iframeTimeoutRef = useRef<number | null>(null);
+  const logContainerRef = useRef<HTMLDivElement | null>(null);
+  const stickToBottomRef = useRef(true);
 
-  useEffect(() => {
-    if (state.command && command.trim().length === 0) {
-      setCommand(state.command);
-      return;
-    }
-
-    if (!state.command && command.trim().length === 0 && Object.keys(scripts).length > 0) {
-      const firstScript = Object.entries(scripts)[0];
-      if (firstScript) {
-        setScriptName(firstScript[0]);
-        setCommand(firstScript[1]);
-      }
-    }
-  }, [command, scripts, state.command]);
-
-  useEffect(() => {
-    previewLoadedRef.current = false;
-    setIframeBlocked(false);
-
-    if (!effectivePreviewUrl) {
-      return;
-    }
-
-    const timer = window.setTimeout(() => {
-      if (!previewLoadedRef.current) {
-        setIframeBlocked(true);
-      }
-    }, 3000);
-
-    return () => {
-      window.clearTimeout(timer);
-    };
-  }, [effectivePreviewUrl]);
-
-  const scriptOptions = useMemo(
-    () => Object.entries(scripts).sort(([a], [b]) => a.localeCompare(b)),
-    [scripts],
+  const selectedCandidate = useMemo(
+    () => candidates.find((candidate) => candidateKey(candidate) === selectedCandidateId) ?? null,
+    [candidates, selectedCandidateId],
   );
 
-  const isRunningLike = state.status === "running" || state.status === "starting";
-  const canStart = !isRunningLike && command.trim().length > 0;
-  const canStop = isRunningLike;
-  const canRestart = command.trim().length > 0 && state.status !== "starting";
+  const renderedLogs = useMemo(() => logs.map(sanitizeLogLine), [logs]);
 
-  const handleSelectScript = (name: string) => {
-    setScriptName(name);
-    const selected = scripts[name];
-    if (selected) {
-      setCommand(selected);
+  const clearIframeTimeout = useCallback(() => {
+    if (iframeTimeoutRef.current !== null) {
+      window.clearTimeout(iframeTimeoutRef.current);
+      iframeTimeoutRef.current = null;
     }
-  };
+  }, []);
 
-  const handleStart = async () => {
-    if (!canStart) {
+  useEffect(() => {
+    if (candidates.length === 0) {
+      setSelectedCandidateId("");
       return;
     }
-    setActionPending("start");
-    try {
-      await start({
-        command: command.trim(),
-        scriptName: scriptName || undefined,
-      });
-    } finally {
-      setActionPending(null);
+
+    const hasSelectedCandidate = candidates.some((candidate) => candidateKey(candidate) === selectedCandidateId);
+    if (hasSelectedCandidate) {
+      return;
+    }
+
+    const first = candidates[0];
+    setSelectedCandidateId(candidateKey(first));
+    setCommandInput(first.command);
+  }, [candidates, selectedCandidateId]);
+
+  useEffect(() => {
+    if (selectedCandidate) {
+      setCommandInput(selectedCandidate.command);
+    }
+  }, [selectedCandidate]);
+
+  useEffect(() => {
+    if (serverState?.status === "running" || serverState?.status === "starting") {
+      if (serverState.command.trim().length > 0) {
+        setCommandInput(serverState.command);
+      }
+    }
+  }, [serverState?.command, serverState?.status]);
+
+  useEffect(() => {
+    setPreviewInput(serverState?.manualPreviewUrl ?? "");
+  }, [serverState?.manualPreviewUrl]);
+
+  useEffect(() => {
+    clearIframeTimeout();
+
+    if (previewMode !== "embedded" || !previewUrl) {
+      setIframeError(false);
+      setIframeLoading(false);
+      return;
+    }
+
+    setIframeError(false);
+    setIframeLoading(true);
+
+    iframeTimeoutRef.current = window.setTimeout(() => {
+      setIframeLoading(false);
+      setIframeError(true);
+    }, 5000);
+
+    return () => {
+      clearIframeTimeout();
+    };
+  }, [clearIframeTimeout, previewMode, previewUrl]);
+
+  useEffect(() => {
+    const container = logContainerRef.current;
+    if (!container || !stickToBottomRef.current) {
+      return;
+    }
+
+    container.scrollTop = container.scrollHeight;
+  }, [renderedLogs]);
+
+  useEffect(() => {
+    return () => {
+      clearIframeTimeout();
+    };
+  }, [clearIframeTimeout]);
+
+  const handleLogScroll = useCallback(() => {
+    const container = logContainerRef.current;
+    if (!container) {
+      return;
+    }
+
+    const threshold = 24;
+    const nearBottom = container.scrollTop + container.clientHeight >= container.scrollHeight - threshold;
+    stickToBottomRef.current = nearBottom;
+  }, []);
+
+  const handleSelectCandidate = (value: string) => {
+    setSelectedCandidateId(value);
+    const nextCandidate = candidates.find((candidate) => candidateKey(candidate) === value);
+    if (nextCandidate) {
+      setCommandInput(nextCandidate.command);
     }
   };
 
-  const handleStop = async () => {
-    if (!canStop) {
+  const openPreview = useCallback(() => {
+    if (!previewUrl) {
       return;
     }
-    setActionPending("stop");
+    window.open(previewUrl, "_blank", "noopener,noreferrer");
+  }, [previewUrl]);
+
+  const runAction = useCallback(async (kind: "start" | "stop" | "restart" | "preview", action: () => Promise<void>, successMessage: string) => {
+    setActionInFlight(kind);
     try {
-      await stop();
+      await action();
+      addToast(successMessage, "success");
+    } catch (actionError) {
+      addToast(normalizeError(actionError), "error");
     } finally {
-      setActionPending(null);
+      setActionInFlight(null);
     }
+  }, [addToast]);
+
+  const handleStart = () => {
+    const trimmedCommand = commandInput.trim();
+    if (trimmedCommand.length === 0) {
+      addToast("Enter a command before starting the dev server.", "warning");
+      return;
+    }
+
+    const scriptName = selectedCandidate?.scriptName ?? "custom";
+    const cwd = selectedCandidate?.cwd ?? ".";
+
+    void runAction(
+      "start",
+      () => {
+        if (selectedCandidate && trimmedCommand === selectedCandidate.command) {
+          return start(selectedCandidate);
+        }
+        return start({ command: trimmedCommand, scriptName, cwd });
+      },
+      "Dev server started.",
+    );
   };
 
-  const handleRestart = async () => {
-    if (!canRestart) {
-      return;
-    }
-    setActionPending("restart");
-    try {
-      await restart({
-        command: command.trim(),
-        scriptName: scriptName || undefined,
-      });
-    } finally {
-      setActionPending(null);
-    }
+  const handleStop = () => {
+    void runAction("stop", stop, "Dev server stopped.");
   };
+
+  const handleRestart = () => {
+    void runAction("restart", restart, "Dev server restarted.");
+  };
+
+  const handleSetPreview = () => {
+    const trimmed = previewInput.trim();
+    void runAction(
+      "preview",
+      () => setPreviewUrl(trimmed.length > 0 ? trimmed : null),
+      trimmed.length > 0 ? "Preview URL updated." : "Preview URL override cleared.",
+    );
+  };
+
+  const startDisabled = status === "starting" || status === "running" || actionInFlight !== null;
+  const stopDisabled = status === "stopped" || actionInFlight !== null;
+  const restartDisabled = status === "stopped" || status === "starting" || actionInFlight !== null;
 
   return (
-    <div className="dev-server-page" data-testid="dev-server-view">
-      <div className="dev-server-header card">
+    <div className="dev-server-view" data-testid="dev-server-view">
+      <section className="dev-server-header" aria-label="Dev server controls header">
         <div className="dev-server-header-title">
-          <Server size={16} />
+          <Monitor size={16} />
           <h2>Dev Server</h2>
-        </div>
-        <div className="dev-server-header-meta">
-          <span className={`dev-server-status-badge dev-server-status-badge--${state.status}`}>
-            {state.status}
-          </span>
-          <span className="dev-server-connection-state">stream: {connectionState}</span>
-        </div>
-      </div>
-
-      <div className="dev-server-layout">
-        <section className="dev-server-panel card" aria-label="Dev server controls">
-          <div className="dev-server-panel-header">
-            <h3>Controls</h3>
-            <button className="btn btn-sm" onClick={() => void refresh()} disabled={loading}>
-              Refresh
-            </button>
-          </div>
-
-          <label className="dev-server-label" htmlFor="dev-server-script">
-            Script
-          </label>
-          <select
-            id="dev-server-script"
-            className="select"
-            value={scriptName}
-            onChange={(event) => handleSelectScript(event.target.value)}
+          <span
+            className={`dev-server-status-badge ${statusBadge.className}`}
+            data-testid="dev-server-status-badge"
           >
-            <option value="">Custom command</option>
-            {scriptOptions.map(([name]) => (
-              <option key={name} value={name}>
-                {name}
-              </option>
-            ))}
-          </select>
+            {statusBadge.label}
+          </span>
+        </div>
+        <div className="dev-server-header-actions">
+          <button
+            type="button"
+            className="btn btn-primary btn-sm"
+            onClick={handleStart}
+            disabled={startDisabled}
+            data-testid="dev-server-start-button"
+          >
+            <Play size={14} />
+            <span>{actionInFlight === "start" ? "Starting..." : "Start"}</span>
+          </button>
+          <button
+            type="button"
+            className="btn btn-danger btn-sm"
+            onClick={handleStop}
+            disabled={stopDisabled}
+            data-testid="dev-server-stop-button"
+          >
+            <Square size={14} />
+            <span>{actionInFlight === "stop" ? "Stopping..." : "Stop"}</span>
+          </button>
+          <button
+            type="button"
+            className="btn btn-sm"
+            onClick={handleRestart}
+            disabled={restartDisabled}
+            data-testid="dev-server-restart-button"
+          >
+            <RotateCw size={14} />
+            <span>{actionInFlight === "restart" ? "Restarting..." : "Restart"}</span>
+          </button>
+        </div>
+      </section>
 
-          <label className="dev-server-label" htmlFor="dev-server-command">
-            Command
-          </label>
+      <section className="dev-server-panel dev-server-config" aria-label="Dev server configuration">
+        <div className="dev-server-section-header">
+          <h3>Configuration</h3>
+          {loading && <span className="dev-server-muted">Loading...</span>}
+        </div>
+
+        {status === "stopped" && candidates.length > 0 && (
+          <div className="dev-server-field-group">
+            <label htmlFor="dev-server-candidate" className="dev-server-label">Detected scripts</label>
+            <select
+              id="dev-server-candidate"
+              className="select"
+              value={selectedCandidateId}
+              onChange={(event) => handleSelectCandidate(event.target.value)}
+              data-testid="dev-server-candidate-select"
+            >
+              {candidates.map((candidate) => (
+                <option key={candidateKey(candidate)} value={candidateKey(candidate)}>
+                  {candidate.label}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
+
+        {status === "stopped" && candidates.length === 0 && (
+          <p className="dev-server-empty-state" data-testid="dev-server-empty-candidates">
+            No dev server scripts detected. Add a <code>dev</code>, <code>start</code>, or <code>serve</code> script to your package.json.
+          </p>
+        )}
+
+        <div className="dev-server-field-group">
+          <label htmlFor="dev-server-command" className="dev-server-label">Command</label>
           <input
             id="dev-server-command"
             className="input"
-            value={command}
-            onChange={(event) => setCommand(event.target.value)}
+            value={commandInput}
+            onChange={(event) => setCommandInput(event.target.value)}
             placeholder="pnpm dev"
+            data-testid="dev-server-command-input"
+            readOnly={status === "running" || status === "starting"}
           />
+        </div>
 
-          <div className="dev-server-actions">
-            <button
-              className="btn btn-primary"
-              onClick={() => void handleStart()}
-              disabled={!canStart || actionPending !== null}
-              data-testid="dev-server-start-btn"
-            >
-              <Play size={14} />
-              <span>{actionPending === "start" ? "Starting…" : "Start"}</span>
-            </button>
-            <button
-              className="btn btn-warning"
-              onClick={() => void handleRestart()}
-              disabled={!canRestart || actionPending !== null}
-              data-testid="dev-server-restart-btn"
-            >
-              <RefreshCw size={14} />
-              <span>{actionPending === "restart" ? "Restarting…" : "Restart"}</span>
-            </button>
-            <button
-              className="btn btn-danger"
-              onClick={() => void handleStop()}
-              disabled={!canStop || actionPending !== null}
-              data-testid="dev-server-stop-btn"
-            >
-              <Square size={14} />
-              <span>{actionPending === "stop" ? "Stopping…" : "Stop"}</span>
-            </button>
+        {(status === "running" || status === "starting") && serverState && (
+          <div className="dev-server-current-command" data-testid="dev-server-current-command">
+            <span className="dev-server-label">Running command</span>
+            <code>{serverState.command}</code>
           </div>
+        )}
 
-          <div className="dev-server-meta-grid" data-testid="dev-server-status-panel">
-            <div>
-              <span className="dev-server-meta-label">PID</span>
-              <span className="dev-server-meta-value">{state.pid ?? "—"}</span>
-            </div>
-            <div>
-              <span className="dev-server-meta-label">Started</span>
-              <span className="dev-server-meta-value">{formatTimestamp(state.startedAt)}</span>
-            </div>
-            <div>
-              <span className="dev-server-meta-label">Exited</span>
-              <span className="dev-server-meta-value">{formatTimestamp(state.exitedAt)}</span>
-            </div>
-            <div>
-              <span className="dev-server-meta-label">Exit Code</span>
-              <span className="dev-server-meta-value">{state.exitCode ?? "—"}</span>
-            </div>
+        {error && <p className="dev-server-error" role="alert">{error}</p>}
+      </section>
+
+      <div className="dev-server-content">
+        <section className="dev-server-panel dev-server-logs-panel" data-testid="dev-server-logs-panel" aria-label="Dev server logs">
+          <div className="dev-server-section-header">
+            <h3>Logs</h3>
+            <span className="dev-server-muted">{renderedLogs.length} lines</span>
           </div>
-
-          {error && <p className="dev-server-error">{error}</p>}
-          {!error && state.failureReason && <p className="dev-server-error">{state.failureReason}</p>}
-        </section>
-
-        <section className="dev-server-panel card" aria-label="Preview" data-testid="dev-server-preview-panel">
-          <div className="dev-server-panel-header">
-            <h3>Preview</h3>
-            {effectivePreviewUrl && (
-              <a className="btn btn-sm" href={effectivePreviewUrl} target="_blank" rel="noreferrer">
-                <ExternalLink size={14} />
-                <span>Open</span>
-              </a>
+          <div
+            className="dev-server-logs"
+            ref={logContainerRef}
+            onScroll={handleLogScroll}
+            data-testid="dev-server-log-viewer"
+          >
+            {renderedLogs.length === 0 ? (
+              <p className="dev-server-empty-state">No logs yet.</p>
+            ) : (
+              renderedLogs.map((line, index) => (
+                <pre className="dev-server-log-line" key={`${index}-${line.slice(0, 24)}`}>
+                  {line}
+                </pre>
+              ))
             )}
           </div>
+        </section>
 
-          <label className="dev-server-label" htmlFor="dev-server-preview-url">
-            Preview URL override
-          </label>
-          <div className="dev-server-preview-input-row">
+        <section className="dev-server-panel dev-server-preview" data-testid="dev-server-preview-panel" aria-label="Dev server preview">
+          <div className="dev-server-section-header">
+            <h3>Preview</h3>
+            <div className="dev-server-preview-actions">
+              <button
+                type="button"
+                className="btn btn-sm"
+                onClick={() => setPreviewMode((current) => (current === "embedded" ? "external" : "embedded"))}
+                data-testid="dev-server-preview-mode-toggle"
+              >
+                {previewMode === "embedded" ? "External only" : "Embedded"}
+              </button>
+              {previewUrl && (
+                <button
+                  type="button"
+                  className="btn btn-sm"
+                  onClick={openPreview}
+                  data-testid="dev-server-open-preview"
+                >
+                  <ExternalLink size={14} />
+                  <span>Open in new tab</span>
+                </button>
+              )}
+            </div>
+          </div>
+
+          <div className="dev-server-preview-url-row">
             <input
-              id="dev-server-preview-url"
               className="input"
-              value={manualPreviewUrl}
-              onChange={(event) => setManualPreviewUrl(event.target.value)}
-              placeholder={state.previewUrl ?? "https://localhost:3000"}
-              data-testid="dev-server-preview-url-input"
+              value={previewInput}
+              onChange={(event) => setPreviewInput(event.target.value)}
+              placeholder="https://localhost:5173"
+              data-testid="dev-server-preview-input"
             />
             <button
+              type="button"
               className="btn btn-sm"
-              onClick={() => setManualPreviewUrl("")}
-              disabled={manualPreviewUrl.trim().length === 0}
-              data-testid="dev-server-clear-preview-override"
+              onClick={handleSetPreview}
+              disabled={actionInFlight === "preview"}
+              data-testid="dev-server-set-preview"
             >
-              Clear
+              Set
             </button>
           </div>
 
-          {!effectivePreviewUrl && (
-            <div className="dev-server-preview-empty">Start the server to load a preview.</div>
+          {!previewUrl && (
+            <p className="dev-server-empty-state">Preview URL will appear once the dev server starts.</p>
           )}
 
-          {effectivePreviewUrl && (
-            <>
-              <iframe
-                title="Dev Server Preview"
-                src={effectivePreviewUrl}
-                className="dev-server-preview-frame"
-                onLoad={() => {
-                  previewLoadedRef.current = true;
-                  setIframeBlocked(false);
-                }}
-                onError={() => {
-                  previewLoadedRef.current = false;
-                  setIframeBlocked(true);
-                }}
-              />
-              {iframeBlocked && (
-                <div className="dev-server-preview-fallback" data-testid="dev-server-preview-fallback">
-                  <p>
-                    Preview could not be embedded (the target may block iframes). Use the open button to launch it in a new tab.
-                  </p>
+          {previewUrl && previewMode === "external" && (
+            <div className="dev-server-preview-external-only" data-testid="dev-server-preview-external-only">
+              <p>Embedded preview is disabled. Open the preview in a new tab.</p>
+              <button type="button" className="btn btn-primary btn-sm" onClick={openPreview}>
+                Open Preview
+              </button>
+            </div>
+          )}
+
+          {previewUrl && previewMode === "embedded" && (
+            <div className="dev-server-preview-frame-wrap">
+              {!iframeError && (
+                <iframe
+                  title="Dev server preview"
+                  src={previewUrl}
+                  className="dev-server-preview-iframe"
+                  data-testid="dev-server-preview-iframe"
+                  onLoad={() => {
+                    clearIframeTimeout();
+                    setIframeLoading(false);
+                    setIframeError(false);
+                  }}
+                  onError={() => {
+                    clearIframeTimeout();
+                    setIframeLoading(false);
+                    setIframeError(true);
+                  }}
+                />
+              )}
+
+              {iframeLoading && !iframeError && (
+                <div className="dev-server-preview-loading" data-testid="dev-server-preview-loading">
+                  <Loader2 size={16} className="dev-server-spin" />
+                  <span>Loading preview...</span>
                 </div>
               )}
-            </>
+
+              {iframeError && (
+                <div className="dev-server-preview-fallback" data-testid="dev-server-preview-fallback">
+                  <p>
+                    Preview cannot be embedded (blocked by the app's security policy). Open in a new tab instead.
+                  </p>
+                  <button type="button" className="btn btn-primary btn-sm" onClick={openPreview}>
+                    Open Preview
+                  </button>
+                </div>
+              )}
+            </div>
           )}
         </section>
       </div>
-
-      <section className="dev-server-panel card" data-testid="dev-server-logs-panel">
-        <div className="dev-server-panel-header">
-          <h3>Recent logs</h3>
-          <span>{logs.length} entries</span>
-        </div>
-        <div className="dev-server-log-list">
-          {logs.length === 0 ? (
-            <p className="dev-server-preview-empty">No logs yet.</p>
-          ) : (
-            logs.map((entry, index) => (
-              <div key={`${entry.timestamp}-${index}`} className={`dev-server-log-entry dev-server-log-entry--${entry.source}`}>
-                <span className="dev-server-log-time">{formatTimestamp(entry.timestamp)}</span>
-                <span className="dev-server-log-source">{entry.source}</span>
-                <span className="dev-server-log-message">{entry.message}</span>
-              </div>
-            ))
-          )}
-        </div>
-      </section>
     </div>
   );
 }

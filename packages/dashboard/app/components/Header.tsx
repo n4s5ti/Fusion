@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
-import { Settings, Pause, Play, Square, LayoutGrid, List, Terminal, Lightbulb, Search, X, Activity, MoreHorizontal, Clock, Folder, History, GitBranch, Server, Workflow, Bot, ChevronLeft, Target, ChevronRight, FileCode, Loader2, Grid3X3, Mail, MessageSquare, ChevronDown, Check, Map, Zap, Sparkles, FileText, Brain } from "lucide-react";
+import { Settings, Pause, Play, Square, LayoutGrid, List, Terminal, Lightbulb, Search, X, Activity, MoreHorizontal, Clock, Folder, History, GitBranch, Server, Workflow, Bot, ChevronLeft, Target, ChevronRight, FileCode, Loader2, Grid3X3, Mail, MessageSquare, ChevronDown, Check, Map, Zap, Sparkles, FileText, Brain, Monitor } from "lucide-react";
 import type { ProjectInfo } from "../api";
 import type { NodeConfig, ProjectStatus } from "@fusion/core";
 import { fetchScripts } from "../api";
@@ -209,7 +209,7 @@ export interface HeaderProps {
   /** Whether the current view is a remote node */
   isRemote?: boolean;
   /** Experimental feature flags controlling visibility of nav items. */
-  experimentalFeatures?: { insights?: boolean; roadmap?: boolean; memoryView?: boolean };
+  experimentalFeatures?: { insights?: boolean; roadmap?: boolean; memoryView?: boolean; devServerView?: boolean };
 }
 
 export function Header({
@@ -301,7 +301,8 @@ export function Header({
       experimentalFeatures?.insights ||
       experimentalFeatures?.roadmap ||
       showSkillsTab ||
-      experimentalFeatures?.memoryView
+      experimentalFeatures?.memoryView ||
+      experimentalFeatures?.devServerView
     );
   }, [experimentalFeatures, showSkillsTab]);
 
@@ -773,16 +774,6 @@ export function Header({
               <Target size={16} />
             </button>
             <button
-              className={`view-toggle-btn${view === "dev-server" ? " active" : ""}`}
-              onClick={() => onChangeView("dev-server")}
-              title="Dev server view"
-              aria-label="Dev server view"
-              aria-pressed={view === "dev-server"}
-              data-testid="view-toggle-dev-server"
-            >
-              <Server size={16} />
-            </button>
-            <button
               className={`view-toggle-btn${view === "chat" ? " active" : ""}`}
               onClick={() => onChangeView("chat")}
               title="Chat view"
@@ -813,7 +804,7 @@ export function Header({
               <>
                 <button
                   ref={viewOverflowTriggerRef}
-                  className={`view-toggle-btn${["skills", "roadmaps", "insights"].includes(view) ? " active" : ""}`}
+                  className={`view-toggle-btn${["skills", "roadmaps", "insights", "memory", "dev-server"].includes(view) ? " active" : ""}`}
                   onClick={() => setIsViewOverflowOpen((prev) => !prev)}
                   title="More views"
                   aria-label="More views"
@@ -884,6 +875,20 @@ export function Header({
                       >
                         <Brain size={14} />
                         <span>Memory</span>
+                      </button>
+                    )}
+                    {experimentalFeatures?.devServerView && (
+                      <button
+                        className={`view-toggle-overflow-item${view === "dev-server" ? " active" : ""}`}
+                        onClick={() => {
+                          onChangeView("dev-server");
+                          setIsViewOverflowOpen(false);
+                        }}
+                        role="menuitem"
+                        data-testid="view-overflow-dev-server"
+                      >
+                        <Monitor size={14} />
+                        <span>Dev Server</span>
                       </button>
                     )}
                   </div>

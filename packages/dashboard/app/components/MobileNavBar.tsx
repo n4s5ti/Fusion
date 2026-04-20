@@ -18,7 +18,7 @@ import {
   MoreHorizontal,
   Play,
   Settings,
-  Server,
+  Monitor,
   Sparkles,
   Target,
   Terminal,
@@ -61,7 +61,7 @@ export interface MobileNavBarProps {
   /** Whether to show the skills tab */
   showSkillsTab?: boolean;
   /** Experimental feature flags controlling visibility of nav items. */
-  experimentalFeatures?: { insights?: boolean; roadmap?: boolean; memoryView?: boolean };
+  experimentalFeatures?: { insights?: boolean; roadmap?: boolean; memoryView?: boolean; devServerView?: boolean };
 }
 
 function GitHubLogo({ size = 20 }: { size?: number }) {
@@ -234,17 +234,6 @@ export function MobileNavBar({
           <span className="mobile-nav-tab-label">Chat</span>
         </button>
 
-        <button
-          type="button"
-          className={`mobile-nav-tab${view === "dev-server" ? " mobile-nav-tab--active" : ""}`}
-          data-testid="mobile-nav-tab-dev-server"
-          role="tab"
-          aria-selected={view === "dev-server"}
-          onClick={() => onChangeView("dev-server")}
-        >
-          <Server />
-          <span className="mobile-nav-tab-label">Dev Server</span>
-        </button>
 
         <button
           type="button"
@@ -557,6 +546,18 @@ export function MobileNavBar({
               >
                 <Brain />
                 <span>Memory</span>
+              </button>
+            )}
+
+            {experimentalFeatures?.devServerView && (
+              <button
+                type="button"
+                className="mobile-more-item"
+                data-testid="mobile-more-item-dev-server"
+                onClick={() => handleMoreAction(() => onChangeView("dev-server"))}
+              >
+                <Monitor />
+                <span>Dev Server</span>
               </button>
             )}
 
