@@ -11189,8 +11189,9 @@ describe("TaskExecutor messaging tools", () => {
     messageStore?: unknown;
     agentStore?: unknown;
     assignedAgentId?: string;
+    executionMode?: "standard" | "fast";
   }): Promise<any[]> {
-    const { messageStore, agentStore, assignedAgentId } = options || {};
+    const { messageStore, agentStore, assignedAgentId, executionMode } = options || {};
     let captured: any[] = [];
 
     mockedCreateFnAgent.mockImplementation(async (opts: any) => {
@@ -11210,7 +11211,7 @@ describe("TaskExecutor messaging tools", () => {
     });
 
     const store = createMockStore();
-    // Override getTask to return the correct assignedAgentId
+    // Override getTask to return the correct assignedAgentId and executionMode
     store.getTask.mockImplementation(async (id: string) => ({
       id,
       title: "Test",
@@ -11221,6 +11222,7 @@ describe("TaskExecutor messaging tools", () => {
       currentStep: 0,
       log: [],
       assignedAgentId,
+      executionMode,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     }));
@@ -11240,6 +11242,7 @@ describe("TaskExecutor messaging tools", () => {
       currentStep: 0,
       log: [],
       assignedAgentId,
+      executionMode,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     });
@@ -11326,6 +11329,48 @@ describe("TaskExecutor messaging tools", () => {
     const toolNames = tools.map((t: any) => t.name);
     expect(toolNames).not.toContain("list_agents");
     expect(toolNames).not.toContain("delegate_task");
+  });
+
+  describe("fast mode", () => {
+    beforeEach(() => {
+      vi.clearAllMocks();
+      mockedExistsSync.mockReturnValue(true);
+    });
+
+    it("excludes review_step tool when executionMode is 'fast'", async () => {
+      const tools = await captureCustomTools({
+        executionMode: "fast",
+      });
+
+      const toolNames = tools.map((t: any) => t.name);
+      expect(toolNames).not.toContain("review_step");
+    });
+
+    it("includes task_update and task_done tools in fast mode", async () => {
+      const tools = await captureCustomTools({
+        executionMode: "fast",
+      });
+
+      const toolNames = tools.map((t: any) => t.name);
+      expect(toolNames).toContain("task_update");
+      expect(toolNames).toContain("task_done");
+    });
+
+    it("includes review_step tool when executionMode is 'standard'", async () => {
+      const tools = await captureCustomTools({
+        executionMode: "standard",
+      });
+
+      const toolNames = tools.map((t: any) => t.name);
+      expect(toolNames).toContain("review_step");
+    });
+
+    it("includes review_step tool when executionMode is undefined (defaults to standard)", async () => {
+      const tools = await captureCustomTools({});
+
+      const toolNames = tools.map((t: any) => t.name);
+      expect(toolNames).toContain("review_step");
+    });
   });
 });
 

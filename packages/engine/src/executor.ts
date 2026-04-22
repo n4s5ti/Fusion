@@ -884,13 +884,17 @@ export class TaskExecutor {
           executorLog.log(`${task.id}: recovered ${modifiedFiles.length} modified files`);
         }
 
-        // Run workflow steps before transitioning
-        const workflowResult = await this.runWorkflowSteps(task, task.worktree, settings);
-        if (!workflowResult.allPassed) {
-          // For recovery path, treat any failure (including revision) as hard failure
-          // Send back to in-progress so executor can attempt to fix the issues
-          await this.sendTaskBackForFix(task, task.worktree!, workflowResult.feedback, workflowResult.stepName || "Unknown", "Workflow step failed during recovery");
-          return true; // Still transitioned out of in-progress
+        // Run workflow steps before transitioning — skip in fast mode
+        if (task.executionMode !== "fast") {
+          const workflowResult = await this.runWorkflowSteps(task, task.worktree, settings);
+          if (!workflowResult.allPassed) {
+            // For recovery path, treat any failure (including revision) as hard failure
+            // Send back to in-progress so executor can attempt to fix the issues
+            await this.sendTaskBackForFix(task, task.worktree!, workflowResult.feedback, workflowResult.stepName || "Unknown", "Workflow step failed during recovery");
+            return true; // Still transitioned out of in-progress
+          }
+        } else {
+          executorLog.log(`${task.id}: fast mode — skipping workflow steps on auto-recovery`);
         }
       }
 
@@ -1099,6 +1103,9 @@ export class TaskExecutor {
 
     // Fetch settings early — needed for worktree naming and later configuration
     const settings = await this.store.getSettings();
+
+    // Read execution mode to determine whether to skip review and workflow steps
+    const executionMode = task.executionMode ?? "standard";
 
     // Construct run context for mutation correlation
     // Use a synthetic correlation ID: task ID + timestamp + random suffix
@@ -1472,21 +1479,27 @@ export class TaskExecutor {
               await audit.filesystem({ type: "file:capture-modified", target: task.id, metadata: { files: modifiedFiles } });
             }
 
-            const workflowResult = await this.runWorkflowSteps(task, worktreePath, settings);
-            if (!workflowResult.allPassed) {
-              // Check if revision was requested
-              if (workflowResult.revisionRequested) {
-                await this.handleWorkflowRevisionRequest(task, worktreePath, workflowResult.feedback, workflowResult.stepName);
+            // Run workflow steps before moving to in-review — skip in fast mode
+            if (executionMode !== "fast") {
+              const workflowResult = await this.runWorkflowSteps(task, worktreePath, settings);
+              if (!workflowResult.allPassed) {
+                // Check if revision was requested
+                if (workflowResult.revisionRequested) {
+                  await this.handleWorkflowRevisionRequest(task, worktreePath, workflowResult.feedback, workflowResult.stepName);
+                  return;
+                }
+                // Try to fix workflow step failures with retries
+                const retried = await this.handleWorkflowStepFailure(task, worktreePath, workflowResult.feedback, workflowResult.stepName || "Unknown");
+                if (retried) {
+                  return; // Retry scheduled
+                }
+                // Retries exhausted - send back to in-progress for remediation
+                await this.sendTaskBackForFix(task, worktreePath, workflowResult.feedback, workflowResult.stepName || "Unknown", "Workflow step failed");
                 return;
               }
-              // Try to fix workflow step failures with retries
-              const retried = await this.handleWorkflowStepFailure(task, worktreePath, workflowResult.feedback, workflowResult.stepName || "Unknown");
-              if (retried) {
-                return; // Retry scheduled
-              }
-              // Retries exhausted - send back to in-progress for remediation
-              await this.sendTaskBackForFix(task, worktreePath, workflowResult.feedback, workflowResult.stepName || "Unknown", "Workflow step failed");
-              return;
+            } else {
+              executorLog.log(`${task.id}: fast mode — skipping pre-merge workflow steps`);
+              await this.store.logEntry(task.id, "Fast mode — pre-merge workflow steps skipped", undefined, this.currentRunContext);
             }
 
             // Reset retry counters on success
@@ -1654,13 +1667,21 @@ export class TaskExecutor {
         ? await this.options.agentStore.getAgent(assignedAgentId).catch(() => null)
         : null;
 
+      // Log fast mode status
+      if (executionMode === "fast") {
+        executorLog.log(`${task.id}: fast mode — review_step tool not injected`);
+      }
+
       const customTools = [
         this.createTaskUpdateTool(task.id, codeReviewVerdicts, sessionRef, stepCheckpoints, stuckDetector),
         this.createTaskLogTool(task.id),
         this.createTaskCreateTool(),
         this.createTaskAddDepTool(task.id),
         this.createTaskDoneTool(task.id, () => { taskDone = true; }),
-        this.createReviewStepTool(task.id, worktreePath, detail.prompt, codeReviewVerdicts, sessionRef, stepCheckpoints, detail, stuckDetector),
+        // Skip review_step tool in fast mode — fast mode bypasses automated review gates
+        ...(executionMode !== "fast" ? [
+          this.createReviewStepTool(task.id, worktreePath, detail.prompt, codeReviewVerdicts, sessionRef, stepCheckpoints, detail, stuckDetector),
+        ] : []),
         this.createSpawnAgentTool(task.id, worktreePath, settings),
         this.createTaskDocumentWriteTool(task.id),
         this.createTaskDocumentReadTool(task.id),
@@ -1941,22 +1962,27 @@ export class TaskExecutor {
               executorLog.log(`${task.id}: captured ${modifiedFiles.length} modified files`);
             }
 
-            // Run workflow steps before moving to in-review
-            const workflowResult = await this.runWorkflowSteps(task, worktreePath, settings);
-            if (!workflowResult.allPassed) {
-              // Check if revision was requested
-              if (workflowResult.revisionRequested) {
-                await this.handleWorkflowRevisionRequest(task, worktreePath, workflowResult.feedback, workflowResult.stepName);
+            // Run workflow steps before moving to in-review — skip in fast mode
+            if (executionMode !== "fast") {
+              const workflowResult = await this.runWorkflowSteps(task, worktreePath, settings);
+              if (!workflowResult.allPassed) {
+                // Check if revision was requested
+                if (workflowResult.revisionRequested) {
+                  await this.handleWorkflowRevisionRequest(task, worktreePath, workflowResult.feedback, workflowResult.stepName);
+                  return;
+                }
+                // Try to fix workflow step failures with retries
+                const retried = await this.handleWorkflowStepFailure(task, worktreePath, workflowResult.feedback, workflowResult.stepName || "Unknown");
+                if (retried) {
+                  return; // Retry scheduled
+                }
+                // Retries exhausted - send back to in-progress for remediation
+                await this.sendTaskBackForFix(task, worktreePath, workflowResult.feedback, workflowResult.stepName || "Unknown", "Workflow step failed");
                 return;
               }
-              // Try to fix workflow step failures with retries
-              const retried = await this.handleWorkflowStepFailure(task, worktreePath, workflowResult.feedback, workflowResult.stepName || "Unknown");
-              if (retried) {
-                return; // Retry scheduled
-              }
-              // Retries exhausted - send back to in-progress for remediation
-              await this.sendTaskBackForFix(task, worktreePath, workflowResult.feedback, workflowResult.stepName || "Unknown", "Workflow step failed");
-              return;
+            } else {
+              executorLog.log(`${task.id}: fast mode — skipping pre-merge workflow steps`);
+              await this.store.logEntry(task.id, "Fast mode — pre-merge workflow steps skipped", undefined, this.currentRunContext);
             }
 
             // Reset retry counters on success
@@ -2047,16 +2073,22 @@ export class TaskExecutor {
                 executorLog.log(`${task.id}: captured ${modifiedFiles.length} modified files`);
               }
 
-              const workflowResult = await this.runWorkflowSteps(task, worktreePath, settings);
-              if (!workflowResult.allPassed) {
-                // Check if revision was requested
-                if (workflowResult.revisionRequested) {
-                  await this.handleWorkflowRevisionRequest(task, worktreePath, workflowResult.feedback, workflowResult.stepName);
+              // Run workflow steps before moving to in-review — skip in fast mode
+              if (executionMode !== "fast") {
+                const workflowResult = await this.runWorkflowSteps(task, worktreePath, settings);
+                if (!workflowResult.allPassed) {
+                  // Check if revision was requested
+                  if (workflowResult.revisionRequested) {
+                    await this.handleWorkflowRevisionRequest(task, worktreePath, workflowResult.feedback, workflowResult.stepName);
+                    return;
+                  }
+                  // Hard failure - send back to in-progress for remediation
+                  await this.sendTaskBackForFix(task, worktreePath, workflowResult.feedback, workflowResult.stepName || "Unknown", "Workflow step failed on retry");
                   return;
                 }
-                // Hard failure - send back to in-progress for remediation
-                await this.sendTaskBackForFix(task, worktreePath, workflowResult.feedback, workflowResult.stepName || "Unknown", "Workflow step failed on retry");
-                return;
+              } else {
+                executorLog.log(`${task.id}: fast mode — skipping pre-merge workflow steps`);
+                await this.store.logEntry(task.id, "Fast mode — pre-merge workflow steps skipped", undefined, this.currentRunContext);
               }
 
               // Reset retry counters on success
