@@ -203,7 +203,9 @@ The open-source autonomous agent from **Nous Research**. Install the Hermes agen
 
 <sub>paperclip.ing</sub>
 
-The human control plane for AI labor. Install the Paperclip agent-provider plugin to run agents through Paperclip inside Fusion, or import [Agent Companies](https://github.com/paperclipai/companies) directly — same format, same skills.
+The human control plane for AI labor. Install the Paperclip agent-provider plugin to run agents through Paperclip inside Fusion.
+
+Fusion also natively supports the **[`companies.sh`](https://github.com/paperclipai/companies)** agent-company standard: import a prebuilt team — **440+ agents across 16 companies** — and let them coordinate over Fusion's mailbox, missions, and workflow gates for weeks of autonomous work. Same company format, same agents, same skills as Paperclip.
 
 ```bash
 npx companies.sh add paperclipai/companies/gstack
