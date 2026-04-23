@@ -117,7 +117,7 @@ Defaults from `DEFAULT_PROJECT_SETTINGS`; key scope from `PROJECT_SETTINGS_KEYS`
 | `smartConflictResolution` | `boolean` | `true` | Alias/preferred flag for smart conflict handling. |
 | `strictScopeEnforcement` | `boolean` | `false` | Block merges on out-of-scope file changes. |
 | `buildRetryCount` | `number` | `0` | Build retry attempts during merge. |
-| `verificationFixRetries` | `number` | `1` | Auto-fix retry attempts when verification fails during merge. |
+| `verificationFixRetries` | `number` | `3` | Auto-fix retry attempts when verification fails during merge. |
 | `buildTimeoutMs` | `number` | `300000` | Build timeout in milliseconds (5 minutes). |
 | `requirePlanApproval` | `boolean` | `false` | Require manual approval before triage → todo. |
 | `specStalenessEnabled` | `boolean` | `false` | Enforce automatic re-triage for stale specs. |

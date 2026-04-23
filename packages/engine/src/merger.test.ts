@@ -5901,4 +5901,66 @@ describe("aiMergeTask — in-merge verification fix", () => {
     // Should have 3 fix attempts (capped at 3) + 1 merger = 4 calls
     expect(mockedCreateFnAgent).toHaveBeenCalledTimes(4);
   });
+
+  it("default verificationFixRetries (omitted) results in 3 fix attempts", async () => {
+    mockedExecSync.mockImplementation((cmd: any) => {
+      const cmdStr = String(cmd);
+      if (cmdStr.includes("rev-parse --verify")) return Buffer.from("abc123");
+      if (cmdStr.includes("git log")) return "- feat: something" as any;
+      if (cmdStr.includes("merge-base")) return Buffer.from("abc123");
+      if (cmdStr.includes("git diff") && cmdStr.includes("--stat")) return "1 file changed" as any;
+      if (cmdStr.includes("merge --squash")) return Buffer.from("");
+      if (cmdStr.includes("vitest run")) {
+        const err = new Error("Test failed") as any;
+        err.status = 1;
+        err.stdout = "";
+        err.stderr = "";
+        throw err;
+      }
+      if (cmdStr.includes("diff --cached --quiet")) return "1" as any;
+      if (cmdStr.includes("diff --cached")) return "" as any;
+      if (cmdStr.includes("branch -d") || cmdStr.includes("branch -D")) return Buffer.from("");
+      if (cmdStr.includes("worktree remove")) return Buffer.from("");
+      if (cmdStr === "git rev-parse HEAD" || cmdStr.startsWith("git rev-parse HEAD ")) return "mergedcommit123";
+      return Buffer.from("");
+    });
+
+    mockedCreateFnAgent.mockImplementation(async (opts: any) => {
+      return {
+        session: {
+          prompt: vi.fn().mockResolvedValue(undefined),
+          dispose: vi.fn(),
+        },
+      } as any;
+    });
+
+    const store = createMockStore(
+      { id: "FN-050", worktree: "/tmp/root/.worktrees/KB-050" },
+      [{ id: "FN-050", worktree: "/tmp/root/.worktrees/KB-050", column: "in-review" } as Task],
+    );
+    // Explicitly omit verificationFixRetries to test default behavior
+    (store.getSettings as ReturnType<typeof vi.fn>).mockResolvedValue({
+      ...DEFAULT_SETTINGS,
+      testCommand: "vitest run",
+      // verificationFixRetries is NOT set — should default to 3
+    });
+
+    await expect(aiMergeTask(store, "/tmp/root", "FN-050")).rejects.toMatchObject({
+      name: "VerificationError",
+    });
+
+    // Should have 3 fix attempts (default) + 1 merger = 4 calls
+    expect(mockedCreateFnAgent).toHaveBeenCalledTimes(4);
+
+    // Verify the log shows 3 fix attempts (2 log entries per attempt: start + failure)
+    const logCalls = (store.logEntry as ReturnType<typeof vi.fn>).mock.calls;
+    const fixAttempts = logCalls.filter((call: any[]) =>
+      typeof call[1] === "string" && call[1].includes("In-merge verification fix attempt"),
+    );
+    // Each attempt produces 2 log entries: "attempt X/3" and "attempt X — verification still fails"
+    expect(fixAttempts).toHaveLength(6);
+    expect(fixAttempts[0][1]).toContain("attempt 1/3");
+    expect(fixAttempts[2][1]).toContain("attempt 2/3");
+    expect(fixAttempts[4][1]).toContain("attempt 3/3");
+  });
 });

@@ -100,7 +100,7 @@ export const DEFAULT_PROJECT_SETTINGS = {
   worktreeRebaseRemote: "",
   strictScopeEnforcement: false,
   buildRetryCount: 0,
-  verificationFixRetries: 1,
+  verificationFixRetries: 3,
   buildTimeoutMs: 300_000,
   requirePlanApproval: false,
   specStalenessEnabled: false,
