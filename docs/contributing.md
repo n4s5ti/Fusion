@@ -36,7 +36,7 @@ pnpm build
 | `@fusion/desktop` | Electron shell around Fusion dashboard/client |
 | `@fusion/mobile` | Capacitor + PWA mobile packaging |
 | `@fusion/plugin-sdk` | Plugin SDK for building Fusion extensions |
-| `@gsxdsm/fusion` | Published CLI + pi extension |
+| `@runfusion/fusion` | Published CLI + pi extension |
 
 ## Development Workflow
 

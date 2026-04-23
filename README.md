@@ -8,10 +8,10 @@
 
 **Multi-node agent orchestrator** — tasks, agents, missions, git, files, and worktrees, with any model, local or cloud.
 
-[**runfusion.ai →**](https://runfusion.ai) · [Docs](./docs/README.md) · [GitHub](https://github.com/Runfusion/Fusion) · [npm](https://www.npmjs.com/package/@gsxdsm/fusion)
+[**runfusion.ai →**](https://runfusion.ai) · [Docs](./docs/README.md) · [GitHub](https://github.com/Runfusion/Fusion) · [npm](https://www.npmjs.com/package/@runfusion/fusion)
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-3fb950.svg)](./LICENSE)
-[![npm](https://img.shields.io/npm/v/@gsxdsm/fusion.svg?color=58a6ff)](https://www.npmjs.com/package/@gsxdsm/fusion)
+[![npm](https://img.shields.io/npm/v/@runfusion/fusion.svg?color=58a6ff)](https://www.npmjs.com/package/@runfusion/fusion)
 ![Status](https://img.shields.io/badge/status-early%20preview-d29922.svg)
 ![Shipping](https://img.shields.io/badge/shipping-weekly-bc8cff.svg)
 
@@ -322,7 +322,7 @@ fn skills install firebase/agent-skills               # Install agent skills
 | `@fusion/dashboard` | Web UI — Express server + kanban board with SSE |
 | `@fusion/engine` | AI engine — triage, execution, scheduling, workflow steps |
 | `@fusion/tui` | Terminal UI — Ink-based CLI components |
-| `@gsxdsm/fusion` | CLI + pi extension — published to npm |
+| `@runfusion/fusion` | CLI + pi extension — published to npm |
 
 ---
 

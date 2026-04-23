@@ -1,22 +1,42 @@
-# @gsxdsm/fusion
+<div align="center">
 
-An automated Kanban board for [pi](https://github.com/badlogic/pi-mono). Fusion is an AI-orchestrated task board where you (or an agent) add high level ideas to your task list, and a team of agents execute them using worktrees.
+<img src="https://raw.githubusercontent.com/Runfusion/Fusion/main/demo/assets/fusion-logo.png" alt="Fusion" width="120" />
 
-![Fusion dashboard](https://raw.githubusercontent.com/dustinbyrne/kb/main/demo/screenshot.png)
+# @runfusion/fusion
 
-## Installation
+### From rough idea to production code — automatically.
+
+**Multi-node agent orchestrator** — tasks, agents, missions, git, files, and worktrees, with any model, local or cloud.
+
+[**runfusion.ai →**](https://runfusion.ai) · [GitHub](https://github.com/Runfusion/Fusion) · [Docs](https://github.com/Runfusion/Fusion#readme)
+
+<br />
+
+<img src="https://raw.githubusercontent.com/Runfusion/Fusion/main/demo/assets/fusion-reel.gif" alt="Fusion reel: from rough idea to production code" width="900" />
+
+</div>
+
+---
+
+## Install
+
+As a [pi](https://github.com/badlogic/pi-mono) extension:
 
 ```bash
-pi install npm:@gsxdsm/fusion
+pi install npm:@runfusion/fusion
 ```
 
-This gives pi the ability to manage and create tasks in your Fusion dashboard.
+Or globally via npm:
 
-The package includes a bundled **Fusion skill** that enables AI agents to discover and use Fusion tools automatically. No additional skill installation is needed.
+```bash
+npm install -g @runfusion/fusion
+```
 
-## The dashboard
+The package includes a bundled **Fusion skill** that lets AI agents discover and use Fusion tools automatically.
 
-Run `/fn` in pi to launch the dashboard and AI engine.
+## Launch the dashboard
+
+Run `/fn` inside pi to start the dashboard and AI engine:
 
 ```
 /fn              # start on default port 4040
@@ -24,63 +44,108 @@ Run `/fn` in pi to launch the dashboard and AI engine.
 /fn 8080         # run on a custom port
 ```
 
+Or from a shell:
+
+```bash
+fn dashboard     # same thing, outside pi
+```
+
 The dashboard gives you:
 
 - **A live kanban board** — tasks move through columns automatically as AI works on them
-- **Task detail view** — see the generated spec, step-by-step progress, reviewer verdicts, and full execution log
-- **Dependency-aware scheduling** — declare dependencies between tasks or let the engine infer them; work starts in the right order automatically
-- **Auto-merge** — on by default; reviewed work squash-merges into your branch without you lifting a finger
+- **Task detail view** — generated spec, step-by-step progress, reviewer verdicts, full execution log
+- **Dependency-aware scheduling** — declare task dependencies or let the engine infer them
+- **Auto-merge** — on by default; reviewed work squash-merges without you lifting a finger
 - **Parallel execution** — independent tasks run simultaneously in isolated git worktrees
-- **Self-sustaining board** — agents may spawn follow-up tasks as they work, which get triaged, scheduled, and executed like any other task; the board feeds itself
+- **Self-sustaining board** — agents may spawn follow-up tasks; the board feeds itself
+
+---
+
+## Your entire dev environment. On a single pane of glass.
+
+Describe a task in plain language. A triage agent reads your project, understands context, and writes a full `PROMPT.md` spec — steps, file scope, acceptance criteria. Then Fusion plans, reviews, executes, and reviews again, in an isolated git worktree, with a human approval gate wherever you want one.
+
+One board. Controlled from anywhere. Laptop, Mac mini, Linux server, cloud VM, phone — all connected.
+
+<div align="center">
+  <img src="https://raw.githubusercontent.com/Runfusion/Fusion/main/demo/assets/fusion-mesh.gif" alt="Fusion mesh: laptop, Mac mini, Linux server, cloud VM, phone — all synced" width="820" />
+</div>
+
+---
+
+## Run an agent company
+
+Import a team. Run it autonomously for weeks. **440+ agents across 16 companies**, wired for missions, mailboxes, and inter-agent delegation.
+
+```bash
+npx companies.sh add paperclipai/companies/gstack
+```
+
+<div align="center">
+  <img src="https://raw.githubusercontent.com/Runfusion/Fusion/main/demo/assets/fusion-company-reel.gif" alt="Fusion agent company: import a team, run it autonomously for weeks" width="820" />
+</div>
+
+---
 
 ## How it works
 
-You create a task with a rough description. From there, a pipeline of specialized agents takes over.
+You create a task with a rough description. A pipeline of specialized agents takes over.
 
-### Specification
+**Specification.** A triage agent reads your codebase — file structure, existing patterns, related code — and turns your rough idea into a detailed spec. It breaks the work into discrete steps, identifies which files are in scope, writes acceptance criteria, and assigns a complexity rating that determines how aggressively the work gets reviewed.
 
-A triage agent reads your codebase — file structure, existing patterns, related code — and turns your rough idea into a detailed specification. It breaks the work into discrete steps, identifies which files are in scope, writes acceptance criteria, and assigns a complexity rating that determines how aggressively the work gets reviewed later.
+**Scheduling.** Tasks declare dependencies on each other. The scheduler builds a dependency graph and starts work only when upstream tasks are done. Independent tasks run in parallel — each in its own isolated git worktree, so there are no conflicts during execution.
 
-### Scheduling
+**Execution & review.** An executor agent works through the spec step by step in the worktree. At each step boundary, a separate reviewer agent, with read-only access, independently evaluates the work. The reviewer can approve (continue), request revisions (fix specific issues), or force a rethink (change the approach entirely). Review depth scales with the task's complexity rating: trivial tasks get light checks, complex tasks get thorough multi-pass review.
 
-Tasks declare dependencies on each other. The scheduler builds a dependency graph and starts work only when upstream tasks are done. Independent tasks run in parallel — each in its own isolated git worktree, so there are no conflicts during execution.
-
-### Execution & review
-
-An executor agent works through the spec step by step in the worktree. At each step boundary, a separate reviewer agent, with read-only access, independently evaluates the work. The reviewer can approve (continue), request revisions (fix specific issues), or force a rethink (change the approach entirely). Review depth scales with the task's complexity rating: trivial tasks get light checks, complex tasks get thorough multi-pass review. This execution model is heavily based on [Taskplane](https://www.npmjs.com/package/taskplane).
-
-### Merge
-
-When execution finishes and the reviewer signs off, the task moves to "in review." Fusion supports two completion modes:
+**Merge.** When execution finishes and the reviewer signs off, the task moves to **In Review**:
 
 - **Direct merge** *(default)* — automatically squash-merges the completed task branch into your current branch with a clean commit.
-- **Pull request** — automatically creates or links a GitHub PR for the task branch, waits for GitHub reviews/checks, then merges the PR once policy conditions are satisfied.
+- **Pull request** — automatically creates or links a GitHub PR, waits for reviews/checks, then merges once policy conditions are satisfied.
 
-`autoMerge` still controls whether Fusion performs completion automatically at all. If `autoMerge` is disabled, tasks stay in **In Review** until you finish the merge yourself.
-
-For PR-first mode, authenticate GitHub with `gh auth login`, and make sure the task branch already exists on GitHub as `kb/<task-id-lower>`. Fusion does **not** push branches for you before PR creation.
-
-Worktrees can be cleaned up after merge or reused by the next task to keep build caches warm.
+`autoMerge` controls whether Fusion performs completion automatically. If disabled, tasks stay in **In Review** until you finish the merge yourself. For PR-first mode, authenticate GitHub with `gh auth login`.
 
 Tasks flow through: **Triage → Todo → In Progress → In Review → Done**.
 
+This execution model is heavily based on [Taskplane](https://www.npmjs.com/package/taskplane).
+
+---
+
+## What makes it different
+
+|  |  |
+|---|---|
+| 🧠 **AI specification** | Rough idea in, detailed `PROMPT.md` out — steps, file scope, acceptance criteria. |
+| 🔁 **Workflow gates** | Plan → Review → Execute → Review on every step. Block or pass automatically. |
+| 🌳 **Worktree isolation** | Each task runs in its own branch and worktree. Parallel tasks. Zero conflicts. |
+| ⚡ **Smart merge** | Passing every gate? Fusion squash-merges and moves on. |
+| 🛰️ **Multi-node mesh** | Laptop, server, cloud, phone — all synced. Desktop, mobile, web. |
+| 🧩 **Any model** | Anthropic, OpenAI, Ollama — or anything pi-compatible. |
+| 🏢 **Agent companies** | Import pre-built teams — 440+ agents across 16 companies. |
+| 📬 **Inter-agent messaging** | Built-in mailbox between agents. Delegate, clarify, coordinate. |
+| 🗺️ **Missions** | Hierarchical planning with autopilot and validation contracts. |
+| 🔓 **Open source. MIT.** | No vendor lock-in. Run it on your own hardware. |
+
+---
+
 ## Working from chat
 
-You can manage tasks without leaving the conversation:
+Manage tasks without leaving the conversation:
 
 > "Every ten minutes, analyze the server code for logic the client hasn't implemented yet and create tasks. Tasks may spawn additional tasks, so just add enough to keep the board saturated."
 
 > "Create a Fusion task to fix the login redirect bug"
 
-> "Add a task for dark mode support, it depends on KB-003"
+> "Add a task for dark mode support, it depends on FN-003"
 
-> "What's the status of KB-042"
+> "What's the status of FN-042"
 
-> "Attach screenshot.png to KB-007"
+> "Attach screenshot.png to FN-007"
 
-> "Pause KB-012 — I want to add more context first"
+> "Pause FN-012 — I want to add more context first"
 
-The extension gives pi tools to create tasks, check progress, attach files, and pause or resume automation.
+The pi extension exposes tools to create tasks, check progress, attach files, and pause or resume automation.
+
+---
 
 ## Standalone CLI
 
@@ -88,8 +153,14 @@ Fusion also works as a standalone CLI outside of pi. See [STANDALONE.md](./STAND
 
 ## Full documentation
 
-For architecture details, development setup, and contributor info, see the [project README](https://github.com/Runfusion/Fusion#readme).
+Architecture details, development setup, and contributor info live in the [project README](https://github.com/Runfusion/Fusion#readme).
 
 ## License
 
-ISC
+MIT — see [LICENSE](https://github.com/Runfusion/Fusion/blob/main/LICENSE).
+
+<div align="center">
+
+**[runfusion.ai →](https://runfusion.ai)**
+
+</div>

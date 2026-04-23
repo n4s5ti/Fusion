@@ -49,7 +49,7 @@ For details on runtime selection, fallback behavior, and constraints, see the [P
 Install the published CLI package globally:
 
 ```bash
-npm i -g @gsxdsm/fusion
+npm i -g @runfusion/fusion
 ```
 
 Then verify install:

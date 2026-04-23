@@ -1,10 +1,21 @@
-# @gsxdsm/fusion
+# @runfusion/fusion
 
-## 0.4.0
+## 0.0.1
+
+### Initial release
+
+First public release under the `@runfusion` scope. Package was previously
+developed under the `@gsxdsm/fusion` name; it was never published to npm,
+so version history resets with `0.0.1`. Pre-release notes preserved below
+for reference.
+
+---
+
+## 0.4.0 (pre-release, unpublished)
 
 ### Minor Changes
 
-- 2d13b82: Add pi extension. Installing `@gsxdsm/fusion` via `pi install` now provides native tools (`fn_task_create`, `fn_task_list`, `fn_task_show`, `fn_task_attach`, `fn_task_pause`, `fn_task_unpause`) and a `/fn` command to start the dashboard and AI engine from within a pi session.
+- 2d13b82: Add pi extension. Installing `@runfusion/fusion` via `pi install` now provides native tools (`fn_task_create`, `fn_task_list`, `fn_task_show`, `fn_task_attach`, `fn_task_pause`, `fn_task_unpause`) and a `/fn` command to start the dashboard and AI engine from within a pi session.
 - 494de14: Changed `autoMerge` to default to `true` for new boards.
 - 50821fc: Add global pause button to stop all automated agents and scheduling
 - cac10af: Split engine control into Pause (soft) and Stop (hard). The dashboard Header now shows two buttons: "Pause AI engine" stops new work from being dispatched while letting in-flight agents finish gracefully, and "Stop AI engine" (previously the only Pause button) immediately kills all active agent sessions. A new `enginePaused` setting field controls the soft-pause state alongside the existing `globalPause` hard-stop.

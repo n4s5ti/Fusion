@@ -27,7 +27,7 @@ _Date: 2026-04-08_
 |---|---:|---:|---:|---:|---:|---:|---:|---:|
 | `@fusion/core` | 34 | 33 | 1.03 | 1,427 | 88.98 / 87.05 / 92.80 | 1,427 | 3,249 | 1 |
 | `@fusion/engine` | 41 | 43 | 0.95 | 1,464 | 79.46 / 82.29 / 84.38 | 1,415 | 2,873 | 55 |
-| `@gsxdsm/fusion` (CLI) | 28 | 24 | 1.17 | 522 | 68.48 / 71.70 / 74.90 | 512 | 1,106 | 73 |
+| `@runfusion/fusion` (CLI) | 28 | 24 | 1.17 | 522 | 68.48 / 71.70 / 74.90 | 512 | 1,106 | 73 |
 | `@fusion/dashboard` | 163 | 156 | 1.04 | 4,775 (+1 skipped) | 73.70 / 84.87 / 65.87 | 4,743 | 10,842 | 174 |
 
 ## Test runtime snapshots (latest per-package runs)
@@ -59,7 +59,7 @@ _Date: 2026-04-08_
 | `packages/engine/src/pi.ts` | 56.61 | 79.16 | 50.00 |
 | `packages/engine/src/reviewer.ts` | 82.48 | 51.28 | 66.66 |
 
-### `@gsxdsm/fusion` (CLI)
+### `@runfusion/fusion` (CLI)
 
 | File | Lines | Branch | Func |
 |---|---:|---:|---:|

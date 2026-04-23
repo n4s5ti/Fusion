@@ -14,7 +14,7 @@ At a high level, Fusion is split into:
 - **Core domain + persistence** (`@fusion/core`)
 - **Execution engine** (`@fusion/engine`)
 - **Dashboard API + SPA** (`@fusion/dashboard`)
-- **CLI + Pi extension** (`@gsxdsm/fusion`)
+- **CLI + Pi extension** (`@runfusion/fusion`)
 - **Desktop shell** (`@fusion/desktop`)
 - **TUI** (`@fusion/tui`)
 
@@ -62,7 +62,7 @@ At a high level, Fusion is split into:
 | `@fusion/core` | Private | Domain model, stores, SQLite adapters, settings, shared types | `packages/core/src/types.ts`, `store.ts`, `db.ts`, `central-core.ts`, `agent-store.ts` |
 | `@fusion/engine` | Private | AI orchestration runtime (triage, scheduler, executor, merger, recovery) | `packages/engine/src/triage.ts`, `scheduler.ts`, `executor.ts`, `merger.ts`, `project-runtime.ts` |
 | `@fusion/dashboard` | Private | Express API server + React app | `packages/dashboard/src/server.ts`, `routes.ts`, `sse.ts`, `websocket.ts`, `packages/dashboard/app/App.tsx` |
-| `@gsxdsm/fusion` | **Published** | CLI binary (`fn`) + Pi extension | `packages/cli/src/bin.ts`, `commands/*`, `project-resolver.ts`, `extension.ts` |
+| `@runfusion/fusion` | **Published** | CLI binary (`fn`) + Pi extension | `packages/cli/src/bin.ts`, `commands/*`, `project-resolver.ts`, `extension.ts` |
 | `@fusion/desktop` | Private | Electron shell around Fusion dashboard/client | `packages/desktop/src/main.ts`, `ipc.ts`, `preload.ts`, `scripts/build.ts` |
 | `@fusion/tui` | Private | Ink-based terminal package with ScreenRouter and tab navigation | `packages/tui/src/index.tsx`, `packages/tui/src/components/screen-router.tsx` |
 | `@fusion/mobile` | Private | Capacitor + PWA mobile packaging of dashboard assets | `packages/mobile/capacitor.config.ts`, `packages/mobile/src/*` |
@@ -80,9 +80,9 @@ At a high level, Fusion is split into:
 @fusion/engine ───────────────▶ @fusion/core
 @fusion/dashboard ────────────▶ @fusion/core
 @fusion/dashboard ────────────▶ @fusion/engine
-@gsxdsm/fusion (CLI) ─────────▶ @fusion/core
-@gsxdsm/fusion (CLI) ─────────▶ @fusion/engine
-@gsxdsm/fusion (CLI) ─────────▶ @fusion/dashboard
+@runfusion/fusion (CLI) ─────────▶ @fusion/core
+@runfusion/fusion (CLI) ─────────▶ @fusion/engine
+@runfusion/fusion (CLI) ─────────▶ @fusion/dashboard
 @fusion/tui ──────────────────▶ @fusion/core
 @fusion/plugin-sdk (peerDep) ─▶ @fusion/core
 
@@ -93,7 +93,7 @@ At a high level, Fusion is split into:
 Concrete references:
 - `@fusion/engine` has a workspace dependency on `@fusion/core` (`packages/engine/package.json`)
 - `@fusion/dashboard` has workspace dependencies on `@fusion/core` and `@fusion/engine` (`packages/dashboard/package.json`)
-- `@gsxdsm/fusion` has workspace development dependencies on `@fusion/core`, `@fusion/engine`, and `@fusion/dashboard` for composition/build packaging (`packages/cli/package.json`)
+- `@runfusion/fusion` has workspace development dependencies on `@fusion/core`, `@fusion/engine`, and `@fusion/dashboard` for composition/build packaging (`packages/cli/package.json`)
 - `@fusion/tui` depends on `@fusion/core` (`packages/tui/package.json`)
 - `@fusion/plugin-sdk` declares a peer dependency on `@fusion/core` (`packages/plugin-sdk/package.json`)
 - `@fusion/desktop` embeds dashboard assets at build time via script (`packages/desktop/scripts/build.ts`) but does not declare workspace deps in `package.json`
@@ -449,7 +449,7 @@ Events are tied to specific run IDs for end-to-end traceability.
 
 ---
 
-## 7) CLI Package (`@gsxdsm/fusion`)
+## 7) CLI Package (`@runfusion/fusion`)
 
 ### Command entrypoint
 - `packages/cli/src/bin.ts`

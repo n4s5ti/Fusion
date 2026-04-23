@@ -7,7 +7,7 @@ When making changes that affect published packages, create a changeset file:
 ```bash
 cat > .changeset/<short-description>.md << 'EOF'
 ---
-"@gsxdsm/fusion": patch
+"@runfusion/fusion": patch
 ---
 
 Short description of the change.
@@ -21,16 +21,16 @@ Bump types:
 
 Include the changeset file in the same commit as the code change. The filename should be a short kebab-case description (e.g., `fix-merge-conflict.md`, `add-retry-button.md`).
 
-Only create changesets for changes that affect the published `@gsxdsm/fusion` package — user-facing features, bug fixes, CLI changes, tool changes. Do NOT create changesets for internal docs (AGENTS.md, README), CI config, or refactors that don't change behavior.
+Only create changesets for changes that affect the published `@runfusion/fusion` package — user-facing features, bug fixes, CLI changes, tool changes. Do NOT create changesets for internal docs (AGENTS.md, README), CI config, or refactors that don't change behavior.
 
 ## Package Structure
 
 - `@fusion/core` — domain model, task store (private, not published)
 - `@fusion/dashboard` — web UI + API server (private, not published)
 - `@fusion/engine` — AI agents: triage, executor, reviewer, merger, scheduler (private, not published)
-- `@gsxdsm/fusion` — CLI + pi extension (published to npm)
+- `@runfusion/fusion` — CLI + pi extension (published to npm)
 
-Only `@gsxdsm/fusion` is published. The others are internal workspace packages.
+Only `@runfusion/fusion` is published. The others are internal workspace packages.
 
 ## Storage Model
 
@@ -109,7 +109,7 @@ All remote node endpoints require the target node to have an `apiKey` configured
 
 ## Pi Extension (`packages/cli/src/extension.ts`)
 
-The pi extension provides tools and a `/fn` command for interacting with fn from within a pi session. It ships as part of `@gsxdsm/fusion`.
+The pi extension provides tools and a `/fn` command for interacting with fn from within a pi session. It ships as part of `@runfusion/fusion`.
 
 **Update the extension when:**
 - CLI commands change (behavior, flags, or output)

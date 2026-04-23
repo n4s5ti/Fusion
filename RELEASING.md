@@ -85,9 +85,9 @@ This will trigger `release.yml` to build binaries and create a GitHub Release. N
 | `pnpm changeset` | Add a new changeset |
 | `pnpm changeset status` | Check pending changesets |
 | `pnpm release:version` | Apply changesets and bump versions (used by CI) |
-| `pnpm --filter @gsxdsm/fusion build:exe` | Build binary for current platform |
-| `pnpm --filter @gsxdsm/fusion build:exe -- --target <target>` | Cross-compile for a specific platform |
-| `pnpm --filter @gsxdsm/fusion build:exe:all` | Build binaries for all platforms |
+| `pnpm --filter @runfusion/fusion build:exe` | Build binary for current platform |
+| `pnpm --filter @runfusion/fusion build:exe -- --target <target>` | Cross-compile for a specific platform |
+| `pnpm --filter @runfusion/fusion build:exe:all` | Build binaries for all platforms |
 
 ## Tips
 
@@ -107,4 +107,4 @@ The following packages are **internal** and are **not published to npm**:
 - `@fusion/plugin-sdk` — Plugin development SDK
 - `@fusion-plugin-examples/*` — Example plugins
 
-These packages have `private: true` in their `package.json` and are listed in the `.changeset/config.json` `ignore` array to prevent accidental publishing. Only the `@gsxdsm/fusion` package is published to npm.
+These packages have `private: true` in their `package.json` and are listed in the `.changeset/config.json` `ignore` array to prevent accidental publishing. Only the `@runfusion/fusion` package is published to npm.

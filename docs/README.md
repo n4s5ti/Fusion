@@ -69,7 +69,7 @@ For a full walkthrough (installation, onboarding, first task, and daily workflow
 ## External Resources
 
 - GitHub repository: https://github.com/Runfusion/Fusion
-- npm package: https://www.npmjs.com/package/@gsxdsm/fusion
+- npm package: https://www.npmjs.com/package/@runfusion/fusion
 - pi agent framework: https://github.com/badlogic/pi-mono
 
 ## Suggested Reading Paths
