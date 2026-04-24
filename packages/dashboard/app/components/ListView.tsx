@@ -508,6 +508,8 @@ export function ListView({
         payload.modelId,
         payload.validatorModelProvider,
         payload.validatorModelId,
+        undefined,
+        undefined,
         projectId,
       );
 
@@ -678,10 +680,11 @@ export function ListView({
             <div className="bulk-edit-dropdown">
               <CustomModelDropdown
                 models={availableModels}
-                value={executorModel === "__no_change__" ? "" : executorModel}
-                onChange={(value) => setExecutorModel(value === "" ? "__no_change__" : value)}
+                value={executorModel}
+                onChange={setExecutorModel}
                 label="Executor Model"
-                placeholder="No change"
+                noChangeValue="__no_change__"
+                noChangeLabel="No change"
                 favoriteProviders={favoriteProviders}
                 onToggleFavorite={onToggleFavorite}
                 favoriteModels={favoriteModels}
@@ -691,10 +694,11 @@ export function ListView({
             <div className="bulk-edit-dropdown">
               <CustomModelDropdown
                 models={availableModels}
-                value={validatorModel === "__no_change__" ? "" : validatorModel}
-                onChange={(value) => setValidatorModel(value === "" ? "__no_change__" : value)}
+                value={validatorModel}
+                onChange={setValidatorModel}
                 label="Validator Model"
-                placeholder="No change"
+                noChangeValue="__no_change__"
+                noChangeLabel="No change"
                 favoriteProviders={favoriteProviders}
                 onToggleFavorite={onToggleFavorite}
                 favoriteModels={favoriteModels}

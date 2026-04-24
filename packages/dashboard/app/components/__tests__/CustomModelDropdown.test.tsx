@@ -54,6 +54,35 @@ describe("CustomModelDropdown", () => {
     expect(hostSurface.contains(portal)).toBe(false);
   });
 
+  it("supports an explicit No change sentinel while keeping Use default available", async () => {
+    const user = userEvent.setup();
+    const onChange = vi.fn();
+
+    render(
+      <CustomModelDropdown
+        label="Executor Model"
+        value="__no_change__"
+        onChange={onChange}
+        models={MOCK_MODELS}
+        noChangeValue="__no_change__"
+        noChangeLabel="No change"
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: "Executor Model" }));
+    const portal = await screen.findByTestId("model-combobox-portal");
+
+    await user.click(within(portal).getByText("Use default"));
+    expect(onChange).toHaveBeenCalledWith("");
+
+    onChange.mockClear();
+    await user.click(screen.getByRole("button", { name: "Executor Model" }));
+    const reopenedPortal = await screen.findByTestId("model-combobox-portal");
+    await user.click(within(reopenedPortal).getByText("No change"));
+
+    expect(onChange).toHaveBeenCalledWith("__no_change__");
+  });
+
   it("keeps the portaled list interactive for selecting a model and clearing back to default", async () => {
     const user = userEvent.setup();
     const onChange = vi.fn();

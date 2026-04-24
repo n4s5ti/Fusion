@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { ListView } from "../ListView";
 import type { Task, TaskDetail } from "@fusion/core";
 import { scopedKey } from "../../utils/projectStorage";
@@ -21,7 +22,7 @@ vi.mock("../../api", () => ({
   batchUpdateTaskModels: vi.fn(),
 }));
 
-import { fetchTaskDetail } from "../../api";
+import { fetchTaskDetail, batchUpdateTaskModels } from "../../api";
 
 const mockAddToast = vi.fn();
 const TEST_PROJECT_ID = "proj-123";
@@ -2062,11 +2063,23 @@ describe("ListView - Bulk Selection", () => {
     expect(screen.getByText("1 selected")).toBeDefined();
   });
 
-  it("enables apply button when a model is selected", async () => {
+  it("treats No change, explicit model, and Use default as distinct bulk-edit states", async () => {
+    const user = userEvent.setup();
     const availableModels = [
       { provider: "openai", id: "gpt-4o", name: "GPT-4o", reasoning: false, contextWindow: 128000 },
     ];
     const tasks = [createMockTask({ id: "FN-001" })];
+    const mockedBatchUpdateTaskModels = vi.mocked(batchUpdateTaskModels);
+    mockedBatchUpdateTaskModels.mockResolvedValue({
+      updated: [
+        {
+          ...tasks[0],
+          modelProvider: "openai",
+          modelId: "gpt-4o",
+        },
+      ],
+      count: 1,
+    });
 
     render(
       <ListView
@@ -2078,16 +2091,62 @@ describe("ListView - Bulk Selection", () => {
       />
     );
 
-    // Select the task
-    const checkbox = screen.getByLabelText("Select FN-001");
-    fireEvent.click(checkbox);
+    await user.click(screen.getByLabelText("Select FN-001"));
 
-    // Initially disabled
-    const applyButton = screen.getByText("Apply");
+    let applyButton = screen.getByRole("button", { name: "Apply" });
     expect(applyButton).toBeDisabled();
 
-    // The dropdown would need to be interacted with to enable the button
-    // This test verifies the initial disabled state and button presence
+    await user.click(screen.getByRole("button", { name: "Executor Model" }));
+    const modelMenu = await screen.findByTestId("model-combobox-portal");
+    await user.click(within(modelMenu).getByText("GPT-4o"));
+
+    expect(applyButton).toBeEnabled();
+
+    await user.click(applyButton);
+
+    await waitFor(() => {
+      expect(mockedBatchUpdateTaskModels).toHaveBeenCalled();
+      const firstApplyArgs = mockedBatchUpdateTaskModels.mock.calls[0];
+      expect(firstApplyArgs?.[0]).toEqual(["FN-001"]);
+      expect(firstApplyArgs?.[1]).toBe("openai");
+      expect(firstApplyArgs?.[2]).toBe("gpt-4o");
+      expect(firstApplyArgs?.[3]).toBeUndefined();
+      expect(firstApplyArgs?.[4]).toBeUndefined();
+    });
+
+    // After a successful apply, controls reset to No change and disable Apply again.
+    await user.click(screen.getByLabelText("Select FN-001"));
+    applyButton = screen.getByRole("button", { name: "Apply" });
+    expect(applyButton).toBeDisabled();
+
+    // Selecting Use default must be treated as an explicit clear (null pair), not unchanged.
+    mockedBatchUpdateTaskModels.mockResolvedValue({
+      updated: [
+        {
+          ...tasks[0],
+          modelProvider: null,
+          modelId: null,
+        },
+      ],
+      count: 1,
+    });
+
+    await user.click(screen.getByRole("button", { name: "Executor Model" }));
+    const clearMenu = await screen.findByTestId("model-combobox-portal");
+    await user.click(within(clearMenu).getByText("Use default"));
+
+    expect(applyButton).toBeEnabled();
+
+    await user.click(applyButton);
+
+    await waitFor(() => {
+      const clearApplyArgs = mockedBatchUpdateTaskModels.mock.calls.at(-1);
+      expect(clearApplyArgs?.[0]).toEqual(["FN-001"]);
+      expect(clearApplyArgs?.[1]).toBeNull();
+      expect(clearApplyArgs?.[2]).toBeNull();
+      expect(clearApplyArgs?.[3]).toBeUndefined();
+      expect(clearApplyArgs?.[4]).toBeUndefined();
+    });
   });
 
   it("forwards favoriteProviders and favoriteModels to QuickEntryBox model menu (FN-770)", async () => {

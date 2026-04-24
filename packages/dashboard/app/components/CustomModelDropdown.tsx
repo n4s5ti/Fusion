@@ -12,6 +12,10 @@ export interface CustomModelDropdownProps {
   disabled?: boolean;
   id?: string;
   label: string;
+  /** Optional untouched sentinel value for contexts that need a third lane (e.g. list-view bulk edit). */
+  noChangeValue?: string;
+  /** Display label for noChangeValue (defaults to "No change"). */
+  noChangeLabel?: string;
   /** List of favorite provider names in preferred order */
   favoriteProviders?: string[];
   /** Called when user toggles a provider's favorite status */
@@ -54,6 +58,8 @@ export function CustomModelDropdown({
   onToggleFavorite,
   favoriteModels = [],
   onToggleModelFavorite,
+  noChangeValue,
+  noChangeLabel = "No change",
 }: CustomModelDropdownProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [localFilter, setLocalFilter] = useState("");
@@ -118,19 +124,29 @@ export function CustomModelDropdown({
     });
   }, [modelsByProvider, favoriteProviders]);
 
+  const hasNoChangeOption = typeof noChangeValue === "string" && noChangeValue.length > 0;
+
   // Get current provider from value
   const currentProvider = useMemo(() => {
-    if (!value) return null;
+    if (!value || (hasNoChangeOption && value === noChangeValue)) return null;
     const slashIdx = value.indexOf("/");
     return slashIdx === -1 ? null : value.slice(0, slashIdx);
-  }, [value]);
+  }, [hasNoChangeOption, noChangeValue, value]);
+
+  const specialOptions = useMemo(() => {
+    const options: Array<{ type: "default" | "no-change"; value: string; label: string }> = [];
+    if (hasNoChangeOption) {
+      options.push({ type: "no-change", value: noChangeValue, label: noChangeLabel });
+    }
+    options.push({ type: "default", value: "", label: "Use default" });
+    return options;
+  }, [hasNoChangeOption, noChangeLabel, noChangeValue]);
 
   // Build list of all selectable options (for keyboard navigation)
-  // Includes favorited models first (as pinned rows), then provider groups
+  // Includes special rows first (optional "No change" + "Use default"),
+  // favorited models next, then provider groups.
   const optionsList = useMemo(() => {
-    const options: Array<{ type: "default" | "provider" | "model" | "favorite"; value: string; label: string; provider?: string }> = [
-      { type: "default", value: "", label: "Use default" },
-    ];
+    const options: Array<{ type: "default" | "no-change" | "provider" | "model" | "favorite"; value: string; label: string; provider?: string }> = [...specialOptions];
 
     // Add favorited models as pinned rows first
     for (const { model, fullId } of favoritedModelEntries) {
@@ -155,10 +171,13 @@ export function CustomModelDropdown({
     });
 
     return options;
-  }, [favoritedModelEntries, sortedProviderEntries]);
+  }, [favoritedModelEntries, sortedProviderEntries, specialOptions]);
 
   // Get current selection display text
   const selectedDisplayText = useMemo(() => {
+    if (hasNoChangeOption && value === noChangeValue) {
+      return noChangeLabel;
+    }
     if (!value) return "Use default";
     const slashIdx = value.indexOf("/");
     if (slashIdx === -1) return value;
@@ -166,7 +185,7 @@ export function CustomModelDropdown({
     const modelId = value.slice(slashIdx + 1);
     const model = models.find((m) => m.provider === provider && m.id === modelId);
     return model?.name || value;
-  }, [value, models]);
+  }, [hasNoChangeOption, noChangeLabel, noChangeValue, value, models]);
 
   // Find index of current value in options list
   const currentValueIndex = useMemo(() => {
@@ -470,23 +489,26 @@ export function CustomModelDropdown({
       </div>
 
       <div ref={listRef} className="model-combobox-list">
-        <div
-          data-index={0}
-          className={`model-combobox-option ${highlightedIndex === 0 ? "model-combobox-option--highlighted" : ""} ${value === "" ? "model-combobox-option--selected" : ""}`}
-          onClick={() => handleSelect("")}
-          onMouseEnter={() => setHighlightedIndex(0)}
-          role="option"
-          aria-selected={value === ""}
-        >
-          <span className="model-combobox-option-text model-combobox-option-text--default">Use default</span>
-        </div>
+        {specialOptions.map((option, index) => (
+          <div
+            key={`${option.type}-${option.value}`}
+            data-index={index}
+            className={`model-combobox-option ${highlightedIndex === index ? "model-combobox-option--highlighted" : ""} ${value === option.value ? "model-combobox-option--selected" : ""}`}
+            onClick={() => handleSelect(option.value)}
+            onMouseEnter={() => setHighlightedIndex(index)}
+            role="option"
+            aria-selected={value === option.value}
+          >
+            <span className="model-combobox-option-text model-combobox-option-text--default">{option.label}</span>
+          </div>
+        ))}
 
         {/* Favorited models as pinned rows */}
         {favoritedModelEntries.length > 0 && (
           <>
             <div className="model-combobox-divider" />
             {favoritedModelEntries.map(({ model, fullId }, idx) => {
-              const optionIndex = idx + 1; // +1 for "Use default" at index 0
+              const optionIndex = idx + specialOptions.length;
               const isHighlighted = highlightedIndex === optionIndex;
               const isSelected = value === fullId;
               return (
