@@ -286,6 +286,117 @@ function readJsonObject(path) {
         return {};
     }
 }
+function normalizeSessionHistoryEntries(sessionManager) {
+    const entries = sessionManager.fileEntries;
+    if (!Array.isArray(entries) || entries.length === 0) {
+        return;
+    }
+    let changed = false;
+    for (const entry of entries) {
+        if (entry?.type !== "message" || !entry.message || typeof entry.message !== "object") {
+            continue;
+        }
+        const role = entry.message.role;
+        if (role !== "assistant" && role !== "toolResult") {
+            continue;
+        }
+        if (!("content" in entry.message)) {
+            entry.message.content = [];
+            changed = true;
+        }
+    }
+    if (changed) {
+        sessionManager._rewriteFile?.();
+    }
+}
+function normalizeAssistantOrToolResultMessage(message) {
+    if (!message || typeof message !== "object") {
+        return false;
+    }
+    const role = message.role;
+    if (role !== "assistant" && role !== "toolResult") {
+        return false;
+    }
+    if (!Array.isArray(message.content)) {
+        message.content = [];
+    }
+    return true;
+}
+function syncNormalizedMessageIntoAgentState(session, message) {
+    const messages = session.agent?.state?.messages;
+    if (!Array.isArray(messages) || messages.length === 0) {
+        return;
+    }
+    for (let i = messages.length - 1; i >= 0; i--) {
+        const candidate = messages[i];
+        if (!candidate || typeof candidate !== "object") {
+            continue;
+        }
+        if (candidate === message) {
+            normalizeAssistantOrToolResultMessage(candidate);
+            return;
+        }
+        if (candidate.role !== message.role) {
+            continue;
+        }
+        if (candidate.role === "toolResult") {
+            if (candidate.toolCallId === message.toolCallId && candidate.toolName === message.toolName) {
+                normalizeAssistantOrToolResultMessage(candidate);
+                return;
+            }
+            continue;
+        }
+        if (candidate.timestamp === message.timestamp) {
+            normalizeAssistantOrToolResultMessage(candidate);
+            return;
+        }
+    }
+}
+function installToolResultContentGuard(session) {
+    if (session.__fusionToolResultGuardInstalled || !session.agent?.afterToolCall) {
+        return;
+    }
+    const originalAfterToolCall = session.agent.afterToolCall.bind(session.agent);
+    session.agent.afterToolCall = async (payload) => {
+        const hookResult = await originalAfterToolCall(payload);
+        if (!hookResult || typeof hookResult !== "object") {
+            return hookResult;
+        }
+        const content = hookResult.content ?? payload.result?.content ?? [];
+        return {
+            content: Array.isArray(content) ? content : [],
+            details: hookResult.details ?? payload.result?.details,
+            isError: hookResult.isError ?? payload.isError,
+        };
+    };
+    session.__fusionToolResultGuardInstalled = true;
+}
+function installMessageContentGuard(session, sessionManager) {
+    if (session.__fusionMessageContentGuardInstalled) {
+        return;
+    }
+    if (typeof session.subscribe === "function") {
+        session.subscribe((event) => {
+            if (!event || typeof event !== "object" || event.type !== "message_end") {
+                return;
+            }
+            const message = event.message;
+            if (!normalizeAssistantOrToolResultMessage(message)) {
+                return;
+            }
+            syncNormalizedMessageIntoAgentState(session, message);
+        });
+    }
+    if (typeof sessionManager.appendMessage === "function") {
+        const originalAppendMessage = sessionManager.appendMessage.bind(sessionManager);
+        sessionManager.appendMessage = (message) => {
+            normalizeAssistantOrToolResultMessage(message);
+            syncNormalizedMessageIntoAgentState(session, message);
+            return originalAppendMessage(message);
+        };
+    }
+    session.__fusionMessageContentGuardInstalled = true;
+}
 function hasPackageManagerSettings(settings) {
     return Array.isArray(settings.packages) || Array.isArray(settings.npmCommand);
 }
@@ -572,6 +683,7 @@ export async function createFnAgent(options) {
     });
     await resourceLoader.reload();
     const sessionManager = options.sessionManager ?? SessionManager.inMemory();
+    normalizeSessionHistoryEntries(sessionManager);
     const createSessionWithModel = async (modelOverride) => {
         return createAgentSession({
             cwd: options.cwd,
@@ -602,6 +714,8 @@ export async function createFnAgent(options) {
         piLog.log("Fallback session created successfully");
     }
     const { session } = sessionResult;
+    installToolResultContentGuard(session);
+    installMessageContentGuard(session, sessionManager);
     session.__fusionMemoryAppendAvailable = options.customTools?.some((tool) => tool.name === "memory_append") === true;
     const promptableSession = session;
     promptableSession.promptWithFallback = async (prompt, promptOptions) => {
@@ -657,6 +771,8 @@ export async function createFnAgent(options) {
             }
             const fallbackSessionResult = await createSessionWithModel(fallbackModel);
             const fallbackSession = fallbackSessionResult.session;
+            installToolResultContentGuard(fallbackSession);
+            installMessageContentGuard(fallbackSession, sessionManager);
             fallbackSession.__fusionMemoryAppendAvailable = options.customTools?.some((tool) => tool.name === "memory_append") === true;
             if (options.defaultThinkingLevel) {
                 fallbackSession.setThinkingLevel(options.defaultThinkingLevel);

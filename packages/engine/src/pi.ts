@@ -46,6 +46,36 @@ export interface PromptableSession extends AgentSession {
   promptWithFallback: (prompt: string, options?: unknown) => Promise<void>;
 }
 
+interface SessionManagerLike {
+  fileEntries?: Array<{ type?: string; message?: Record<string, unknown> }>;
+  appendMessage?: (message: Record<string, unknown>) => void;
+  _rewriteFile?: () => void;
+}
+
+interface ToolHookPayload {
+  toolCall: unknown;
+  args: unknown;
+  result: { content?: unknown; details?: unknown };
+  isError: boolean;
+}
+
+interface ToolHookResult {
+  content?: unknown;
+  details?: unknown;
+  isError?: boolean;
+}
+
+type AgentToolHookSession = AgentSession & {
+  agent?: {
+    afterToolCall?: (payload: ToolHookPayload) => Promise<ToolHookResult | undefined>;
+    state?: {
+      messages?: Array<Record<string, unknown>>;
+    };
+  };
+  __fusionToolResultGuardInstalled?: boolean;
+  __fusionMessageContentGuardInstalled?: boolean;
+};
+
 function getSessionStateError(session: AgentSession): string {
   const state = (session as any).state;
   const error = state?.errorMessage ?? state?.error;
@@ -414,6 +444,137 @@ function readJsonObject(path: string): Record<string, any> {
   }
 }
 
+function normalizeSessionHistoryEntries(sessionManager: SessionManagerLike): void {
+  const entries = sessionManager.fileEntries;
+  if (!Array.isArray(entries) || entries.length === 0) {
+    return;
+  }
+
+  let changed = false;
+  for (const entry of entries) {
+    if (entry?.type !== "message" || !entry.message || typeof entry.message !== "object") {
+      continue;
+    }
+    const role = entry.message.role;
+    if (role !== "assistant" && role !== "toolResult") {
+      continue;
+    }
+    if (!("content" in entry.message)) {
+      entry.message.content = [];
+      changed = true;
+    }
+  }
+
+  if (changed) {
+    sessionManager._rewriteFile?.();
+  }
+}
+
+function normalizeAssistantOrToolResultMessage(message: unknown): message is Record<string, unknown> {
+  if (!message || typeof message !== "object") {
+    return false;
+  }
+
+  const role = (message as Record<string, unknown>).role;
+  if (role !== "assistant" && role !== "toolResult") {
+    return false;
+  }
+
+  if (!Array.isArray((message as Record<string, unknown>).content)) {
+    (message as Record<string, unknown>).content = [];
+  }
+  return true;
+}
+
+function syncNormalizedMessageIntoAgentState(session: AgentToolHookSession, message: Record<string, unknown>): void {
+  const messages = session.agent?.state?.messages;
+  if (!Array.isArray(messages) || messages.length === 0) {
+    return;
+  }
+
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const candidate = messages[i];
+    if (!candidate || typeof candidate !== "object") {
+      continue;
+    }
+    if (candidate === message) {
+      normalizeAssistantOrToolResultMessage(candidate);
+      return;
+    }
+
+    if (candidate.role !== message.role) {
+      continue;
+    }
+
+    if (candidate.role === "toolResult") {
+      if (candidate.toolCallId === message.toolCallId && candidate.toolName === message.toolName) {
+        normalizeAssistantOrToolResultMessage(candidate);
+        return;
+      }
+      continue;
+    }
+
+    if (candidate.timestamp === message.timestamp) {
+      normalizeAssistantOrToolResultMessage(candidate);
+      return;
+    }
+  }
+}
+
+function installToolResultContentGuard(session: AgentToolHookSession): void {
+  if (session.__fusionToolResultGuardInstalled || !session.agent?.afterToolCall) {
+    return;
+  }
+
+  const originalAfterToolCall = session.agent.afterToolCall.bind(session.agent) as any;
+  (session.agent as any).afterToolCall = async (payload: ToolHookPayload) => {
+    const hookResult = await originalAfterToolCall(payload);
+    if (!hookResult || typeof hookResult !== "object") {
+      return hookResult;
+    }
+
+    const content = hookResult.content ?? payload.result?.content ?? [];
+    return {
+      content: Array.isArray(content) ? content : [],
+      details: hookResult.details ?? payload.result?.details,
+      isError: hookResult.isError ?? payload.isError,
+    };
+  };
+  session.__fusionToolResultGuardInstalled = true;
+}
+
+function installMessageContentGuard(session: AgentToolHookSession, sessionManager: SessionManagerLike): void {
+  if (session.__fusionMessageContentGuardInstalled) {
+    return;
+  }
+
+  if (typeof session.subscribe === "function") {
+    session.subscribe((event: unknown) => {
+      if (!event || typeof event !== "object" || (event as { type?: string }).type !== "message_end") {
+        return;
+      }
+
+      const message = (event as { message?: unknown }).message;
+      if (!normalizeAssistantOrToolResultMessage(message)) {
+        return;
+      }
+
+      syncNormalizedMessageIntoAgentState(session, message);
+    });
+  }
+
+  if (typeof sessionManager.appendMessage === "function") {
+    const originalAppendMessage = sessionManager.appendMessage.bind(sessionManager);
+    sessionManager.appendMessage = (message: Record<string, unknown>) => {
+      normalizeAssistantOrToolResultMessage(message);
+      syncNormalizedMessageIntoAgentState(session, message);
+      return originalAppendMessage(message);
+    };
+  }
+
+  session.__fusionMessageContentGuardInstalled = true;
+}
+
 function hasPackageManagerSettings(settings: Record<string, any>): boolean {
   return Array.isArray(settings.packages) || Array.isArray(settings.npmCommand);
 }
@@ -760,6 +921,7 @@ export async function createFnAgent(options: AgentOptions): Promise<AgentResult>
   await resourceLoader.reload();
 
   const sessionManager = options.sessionManager ?? SessionManager.inMemory();
+  normalizeSessionHistoryEntries(sessionManager as unknown as SessionManagerLike);
 
   const createSessionWithModel = async (modelOverride?: typeof selectedModel) => {
     // pi-coding-agent 0.68+: `tools` is a string[] allowlist of tool names, not
@@ -801,6 +963,8 @@ export async function createFnAgent(options: AgentOptions): Promise<AgentResult>
   }
 
   const { session } = sessionResult;
+  installToolResultContentGuard(session as AgentToolHookSession);
+  installMessageContentGuard(session as AgentToolHookSession, sessionManager as unknown as SessionManagerLike);
   (session as any).__fusionMemoryAppendAvailable = options.customTools?.some((tool) => tool.name === "memory_append") === true;
   const promptableSession = session as PromptableSession;
 
@@ -857,6 +1021,11 @@ export async function createFnAgent(options: AgentOptions): Promise<AgentResult>
 
       const fallbackSessionResult = await createSessionWithModel(fallbackModel);
       const fallbackSession = fallbackSessionResult.session as PromptableSession;
+      installToolResultContentGuard(fallbackSession as unknown as AgentToolHookSession);
+      installMessageContentGuard(
+        fallbackSession as unknown as AgentToolHookSession,
+        sessionManager as unknown as SessionManagerLike,
+      );
       (fallbackSession as any).__fusionMemoryAppendAvailable = options.customTools?.some((tool) => tool.name === "memory_append") === true;
 
       if (options.defaultThinkingLevel) {

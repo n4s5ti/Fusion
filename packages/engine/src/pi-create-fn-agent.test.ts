@@ -678,6 +678,124 @@ describe("createFnAgent", () => {
     );
   });
 
+  it("preserves tool result content when extension hooks only modify metadata", async () => {
+    const originalAfterToolCall = vi.fn().mockResolvedValue({ isError: false });
+    const session = {
+      agent: {
+        afterToolCall: originalAfterToolCall,
+      },
+      prompt: vi.fn(),
+      subscribe: vi.fn(),
+      dispose: vi.fn(),
+      setThinkingLevel: vi.fn(),
+    };
+    createAgentSessionMock.mockResolvedValueOnce({ session });
+
+    const { createFnAgent } = await import("./pi.js");
+    const { session: guardedSession } = await createFnAgent({
+      cwd: "/tmp",
+      systemPrompt: "test",
+      tools: "readonly",
+    });
+
+    const result = await (guardedSession as any).agent.afterToolCall({
+      toolCall: { id: "tool-1", name: "read" },
+      args: { path: "file.txt" },
+      result: { content: [{ type: "text", text: "ok" }], details: { source: "tool" } },
+      isError: false,
+    });
+
+    expect(result).toEqual({
+      content: [{ type: "text", text: "ok" }],
+      details: { source: "tool" },
+      isError: false,
+    });
+  });
+
+  it("repairs malformed persisted session messages missing content", async () => {
+    const rewriteFile = vi.fn();
+    const sessionManager = {
+      fileEntries: [
+        { type: "message", message: { role: "toolResult", toolName: "read" } },
+        { type: "message", message: { role: "assistant", stopReason: "error" } },
+      ],
+      _rewriteFile: rewriteFile,
+    };
+
+    const { createFnAgent } = await import("./pi.js");
+    await createFnAgent({
+      cwd: "/tmp",
+      systemPrompt: "test",
+      tools: "readonly",
+      sessionManager: sessionManager as any,
+    });
+
+    expect(sessionManager.fileEntries[0]?.message).toMatchObject({
+      role: "toolResult",
+      content: [],
+    });
+    expect(sessionManager.fileEntries[1]?.message).toMatchObject({
+      role: "assistant",
+      content: [],
+    });
+    expect(rewriteFile).toHaveBeenCalledTimes(1);
+  });
+
+  it("normalizes malformed live tool results before persistence and replay", async () => {
+    const listeners: Array<(event: unknown) => void> = [];
+    const stateMessages = [
+      { role: "toolResult", toolCallId: "call-1", toolName: "read", timestamp: 123 },
+    ];
+    const originalAppendMessage = vi.fn();
+    const sessionManager = {
+      fileEntries: [],
+      appendMessage: originalAppendMessage,
+    };
+    const session = {
+      agent: {
+        afterToolCall: vi.fn().mockResolvedValue(undefined),
+        state: {
+          messages: stateMessages,
+        },
+      },
+      prompt: vi.fn(),
+      subscribe: vi.fn((listener: (event: unknown) => void) => {
+        listeners.push(listener);
+        return vi.fn();
+      }),
+      dispose: vi.fn(),
+      setThinkingLevel: vi.fn(),
+    };
+    createAgentSessionMock.mockResolvedValueOnce({ session });
+
+    const { createFnAgent } = await import("./pi.js");
+    await createFnAgent({
+      cwd: "/tmp",
+      systemPrompt: "test",
+      tools: "readonly",
+      sessionManager: sessionManager as any,
+    });
+
+    const liveMessage = stateMessages[0]!;
+    listeners[0]?.({ type: "message_end", message: liveMessage });
+    expect(liveMessage).toMatchObject({
+      role: "toolResult",
+      content: [],
+    });
+
+    const persistedMessage = {
+      role: "toolResult",
+      toolCallId: "call-1",
+      toolName: "read",
+      timestamp: 123,
+    };
+    sessionManager.appendMessage(persistedMessage as any);
+    expect(originalAppendMessage).toHaveBeenCalledWith(expect.objectContaining({
+      role: "toolResult",
+      content: [],
+    }));
+  });
+
   describe("skill selection", () => {
     beforeEach(() => {
       // Reset modules to ensure fresh imports for each test
