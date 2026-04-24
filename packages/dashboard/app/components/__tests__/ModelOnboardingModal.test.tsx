@@ -3115,47 +3115,6 @@ describe("ModelOnboardingModal progressive disclosure", () => {
       });
     });
 
-    it("clicking disclosure trigger expands content", async () => {
-      render(<ModelOnboardingModal onComplete={vi.fn()} addToast={vi.fn()} projectId="proj_123" />);
-
-      await waitFor(() => {
-        expect(screen.getByText("What are AI providers?")).toBeTruthy();
-      });
-
-      const trigger = screen.getByRole("button", { name: /What are AI providers\?/ });
-      expect(trigger.getAttribute("aria-expanded")).toBe("false");
-
-      fireEvent.click(trigger);
-
-      await waitFor(() => {
-        expect(trigger.getAttribute("aria-expanded")).toBe("true");
-        expect(screen.getByText(/AI providers like OpenAI and Anthropic/)).toBeTruthy();
-      });
-    });
-
-    it("clicking disclosure trigger again collapses content", async () => {
-      render(<ModelOnboardingModal onComplete={vi.fn()} addToast={vi.fn()} projectId="proj_123" />);
-
-      await waitFor(() => {
-        expect(screen.getByText("What are AI providers?")).toBeTruthy();
-      });
-
-      const trigger = screen.getByRole("button", { name: /What are AI providers\?/ });
-
-      // Open
-      fireEvent.click(trigger);
-      await waitFor(() => {
-        expect(trigger.getAttribute("aria-expanded")).toBe("true");
-      });
-
-      // Close
-      fireEvent.click(trigger);
-      await waitFor(() => {
-        expect(trigger.getAttribute("aria-expanded")).toBe("false");
-        expect(screen.queryByText(/AI providers like OpenAI and Anthropic/)).toBeNull();
-      });
-    });
-
     it("multiple disclosures are independent", async () => {
       render(<ModelOnboardingModal onComplete={vi.fn()} addToast={vi.fn()} projectId="proj_123" />);
 
@@ -3181,6 +3140,14 @@ describe("ModelOnboardingModal progressive disclosure", () => {
         expect(trigger1.getAttribute("aria-expanded")).toBe("true");
         expect(trigger2.getAttribute("aria-expanded")).toBe("true");
         expect(screen.getByText(/An API key is a secret token/)).toBeTruthy();
+      });
+
+      // Clicking again collapses only the clicked trigger
+      fireEvent.click(trigger1);
+      await waitFor(() => {
+        expect(trigger1.getAttribute("aria-expanded")).toBe("false");
+        expect(trigger2.getAttribute("aria-expanded")).toBe("true");
+        expect(screen.queryByText(/AI providers like OpenAI and Anthropic/)).toBeNull();
       });
     });
   });
