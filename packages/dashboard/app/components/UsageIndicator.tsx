@@ -488,12 +488,14 @@ export function UsageIndicator({ isOpen, onClose, projectId }: UsageIndicatorPro
         </div>
 
         <div className="modal-actions usage-actions">
-          <div className="usage-last-updated">
-            {lastUpdated && (
-              <span>Last updated: {lastUpdated.toLocaleTimeString()}</span>
-            )}
+          <div className="modal-actions-left usage-actions-left">
+            <div className="usage-last-updated">
+              {lastUpdated && (
+                <span>Last updated: {lastUpdated.toLocaleTimeString()}</span>
+              )}
+            </div>
           </div>
-          <div className="usage-actions-right">
+          <div className="modal-actions-right usage-actions-right">
             <button
               className="btn btn-sm"
               onClick={handleRefresh}

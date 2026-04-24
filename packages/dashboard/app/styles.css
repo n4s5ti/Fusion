@@ -14932,22 +14932,23 @@ html .column.drag-over * {
 /* Actions */
 .usage-actions {
   display: flex;
-  justify-content: space-between;
   align-items: center;
   gap: var(--space-md);
+}
+
+.usage-actions-left {
+  min-width: 0;
 }
 
 .usage-last-updated {
   font-size: 11px;
   color: var(--text-dim);
-  flex: 1;
 }
 
 .usage-actions-right {
   display: flex;
   gap: var(--space-sm);
   align-items: center;
-  margin-left: auto;
 }
 
 /* Mobile responsive */
@@ -14964,14 +14965,11 @@ html .column.drag-over * {
   }
 
   .usage-actions {
-    flex-wrap: wrap;
+    align-items: center;
   }
 
   .usage-last-updated {
-    width: 100%;
-    text-align: center;
-    order: 3;
-    margin-top: var(--space-sm);
+    text-align: left;
   }
 }
 

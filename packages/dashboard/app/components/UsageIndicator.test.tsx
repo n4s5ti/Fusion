@@ -355,6 +355,38 @@ describe("UsageIndicator", () => {
     expect(screen.getByText(/10:30:00/)).toBeInTheDocument();
   });
 
+  it("keeps footer metadata on the left and action buttons on the right", () => {
+    const lastUpdated = new Date("2024-01-15T10:30:00");
+    mockUseUsageData.mockReturnValue({
+      providers: mockProviders,
+      loading: false,
+      error: null,
+      lastUpdated,
+      refresh: mockRefresh,
+    });
+
+    render(<UsageIndicator isOpen={true} onClose={mockOnClose} projectId={TEST_PROJECT_ID} />);
+
+    const footer = document.querySelector(".usage-actions");
+    const leftGroup = document.querySelector(".usage-actions-left");
+    const rightGroup = document.querySelector(".usage-actions-right");
+
+    expect(footer).toBeInTheDocument();
+    expect(leftGroup).toBeInTheDocument();
+    expect(rightGroup).toBeInTheDocument();
+
+    const lastUpdatedLabel = screen.getByText(/Last updated:/);
+    const refreshButton = screen.getByTestId("usage-refresh-btn");
+    const closeButton = screen.getByRole("button", { name: "Close" });
+
+    expect(leftGroup).toContainElement(lastUpdatedLabel);
+    expect(rightGroup).toContainElement(refreshButton);
+    expect(rightGroup).toContainElement(closeButton);
+
+    expect(footer?.firstElementChild).toBe(leftGroup);
+    expect(footer?.lastElementChild).toBe(rightGroup);
+  });
+
   it("renders usage windows with correct percentage text", () => {
     mockUseUsageData.mockReturnValue({
       providers: [
