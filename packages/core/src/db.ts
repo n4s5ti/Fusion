@@ -86,7 +86,7 @@ export function probeFts5(db: DatabaseSync): boolean {
 
 // ── Schema Definition ────────────────────────────────────────────────
 
-const SCHEMA_VERSION = 43;
+const SCHEMA_VERSION = 44;
 
 function normalizeTaskComments(
   steeringComments: SteeringComment[] | undefined,
@@ -180,6 +180,12 @@ CREATE TABLE IF NOT EXISTS tasks (
   summary TEXT,
   thinkingLevel TEXT,
   executionMode TEXT DEFAULT 'standard',
+  tokenUsageInputTokens INTEGER,
+  tokenUsageOutputTokens INTEGER,
+  tokenUsageCachedTokens INTEGER,
+  tokenUsageTotalTokens INTEGER,
+  tokenUsageFirstUsedAt TEXT,
+  tokenUsageLastUsedAt TEXT,
   createdAt TEXT NOT NULL,
   updatedAt TEXT NOT NULL,
   columnMovedAt TEXT,
@@ -1711,6 +1717,21 @@ export class Database {
           SET priority = 'normal'
           WHERE priority IS NULL OR priority = '' OR priority NOT IN ('low', 'normal', 'high', 'urgent')
         `);
+      });
+    }
+
+    // Task-level token usage aggregate contract (FN-2456)
+    // Persists durable token totals and first/last usage timestamps on each task row.
+    // Existing rows are left null-compatible so legacy tasks deserialize without
+    // synthesizing usage data.
+    if (version < 44) {
+      this.applyMigration(44, () => {
+        this.addColumnIfMissing("tasks", "tokenUsageInputTokens", "INTEGER");
+        this.addColumnIfMissing("tasks", "tokenUsageOutputTokens", "INTEGER");
+        this.addColumnIfMissing("tasks", "tokenUsageCachedTokens", "INTEGER");
+        this.addColumnIfMissing("tasks", "tokenUsageTotalTokens", "INTEGER");
+        this.addColumnIfMissing("tasks", "tokenUsageFirstUsedAt", "TEXT");
+        this.addColumnIfMissing("tasks", "tokenUsageLastUsedAt", "TEXT");
       });
     }
 

@@ -538,12 +538,10 @@ describe("useNodeSettingsSync", () => {
 
     await expect(result.current.pushSettings("node_1")).rejects.toThrow("Push failed");
 
-    await act(async () => {
-      await flushPromises();
+    await waitFor(() => {
+      expect(result.current.error).toBe("Push failed");
+      expect(result.current.actionLoading).toEqual({});
     });
-
-    expect(result.current.error).toBe("Push failed");
-    expect(result.current.actionLoading).toEqual({});
   });
 
   it("action error for pull clears actionLoading and sets error", async () => {
@@ -566,12 +564,10 @@ describe("useNodeSettingsSync", () => {
 
     await expect(result.current.pullSettings("node_1")).rejects.toThrow("Pull failed");
 
-    await act(async () => {
-      await flushPromises();
+    await waitFor(() => {
+      expect(result.current.error).toBe("Pull failed");
+      expect(result.current.actionLoading).toEqual({});
     });
-
-    expect(result.current.error).toBe("Pull failed");
-    expect(result.current.actionLoading).toEqual({});
   });
 
   it("action error for auth sync clears actionLoading and sets error", async () => {
@@ -594,12 +590,10 @@ describe("useNodeSettingsSync", () => {
 
     await expect(result.current.syncAuth("node_1")).rejects.toThrow("Auth sync failed");
 
-    await act(async () => {
-      await flushPromises();
+    await waitFor(() => {
+      expect(result.current.error).toBe("Auth sync failed");
+      expect(result.current.actionLoading).toEqual({});
     });
-
-    expect(result.current.error).toBe("Auth sync failed");
-    expect(result.current.actionLoading).toEqual({});
   });
 
   // ── Polling error handling ─────────────────────────────────────────────────

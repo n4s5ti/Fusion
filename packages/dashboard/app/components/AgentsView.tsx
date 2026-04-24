@@ -293,11 +293,20 @@ export function AgentsView({ addToast, projectId }: AgentsViewProps) {
   const [isSavingMultiplier, setIsSavingMultiplier] = useState(false);
   /** Agent IDs with an in-flight state transition (for optimistic update guard) */
   const [transitioningAgentIds, setTransitioningAgentIds] = useState<Set<string>>(new Set());
+  const isMountedRef = useRef(true);
+
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
 
   // Load heartbeat multiplier from project settings on mount
   useEffect(() => {
     fetchSettings(projectId)
       .then((settings) => {
+        if (!isMountedRef.current) return;
         setHeartbeatMultiplier(settings.heartbeatMultiplier ?? 1);
       })
       .catch(() => {
@@ -316,7 +325,9 @@ export function AgentsView({ addToast, projectId }: AgentsViewProps) {
     } catch (err) {
       addToast(`Failed to save heartbeat multiplier: ${getErrorMessage(err)}`, "error");
     } finally {
-      setIsSavingMultiplier(false);
+      if (isMountedRef.current) {
+        setIsSavingMultiplier(false);
+      }
     }
   }, [projectId, addToast]);
 

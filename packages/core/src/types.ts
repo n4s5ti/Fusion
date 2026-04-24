@@ -645,6 +645,28 @@ export interface CheckoutLease {
   checkedOutAt: string;
 }
 
+/**
+ * Durable task-level aggregate token usage totals persisted on the task row.
+ *
+ * This model captures cumulative usage across all agent/run activity linked to
+ * a task so usage survives process restarts and can be queried without joining
+ * transient run state.
+ */
+export interface TaskTokenUsage {
+  /** Cumulative prompt/input tokens consumed by the task. */
+  inputTokens: number;
+  /** Cumulative completion/output tokens consumed by the task. */
+  outputTokens: number;
+  /** Cumulative cache-hit tokens reported by providers. */
+  cachedTokens: number;
+  /** Cumulative total tokens for the task (input + output + cached semantics per provider reporting). */
+  totalTokens: number;
+  /** ISO-8601 timestamp of the first recorded usage event for this task. */
+  firstUsedAt: string;
+  /** ISO-8601 timestamp of the most recent recorded usage event for this task. */
+  lastUsedAt: string;
+}
+
 /** Thrown when a checkout is attempted on a task already checked out by another agent. */
 export class CheckoutConflictError extends Error {
   constructor(
@@ -710,6 +732,8 @@ export interface Task {
   /** Issue information for tasks imported from GitHub issues */
   issueInfo?: IssueInfo;
   log: TaskLogEntry[];
+  /** Durable aggregate token usage totals for the task. Undefined when no usage has been recorded yet. */
+  tokenUsage?: TaskTokenUsage;
   size?: "S" | "M" | "L";
   reviewLevel?: number;
   /** Model preset selected during task creation. Presets resolve to concrete model overrides at creation time. */
@@ -819,6 +843,8 @@ export interface InboxTask {
 export interface TaskCreateInput {
   title?: string;
   description: string;
+  /** Optional persisted aggregate token usage snapshot for task creation/import paths. */
+  tokenUsage?: TaskTokenUsage;
   /**
    * Optional task importance level. Omitted values default to `normal`.
    */

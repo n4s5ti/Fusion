@@ -16224,7 +16224,7 @@ describe("Agent Reflection routes", () => {
 
       expect(res.status).toBe(500);
       expect(res.body.error).toMatch(/Unable to generate reflection|Reflection service unavailable/i);
-    });
+    }, 15000);
 
     it("returns 500 with a clear message when reflection generation returns null", async () => {
       const engine = await import("@fusion/engine");

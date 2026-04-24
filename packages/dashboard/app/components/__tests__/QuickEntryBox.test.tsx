@@ -1185,7 +1185,9 @@ describe("QuickEntryBox", () => {
       });
 
       // After creation, input is cleared and focus is restored
-      expect((textarea as HTMLTextAreaElement).value).toBe("");
+      await waitFor(() => {
+        expect((textarea as HTMLTextAreaElement).value).toBe("");
+      });
 
       // With autoExpand=true (default), textarea auto-expands on focus restore
       // but disclosure resets to collapsed — controls hidden until user toggles again

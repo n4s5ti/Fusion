@@ -223,6 +223,106 @@ describe("TaskStore", () => {
     });
   });
 
+  describe("task token usage persistence", () => {
+    it("creates and reads tasks without token usage data as undefined", async () => {
+      const task = await store.createTask({
+        description: "Task without token usage",
+      });
+
+      expect(task.tokenUsage).toBeUndefined();
+
+      const detail = await store.getTask(task.id);
+      expect(detail.tokenUsage).toBeUndefined();
+    });
+
+    it("round-trips token usage totals and timestamps through create and read", async () => {
+      const tokenUsage = {
+        inputTokens: 120,
+        outputTokens: 45,
+        cachedTokens: 30,
+        totalTokens: 195,
+        firstUsedAt: "2026-04-23T10:00:00.000Z",
+        lastUsedAt: "2026-04-23T10:05:00.000Z",
+      };
+
+      const task = await store.createTask({
+        description: "Task with token usage",
+        tokenUsage,
+      });
+
+      expect(task.tokenUsage).toEqual(tokenUsage);
+
+      const detail = await store.getTask(task.id);
+      expect(detail.tokenUsage).toEqual(tokenUsage);
+    });
+
+    it("round-trips token usage through update and preserves exact values", async () => {
+      const task = await store.createTask({ description: "Update token usage" });
+
+      const tokenUsage = {
+        inputTokens: 210,
+        outputTokens: 80,
+        cachedTokens: 40,
+        totalTokens: 330,
+        firstUsedAt: "2026-04-23T12:00:00.000Z",
+        lastUsedAt: "2026-04-23T12:30:00.000Z",
+      };
+
+      const updated = await store.updateTask(task.id, { tokenUsage });
+      expect(updated.tokenUsage).toEqual(tokenUsage);
+
+      const detail = await store.getTask(task.id);
+      expect(detail.tokenUsage).toEqual(tokenUsage);
+    });
+
+    it("persists token usage across TaskStore reinitialization", async () => {
+      const tokenUsage = {
+        inputTokens: 300,
+        outputTokens: 120,
+        cachedTokens: 50,
+        totalTokens: 470,
+        firstUsedAt: "2026-04-23T13:00:00.000Z",
+        lastUsedAt: "2026-04-23T13:45:00.000Z",
+      };
+
+      const created = await store.createTask({
+        description: "Reinit token usage persistence",
+        tokenUsage,
+      });
+
+      store.close();
+      store = new TaskStore(rootDir, globalDir);
+      await store.init();
+
+      const reloaded = await store.getTask(created.id);
+      expect(reloaded.tokenUsage).toEqual(tokenUsage);
+    });
+
+    it("clears token usage via null update and keeps it absent after reload", async () => {
+      const task = await store.createTask({
+        description: "Clear token usage",
+        tokenUsage: {
+          inputTokens: 99,
+          outputTokens: 44,
+          cachedTokens: 11,
+          totalTokens: 154,
+          firstUsedAt: "2026-04-23T14:00:00.000Z",
+          lastUsedAt: "2026-04-23T14:01:00.000Z",
+        },
+      });
+
+      const cleared = await store.updateTask(task.id, { tokenUsage: null });
+      expect(cleared.tokenUsage).toBeUndefined();
+
+      store.close();
+      store = new TaskStore(rootDir, globalDir);
+      await store.init();
+
+      const reloaded = await store.getTask(task.id);
+      expect(reloaded.tokenUsage).toBeUndefined();
+    });
+  });
+
   describe("breakIntoSubtasks task creation flag", () => {
     it("persists breakIntoSubtasks=true when explicitly requested", async () => {
       const task = await store.createTask({
