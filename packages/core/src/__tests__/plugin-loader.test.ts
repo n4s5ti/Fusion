@@ -1,0 +1,1563 @@
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
+import { writeFile, mkdir } from "node:fs/promises";
+import { join } from "node:path";
+import { mkdtempSync, existsSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { PluginLoader } from "../plugin-loader.js";
+import { PluginStore } from "../plugin-store.js";
+import type { FusionPlugin, PluginManifest } from "../plugin-types.js";
+
+// Test plugin manifest
+function makeManifest(overrides: Partial<PluginManifest> = {}): PluginManifest {
+  return {
+    id: "test-plugin",
+    name: "Test Plugin",
+    version: "1.0.0",
+    description: "A test plugin",
+    ...overrides,
+  };
+}
+
+// Create a minimal FusionPlugin for testing
+function makePlugin(manifest: PluginManifest): FusionPlugin {
+  return {
+    manifest,
+    state: "installed",
+    hooks: {},
+    tools: [],
+    routes: [],
+  };
+}
+
+// Write a plugin module to disk - creates a simple module without hooks
+async function writePluginModule(
+  dir: string,
+  filename: string,
+  plugin: FusionPlugin,
+): Promise<string> {
+  const filepath = join(dir, filename);
+  await mkdir(dir, { recursive: true });
+
+  const manifest = JSON.stringify(plugin.manifest, null, 2);
+
+  // Create a module that exports the plugin
+  const moduleCode = `
+const manifest = ${manifest};
+const plugin = {
+  manifest,
+  state: "${plugin.state}",
+  hooks: {},
+  tools: ${JSON.stringify(plugin.tools || [])},
+  routes: ${JSON.stringify(plugin.routes || [])},
+};
+
+export default plugin;
+export { plugin };
+`;
+
+  await writeFile(filepath, moduleCode);
+  return filepath;
+}
+
+// Create a plugin module with hooks
+async function writePluginWithHooks(
+  dir: string,
+  filename: string,
+  hooks: {
+    onLoad?: string;
+    onUnload?: string;
+    onTaskCreated?: string;
+    onError?: string;
+  },
+  manifest: PluginManifest,
+): Promise<string> {
+  const filepath = join(dir, filename);
+  await mkdir(dir, { recursive: true });
+
+  const manifestStr = JSON.stringify(manifest, null, 2);
+
+  const hooksCode = Object.entries(hooks)
+    .map(([name, body]) => `${name}: ${body}`)
+    .join(",\n    ");
+
+  const moduleCode = `
+const manifest = ${manifestStr};
+const plugin = {
+  manifest,
+  state: "installed",
+  hooks: {
+    ${hooksCode}
+  },
+  tools: [],
+  routes: [],
+};
+
+export default plugin;
+export { plugin };
+`;
+
+  await writeFile(filepath, moduleCode);
+  return filepath;
+}
+
+function makeTmpDir(): string {
+  return mkdtempSync(join(tmpdir(), "kb-plugin-loader-test-"));
+}
+
+// Mock TaskStore for testing
+const mockTaskStore = {
+  logActivity: vi.fn(),
+} as any;
+
+type MockStructuredLogger = {
+  log: ReturnType<typeof vi.fn>;
+  warn: ReturnType<typeof vi.fn>;
+  error: ReturnType<typeof vi.fn>;
+};
+
+async function loadPluginLoaderWithMockedLogger() {
+  vi.resetModules();
+  const loggerMap = new Map<string, MockStructuredLogger>();
+  const createLoggerMock = vi.fn((prefix: string): MockStructuredLogger => {
+    const existing = loggerMap.get(prefix);
+    if (existing) return existing;
+
+    const logger: MockStructuredLogger = {
+      log: vi.fn(),
+      warn: vi.fn(),
+      error: vi.fn(),
+    };
+    loggerMap.set(prefix, logger);
+    return logger;
+  });
+
+  vi.doMock("../logger.js", () => ({
+    createLogger: createLoggerMock,
+  }));
+
+  const { PluginLoader: MockedPluginLoader } = await import("../plugin-loader.js");
+  return { MockedPluginLoader, createLoggerMock, loggerMap };
+}
+
+describe("PluginLoader", () => {
+  let rootDir: string;
+  let pluginStore: PluginStore;
+  let loader: PluginLoader;
+
+  beforeEach(() => {
+    rootDir = makeTmpDir();
+    pluginStore = new PluginStore(rootDir);
+  });
+
+  afterEach(async () => {
+    const { rm } = await import("node:fs/promises");
+    await rm(rootDir, { recursive: true, force: true });
+    vi.clearAllMocks();
+  });
+
+  // ── Constructor & init ─────────────────────────────────────────────
+
+  describe("constructor", () => {
+    it("creates loader with options", () => {
+      const loader = new PluginLoader({
+        pluginStore,
+        taskStore: mockTaskStore,
+      });
+      expect(loader).toBeTruthy();
+    });
+
+    it("accepts custom plugin directories", () => {
+      const loader = new PluginLoader({
+        pluginStore,
+        taskStore: mockTaskStore,
+        pluginDirs: ["/custom/plugins"],
+      });
+      expect(loader).toBeTruthy();
+    });
+  });
+
+  // ── resolveLoadOrder ──────────────────────────────────────────────
+
+  describe("resolveLoadOrder", () => {
+    it("returns plugins in dependency order", async () => {
+      await pluginStore.init();
+      await pluginStore.registerPlugin({
+        manifest: makeManifest({ id: "plugin-a", dependencies: [] }),
+        path: "/a",
+      });
+      await pluginStore.registerPlugin({
+        manifest: makeManifest({ id: "plugin-b", dependencies: ["plugin-a"] }),
+        path: "/b",
+      });
+
+      const loader = new PluginLoader({
+        pluginStore,
+        taskStore: mockTaskStore,
+      });
+
+      const plugins = await pluginStore.listPlugins();
+      const sorted = loader.resolveLoadOrder(plugins);
+
+      expect(sorted[0].id).toBe("plugin-a");
+      expect(sorted[1].id).toBe("plugin-b");
+    });
+
+    it("handles complex dependency chains", async () => {
+      await pluginStore.init();
+      await pluginStore.registerPlugin({
+        manifest: makeManifest({ id: "base", dependencies: [] }),
+        path: "/base",
+      });
+      await pluginStore.registerPlugin({
+        manifest: makeManifest({ id: "middle", dependencies: ["base"] }),
+        path: "/middle",
+      });
+      await pluginStore.registerPlugin({
+        manifest: makeManifest({ id: "top", dependencies: ["middle", "base"] }),
+        path: "/top",
+      });
+
+      const loader = new PluginLoader({
+        pluginStore,
+        taskStore: mockTaskStore,
+      });
+
+      const plugins = await pluginStore.listPlugins();
+      const sorted = loader.resolveLoadOrder(plugins);
+
+      // base must come before middle and top
+      expect(sorted.findIndex((p) => p.id === "base")).toBeLessThan(
+        sorted.findIndex((p) => p.id === "middle"),
+      );
+      expect(sorted.findIndex((p) => p.id === "base")).toBeLessThan(
+        sorted.findIndex((p) => p.id === "top"),
+      );
+      // middle must come before top
+      expect(sorted.findIndex((p) => p.id === "middle")).toBeLessThan(
+        sorted.findIndex((p) => p.id === "top"),
+      );
+    });
+
+    it("throws on circular dependencies", async () => {
+      await pluginStore.init();
+      await pluginStore.registerPlugin({
+        manifest: makeManifest({ id: "a", dependencies: ["b"] }),
+        path: "/a",
+      });
+      await pluginStore.registerPlugin({
+        manifest: makeManifest({ id: "b", dependencies: ["a"] }),
+        path: "/b",
+      });
+
+      const loader = new PluginLoader({
+        pluginStore,
+        taskStore: mockTaskStore,
+      });
+
+      const plugins = await pluginStore.listPlugins();
+      expect(() => loader.resolveLoadOrder(plugins)).toThrow(
+        "Circular dependency detected",
+      );
+    });
+
+    it("handles plugins with no dependencies", async () => {
+      await pluginStore.init();
+      await pluginStore.registerPlugin({
+        manifest: makeManifest({ id: "solo" }),
+        path: "/solo",
+      });
+
+      const loader = new PluginLoader({
+        pluginStore,
+        taskStore: mockTaskStore,
+      });
+
+      const plugins = await pluginStore.listPlugins();
+      const sorted = loader.resolveLoadOrder(plugins);
+
+      expect(sorted).toHaveLength(1);
+      expect(sorted[0].id).toBe("solo");
+    });
+  });
+
+  // ── loadPlugin ─────────────────────────────────────────────────────
+
+  describe("loadPlugin", () => {
+    it("loads a valid plugin from file path", async () => {
+      await pluginStore.init();
+
+      const pluginDir = join(rootDir, "plugins");
+      const plugin = makePlugin(makeManifest({ id: "load-test" }));
+      const pluginPath = await writePluginModule(pluginDir, "index.js", plugin);
+
+      await pluginStore.registerPlugin({
+        manifest: plugin.manifest,
+        path: pluginPath,
+      });
+
+      const loader = new PluginLoader({
+        pluginStore,
+        taskStore: mockTaskStore,
+      });
+
+      const loaded = await loader.loadPlugin("load-test");
+
+      expect(loaded.manifest.id).toBe("load-test");
+      expect(loaded.state).toBe("started");
+      expect(loader.isPluginLoaded("load-test")).toBe(true);
+    });
+
+    it("updates plugin state to started", async () => {
+      await pluginStore.init();
+
+      const plugin = makePlugin(makeManifest({ id: "state-test" }));
+      const pluginDir = join(rootDir, "plugins");
+      const pluginPath = await writePluginModule(pluginDir, "index.js", plugin);
+
+      await pluginStore.registerPlugin({
+        manifest: plugin.manifest,
+        path: pluginPath,
+      });
+
+      const loader = new PluginLoader({
+        pluginStore,
+        taskStore: mockTaskStore,
+      });
+
+      await loader.loadPlugin("state-test");
+
+      const updated = await pluginStore.getPlugin("state-test");
+      expect(updated.state).toBe("started");
+    });
+
+    it("skips disabled plugins", async () => {
+      await pluginStore.init();
+
+      const plugin = makePlugin(makeManifest({ id: "disabled-test" }));
+      const pluginDir = join(rootDir, "plugins");
+      const pluginPath = await writePluginModule(pluginDir, "index.js", plugin);
+
+      await pluginStore.registerPlugin({
+        manifest: plugin.manifest,
+        path: pluginPath,
+      });
+      await pluginStore.disablePlugin("disabled-test");
+
+      const loader = new PluginLoader({
+        pluginStore,
+        taskStore: mockTaskStore,
+      });
+
+      await expect(loader.loadPlugin("disabled-test")).rejects.toThrow(
+        "disabled",
+      );
+    });
+
+    it("loads dependencies before loading dependent", async () => {
+      await pluginStore.init();
+
+      const depPlugin = makePlugin(makeManifest({ id: "dep-plugin" }));
+      const mainPlugin = makePlugin(
+        makeManifest({ id: "main-plugin", dependencies: ["dep-plugin"] }),
+      );
+
+      const pluginDir = join(rootDir, "plugins");
+      const depPath = await writePluginModule(pluginDir, "dep.js", depPlugin);
+      const mainPath = await writePluginModule(pluginDir, "main.js", mainPlugin);
+
+      await pluginStore.registerPlugin({
+        manifest: depPlugin.manifest,
+        path: depPath,
+      });
+      await pluginStore.registerPlugin({
+        manifest: mainPlugin.manifest,
+        path: mainPath,
+      });
+
+      const loader = new PluginLoader({
+        pluginStore,
+        taskStore: mockTaskStore,
+      });
+
+      // Use loadAllPlugins to test dependency ordering
+      const result = await loader.loadAllPlugins();
+
+      expect(result.loaded).toBe(2);
+      expect(loader.isPluginLoaded("dep-plugin")).toBe(true);
+      expect(loader.isPluginLoaded("main-plugin")).toBe(true);
+    });
+
+    it("fails when dependency is missing", async () => {
+      await pluginStore.init();
+
+      const plugin = makePlugin(
+        makeManifest({ id: "orphan-plugin", dependencies: ["nonexistent"] }),
+      );
+
+      const pluginDir = join(rootDir, "plugins");
+      const pluginPath = await writePluginModule(pluginDir, "index.js", plugin);
+
+      await pluginStore.registerPlugin({
+        manifest: plugin.manifest,
+        path: pluginPath,
+      });
+
+      const loader = new PluginLoader({
+        pluginStore,
+        taskStore: mockTaskStore,
+      });
+
+      await expect(loader.loadPlugin("orphan-plugin")).rejects.toThrow(
+        "depends on nonexistent",
+      );
+    });
+
+    it("error isolation - plugin crash during load doesn't crash loader", async () => {
+      await pluginStore.init();
+
+      const pluginDir = join(rootDir, "plugins");
+      const pluginPath = await writePluginWithHooks(
+        pluginDir,
+        "bad.js",
+        {
+          onLoad: "(async () => { throw new Error('Plugin crashed!'); })",
+        },
+        makeManifest({ id: "bad-plugin" }),
+      );
+
+      await pluginStore.registerPlugin({
+        manifest: makeManifest({ id: "bad-plugin" }),
+        path: pluginPath,
+      });
+
+      const loader = new PluginLoader({
+        pluginStore,
+        taskStore: mockTaskStore,
+      });
+
+      // Should throw but not crash the process
+      await expect(loader.loadPlugin("bad-plugin")).rejects.toThrow(
+        "Plugin crashed!",
+      );
+
+      // Plugin should be in error state
+      const updated = await pluginStore.getPlugin("bad-plugin");
+      expect(updated.state).toBe("error");
+      expect(updated.error).toContain("Plugin crashed!");
+    });
+  });
+
+  // ── loadAllPlugins ─────────────────────────────────────────────────
+
+  describe("loadAllPlugins", () => {
+    it("loads all enabled plugins", async () => {
+      await pluginStore.init();
+
+      const plugins: FusionPlugin[] = [
+        makePlugin(makeManifest({ id: "all-a" })),
+        makePlugin(makeManifest({ id: "all-b", dependencies: ["all-a"] })),
+      ];
+
+      const pluginDir = join(rootDir, "plugins");
+      for (const plugin of plugins) {
+        const path = await writePluginModule(
+          pluginDir,
+          `${plugin.manifest.id}.js`,
+          plugin,
+        );
+        await pluginStore.registerPlugin({
+          manifest: plugin.manifest,
+          path,
+        });
+      }
+
+      const loader = new PluginLoader({
+        pluginStore,
+        taskStore: mockTaskStore,
+      });
+
+      const result = await loader.loadAllPlugins();
+
+      expect(result.loaded).toBe(2);
+      expect(result.errors).toBe(0);
+      expect(loader.isPluginLoaded("all-a")).toBe(true);
+      expect(loader.isPluginLoaded("all-b")).toBe(true);
+    });
+
+    it("returns error count for failed plugins", async () => {
+      await pluginStore.init();
+
+      const goodPlugin = makePlugin(makeManifest({ id: "good-plugin" }));
+      const pluginDir = join(rootDir, "plugins");
+
+      const goodPath = await writePluginModule(
+        pluginDir,
+        "good.js",
+        goodPlugin,
+      );
+      const badPath = await writePluginWithHooks(
+        pluginDir,
+        "bad.js",
+        {
+          onLoad: "(async () => { throw new Error('Load failed'); })",
+        },
+        makeManifest({ id: "bad-plugin" }),
+      );
+
+      await pluginStore.registerPlugin({
+        manifest: goodPlugin.manifest,
+        path: goodPath,
+      });
+      await pluginStore.registerPlugin({
+        manifest: makeManifest({ id: "bad-plugin" }),
+        path: badPath,
+      });
+
+      const loader = new PluginLoader({
+        pluginStore,
+        taskStore: mockTaskStore,
+      });
+
+      const result = await loader.loadAllPlugins();
+
+      expect(result.loaded).toBe(1);
+      expect(result.errors).toBe(1);
+    });
+  });
+
+  // ── stopPlugin ────────────────────────────────────────────────────
+
+  describe("stopPlugin", () => {
+    it("updates plugin state to stopped", async () => {
+      await pluginStore.init();
+
+      const plugin = makePlugin(makeManifest({ id: "stop-state-test" }));
+      const pluginDir = join(rootDir, "plugins");
+      const pluginPath = await writePluginModule(pluginDir, "index.js", plugin);
+
+      await pluginStore.registerPlugin({
+        manifest: plugin.manifest,
+        path: pluginPath,
+      });
+
+      const loader = new PluginLoader({
+        pluginStore,
+        taskStore: mockTaskStore,
+      });
+
+      await loader.loadPlugin("stop-state-test");
+      await loader.stopPlugin("stop-state-test");
+
+      const updated = await pluginStore.getPlugin("stop-state-test");
+      expect(updated.state).toBe("stopped");
+    });
+
+    it("removes plugin from loaded map", async () => {
+      await pluginStore.init();
+
+      const plugin = makePlugin(makeManifest({ id: "remove-test" }));
+      const pluginDir = join(rootDir, "plugins");
+      const pluginPath = await writePluginModule(pluginDir, "index.js", plugin);
+
+      await pluginStore.registerPlugin({
+        manifest: plugin.manifest,
+        path: pluginPath,
+      });
+
+      const loader = new PluginLoader({
+        pluginStore,
+        taskStore: mockTaskStore,
+      });
+
+      await loader.loadPlugin("remove-test");
+      expect(loader.isPluginLoaded("remove-test")).toBe(true);
+
+      await loader.stopPlugin("remove-test");
+      expect(loader.isPluginLoaded("remove-test")).toBe(false);
+    });
+
+    it("no-ops for non-loaded plugin", async () => {
+      await pluginStore.init();
+
+      const loader = new PluginLoader({
+        pluginStore,
+        taskStore: mockTaskStore,
+      });
+
+      // Should not throw
+      await loader.stopPlugin("nonexistent");
+    });
+  });
+
+  // ── stopAllPlugins ─────────────────────────────────────────────────
+
+  describe("stopAllPlugins", () => {
+    it("stops all loaded plugins", async () => {
+      await pluginStore.init();
+
+      const plugins: FusionPlugin[] = [
+        makePlugin(makeManifest({ id: "stop-all-a" })),
+        makePlugin(makeManifest({ id: "stop-all-b" })),
+      ];
+
+      const pluginDir = join(rootDir, "plugins");
+      for (const plugin of plugins) {
+        const path = await writePluginModule(
+          pluginDir,
+          `${plugin.manifest.id}.js`,
+          plugin,
+        );
+        await pluginStore.registerPlugin({
+          manifest: plugin.manifest,
+          path,
+        });
+      }
+
+      const loader = new PluginLoader({
+        pluginStore,
+        taskStore: mockTaskStore,
+      });
+
+      await loader.loadAllPlugins();
+      await loader.stopAllPlugins();
+
+      expect(loader.isPluginLoaded("stop-all-a")).toBe(false);
+      expect(loader.isPluginLoaded("stop-all-b")).toBe(false);
+    });
+  });
+
+  // ── invokeHook ───────────────────────────────────────────────────
+
+  describe("invokeHook", () => {
+    it("calls hook on all plugins with the hook", async () => {
+      await pluginStore.init();
+
+      const hookA = vi.fn();
+      const hookB = vi.fn();
+
+      const loader = new PluginLoader({
+        pluginStore,
+        taskStore: mockTaskStore,
+      });
+
+      // Manually add plugins with hooks to the loader's internal state
+      (loader as any).plugins.set("hook-a", {
+        manifest: makeManifest({ id: "hook-a" }),
+        state: "started",
+        hooks: { onTaskCreated: hookA },
+        tools: [],
+        routes: [],
+      } as FusionPlugin);
+      (loader as any).plugins.set("hook-b", {
+        manifest: makeManifest({ id: "hook-b" }),
+        state: "started",
+        hooks: { onTaskCreated: hookB },
+        tools: [],
+        routes: [],
+      } as FusionPlugin);
+
+      await loader.invokeHook("onTaskCreated", { id: "FN-001" } as any);
+
+      expect(hookA).toHaveBeenCalledTimes(1);
+      expect(hookB).toHaveBeenCalledTimes(1);
+    });
+
+    it("continues when one plugin's hook fails", async () => {
+      await pluginStore.init();
+
+      const hookGood = vi.fn();
+      const hookBad = vi.fn().mockImplementation(() => {
+        throw new Error("Hook failed!");
+      });
+
+      const loader = new PluginLoader({
+        pluginStore,
+        taskStore: mockTaskStore,
+      });
+
+      // Manually add plugins with hooks
+      (loader as any).plugins.set("good-hook", {
+        manifest: makeManifest({ id: "good-hook" }),
+        state: "started",
+        hooks: { onTaskCreated: hookGood },
+        tools: [],
+        routes: [],
+      } as FusionPlugin);
+      (loader as any).plugins.set("bad-hook", {
+        manifest: makeManifest({ id: "bad-hook" }),
+        state: "started",
+        hooks: { onTaskCreated: hookBad },
+        tools: [],
+        routes: [],
+      } as FusionPlugin);
+
+      // Should not throw
+      await loader.invokeHook("onTaskCreated", { id: "FN-001" } as any);
+
+      // Both hooks were attempted
+      expect(hookGood).toHaveBeenCalledTimes(1);
+      expect(hookBad).toHaveBeenCalledTimes(1);
+    });
+
+    it("no error when plugin doesn't have the hook", async () => {
+      await pluginStore.init();
+
+      const loader = new PluginLoader({
+        pluginStore,
+        taskStore: mockTaskStore,
+      });
+
+      // Manually add plugin without hooks
+      (loader as any).plugins.set("no-hook", {
+        manifest: makeManifest({ id: "no-hook" }),
+        state: "started",
+        hooks: {},
+        tools: [],
+        routes: [],
+      } as FusionPlugin);
+
+      // Should not throw even though plugin has no hooks
+      await loader.invokeHook("onTaskCreated", { id: "FN-001" } as any);
+    });
+  });
+
+  // ── structured logging ──────────────────────────────────────────────
+
+  describe("structured logging", () => {
+    afterEach(() => {
+      vi.doUnmock("./logger.js");
+    });
+
+    it("logs when skipping a disabled plugin", async () => {
+      await pluginStore.init();
+
+      const plugin = makePlugin(makeManifest({ id: "disabled-log-test" }));
+      const pluginDir = join(rootDir, "plugins");
+      const pluginPath = await writePluginModule(pluginDir, "disabled-log.js", plugin);
+
+      await pluginStore.registerPlugin({
+        manifest: plugin.manifest,
+        path: pluginPath,
+      });
+      await pluginStore.disablePlugin("disabled-log-test");
+
+      const { MockedPluginLoader, loggerMap } = await loadPluginLoaderWithMockedLogger();
+      const loader = new MockedPluginLoader({ pluginStore, taskStore: mockTaskStore });
+
+      await expect(loader.loadPlugin("disabled-log-test")).rejects.toThrow("disabled");
+      expect(loggerMap.get("plugin-loader")?.log).toHaveBeenCalledWith(
+        "Skipping disabled plugin: disabled-log-test",
+      );
+    });
+
+    it("logs when plugin is already loaded", async () => {
+      await pluginStore.init();
+
+      const plugin = makePlugin(makeManifest({ id: "already-loaded-log" }));
+      const pluginDir = join(rootDir, "plugins");
+      const pluginPath = await writePluginModule(pluginDir, "already-loaded.js", plugin);
+
+      await pluginStore.registerPlugin({
+        manifest: plugin.manifest,
+        path: pluginPath,
+      });
+
+      const { MockedPluginLoader, loggerMap } = await loadPluginLoaderWithMockedLogger();
+      const loader = new MockedPluginLoader({ pluginStore, taskStore: mockTaskStore });
+
+      await loader.loadPlugin("already-loaded-log");
+      await loader.loadPlugin("already-loaded-log");
+
+      expect(loggerMap.get("plugin-loader")?.log).toHaveBeenCalledWith(
+        "Plugin already loaded: already-loaded-log",
+      );
+    });
+
+    it("logs when reloading a plugin", async () => {
+      await pluginStore.init();
+
+      const plugin = makePlugin(makeManifest({ id: "reload-log-test" }));
+      const pluginDir = join(rootDir, "plugins");
+      const pluginPath = await writePluginModule(pluginDir, "reload-log.js", plugin);
+
+      await pluginStore.registerPlugin({
+        manifest: plugin.manifest,
+        path: pluginPath,
+      });
+
+      const { MockedPluginLoader, loggerMap } = await loadPluginLoaderWithMockedLogger();
+      const loader = new MockedPluginLoader({ pluginStore, taskStore: mockTaskStore });
+
+      await loader.loadPlugin("reload-log-test");
+      await loader.reloadPlugin("reload-log-test");
+
+      expect(loggerMap.get("plugin-loader")?.log).toHaveBeenCalledWith(
+        "Reloading plugin: reload-log-test",
+      );
+    });
+
+    it("logs reload failures", async () => {
+      await pluginStore.init();
+
+      const pluginId = "reload-failure-log";
+      const pluginDir = join(rootDir, "plugins");
+      const pluginPath = join(pluginDir, "reload-failure.js");
+
+      await writePluginModule(pluginDir, "reload-failure.js", makePlugin(makeManifest({ id: pluginId })));
+      await pluginStore.registerPlugin({
+        manifest: makeManifest({ id: pluginId }),
+        path: pluginPath,
+      });
+
+      const { MockedPluginLoader, loggerMap } = await loadPluginLoaderWithMockedLogger();
+      const loader = new MockedPluginLoader({ pluginStore, taskStore: mockTaskStore });
+
+      await loader.loadPlugin(pluginId);
+      await writePluginWithHooks(
+        pluginDir,
+        "reload-failure.js",
+        {
+          onLoad: "(async () => { throw new Error('reload failed'); })",
+        },
+        makeManifest({ id: pluginId }),
+      );
+
+      await expect(loader.reloadPlugin(pluginId)).rejects.toThrow("reload failed");
+      expect(loggerMap.get("plugin-loader")?.error).toHaveBeenCalledWith(
+        `Reload failed for ${pluginId}, rolling back:`,
+        expect.any(Error),
+      );
+    });
+
+    it("logs rollback failures", async () => {
+      await pluginStore.init();
+
+      const pluginId = "rollback-failure-log";
+      const pluginDir = join(rootDir, "plugins");
+      const pluginPath = join(pluginDir, "rollback-failure.js");
+
+      await writePluginWithHooks(
+        pluginDir,
+        "rollback-failure.js",
+        {
+          onLoad: "((() => { let count = 0; return async () => { count += 1; if (count > 1) throw new Error('old onLoad failed on retry'); }; })())",
+        },
+        makeManifest({ id: pluginId }),
+      );
+
+      await pluginStore.registerPlugin({
+        manifest: makeManifest({ id: pluginId }),
+        path: pluginPath,
+      });
+
+      const { MockedPluginLoader, loggerMap } = await loadPluginLoaderWithMockedLogger();
+      const loader = new MockedPluginLoader({ pluginStore, taskStore: mockTaskStore });
+
+      await loader.loadPlugin(pluginId);
+      await writePluginWithHooks(
+        pluginDir,
+        "rollback-failure.js",
+        {
+          onLoad: "(async () => { throw new Error('new onLoad failed'); })",
+        },
+        makeManifest({ id: pluginId }),
+      );
+
+      await expect(loader.reloadPlugin(pluginId)).rejects.toThrow("new onLoad failed");
+      expect(loggerMap.get("plugin-loader")?.error).toHaveBeenCalledWith(
+        `Rollback failed for ${pluginId}, removing plugin:`,
+        expect.any(Error),
+      );
+    });
+
+    it("logs onUnload hook errors when stopping", async () => {
+      await pluginStore.init();
+
+      const pluginId = "stop-hook-log";
+      const pluginDir = join(rootDir, "plugins");
+      const pluginPath = await writePluginWithHooks(
+        pluginDir,
+        "stop-hook.js",
+        {
+          onUnload: "(() => { throw new Error('stop failed'); })",
+        },
+        makeManifest({ id: pluginId }),
+      );
+
+      await pluginStore.registerPlugin({
+        manifest: makeManifest({ id: pluginId }),
+        path: pluginPath,
+      });
+
+      const { MockedPluginLoader, loggerMap } = await loadPluginLoaderWithMockedLogger();
+      const loader = new MockedPluginLoader({ pluginStore, taskStore: mockTaskStore });
+
+      await loader.loadPlugin(pluginId);
+      await loader.stopPlugin(pluginId);
+
+      expect(loggerMap.get("plugin-loader")?.error).toHaveBeenCalledWith(
+        `Error in onUnload for ${pluginId}:`,
+        expect.any(Error),
+      );
+    });
+
+    it("logs loadAllPlugins failures", async () => {
+      await pluginStore.init();
+
+      const pluginDir = join(rootDir, "plugins");
+      const goodPlugin = makePlugin(makeManifest({ id: "good-load-all-log" }));
+      const goodPath = await writePluginModule(pluginDir, "good-load-all.js", goodPlugin);
+      const badPath = await writePluginWithHooks(
+        pluginDir,
+        "bad-load-all.js",
+        {
+          onLoad: "(async () => { throw new Error('load all failure'); })",
+        },
+        makeManifest({ id: "bad-load-all-log" }),
+      );
+
+      await pluginStore.registerPlugin({ manifest: goodPlugin.manifest, path: goodPath });
+      await pluginStore.registerPlugin({
+        manifest: makeManifest({ id: "bad-load-all-log" }),
+        path: badPath,
+      });
+
+      const { MockedPluginLoader, loggerMap } = await loadPluginLoaderWithMockedLogger();
+      const loader = new MockedPluginLoader({ pluginStore, taskStore: mockTaskStore });
+
+      await loader.loadAllPlugins();
+
+      expect(loggerMap.get("plugin-loader")?.error).toHaveBeenCalledWith(
+        "Failed to load plugin bad-load-all-log:",
+        expect.any(Error),
+      );
+    }, 15_000);
+
+    it("logs invokeHook failures", async () => {
+      await pluginStore.init();
+
+      const { MockedPluginLoader, loggerMap } = await loadPluginLoaderWithMockedLogger();
+      const loader = new MockedPluginLoader({ pluginStore, taskStore: mockTaskStore });
+
+      (loader as any).plugins.set("hook-error-log", {
+        manifest: makeManifest({ id: "hook-error-log" }),
+        state: "started",
+        hooks: {
+          onTaskCreated: () => {
+            throw new Error("hook failure");
+          },
+        },
+        tools: [],
+        routes: [],
+      } as FusionPlugin);
+
+      await loader.invokeHook("onTaskCreated", { id: "FN-123" } as any);
+
+      expect(loggerMap.get("plugin-loader")?.error).toHaveBeenCalledWith(
+        "Error in onTaskCreated hook for hook-error-log:",
+        expect.any(Error),
+      );
+    });
+
+    it("logs custom events from createContext through structured logger", async () => {
+      await pluginStore.init();
+
+      const pluginId = "custom-event-log";
+      const pluginDir = join(rootDir, "plugins");
+      const pluginPath = await writePluginWithHooks(
+        pluginDir,
+        "custom-event.js",
+        {
+          onLoad: "(async (ctx) => { ctx.emitEvent('custom-event', { payload: 'ok' }); })",
+        },
+        makeManifest({ id: pluginId }),
+      );
+
+      await pluginStore.registerPlugin({
+        manifest: makeManifest({ id: pluginId }),
+        path: pluginPath,
+      });
+
+      const { MockedPluginLoader, loggerMap } = await loadPluginLoaderWithMockedLogger();
+      const loader = new MockedPluginLoader({ pluginStore, taskStore: mockTaskStore });
+
+      await loader.loadPlugin(pluginId);
+
+      expect(loggerMap.get("plugin-loader")?.log).toHaveBeenCalledWith(
+        `[plugin:${pluginId}] Custom event: custom-event`,
+        { payload: "ok" },
+      );
+    });
+  });
+
+  // ── getPluginTools ─────────────────────────────────────────────────
+
+  describe("getPluginTools", () => {
+    it("aggregates tools from all loaded plugins", async () => {
+      await pluginStore.init();
+
+      const loader = new PluginLoader({
+        pluginStore,
+        taskStore: mockTaskStore,
+      });
+
+      // Manually add plugins with tools
+      (loader as any).plugins.set("tools-a", {
+        manifest: makeManifest({ id: "tools-a" }),
+        state: "started",
+        hooks: {},
+        tools: [
+          {
+            name: "tool_a1",
+            description: "Tool A1",
+            parameters: {},
+            execute: async () => ({ content: [] }),
+          },
+        ],
+        routes: [],
+      } as FusionPlugin);
+      (loader as any).plugins.set("tools-b", {
+        manifest: makeManifest({ id: "tools-b" }),
+        state: "started",
+        hooks: {},
+        tools: [
+          {
+            name: "tool_b1",
+            description: "Tool B1",
+            parameters: {},
+            execute: async () => ({ content: [] }),
+          },
+        ],
+        routes: [],
+      } as FusionPlugin);
+
+      const tools = loader.getPluginTools();
+
+      expect(tools).toHaveLength(2);
+      expect(tools.map((t) => t.name)).toContain("tool_a1");
+      expect(tools.map((t) => t.name)).toContain("tool_b1");
+    });
+
+    it("returns empty array when no plugins have tools", async () => {
+      await pluginStore.init();
+
+      const loader = new PluginLoader({
+        pluginStore,
+        taskStore: mockTaskStore,
+      });
+
+      // Manually add plugin without tools
+      (loader as any).plugins.set("no-tools", {
+        manifest: makeManifest({ id: "no-tools" }),
+        state: "started",
+        hooks: {},
+        tools: [],
+        routes: [],
+      } as FusionPlugin);
+
+      const tools = loader.getPluginTools();
+
+      expect(tools).toEqual([]);
+    });
+  });
+
+  // ── getPluginRoutes ───────────────────────────────────────────────
+
+  describe("getPluginRoutes", () => {
+    it("aggregates routes from all loaded plugins", async () => {
+      await pluginStore.init();
+
+      const loader = new PluginLoader({
+        pluginStore,
+        taskStore: mockTaskStore,
+      });
+
+      // Manually add plugins with routes
+      (loader as any).plugins.set("routes-a", {
+        manifest: makeManifest({ id: "routes-a" }),
+        state: "started",
+        hooks: {},
+        tools: [],
+        routes: [
+          {
+            method: "GET",
+            path: "/status",
+            handler: async () => ({}),
+          },
+        ],
+      } as FusionPlugin);
+      (loader as any).plugins.set("routes-b", {
+        manifest: makeManifest({ id: "routes-b" }),
+        state: "started",
+        hooks: {},
+        tools: [],
+        routes: [
+          {
+            method: "POST",
+            path: "/action",
+            handler: async () => ({}),
+          },
+        ],
+      } as FusionPlugin);
+
+      const routes = loader.getPluginRoutes();
+
+      expect(routes).toHaveLength(2);
+      expect(routes.find((r) => r.pluginId === "routes-a")?.route.path).toBe(
+        "/status",
+      );
+      expect(routes.find((r) => r.pluginId === "routes-b")?.route.path).toBe(
+        "/action",
+      );
+    });
+  });
+
+  // ── getPluginUiSlots ───────────────────────────────────────────────
+
+  describe("getPluginUiSlots", () => {
+    it("returns empty array when no plugins loaded", async () => {
+      await pluginStore.init();
+
+      const loader = new PluginLoader({
+        pluginStore,
+        taskStore: mockTaskStore,
+      });
+
+      const slots = loader.getPluginUiSlots();
+      expect(slots).toEqual([]);
+    });
+
+    it("returns empty array when plugins have no uiSlots", async () => {
+      await pluginStore.init();
+
+      const loader = new PluginLoader({
+        pluginStore,
+        taskStore: mockTaskStore,
+      });
+
+      // Manually add plugin without uiSlots
+      (loader as any).plugins.set("no-ui-slots", {
+        manifest: makeManifest({ id: "no-ui-slots" }),
+        state: "started",
+        hooks: {},
+        tools: [],
+        routes: [],
+      } as FusionPlugin);
+
+      const slots = loader.getPluginUiSlots();
+      expect(slots).toEqual([]);
+    });
+
+    it("returns aggregated slots from single plugin", async () => {
+      await pluginStore.init();
+
+      const loader = new PluginLoader({
+        pluginStore,
+        taskStore: mockTaskStore,
+      });
+
+      // Manually add plugin with uiSlots
+      (loader as any).plugins.set("slots-a", {
+        manifest: makeManifest({ id: "slots-a" }),
+        state: "started",
+        hooks: {},
+        tools: [],
+        routes: [],
+        uiSlots: [
+          {
+            slotId: "task-detail-tab",
+            label: "Task Details",
+            componentPath: "./components/TaskDetailTab.js",
+          },
+        ],
+      } as FusionPlugin);
+
+      const slots = loader.getPluginUiSlots();
+
+      expect(slots).toHaveLength(1);
+      expect(slots[0].pluginId).toBe("slots-a");
+      expect(slots[0].slot.slotId).toBe("task-detail-tab");
+      expect(slots[0].slot.label).toBe("Task Details");
+      expect(slots[0].slot.componentPath).toBe("./components/TaskDetailTab.js");
+    });
+
+    it("returns aggregated slots from multiple plugins", async () => {
+      await pluginStore.init();
+
+      const loader = new PluginLoader({
+        pluginStore,
+        taskStore: mockTaskStore,
+      });
+
+      // Manually add plugins with uiSlots
+      (loader as any).plugins.set("slots-a", {
+        manifest: makeManifest({ id: "slots-a" }),
+        state: "started",
+        hooks: {},
+        tools: [],
+        routes: [],
+        uiSlots: [
+          {
+            slotId: "task-detail-tab",
+            label: "Task Details",
+            componentPath: "./components/TaskDetailTab.js",
+          },
+        ],
+      } as FusionPlugin);
+      (loader as any).plugins.set("slots-b", {
+        manifest: makeManifest({ id: "slots-b" }),
+        state: "started",
+        hooks: {},
+        tools: [],
+        routes: [],
+        uiSlots: [
+          {
+            slotId: "header-action",
+            label: "Header Action",
+            icon: "Plus",
+            componentPath: "./components/HeaderAction.js",
+          },
+          {
+            slotId: "settings-section",
+            label: "Settings",
+            componentPath: "./components/SettingsSection.js",
+          },
+        ],
+      } as FusionPlugin);
+
+      const slots = loader.getPluginUiSlots();
+
+      expect(slots).toHaveLength(3);
+      expect(slots.find((s) => s.pluginId === "slots-a")?.slot.slotId).toBe(
+        "task-detail-tab",
+      );
+      expect(slots.find((s) => s.pluginId === "slots-b")?.slot.slotId).toBe(
+        "header-action",
+      );
+      expect(slots.filter((s) => s.pluginId === "slots-b")).toHaveLength(2);
+    });
+
+    it("each slot includes correct pluginId", async () => {
+      await pluginStore.init();
+
+      const loader = new PluginLoader({
+        pluginStore,
+        taskStore: mockTaskStore,
+      });
+
+      // Manually add plugins with overlapping slotIds (different plugins)
+      (loader as any).plugins.set("plugin-x", {
+        manifest: makeManifest({ id: "plugin-x" }),
+        state: "started",
+        hooks: {},
+        tools: [],
+        routes: [],
+        uiSlots: [
+          {
+            slotId: "custom-tab",
+            label: "Custom Tab",
+            componentPath: "./components/CustomTab.js",
+          },
+        ],
+      } as FusionPlugin);
+      (loader as any).plugins.set("plugin-y", {
+        manifest: makeManifest({ id: "plugin-y" }),
+        state: "started",
+        hooks: {},
+        tools: [],
+        routes: [],
+        uiSlots: [
+          {
+            slotId: "custom-tab",
+            label: "Custom Tab Y",
+            componentPath: "./components/CustomTabY.js",
+          },
+        ],
+      } as FusionPlugin);
+
+      const slots = loader.getPluginUiSlots();
+
+      // Both plugins can have slots with the same slotId
+      const pluginXSlot = slots.find((s) => s.pluginId === "plugin-x");
+      const pluginYSlot = slots.find((s) => s.pluginId === "plugin-y");
+
+      expect(pluginXSlot?.slot.slotId).toBe("custom-tab");
+      expect(pluginXSlot?.slot.label).toBe("Custom Tab");
+      expect(pluginYSlot?.slot.slotId).toBe("custom-tab");
+      expect(pluginYSlot?.slot.label).toBe("Custom Tab Y");
+    });
+  });
+
+  // ── getPluginRuntimes ─────────────────────────────────────────────
+
+  describe("getPluginRuntimes", () => {
+    it("returns empty array when no plugins loaded", async () => {
+      await pluginStore.init();
+
+      const loader = new PluginLoader({
+        pluginStore,
+        taskStore: mockTaskStore,
+      });
+
+      const runtimes = loader.getPluginRuntimes();
+      expect(runtimes).toEqual([]);
+    });
+
+    it("returns empty array when plugins have no runtime registration", async () => {
+      await pluginStore.init();
+
+      const loader = new PluginLoader({
+        pluginStore,
+        taskStore: mockTaskStore,
+      });
+
+      // Manually add plugin without runtime
+      (loader as any).plugins.set("no-runtime", {
+        manifest: makeManifest({ id: "no-runtime" }),
+        state: "started",
+        hooks: {},
+        tools: [],
+        routes: [],
+      } as FusionPlugin);
+
+      const runtimes = loader.getPluginRuntimes();
+      expect(runtimes).toEqual([]);
+    });
+
+    it("returns runtime registration from single plugin with runtime", async () => {
+      await pluginStore.init();
+
+      const loader = new PluginLoader({
+        pluginStore,
+        taskStore: mockTaskStore,
+      });
+
+      const mockRuntime = {
+        metadata: {
+          runtimeId: "code-interpreter",
+          name: "Code Interpreter",
+          description: "Executes code in a sandbox",
+          version: "1.0.0",
+        },
+        factory: async () => ({ execute: async () => {} }),
+      };
+
+      // Manually add plugin with runtime
+      (loader as any).plugins.set("runtime-plugin", {
+        manifest: makeManifest({ id: "runtime-plugin" }),
+        state: "started",
+        hooks: {},
+        tools: [],
+        routes: [],
+        runtime: mockRuntime,
+      } as FusionPlugin);
+
+      const runtimes = loader.getPluginRuntimes();
+
+      expect(runtimes).toHaveLength(1);
+      expect(runtimes[0].pluginId).toBe("runtime-plugin");
+      expect(runtimes[0].runtime.metadata.runtimeId).toBe("code-interpreter");
+      expect(runtimes[0].runtime.metadata.name).toBe("Code Interpreter");
+      expect(runtimes[0].runtime.metadata.description).toBe("Executes code in a sandbox");
+      expect(runtimes[0].runtime.metadata.version).toBe("1.0.0");
+      expect(typeof runtimes[0].runtime.factory).toBe("function");
+    });
+
+    it("returns runtime registrations from multiple plugins", async () => {
+      await pluginStore.init();
+
+      const loader = new PluginLoader({
+        pluginStore,
+        taskStore: mockTaskStore,
+      });
+
+      const runtimeA = {
+        metadata: {
+          runtimeId: "runtime-a",
+          name: "Runtime A",
+        },
+        factory: async () => {},
+      };
+
+      const runtimeB = {
+        metadata: {
+          runtimeId: "runtime-b",
+          name: "Runtime B",
+          description: "Another runtime",
+          version: "2.0.0",
+        },
+        factory: async () => {},
+      };
+
+      // Manually add plugins with runtimes
+      (loader as any).plugins.set("plugin-a", {
+        manifest: makeManifest({ id: "plugin-a" }),
+        state: "started",
+        hooks: {},
+        tools: [],
+        routes: [],
+        runtime: runtimeA,
+      } as FusionPlugin);
+      (loader as any).plugins.set("plugin-b", {
+        manifest: makeManifest({ id: "plugin-b" }),
+        state: "started",
+        hooks: {},
+        tools: [],
+        routes: [],
+        runtime: runtimeB,
+      } as FusionPlugin);
+
+      const runtimes = loader.getPluginRuntimes();
+
+      expect(runtimes).toHaveLength(2);
+      expect(runtimes.find((r) => r.pluginId === "plugin-a")?.runtime.metadata.runtimeId).toBe("runtime-a");
+      expect(runtimes.find((r) => r.pluginId === "plugin-b")?.runtime.metadata.runtimeId).toBe("runtime-b");
+    }, 15_000);
+
+    it("skips plugins without runtime registration when other plugins have runtimes", async () => {
+      await pluginStore.init();
+
+      const loader = new PluginLoader({
+        pluginStore,
+        taskStore: mockTaskStore,
+      });
+
+      const mockRuntime = {
+        metadata: {
+          runtimeId: "code-interpreter",
+          name: "Code Interpreter",
+        },
+        factory: async () => {},
+      };
+
+      // Manually add plugins - one with runtime, one without
+      (loader as any).plugins.set("plugin-with-runtime", {
+        manifest: makeManifest({ id: "plugin-with-runtime" }),
+        state: "started",
+        hooks: {},
+        tools: [],
+        routes: [],
+        runtime: mockRuntime,
+      } as FusionPlugin);
+      (loader as any).plugins.set("plugin-no-runtime", {
+        manifest: makeManifest({ id: "plugin-no-runtime" }),
+        state: "started",
+        hooks: {},
+        tools: [],
+        routes: [],
+      } as FusionPlugin);
+
+      const runtimes = loader.getPluginRuntimes();
+
+      expect(runtimes).toHaveLength(1);
+      expect(runtimes[0].pluginId).toBe("plugin-with-runtime");
+      expect(runtimes[0].runtime.metadata.runtimeId).toBe("code-interpreter");
+    });
+
+    it("includes both metadata and factory from runtime registration", async () => {
+      await pluginStore.init();
+
+      const loader = new PluginLoader({
+        pluginStore,
+        taskStore: mockTaskStore,
+      });
+
+      const factoryFn = async () => ({ result: "test" });
+      const mockRuntime = {
+        metadata: {
+          runtimeId: "test-runtime",
+          name: "Test Runtime",
+          description: "Test description",
+        },
+        factory: factoryFn,
+      };
+
+      (loader as any).plugins.set("test-plugin", {
+        manifest: makeManifest({ id: "test-plugin" }),
+        state: "started",
+        hooks: {},
+        tools: [],
+        routes: [],
+        runtime: mockRuntime,
+      } as FusionPlugin);
+
+      const runtimes = loader.getPluginRuntimes();
+
+      expect(runtimes).toHaveLength(1);
+      expect(runtimes[0].runtime.metadata).toEqual({
+        runtimeId: "test-runtime",
+        name: "Test Runtime",
+        description: "Test description",
+      });
+      expect(runtimes[0].runtime.factory).toBe(factoryFn);
+    });
+
+    it("returns deterministic empty array when no runtime registrations available", async () => {
+      await pluginStore.init();
+
+      const loader = new PluginLoader({
+        pluginStore,
+        taskStore: mockTaskStore,
+      });
+
+      // Multiple calls return same result
+      const runtimes1 = loader.getPluginRuntimes();
+      const runtimes2 = loader.getPluginRuntimes();
+      const runtimes3 = loader.getPluginRuntimes();
+
+      expect(runtimes1).toEqual([]);
+      expect(runtimes2).toEqual([]);
+      expect(runtimes3).toEqual([]);
+    });
+  });
+
+  // ── getLoadedPlugins ───────────────────────────────────────────────
+
+  describe("getLoadedPlugins", () => {
+    it("returns all loaded plugin instances", async () => {
+      await pluginStore.init();
+
+      const loader = new PluginLoader({
+        pluginStore,
+        taskStore: mockTaskStore,
+      });
+
+      // Manually add plugins
+      (loader as any).plugins.set("loaded-a", {
+        manifest: makeManifest({ id: "loaded-a" }),
+        state: "started",
+        hooks: {},
+        tools: [],
+        routes: [],
+      } as FusionPlugin);
+      (loader as any).plugins.set("loaded-b", {
+        manifest: makeManifest({ id: "loaded-b" }),
+        state: "started",
+        hooks: {},
+        tools: [],
+        routes: [],
+      } as FusionPlugin);
+
+      const loaded = loader.getLoadedPlugins();
+
+      expect(loaded).toHaveLength(2);
+      expect(loaded.map((p) => p.manifest.id).sort()).toEqual([
+        "loaded-a",
+        "loaded-b",
+      ]);
+    });
+
+    it("returns empty array when no plugins loaded", async () => {
+      await pluginStore.init();
+
+      const loader = new PluginLoader({
+        pluginStore,
+        taskStore: mockTaskStore,
+      });
+
+      const loaded = loader.getLoadedPlugins();
+
+      expect(loaded).toEqual([]);
+    });
+  });
+});

@@ -2,7 +2,15 @@
  * Pi Module Seam
  *
  * Provides a mockable import path for pi functions used by the OpenClawRuntimeAdapter.
+ * Tests intercept this module via `vi.mock("../pi-module.js", ...)`. The runtime
+ * implementations come from @fusion/engine; the local types provide a loose
+ * surface so the adapter doesn't have to depend on @fusion/engine's full types.
  */
+import {
+  createFnAgent as _createFnAgent,
+  promptWithFallback as _promptWithFallback,
+  describeModel as _describeModel,
+} from "@fusion/engine";
 
 export interface PiAgentSession {
   dispose?: () => Promise<void> | void;
@@ -32,13 +40,14 @@ export interface PiAgentOptions {
   skills?: string[];
 }
 
-// eslint-disable-next-line @typescript-eslint/no-require-imports
-const _piModule = require("../../../packages/engine/src/pi.js") as {
-  createFnAgent: (options: PiAgentOptions) => Promise<PiAgentResult>;
-  promptWithFallback: (session: PiAgentSession, prompt: string, options?: unknown) => Promise<void>;
-  describeModel: (session: PiAgentSession) => string;
-};
+export const createFnAgent = _createFnAgent as unknown as (
+  options: PiAgentOptions,
+) => Promise<PiAgentResult>;
 
-export const createFnAgent = _piModule.createFnAgent;
-export const promptWithFallback = _piModule.promptWithFallback;
-export const describeModel = _piModule.describeModel;
+export const promptWithFallback = _promptWithFallback as unknown as (
+  session: PiAgentSession,
+  prompt: string,
+  options?: unknown,
+) => Promise<void>;
+
+export const describeModel = _describeModel as unknown as (session: PiAgentSession) => string;
