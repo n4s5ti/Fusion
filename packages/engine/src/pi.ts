@@ -9,6 +9,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { exec } from "node:child_process";
 import { promisify } from "node:util";
+import { createRequire } from "node:module";
 import { basename, dirname, join, relative, isAbsolute, resolve } from "node:path";
 
 const execAsync = promisify(exec);
@@ -26,7 +27,7 @@ import {
   type AgentSession,
   type ToolDefinition,
 } from "@mariozechner/pi-coding-agent";
-import { getEnabledPiExtensionPaths, getFusionAgentDir, getLegacyPiAgentDir, resolvePiExtensionProjectRoot } from "@fusion/core";
+import { getEnabledPiExtensionPaths, getFusionAgentDir, getLegacyPiAgentDir, reconcileClaudeCliPaths, resolvePiExtensionProjectRoot } from "@fusion/core";
 import {
   resolveSessionSkills,
   createSkillsOverrideFromSelection,
@@ -674,6 +675,33 @@ function getPackageManagerAgentDir(): string {
   return existsSync(fusionAgentDir) ? fusionAgentDir : legacyAgentDir;
 }
 
+/**
+ * Resolve the absolute path to Fusion's vendored `@fusion/pi-claude-cli`
+ * extension entry. Used by `registerExtensionProviders` to ensure the fork
+ * always wins over any externally-installed `pi-claude-cli`.
+ *
+ * Returns null when the vendored package isn't available (e.g. someone
+ * embedded `@fusion/engine` standalone without bundling the fork) — callers
+ * should treat that as "no override needed, leave external paths alone".
+ */
+function resolveVendoredClaudeCliEntry(): string | null {
+  try {
+    const require_ = createRequire(import.meta.url);
+    const pkgJsonPath = require_.resolve("@fusion/pi-claude-cli/package.json");
+    const pkgJson = JSON.parse(readFileSync(pkgJsonPath, "utf-8")) as {
+      pi?: { extensions?: unknown };
+    };
+    const extensions = pkgJson.pi?.extensions;
+    if (!Array.isArray(extensions) || extensions.length === 0) return null;
+    const entry = extensions[0];
+    if (typeof entry !== "string" || entry.length === 0) return null;
+    const path = resolve(dirname(pkgJsonPath), entry);
+    return existsSync(path) ? path : null;
+  } catch {
+    return null;
+  }
+}
+
 async function registerExtensionProviders(cwd: string, modelRegistry: ModelRegistry): Promise<void> {
   try {
     const agentDir = getPackageManagerAgentDir();
@@ -687,8 +715,19 @@ async function registerExtensionProviders(cwd: string, modelRegistry: ModelRegis
       .filter((resource) => resource.enabled)
       .map((resource) => resource.path);
 
-    const extensionsResult = await discoverAndLoadExtensions(
+    // Always prefer Fusion's vendored `@fusion/pi-claude-cli` over any external
+    // `pi-claude-cli` install (e.g. a global `npm install -g pi-claude-cli`,
+    // or `npm:pi-claude-cli` in agent settings). Upstream has known timing
+    // and once-and-lock MCP-config bugs that we fix in the fork; loading both
+    // also produces unpredictable provider-registration winners.
+    const vendoredClaudeCli = resolveVendoredClaudeCliEntry();
+    const reconciledPaths = reconcileClaudeCliPaths(
       [...getEnabledPiExtensionPaths(cwd), ...packageExtensionPaths],
+      vendoredClaudeCli,
+    );
+
+    const extensionsResult = await discoverAndLoadExtensions(
+      reconciledPaths,
       cwd,
       join(resolvePiExtensionProjectRoot(cwd), ".fusion", "disabled-auto-extension-discovery"),
     );

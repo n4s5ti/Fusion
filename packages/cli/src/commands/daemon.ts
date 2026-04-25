@@ -21,6 +21,7 @@ import {
   GlobalSettingsStore,
   resolveGlobalDir,
   getEnabledPiExtensionPaths,
+  reconcileClaudeCliPaths,
 } from "@fusion/core";
 import type { AutomationRunResult, ScheduledTask } from "@fusion/core";
 import { createServer, GitHubClient, createSkillsAdapter, getProjectSettingsPath, loadTlsCredentialsFromEnv } from "@fusion/dashboard";
@@ -411,12 +412,17 @@ export async function runDaemon(opts: DaemonOptions = {}) {
       }
     })();
 
+    // Always prefer Fusion's vendored `@fusion/pi-claude-cli` over any
+    // external `pi-claude-cli` install. Drops shadowing externals (e.g. a
+    // global `npm install -g pi-claude-cli`) so the upstream's once-and-lock
+    // MCP-config bug can't poison sessions.
+    const reconciledExtensionPaths = reconcileClaudeCliPaths(
+      [...getEnabledPiExtensionPaths(cwd), ...packageExtensionPaths, ...claudeCliPaths],
+      claudeCliPaths[0] ?? null,
+    );
+
     const extensionsResult = await discoverAndLoadExtensions(
-      [
-        ...getEnabledPiExtensionPaths(cwd),
-        ...packageExtensionPaths,
-        ...claudeCliPaths,
-      ],
+      reconciledExtensionPaths,
       cwd,
       join(cwd, ".fusion", "disabled-auto-extension-discovery"),
     );

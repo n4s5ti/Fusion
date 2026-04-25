@@ -36,6 +36,7 @@
   },
   "dependencies": {
     "@fusion/core": "workspace:*",
+    "@fusion/pi-claude-cli": "workspace:*",
     "@mariozechner/pi-ai": "^0.70.0",
     "@mariozechner/pi-coding-agent": "^0.70.0",
     "typebox": "^1.0.0",

@@ -226,6 +226,56 @@ export function updatePiExtensionDisabledIds(cwd: string, disabledIds: string[],
   return discoverPiExtensions(cwd, home);
 }
 
+/**
+ * Heuristic: does this extension path look like an external (non-Fusion)
+ * `pi-claude-cli` install? We match any path with a directory segment named
+ * exactly `pi-claude-cli`, except for the explicit vendored path that callers
+ * pass in (which always wins).
+ *
+ * Example matches: `/opt/homebrew/lib/node_modules/pi-claude-cli/index.ts`,
+ * `~/.pi/agent/extensions/pi-claude-cli/index.ts`.
+ */
+function isExternalClaudeCliPath(p: string, vendoredPath: string | null): boolean {
+  if (vendoredPath && p === vendoredPath) return false;
+  // Match a path segment "pi-claude-cli" delimited by either separator.
+  return /(^|[/\\])pi-claude-cli([/\\]|$)/i.test(p);
+}
+
+/**
+ * Reconcile the assembled pi-extension load list so Fusion's vendored
+ * `@fusion/pi-claude-cli` always wins over any externally-installed
+ * `pi-claude-cli` (e.g. a stale `npm install -g pi-claude-cli` left in
+ * `/opt/homebrew/lib/node_modules`, or `npm:pi-claude-cli` in agent
+ * settings).
+ *
+ * Two motivating scenarios:
+ *  1. The published upstream package has a once-and-lock MCP-config bug that
+ *     causes "Extension runtime not initialized" during early streamSimple
+ *     calls; our fork fixes it via context.tools-driven regeneration.
+ *  2. Side-by-side loading of two extensions that register the same
+ *     provider name (`pi-claude-cli`) produces unpredictable winners
+ *     depending on load order.
+ *
+ * Behaviour:
+ *  - When `vendoredPath` is null (caller couldn't find the fork — typically
+ *    because Fusion isn't running): return the input unchanged.
+ *  - When `vendoredPath` is set: drop every external pi-claude-cli path and
+ *    ensure the vendored path is loaded first.
+ */
+export function reconcileClaudeCliPaths(
+  paths: readonly string[],
+  vendoredPath: string | null,
+): string[] {
+  if (!vendoredPath) {
+    return [...paths];
+  }
+  const filtered = paths.filter((p) => !isExternalClaudeCliPath(p, vendoredPath));
+  if (!filtered.includes(vendoredPath)) {
+    return [vendoredPath, ...filtered];
+  }
+  return filtered;
+}
+
 export function formatPiExtensionSource(source: PiExtensionSource, extensionPath: string, cwd: string, home?: string): string {
   const homeDir = getHomeDir(home);
   const projectRoot = resolvePiExtensionProjectRoot(cwd);
