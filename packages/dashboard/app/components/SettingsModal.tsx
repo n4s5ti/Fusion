@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useRef, lazy, Suspense } from "react"
 import { Globe, Folder } from "lucide-react";
 import { THINKING_LEVELS, isGlobalSettingsKey, isProjectSettingsKey, getErrorMessage } from "@fusion/core";
 import type { Settings, GlobalSettings, ThemeMode, ColorTheme, ModelPreset, NtfyNotificationEvent, AgentPromptsConfig, ThinkingLevel } from "@fusion/core";
-import { fetchSettings, fetchSettingsByScope, updateSettings, updateGlobalSettings, fetchAuthStatus, loginProvider, logoutProvider, saveApiKey, clearApiKey, fetchModels, testNtfyNotification, fetchBackups, createBackup, exportSettings, importSettings, fetchMemoryFile, fetchMemoryFiles, saveMemoryFile, compactMemory, fetchGlobalConcurrency, updateGlobalConcurrency, installQmd, testMemoryRetrieval, fetchGitRemotesDetailed } from "../api";
+import { fetchSettings, fetchSettingsByScope, updateSettings, updateGlobalSettings, fetchAuthStatus, loginProvider, logoutProvider, saveApiKey, clearApiKey, fetchModels, testNtfyNotification, fetchBackups, createBackup, exportSettings, importSettings, fetchMemoryFile, fetchMemoryFiles, saveMemoryFile, compactMemory, fetchGlobalConcurrency, updateGlobalConcurrency, installQmd, testMemoryRetrieval, fetchGitRemotesDetailed, fetchDashboardHealth } from "../api";
 import type { AuthProvider, ModelInfo, BackupListResponse, SettingsExportData, MemoryFileInfo, MemoryRetrievalTestResult, GitRemoteDetailed } from "../api";
 import { useMemoryBackendStatus } from "../hooks/useMemoryBackendStatus";
 import type { ToastType } from "../hooks/useToast";
@@ -181,6 +181,7 @@ export function SettingsModal({
       ? window.matchMedia(MOBILE_SETTINGS_MEDIA_QUERY)?.matches === true
       : false,
   );
+  const [appVersion, setAppVersion] = useState<string | null>(null);
   const [prefixError, setPrefixError] = useState<string | null>(null);
 
   /** Get the scope of the currently active section */
@@ -296,6 +297,28 @@ export function SettingsModal({
       .catch(() => {
         // Silently fail — global concurrency may not be available
       });
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    fetchDashboardHealth()
+      .then((health) => {
+        if (cancelled) {
+          return;
+        }
+
+        if (typeof health.version === "string" && health.version.trim().length > 0) {
+          setAppVersion(health.version);
+        }
+      })
+      .catch(() => {
+        // Non-blocking metadata only — settings remains usable when unavailable.
+      });
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   // Load auth status when the authentication section is active
@@ -3400,7 +3423,10 @@ export function SettingsModal({
     <div className="modal-overlay open" onClick={handleOverlayClick} role="dialog" aria-modal="true">
       <div className="modal modal-lg">
         <div className="modal-header">
-          <h3>Settings</h3>
+          <div className="settings-modal-heading">
+            <h3>Settings</h3>
+            {appVersion && <p className="settings-modal-version">Version {appVersion}</p>}
+          </div>
           <button className="modal-close" onClick={onClose} aria-label="Close">
             &times;
           </button>

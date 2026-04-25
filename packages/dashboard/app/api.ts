@@ -175,6 +175,16 @@ export async function api<T = unknown>(path: string, opts: RequestInit = {}): Pr
   return data as T;
 }
 
+export interface DashboardHealthResponse {
+  status: string;
+  version: string;
+  uptime: number;
+}
+
+export function fetchDashboardHealth(): Promise<DashboardHealthResponse> {
+  return api<DashboardHealthResponse>("/health");
+}
+
 export function fetchTasks(
   limit?: number,
   offset?: number,

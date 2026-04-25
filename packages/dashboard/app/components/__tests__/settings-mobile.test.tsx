@@ -94,6 +94,7 @@ vi.mock("../../api", () => ({
     qmdAvailable: true,
     qmdInstallCommand: "bun install -g @tobilu/qmd",
   })),
+  fetchDashboardHealth: vi.fn(() => Promise.resolve({ status: "ok", version: "1.2.3", uptime: 120 })),
 }));
 
 vi.mock("../../hooks/useMemoryBackendStatus", () => ({
@@ -175,6 +176,14 @@ describe("SettingsModal mobile adaptations", () => {
     expect(container.querySelector(".settings-layout")).toBeTruthy();
     expect(container.querySelector(".settings-sidebar")).toBeTruthy();
     expect(container.querySelector(".settings-content")).toBeTruthy();
+  });
+
+  it("renders the app version label in mobile layout", async () => {
+    mockSettingsViewport(true);
+    const { findByText } = render(<SettingsModal onClose={vi.fn()} addToast={vi.fn()} />);
+    await waitFor(() => expect(fetchSettings).toHaveBeenCalled());
+
+    expect(await findByText("Version 1.2.3")).toBeTruthy();
   });
 
   it("can open memory settings from the mobile section picker", async () => {

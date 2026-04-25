@@ -28,6 +28,7 @@ const mockFetchMemoryBackendStatus = vi.fn();
 const mockTestMemoryRetrieval = vi.fn();
 const mockInstallQmd = vi.fn();
 const mockFetchGitRemotesDetailed = vi.fn();
+const mockFetchDashboardHealth = vi.fn();
 
 vi.mock("../../api", () => ({
   fetchSettings: (...args: unknown[]) => mockFetchSettings(...args),
@@ -53,6 +54,7 @@ vi.mock("../../api", () => ({
   testMemoryRetrieval: (...args: unknown[]) => mockTestMemoryRetrieval(...args),
   installQmd: (...args: unknown[]) => mockInstallQmd(...args),
   fetchGitRemotesDetailed: (...args: unknown[]) => mockFetchGitRemotesDetailed(...args),
+  fetchDashboardHealth: (...args: unknown[]) => mockFetchDashboardHealth(...args),
 }));
 
 // Mock the hook
@@ -161,6 +163,7 @@ describe("SettingsModal", () => {
       qmdInstallCommand: "bun install -g @tobilu/qmd",
     });
     mockFetchGitRemotesDetailed.mockResolvedValue([]);
+    mockFetchDashboardHealth.mockResolvedValue({ status: "ok", version: "1.2.3", uptime: 123 });
     mockImportSettings.mockResolvedValue({ success: true, globalCount: 0, projectCount: 0 });
     mockFetchGlobalConcurrency.mockResolvedValue({ globalMaxConcurrent: 4, currentlyActive: 0, queuedCount: 0, projectsActive: {} });
     mockUpdateGlobalConcurrency.mockResolvedValue({ globalMaxConcurrent: 4, currentlyActive: 0, queuedCount: 0, projectsActive: {} });
@@ -216,6 +219,29 @@ describe("SettingsModal", () => {
 
   afterEach(() => {
     vi.restoreAllMocks();
+  });
+
+  describe("settings version display", () => {
+    it("renders the app version from the health endpoint", async () => {
+      renderModal();
+      await waitForSettingsModalReady();
+
+      expect(await screen.findByText("Version 1.2.3")).toBeInTheDocument();
+      expect(mockFetchDashboardHealth).toHaveBeenCalledTimes(1);
+    });
+
+    it("keeps settings interactive when version lookup fails", async () => {
+      const addToast = vi.fn();
+      mockFetchDashboardHealth.mockRejectedValueOnce(new Error("health unavailable"));
+      render(<SettingsModal onClose={noop} addToast={addToast} />);
+
+      await waitForSettingsModalReady();
+
+      expect(screen.queryByText(/^Version\s+/)).not.toBeInTheDocument();
+      await userEvent.click(screen.getByText("Scheduling"));
+      expect(await screen.findByLabelText("Max Concurrent Tasks")).toBeInTheDocument();
+      expect(addToast).not.toHaveBeenCalled();
+    });
   });
 
   describe("settings export filename", () => {

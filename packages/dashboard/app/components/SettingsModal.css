@@ -4,6 +4,23 @@
    for the classes they share). */
 
 /* === Settings Layout === */
+.settings-modal-heading {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+}
+
+.settings-modal-heading h3 {
+  margin: 0;
+}
+
+.settings-modal-version {
+  margin: 0;
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  font-weight: 500;
+}
+
 .settings-layout {
   display: flex;
   flex: 1;
