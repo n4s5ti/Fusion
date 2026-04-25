@@ -24,7 +24,7 @@ import { SECTION_ORDER } from "./state.js";
 
 export class DashboardTUI {
   // State fields mirror the original private layout so tests can access them.
-  activeSection: SectionId = "system";
+  activeSection: SectionId = "logs";
   // Named `logBuffer` to match what captureConsole tests access via
   // `(tui as unknown as { logBuffer: LogRingBuffer }).logBuffer`.
   logBuffer: LogRingBuffer;

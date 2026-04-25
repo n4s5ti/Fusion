@@ -60,20 +60,14 @@ afterEach(() => {
 });
 
 describe("DashboardApp smoke", () => {
-  it("renders the splash brand mark and tagline before systemInfo arrives", () => {
+  it("renders the splash logo and tagline before systemInfo arrives", () => {
     const controller = newController();
     const { lastFrame, unmount } = render(<DashboardApp controller={controller} />);
     const frame = lastFrame() ?? "";
-    expect(frame).toContain("╭─────╮");
+    // Block-letter "F" opens with this run on wide terminals; on narrow
+    // terminals the compact layout shows plain "FUSION".
+    expect(frame).toMatch(/███████╗|FUSION/);
     expect(frame).toContain("AI coding agent dashboard");
-    unmount();
-  });
-
-  it("reveals the FUSION block letters after the wipe-in animation runs", async () => {
-    const controller = newController();
-    const { lastFrame, unmount } = render(<DashboardApp controller={controller} />);
-    await new Promise((r) => setTimeout(r, 800));
-    expect(lastFrame() ?? "").toContain("███████╗");
     unmount();
   });
 

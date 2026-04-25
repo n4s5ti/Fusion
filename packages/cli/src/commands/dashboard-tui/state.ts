@@ -144,7 +144,7 @@ export const SECTION_ORDER: SectionId[] = ["system", "logs", "utilities", "stats
 
 export function createInitialState(): DashboardState {
   return {
-    activeSection: "system",
+    activeSection: "logs",
     logEntries: [],
     systemInfo: null,
     taskStats: null,

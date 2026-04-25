@@ -57,27 +57,6 @@ function logoColor(index: number): InkColor {
   return LOGO_COLORS[Math.min(index, LOGO_COLORS.length - 1)];
 }
 
-// ── Brand mark ────────────────────────────────────────────────────────────────
-
-const FUSION_MARK_LINES = [
-  "   ╭─────╮   ",
-  "  ╱     ╱╲   ",
-  " │    ╱  │   ",
-  " │   ╱   │   ",
-  "  ╲ ╱   ╱    ",
-  "   ╰───╯     ",
-];
-
-function FusionMark() {
-  return (
-    <Box flexDirection="column" alignItems="center">
-      {FUSION_MARK_LINES.map((line, i) => (
-        <Text key={i} color="cyanBright" bold>{line}</Text>
-      ))}
-    </Box>
-  );
-}
-
 function AnimatedFusionLogo() {
   return (
     <Box flexDirection="column" alignItems="center">
@@ -91,8 +70,10 @@ function AnimatedFusionLogo() {
 // ── Splash screen ─────────────────────────────────────────────────────────────
 
 // Smallest terminal that can fit the full block-letter splash centered.
-// Below either threshold we drop into a compact top-left layout so nothing
-// gets clipped or re-centered awkwardly.
+// Below either threshold the block-letter logo gets dropped for a plain
+// "FUSION" word so nothing wraps awkwardly on small terminals. The splash
+// always pins to the top-left — never centered — so it doesn't jump around
+// when the terminal resizes.
 const SPLASH_MIN_COLS = 56;
 const SPLASH_MIN_ROWS = 20;
 
@@ -102,33 +83,13 @@ function SplashScreen({ loadingStatus }: { loadingStatus: string }) {
   const rows = stdout?.rows ?? 24;
   const compact = cols < SPLASH_MIN_COLS || rows < SPLASH_MIN_ROWS;
 
-  if (compact) {
-    return (
-      <Box flexDirection="column" paddingX={1} paddingY={1}>
-        <FusionMark />
-        <Box height={1} />
-        <Text bold color="cyanBright">FUSION</Text>
-        <Text color="blueBright" dimColor>{FUSION_TAGLINE}</Text>
-        <Box height={1} />
-        <Box flexDirection="row" gap={1}>
-          <Text color="cyanBright"><Spinner type="dots" /></Text>
-          <Text color="blueBright" dimColor>{loadingStatus}</Text>
-        </Box>
-      </Box>
-    );
-  }
-
   return (
-    <Box
-      flexDirection="column"
-      justifyContent="center"
-      alignItems="center"
-      flexGrow={1}
-    >
-      <FusionMark />
-      <Box height={1} />
-      <AnimatedFusionLogo />
-      <Box height={1} />
+    <Box flexDirection="column" paddingX={1} paddingY={1}>
+      {compact ? (
+        <Text bold color="cyanBright">FUSION</Text>
+      ) : (
+        <AnimatedFusionLogo />
+      )}
       <Text color="blueBright" dimColor>{FUSION_TAGLINE}</Text>
       <Box height={1} />
       <Box flexDirection="row" gap={1}>
@@ -322,6 +283,10 @@ function SettingsPanel({ state, isFocused }: { state: DashboardState; isFocused:
 
 // ── Logs panel ────────────────────────────────────────────────────────────────
 
+// Width of the prefix slot in log rows. Long prefixes are truncated; short
+// ones (and missing prefixes) are padded so the message column stays aligned.
+const PREFIX_WIDTH = 14;
+
 function LevelBadge({ level }: { level: LogEntry["level"] }) {
   if (level === "error") return <Text color="red">✗</Text>;
   if (level === "warn") return <Text color="yellow">⚠</Text>;
@@ -385,36 +350,30 @@ function LogsPanel({
           {visibleEntries.map((entry, displayIdx) => {
             const absoluteIndex = visibleStart + displayIdx;
             const isSelected = absoluteIndex === cursor;
-            // Selected row: blue background + bright arrow + bold text. The
-            // background spans the whole row so the cursor is visible at a
-            // glance even on a busy logs panel.
             const bg = isSelected ? "blue" : undefined;
             const fg = isSelected ? "whiteBright" : undefined;
+            const ts = formatTimestamp(entry.timestamp);
+            const lvl = entry.level === "error" ? "✗" : entry.level === "warn" ? "⚠" : "✓";
+            const lvlColor = entry.level === "error" ? "red" : entry.level === "warn" ? "yellow" : "green";
+            // Pad/truncate prefix to a fixed slot so message column aligns
+            // across rows (rows without a prefix get blank padding instead of
+            // collapsing).
+            const prefixSlot = entry.prefix
+              ? `[${entry.prefix}]`.slice(0, PREFIX_WIDTH).padEnd(PREFIX_WIDTH)
+              : " ".repeat(PREFIX_WIDTH);
+            const marker = isSelected ? "▶ " : "  ";
             return (
-              <Box key={`${entry.timestamp.getTime()}-${displayIdx}`} flexDirection="row" gap={1}>
-                <Text backgroundColor={bg} color={isSelected ? "cyanBright" : "gray"} bold={isSelected}>
-                  {isSelected ? "▶" : " "}
-                </Text>
-                <Text backgroundColor={bg} color={fg} dimColor={!isSelected}>
-                  {formatTimestamp(entry.timestamp)}
-                </Text>
-                <Text backgroundColor={bg}>
-                  <LevelBadge level={entry.level} />
-                </Text>
-                {entry.prefix && (
-                  <Text backgroundColor={bg} color={fg} dimColor={!isSelected}>
-                    [{entry.prefix}]
-                  </Text>
-                )}
-                <Text
-                  backgroundColor={bg}
-                  color={fg}
-                  bold={isSelected}
-                  wrap={logsWrapEnabled ? "wrap" : "truncate"}
-                >
-                  {entry.message}
-                </Text>
-              </Box>
+              <Text
+                key={`${entry.timestamp.getTime()}-${displayIdx}`}
+                backgroundColor={bg}
+                wrap={logsWrapEnabled ? "wrap" : "truncate-end"}
+              >
+                <Text color={isSelected ? "cyanBright" : "gray"} bold={isSelected}>{marker}</Text>
+                <Text color={fg} dimColor={!isSelected}>{ts} </Text>
+                <Text color={lvlColor}>{lvl}</Text>
+                <Text color={fg} dimColor={!isSelected}>{` ${prefixSlot} `}</Text>
+                <Text color={fg} bold={isSelected}>{entry.message}</Text>
+              </Text>
             );
           })}
         </Box>
