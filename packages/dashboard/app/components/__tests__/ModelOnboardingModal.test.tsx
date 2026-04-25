@@ -2881,8 +2881,10 @@ describe("ModelOnboardingModal", () => {
         expect(screen.getByText("Set Up AI")).toBeTruthy();
       });
 
-      // Helper text should be visible when no providers are authenticated
-      expect(screen.getByText("Skip this step if you'd like — you can always add providers later from Settings.")).toBeTruthy();
+      // Wait for provider fetch to settle, then confirm helper visibility.
+      await waitFor(() => {
+        expect(screen.getByText("Skip this step if you'd like — you can always add providers later from Settings.")).toBeTruthy();
+      });
     });
 
     it("does not show helper text on AI Setup when a provider is authenticated", async () => {
@@ -2900,7 +2902,10 @@ describe("ModelOnboardingModal", () => {
         expect(screen.getByText("Set Up AI")).toBeTruthy();
       });
 
-      // Helper text should NOT be visible when a provider is authenticated
+      // Wait for provider sections to render (auth fetch complete), then assert helper absence.
+      await waitFor(() => {
+        expect(screen.getByText("Quick start providers")).toBeTruthy();
+      });
       expect(screen.queryByText("Skip this step if you'd like — you can always add providers later from Settings.")).toBeNull();
     });
 

@@ -393,7 +393,7 @@ export function PluginManager({ addToast, projectId }: PluginManagerProps) {
                             </div>
                           ))}
                           <button
-                            className="btn-secondary"
+                            className="btn btn-secondary"
                             onClick={() => {
                               const current = (pluginSettings[key] as unknown[]) || [];
                               const defaultItem = schema.itemType === "number" ? 0 : "";
@@ -410,7 +410,7 @@ export function PluginManager({ addToast, projectId }: PluginManagerProps) {
                     </div>
                   );
                 })}
-                <button className="btn-primary" onClick={handleSaveSettings}>
+                <button className="btn btn-primary" onClick={handleSaveSettings}>
                   Save Settings
                 </button>
               </div>
@@ -422,7 +422,7 @@ export function PluginManager({ addToast, projectId }: PluginManagerProps) {
           <div className="plugin-detail-actions">
             {selectedPlugin.state === "started" && (
               <button
-                className="btn-secondary"
+                className="btn btn-secondary"
                 onClick={() => handleReload(selectedPlugin)}
                 disabled={reloadingPluginId === selectedPlugin.id}
               >
@@ -431,11 +431,11 @@ export function PluginManager({ addToast, projectId }: PluginManagerProps) {
               </button>
             )}
             {selectedPlugin.enabled ? (
-              <button className="btn-secondary" onClick={() => handleDisable(selectedPlugin)}>
+              <button className="btn btn-secondary" onClick={() => handleDisable(selectedPlugin)}>
                 Disable
               </button>
             ) : (
-              <button className="btn-primary" onClick={() => handleEnable(selectedPlugin)}>
+              <button className="btn btn-primary" onClick={() => handleEnable(selectedPlugin)}>
                 Enable
               </button>
             )}
@@ -456,7 +456,7 @@ export function PluginManager({ addToast, projectId }: PluginManagerProps) {
           <button className="btn-icon" onClick={loadPlugins} title="Refresh">
             <RefreshCw size={16} className={loading ? "spin" : ""} />
           </button>
-          <button className="btn-primary" onClick={() => setShowInstall(true)}>
+          <button className="btn btn-primary" onClick={() => setShowInstall(true)}>
             <Plus size={14} /> Install
           </button>
         </div>
@@ -479,10 +479,10 @@ export function PluginManager({ addToast, projectId }: PluginManagerProps) {
             }}
           />
           <div className="plugin-install-actions">
-            <button className="btn-primary" onClick={handleInstall} disabled={installing || !installPath.trim()}>
+            <button className="btn btn-primary" onClick={handleInstall} disabled={installing || !installPath.trim()}>
               {installing ? "Installing..." : "Install Plugin"}
             </button>
-            <button className="btn-secondary" onClick={() => { setShowInstall(false); setInstallPath(""); }}>
+            <button className="btn btn-secondary" onClick={() => { setShowInstall(false); setInstallPath(""); }}>
               Cancel
             </button>
           </div>

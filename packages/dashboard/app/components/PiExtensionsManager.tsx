@@ -219,9 +219,10 @@ export function PiExtensionsManager({ addToast, projectId }: PiExtensionsManager
             <span key={index} className="pi-ext-resource-tag">
               <span className="pi-ext-resource-path">{path}</span>
               <button
-                className="pi-ext-resource-remove"
+                className="btn-icon touch-target pi-ext-resource-remove"
                 onClick={() => handleRemoveResource(type, path)}
                 title={`Remove ${path}`}
+                aria-label={`Remove ${path}`}
               >
                 <X size={12} />
               </button>
@@ -331,9 +332,10 @@ export function PiExtensionsManager({ addToast, projectId }: PiExtensionsManager
                           </span>
                         )}
                         <button
-                          className="pi-ext-remove-btn"
+                          className="btn-icon touch-target pi-ext-remove-btn"
                           onClick={() => handleRemovePackage(source)}
                           title="Remove package"
+                          aria-label={`Remove package ${label}`}
                         >
                           <Trash2 size={14} />
                         </button>

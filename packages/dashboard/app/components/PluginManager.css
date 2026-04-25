@@ -41,7 +41,10 @@
 .plugin-install-hint code {
   padding: 1px var(--space-xs);
   border-radius: var(--radius-sm);
-  background: var(--bg-tertiary, rgba(127, 127, 127, 0.12));
+  background: var(
+    --bg-tertiary,
+    color-mix(in srgb, var(--text-muted) 18%, transparent)
+  );
   font-size: 0.85em;
 }
 
@@ -220,4 +223,41 @@
   padding: var(--space-2xl);
   text-align: center;
   color: var(--text-muted);
+}
+
+@media (max-width: 768px) {
+  .plugin-manager-detail-header {
+    gap: var(--space-sm);
+  }
+
+  .plugin-detail-title {
+    gap: var(--space-xs);
+  }
+
+  .plugin-detail-card {
+    padding: var(--space-md);
+    gap: var(--space-sm);
+  }
+
+  .plugin-list {
+    gap: var(--space-xs);
+  }
+
+  .plugin-item {
+    padding: var(--space-md);
+  }
+
+  .plugin-actions {
+    gap: var(--space-xs);
+  }
+
+  .plugin-detail-actions {
+    flex-wrap: wrap;
+    justify-content: stretch;
+  }
+
+  .plugin-detail-actions button {
+    flex: 1 1 auto;
+    min-height: 36px;
+  }
 }

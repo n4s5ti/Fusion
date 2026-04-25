@@ -247,16 +247,20 @@
   background: none;
   border: none;
   padding: var(--space-xs);
+  min-width: var(--space-2xl);
+  min-height: var(--space-2xl);
   cursor: pointer;
   color: var(--text-muted);
-  display: flex;
+  display: inline-flex;
   align-items: center;
+  justify-content: center;
   border-radius: var(--radius-sm);
-  transition: color var(--transition-fast);
+  transition: color var(--transition-fast), background-color var(--transition-fast);
 }
 
 .pi-ext-remove-btn:hover {
   color: var(--color-error);
+  background: color-mix(in srgb, var(--color-error) 10%, transparent);
 }
 
 .pi-ext-remove-btn:focus-visible {
@@ -369,17 +373,21 @@
 .pi-ext-resource-remove {
   background: none;
   border: none;
-  padding: 0;
+  padding: var(--space-xs);
+  min-width: var(--space-2xl);
+  min-height: var(--space-2xl);
   cursor: pointer;
   color: var(--text-dim);
-  display: flex;
+  display: inline-flex;
   align-items: center;
+  justify-content: center;
   border-radius: var(--radius-sm);
-  transition: color var(--transition-fast);
+  transition: color var(--transition-fast), background-color var(--transition-fast);
 }
 
 .pi-ext-resource-remove:hover {
   color: var(--color-error);
+  background: color-mix(in srgb, var(--color-error) 10%, transparent);
 }
 
 .pi-ext-resource-remove:focus-visible {
@@ -389,48 +397,6 @@
 
 /* Mobile responsive overrides */
 @media (max-width: 768px) {
-  /* Detail view header */
-  .plugin-manager-detail-header {
-    gap: var(--space-sm);
-    flex-wrap: wrap;
-  }
-
-  .plugin-detail-title {
-    flex-wrap: wrap;
-    gap: var(--space-xs);
-  }
-
-  /* Detail cards */
-  .plugin-detail-card {
-    padding: var(--space-md);
-    gap: var(--space-sm);
-  }
-
-  /* Plugin list items */
-  .plugin-list {
-    gap: var(--space-xs);
-  }
-
-  .plugin-item {
-    padding: var(--space-md);
-  }
-
-  /* Action buttons inside list items */
-  .plugin-actions {
-    gap: var(--space-xs);
-  }
-
-  /* Detail actions footer — buttons stack on narrow screens */
-  .plugin-detail-actions {
-    flex-wrap: wrap;
-    justify-content: stretch;
-  }
-
-  .plugin-detail-actions button {
-    flex: 1 1 auto;
-    min-height: 36px;
-  }
-
   /* Pi Extensions list items - mobile adjustments */
   .pi-ext-list {
     gap: var(--space-xs);
