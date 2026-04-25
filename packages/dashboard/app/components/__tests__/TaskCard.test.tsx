@@ -297,6 +297,31 @@ describe("TaskCard", () => {
     });
   });
 
+  it("shows in-review files-changed chip from modifiedFiles fallback when no worktree diff is available", () => {
+    const onOpenDetailWithTab = vi.fn();
+    const task = makeTask({
+      column: "in-review",
+      worktree: undefined,
+      modifiedFiles: ["packages/dashboard/app/App.tsx", "packages/dashboard/app/styles.css"],
+    });
+
+    render(
+      <TaskCard
+        task={task}
+        onOpenDetail={noop}
+        addToast={noop}
+        onOpenDetailWithTab={onOpenDetailWithTab}
+      />,
+    );
+
+    const filesChangedButton = screen.getByRole("button", { name: "2 files changed" });
+    expect(filesChangedButton).toBeDefined();
+    expect((filesChangedButton as HTMLButtonElement).disabled).toBe(false);
+
+    fireEvent.click(filesChangedButton);
+    expect(onOpenDetailWithTab).toHaveBeenCalledWith(task, "changes");
+  });
+
   it("shows error toast when upload fails", async () => {
     const mockUpload = vi.mocked(uploadAttachment);
     mockUpload.mockRejectedValue(new Error("Upload failed"));

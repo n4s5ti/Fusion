@@ -1091,7 +1091,7 @@ function TaskCardComponent({
           </>
         );
       })()}
-      {task.worktree && (task.column === "in-progress" || task.column === "in-review") && (() => {
+      {task.worktree && task.column === "in-progress" && (() => {
         const activeCount = diffStats?.filesChanged;
         if (activeCount == null || activeCount === 0) {
           return null;
@@ -1105,6 +1105,25 @@ function TaskCardComponent({
           >
             <Folder size={12} />
             <span>{activeCount} {activeCount === 1 ? "file" : "files"} changed</span>
+          </button>
+        );
+      })()}
+      {task.column === "in-review" && (() => {
+        const reviewDiffCount = diffStats?.filesChanged;
+        const fallbackCount = reviewDiffCount == null ? task.modifiedFiles?.length : undefined;
+        const displayCount = reviewDiffCount ?? fallbackCount;
+        if (displayCount == null || displayCount === 0) {
+          return null;
+        }
+        return (
+          <button
+            type="button"
+            className="card-session-files"
+            onClick={handleOpenFiles}
+            disabled={!onOpenDetailWithTab}
+          >
+            <Folder size={12} />
+            <span>{displayCount} {displayCount === 1 ? "file" : "files"} changed</span>
           </button>
         );
       })()}
