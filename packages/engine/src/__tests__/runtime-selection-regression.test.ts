@@ -269,5 +269,36 @@ describe("Runtime Selection Regression Tests", () => {
       expect(result.runtimeId).toBe("code-interpreter");
       expect(result.wasConfigured).toBe(true);
     });
+
+    it("should route runtimeHint=openclaw to the openclaw runtime", async () => {
+      mockResolveRuntime.mockResolvedValue({
+        runtime: {
+          id: "openclaw",
+          name: "OpenClaw Runtime",
+          createSession: async () => ({
+            session: {
+              model: { provider: "openclaw", id: "openclaw-agent" },
+            },
+          }),
+          promptWithFallback: vi.fn(),
+          describeModel: () => "openclaw/openclaw-agent",
+        },
+        wasConfigured: true,
+        runtimeId: "openclaw",
+      });
+
+      const { createResolvedAgentSession } = await import("../agent-session-helpers.js");
+
+      const result = await createResolvedAgentSession({
+        sessionPurpose: "executor",
+        pluginRunner: {} as any,
+        runtimeHint: "openclaw",
+        cwd: "/test/path",
+        systemPrompt: "Test prompt",
+      });
+
+      expect(result.runtimeId).toBe("openclaw");
+      expect(result.wasConfigured).toBe(true);
+    });
   });
 });

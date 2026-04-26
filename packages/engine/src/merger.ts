@@ -98,7 +98,7 @@ import { join } from "node:path";
 import { getTaskMergeBlocker, type TaskStore, type MergeResult, type MergeDetails, type WorkflowStep, type WorkflowStepResult, type Settings, type AgentPromptsConfig } from "@fusion/core";
 import { resolveAgentPrompt } from "@fusion/core";
 import { describeModel, promptWithFallback } from "./pi.js";
-import { createResolvedAgentSession } from "./agent-session-helpers.js";
+import { createResolvedAgentSession, extractRuntimeHint } from "./agent-session-helpers.js";
 import { buildSessionSkillContext } from "./session-skill-context.js";
 import type { WorktreePool } from "./worktree-pool.js";
 import { AgentLogger } from "./agent-logger.js";
@@ -800,12 +800,13 @@ async function attemptInMergeVerificationFix(
 
     // Build skill selection context
     let skillContext = undefined;
+    let taskForSkillContext: Awaited<ReturnType<typeof store.getTask>> | null = null;
     if (options.agentStore) {
       try {
-        const task = await store.getTask(taskId);
+        taskForSkillContext = await store.getTask(taskId);
         skillContext = await buildSessionSkillContext({
           agentStore: options.agentStore,
-          task,
+          task: taskForSkillContext,
           sessionPurpose: "merger",
           projectRootDir: rootDir,
         });
@@ -816,8 +817,17 @@ async function attemptInMergeVerificationFix(
 
     // Create the fix agent session
     throwIfAborted(options.signal, taskId);
+    const assignedAgentId = taskForSkillContext?.assignedAgentId?.trim();
+    const agentStoreWithGetAgent = options.agentStore && typeof (options.agentStore as { getAgent?: unknown }).getAgent === "function"
+      ? options.agentStore
+      : null;
+    const assignedAgent = assignedAgentId && agentStoreWithGetAgent
+      ? await agentStoreWithGetAgent.getAgent(assignedAgentId).catch(() => null)
+      : null;
+    const mergerRuntimeHint = extractRuntimeHint(assignedAgent?.runtimeConfig);
     const { session } = await createResolvedAgentSession({
       sessionPurpose: "merger",
+      runtimeHint: mergerRuntimeHint,
       pluginRunner: options.pluginRunner,
       cwd: rootDir, // Runs on the main branch in the project root
       systemPrompt: `You are a verification fix agent running during a merge on the main branch.
@@ -1665,7 +1675,12 @@ async function resolveComplexRebaseConflictsWithAi(
   taskId: string,
   settings: Settings,
   conflictedFiles: string[],
-  options?: { onAgentText?: (delta: string) => void; pluginRunner?: import("./plugin-runner.js").PluginRunner; signal?: AbortSignal },
+  options?: {
+    onAgentText?: (delta: string) => void;
+    pluginRunner?: import("./plugin-runner.js").PluginRunner;
+    signal?: AbortSignal;
+    runtimeHint?: string;
+  },
 ): Promise<void> {
   mergerLog.log(`${taskId}: resolving ${conflictedFiles.length} complex rebase conflict(s) with AI`);
 
@@ -1693,6 +1708,7 @@ You are assisting with a paused \`git pull --rebase\`.
   throwIfAborted(options?.signal, taskId);
   const { session } = await createResolvedAgentSession({
     sessionPurpose: "merger",
+    runtimeHint: options?.runtimeHint,
     pluginRunner: options?.pluginRunner,
     cwd: rootDir,
     systemPrompt,
@@ -1738,7 +1754,7 @@ async function resolveRebaseConflictSet(
   rootDir: string,
   taskId: string,
   settings: Settings,
-  options?: { onAgentText?: (delta: string) => void; signal?: AbortSignal },
+  options?: { onAgentText?: (delta: string) => void; signal?: AbortSignal; runtimeHint?: string },
 ): Promise<void> {
   const conflictedFiles = await getConflictedFiles(rootDir);
   if (conflictedFiles.length === 0) return;
@@ -1781,7 +1797,7 @@ async function pullWithRebaseAndResolveConflicts(
   settings: Settings,
   remote: string,
   branch: string,
-  options?: { onAgentText?: (delta: string) => void; signal?: AbortSignal },
+  options?: { onAgentText?: (delta: string) => void; signal?: AbortSignal; runtimeHint?: string },
 ): Promise<void> {
   const pullCommand = `git pull --rebase ${quoteArg(remote)} ${quoteArg(branch)}`;
   try {
@@ -1872,7 +1888,7 @@ export async function pushToRemoteAfterMerge(
   rootDir: string,
   taskId: string,
   settings: Settings,
-  options?: { onAgentText?: (delta: string) => void; signal?: AbortSignal },
+  options?: { onAgentText?: (delta: string) => void; signal?: AbortSignal; runtimeHint?: string },
 ): Promise<{ pushed: boolean; error?: string }> {
   let target: { remote: string; branch: string };
 
@@ -2676,7 +2692,20 @@ export async function aiMergeTask(
   if (settings.pushAfterMerge && settings.mergeStrategy !== "pull-request") {
     try {
       throwIfAborted(options.signal, taskId);
-      const pushResult = await pushToRemoteAfterMerge(store, rootDir, taskId, settings, options);
+      const pushTask = await store.getTask(taskId).catch(() => null);
+      const pushAssignedAgentId = pushTask?.assignedAgentId?.trim();
+      const pushAgentStoreWithGetAgent = options.agentStore && typeof (options.agentStore as { getAgent?: unknown }).getAgent === "function"
+        ? options.agentStore
+        : null;
+      const pushAssignedAgent = pushAssignedAgentId && pushAgentStoreWithGetAgent
+        ? await pushAgentStoreWithGetAgent.getAgent(pushAssignedAgentId).catch(() => null)
+        : null;
+      const pushRuntimeHint = extractRuntimeHint(pushAssignedAgent?.runtimeConfig);
+      const pushResult = await pushToRemoteAfterMerge(store, rootDir, taskId, settings, {
+        onAgentText: options.onAgentText,
+        signal: options.signal,
+        runtimeHint: pushRuntimeHint,
+      });
       if (pushResult.pushed) {
         mergerLog.log(`${taskId}: pushed merged result to remote`);
       } else {
@@ -3278,12 +3307,13 @@ async function runAiAgentForCommit(params: AiAgentParams): Promise<{ success: bo
 
   // Build skill selection context (assigned agent skills take precedence over role fallback)
   let skillContext = undefined;
+  let taskForSkillContext: Awaited<ReturnType<typeof store.getTask>> | null = null;
   if (options.agentStore) {
     try {
-      const task = await store.getTask(taskId);
+      taskForSkillContext = await store.getTask(taskId);
       skillContext = await buildSessionSkillContext({
         agentStore: options.agentStore,
-        task,
+        task: taskForSkillContext,
         sessionPurpose: "merger",
         projectRootDir: rootDir,
       });
@@ -3292,8 +3322,18 @@ async function runAiAgentForCommit(params: AiAgentParams): Promise<{ success: bo
     }
   }
 
+  const assignedAgentId = taskForSkillContext?.assignedAgentId?.trim();
+  const agentStoreWithGetAgent = options.agentStore && typeof (options.agentStore as { getAgent?: unknown }).getAgent === "function"
+    ? options.agentStore
+    : null;
+  const assignedAgent = assignedAgentId && agentStoreWithGetAgent
+    ? await agentStoreWithGetAgent.getAgent(assignedAgentId).catch(() => null)
+    : null;
+  const mergerRuntimeHint = extractRuntimeHint(assignedAgent?.runtimeConfig);
+
   const { session } = await createResolvedAgentSession({
     sessionPurpose: "merger",
+    runtimeHint: mergerRuntimeHint,
     pluginRunner: options.pluginRunner,
     cwd: rootDir,
     systemPrompt: mergerSystemPrompt,
@@ -3764,12 +3804,13 @@ If issues are found that need attention, describe them clearly.`;
 
     // Build skill selection context for post-merge session
     let postMergeSkillContext = undefined;
+    let taskForSkillContext: Awaited<ReturnType<typeof store.getTask>> | null = null;
     if (mergeOptions.agentStore) {
       try {
-        const task = await store.getTask(taskId);
+        taskForSkillContext = await store.getTask(taskId);
         postMergeSkillContext = await buildSessionSkillContext({
           agentStore: mergeOptions.agentStore,
-          task,
+          task: taskForSkillContext,
           sessionPurpose: "merger",
           projectRootDir: rootDir,
         });
@@ -3778,8 +3819,17 @@ If issues are found that need attention, describe them clearly.`;
       }
     }
 
+    const assignedAgentId = taskForSkillContext?.assignedAgentId?.trim();
+    const agentStoreWithGetAgent = mergeOptions.agentStore && typeof (mergeOptions.agentStore as { getAgent?: unknown }).getAgent === "function"
+      ? mergeOptions.agentStore
+      : null;
+    const assignedAgent = assignedAgentId && agentStoreWithGetAgent
+      ? await agentStoreWithGetAgent.getAgent(assignedAgentId).catch(() => null)
+      : null;
+    const mergerRuntimeHint = extractRuntimeHint(assignedAgent?.runtimeConfig);
     const { session } = await createResolvedAgentSession({
       sessionPurpose: "merger",
+      runtimeHint: mergerRuntimeHint,
       pluginRunner: mergeOptions.pluginRunner,
       cwd,
       systemPrompt: postMergeSystemPrompt,

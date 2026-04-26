@@ -42,6 +42,10 @@ vi.mock("../agent-session-helpers.js", async () => {
         wasConfigured: false,
       };
     },
+    extractRuntimeHint: (runtimeConfig: Record<string, unknown> | undefined) => {
+      const hint = runtimeConfig?.runtimeHint;
+      return typeof hint === "string" && hint.trim().length > 0 ? hint.trim() : undefined;
+    },
   };
 });
 vi.mock("node:child_process", () => {

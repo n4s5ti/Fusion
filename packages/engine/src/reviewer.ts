@@ -11,7 +11,7 @@
 import type { TaskStore, TaskComment, AgentPromptsConfig, Settings } from "@fusion/core";
 import { buildReviewerMemoryInstructions, resolveAgentPrompt } from "@fusion/core";
 import { describeModel, promptWithFallback } from "./pi.js";
-import { createResolvedAgentSession } from "./agent-session-helpers.js";
+import { createResolvedAgentSession, extractRuntimeHint } from "./agent-session-helpers.js";
 import { buildSessionSkillContext } from "./session-skill-context.js";
 import { AgentLogger } from "./agent-logger.js";
 import { reviewerLog } from "./logger.js";
@@ -364,6 +364,7 @@ export async function reviewStep(
     : undefined;
   const { session } = await createResolvedAgentSession({
     sessionPurpose: "reviewer",
+    runtimeHint: extractRuntimeHint(memoryAgent?.runtimeConfig),
     pluginRunner: options.pluginRunner,
     cwd,
     systemPrompt: reviewerSystemPrompt,

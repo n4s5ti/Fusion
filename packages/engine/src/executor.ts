@@ -11,7 +11,7 @@ import { findWorktreeUser } from "./merger.js";
 import { generateWorktreeName, slugify } from "./worktree-names.js";
 import { Type, type Static } from "@mariozechner/pi-ai";
 import { describeModel, promptWithFallback, compactSessionContext } from "./pi.js";
-import { createResolvedAgentSession } from "./agent-session-helpers.js";
+import { createResolvedAgentSession, extractRuntimeHint } from "./agent-session-helpers.js";
 import { buildSessionSkillContext } from "./session-skill-context.js";
 import { reviewStep, type ReviewVerdict } from "./reviewer.js";
 import { ModelRegistry, SessionManager, type ToolDefinition, type AgentSession } from "@mariozechner/pi-coding-agent";
@@ -1559,6 +1559,11 @@ export class TaskExecutor {
         // ── Step-Session Path ──────────────────────────────────────────
         executorLog.log(`${task.id}: using step-session mode (maxParallel=${settings.maxParallelSteps ?? 2})`);
 
+        const stepSessionAgent = detail.assignedAgentId && this.options.agentStore
+          ? await this.options.agentStore.getAgent(detail.assignedAgentId).catch(() => null)
+          : null;
+        const stepSessionRuntimeHint = extractRuntimeHint(stepSessionAgent?.runtimeConfig);
+
         const stepExecutor = new StepSessionExecutor({
           store: this.store,
           taskDetail: detail,
@@ -1568,6 +1573,7 @@ export class TaskExecutor {
           semaphore: this.options.semaphore,
           stuckTaskDetector: this.options.stuckTaskDetector,
           pluginRunner: this.options.pluginRunner,
+          runtimeHint: stepSessionRuntimeHint,
           // Pass skill selection context from the main executor session
           skillSelection: skillContext.skillSelectionContext,
           // Pass agentStore and messageStore for delegation and messaging tools
@@ -1825,6 +1831,7 @@ export class TaskExecutor {
       const assignedAgent = assignedAgentId && this.options.agentStore
         ? await this.options.agentStore.getAgent(assignedAgentId).catch(() => null)
         : null;
+      const executorRuntimeHint = extractRuntimeHint(assignedAgent?.runtimeConfig);
 
       // Log fast mode status
       if (executionMode === "fast") {
@@ -1918,6 +1925,7 @@ export class TaskExecutor {
         // eslint-disable-next-line prefer-const
         let { session, sessionFile } = await createResolvedAgentSession({
           sessionPurpose: "executor",
+          runtimeHint: executorRuntimeHint,
           pluginRunner: this.options.pluginRunner,
           cwd: worktreePath,
           systemPrompt: executorSystemPrompt,
@@ -2166,6 +2174,7 @@ export class TaskExecutor {
 
               const { session: retrySession, sessionFile: retrySessionFile } = await createResolvedAgentSession({
                 sessionPurpose: "executor",
+                runtimeHint: executorRuntimeHint,
                 pluginRunner: this.options.pluginRunner,
                 cwd: worktreePath,
                 systemPrompt: executorSystemPrompt,
@@ -3809,8 +3818,14 @@ and show an appropriate message to the user.\`
         projectRootDir: this.rootDir,
       });
 
+      const workflowAgent = task.assignedAgentId && this.options.agentStore
+        ? await this.options.agentStore.getAgent(task.assignedAgentId).catch(() => null)
+        : null;
+      const workflowRuntimeHint = extractRuntimeHint(workflowAgent?.runtimeConfig);
+
       const { session } = await createResolvedAgentSession({
         sessionPurpose: "executor",
+        runtimeHint: workflowRuntimeHint,
         pluginRunner: this.options.pluginRunner,
         cwd: worktreePath,
         systemPrompt: stepSystemPrompt,
@@ -4855,10 +4870,16 @@ and show an appropriate message to the user.\`
             sessionPurpose: "executor",
             projectRootDir: this.rootDir,
           });
+          const parentAgent = childTask.assignedAgentId
+            ? await this.options.agentStore.getAgent(childTask.assignedAgentId).catch(() => null)
+            : null;
+          const childRuntimeHint = extractRuntimeHint(agent.runtimeConfig)
+            ?? extractRuntimeHint(parentAgent?.runtimeConfig);
 
           // Create child agent session
           const { session: childSession } = await createResolvedAgentSession({
             sessionPurpose: "executor",
+            runtimeHint: childRuntimeHint,
             pluginRunner: this.options.pluginRunner,
             cwd: childWorktreePath,
             systemPrompt: childSystemPrompt,

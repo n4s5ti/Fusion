@@ -18,7 +18,7 @@ import type {
   AgentSession,
 } from "@mariozechner/pi-coding-agent";
 import { describeModel, promptWithFallback } from "./pi.js";
-import { createResolvedAgentSession } from "./agent-session-helpers.js";
+import { createResolvedAgentSession, extractRuntimeHint } from "./agent-session-helpers.js";
 import { reviewStep, type ReviewVerdict } from "./reviewer.js";
 import { buildSessionSkillContext } from "./session-skill-context.js";
 import { PRIORITY_SPECIFY, type AgentSemaphore } from "./concurrency.js";
@@ -858,12 +858,18 @@ export class TriageProcessor {
           ),
         ];
 
+        const assignedAgent = task.assignedAgentId && this.options.agentStore
+          ? await this.options.agentStore.getAgent(task.assignedAgentId).catch(() => null)
+          : null;
+        let triageRuntimeHint = extractRuntimeHint(assignedAgent?.runtimeConfig);
+
         // Resolve per-agent custom instructions for the triage role
         let triageInstructions = "";
         if (this.options.agentStore) {
           try {
             const agents = await this.options.agentStore.listAgents({ role: "triage" });
             for (const agent of agents) {
+              triageRuntimeHint ??= extractRuntimeHint(agent.runtimeConfig);
               if (agent.instructionsText || agent.instructionsPath) {
                 triageInstructions = await resolveAgentInstructions(agent, this.rootDir);
                 break;
@@ -891,6 +897,7 @@ export class TriageProcessor {
 
         let { session } = await createResolvedAgentSession({
           sessionPurpose: "triage",
+          runtimeHint: triageRuntimeHint,
           pluginRunner: this.options.pluginRunner,
           cwd: this.rootDir,
           systemPrompt: triageSystemPrompt,
@@ -1111,6 +1118,7 @@ export class TriageProcessor {
 
             const fallbackResult = await createResolvedAgentSession({
               sessionPurpose: "triage",
+              runtimeHint: triageRuntimeHint,
               pluginRunner: this.options.pluginRunner,
               cwd: this.rootDir,
               systemPrompt: triageSystemPrompt,

@@ -1075,7 +1075,7 @@ export class HeartbeatMonitor {
 
         // Lazy-load promptWithFallback
         const { promptWithFallback } = await import("./pi.js");
-        const { createResolvedAgentSession } = await import("./agent-session-helpers.js");
+        const { createResolvedAgentSession, extractRuntimeHint } = await import("./agent-session-helpers.js");
         const { buildSessionSkillContextSync } = await import("./session-skill-context.js");
 
         // Build tools with task creation tracking and run context for mutation correlation
@@ -1153,6 +1153,7 @@ export class HeartbeatMonitor {
         // Create agent session
         const { session } = await createResolvedAgentSession({
           sessionPurpose: "heartbeat",
+          runtimeHint: extractRuntimeHint(agent.runtimeConfig),
           pluginRunner: this.pluginRunner,
           cwd: rootDir,
           systemPrompt,

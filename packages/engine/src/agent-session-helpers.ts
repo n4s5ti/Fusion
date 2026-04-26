@@ -43,6 +43,24 @@ export interface ResolvedSessionResult {
 }
 
 /**
+ * Extract runtime hint from untyped runtimeConfig payload.
+ *
+ * @param runtimeConfig - Agent/task runtime configuration
+ * @returns normalized runtime hint or undefined when missing/invalid
+ */
+export function extractRuntimeHint(
+  runtimeConfig: Record<string, unknown> | undefined,
+): string | undefined {
+  const hint = runtimeConfig?.runtimeHint;
+  if (typeof hint !== "string") {
+    return undefined;
+  }
+
+  const normalizedHint = hint.trim();
+  return normalizedHint.length > 0 ? normalizedHint : undefined;
+}
+
+/**
  * Create an agent session using runtime resolution.
  *
  * This function:

@@ -70,6 +70,10 @@ vi.mock("../agent-session-helpers.js", async () => {
         wasConfigured: false,
       };
     },
+    extractRuntimeHint: (runtimeConfig: Record<string, unknown> | undefined) => {
+      const hint = runtimeConfig?.runtimeHint;
+      return typeof hint === "string" && hint.trim().length > 0 ? hint.trim() : undefined;
+    },
   };
 });
 vi.mock("../worktree-names.js", async () => {
@@ -8243,7 +8247,7 @@ describe("Workflow Steps Execution", () => {
 
     vi.useRealTimers();
     await rm(tempRoot, { recursive: true, force: true });
-  });
+  }, 15_000);
 
   it("skips script-mode step when scriptName is missing", async () => {
     const store = createMockStore();

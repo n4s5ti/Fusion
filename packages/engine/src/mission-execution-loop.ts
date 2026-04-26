@@ -18,9 +18,10 @@ import type {
   MissionContractAssertion,
   MissionFeature,
   MissionValidatorRun,
+  AgentStore,
 } from "@fusion/core";
 import { createFnAgent, promptWithFallback, type AgentResult } from "./pi.js";
-import { createResolvedAgentSession } from "./agent-session-helpers.js";
+import { createResolvedAgentSession, extractRuntimeHint } from "./agent-session-helpers.js";
 import { createLogger } from "./logger.js";
 
 /** Logger for the mission execution loop subsystem. */
@@ -66,6 +67,8 @@ export interface MissionExecutionLoopOptions {
   maxRetryBudget?: number;
   /** Plugin runner for runtime selection. When provided, enables plugin runtime lookup. */
   pluginRunner?: import("./plugin-runner.js").PluginRunner;
+  /** Optional agent store for resolving assigned-agent runtime hints. */
+  agentStore?: AgentStore;
 }
 
 export class MissionExecutionLoop extends EventEmitter {
@@ -76,6 +79,7 @@ export class MissionExecutionLoop extends EventEmitter {
   private maxRetryBudget: number;
   private missionAutopilot?: MissionExecutionLoopOptions["missionAutopilot"];
   private pluginRunner?: MissionExecutionLoopOptions["pluginRunner"];
+  private agentStore?: MissionExecutionLoopOptions["agentStore"];
   private activeValidations = new Set<string>(); // feature IDs currently being validated
 
   constructor(options: MissionExecutionLoopOptions) {
@@ -86,6 +90,7 @@ export class MissionExecutionLoop extends EventEmitter {
     this.maxRetryBudget = options.maxRetryBudget ?? 3;
     this.missionAutopilot = options.missionAutopilot;
     this.pluginRunner = options.pluginRunner;
+    this.agentStore = options.agentStore;
     loopLog.log("MissionExecutionLoop created");
   }
 
@@ -325,6 +330,9 @@ export class MissionExecutionLoop extends EventEmitter {
     // Get task context for validation
     const task = feature.taskId ? await this.taskStore.getTask(feature.taskId) : null;
     const taskContext = task ? this.buildTaskContext(task) : "";
+    const validationRuntimeHint = task?.assignedAgentId && this.agentStore
+      ? extractRuntimeHint((await this.agentStore.getAgent(task.assignedAgentId).catch(() => null))?.runtimeConfig)
+      : undefined;
 
     let session: AgentResult | null = null;
 
@@ -332,6 +340,7 @@ export class MissionExecutionLoop extends EventEmitter {
       // Create validation agent session
       const sessionResult = await createResolvedAgentSession({
         sessionPurpose: "validation",
+        runtimeHint: validationRuntimeHint,
         pluginRunner: this.pluginRunner,
         cwd: this.rootDir,
         systemPrompt: this.buildValidationSystemPrompt(feature, assertions, taskContext),

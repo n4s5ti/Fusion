@@ -256,6 +256,7 @@ export class InProcessRuntime
               : undefined,
             rootDir: this.config.workingDirectory,
             pluginRunner: this.pluginRunner,
+            agentStore: this.agentStore,
           })
         : undefined;
 

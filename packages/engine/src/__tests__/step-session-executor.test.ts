@@ -546,6 +546,25 @@ vi.mock("../pi.js", () => ({
   compactSessionContext: vi.fn(),
 }));
 
+vi.mock("../agent-session-helpers.js", async () => {
+  const pi = await import("../pi.js");
+  return {
+    createResolvedAgentSession: vi.fn(async (options: any) => {
+      const result = await pi.createFnAgent(options);
+      return {
+        session: result.session,
+        sessionFile: result.sessionFile,
+        runtimeId: "pi",
+        wasConfigured: false,
+      };
+    }),
+    promptWithAutoRetry: vi.fn(async (session: any, prompt: string, options?: unknown) =>
+      pi.promptWithFallback(session, prompt, options as any),
+    ),
+    describeAgentModel: vi.fn(async (session: any) => pi.describeModel(session)),
+  };
+});
+
 // Mock logger
 vi.mock("../logger.js", () => {
   const createMockLogger = () => ({

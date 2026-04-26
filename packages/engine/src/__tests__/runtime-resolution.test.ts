@@ -244,6 +244,19 @@ describe("runtime-resolution", () => {
         // Should return the matching runtime
         expect(result.runtime.id).toBe("unique-id");
       });
+
+      it("should resolve the openclaw runtime when registered", async () => {
+        const openclawRuntime = createMockPluginRuntime("openclaw", "OpenClaw Runtime");
+        mockPluginRunner.getRuntimeById.mockReturnValue({
+          pluginId: "fusion-plugin-openclaw-runtime",
+          runtime: openclawRuntime,
+        });
+
+        const result = await resolveRuntime(createContext("executor", "openclaw"));
+
+        expect(result.runtimeId).toBe("openclaw");
+        expect(result.wasConfigured).toBe(true);
+      });
     });
 
     describe("fallback behavior", () => {
@@ -253,6 +266,15 @@ describe("runtime-resolution", () => {
 
         const context = createContext("executor", "non-existent");
         const result = await resolveRuntime(context);
+
+        expect(result.runtimeId).toBe("pi");
+        expect(result.wasConfigured).toBe(false);
+      });
+
+      it("should fall back to pi when openclaw runtime is not registered", async () => {
+        mockPluginRunner.getRuntimeById.mockReturnValue(undefined);
+
+        const result = await resolveRuntime(createContext("executor", "openclaw"));
 
         expect(result.runtimeId).toBe("pi");
         expect(result.wasConfigured).toBe(false);

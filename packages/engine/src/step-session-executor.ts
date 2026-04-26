@@ -19,7 +19,11 @@ import { join } from "node:path";
 import type { AgentSession } from "@mariozechner/pi-coding-agent";
 import type { AgentStore, MessageStore, TaskDetail, Settings, TaskStore } from "@fusion/core";
 
-import { createFnAgent, promptWithFallback, describeModel } from "./pi.js";
+import {
+  createResolvedAgentSession,
+  describeAgentModel,
+  promptWithAutoRetry,
+} from "./agent-session-helpers.js";
 import type { SkillSelectionContext } from "./skill-resolver.js";
 import { generateWorktreeName } from "./worktree-names.js";
 import { AgentSemaphore } from "./concurrency.js";
@@ -82,6 +86,8 @@ export interface StepSessionExecutorOptions {
   stuckTaskDetector?: StuckTaskDetector;
   /** Optional plugin runner for providing plugin tools to step sessions. */
   pluginRunner?: import("./plugin-runner.js").PluginRunner;
+  /** Optional runtime hint resolved from assigned agent runtimeConfig. */
+  runtimeHint?: string;
   /** Callback invoked when a step starts executing. */
   onStepStart?: (stepIndex: number) => void;
   /** Callback invoked when a step completes (success or failure). */
@@ -902,7 +908,10 @@ export class StepSessionExecutor {
             settings,
           );
 
-          const createResult = await createFnAgent({
+          const createResult = await createResolvedAgentSession({
+            sessionPurpose: "executor",
+            runtimeHint: this.options.runtimeHint,
+            pluginRunner: this.options.pluginRunner,
             cwd: worktreePath,
             systemPrompt: `You are an AI agent executing step ${stepIndex} of task ${taskDetail.id}. Follow instructions precisely.`,
             defaultProvider: executorProvider,
@@ -950,13 +959,14 @@ export class StepSessionExecutor {
           this.activeSessions.set(stepIndex, handle);
           stuckTaskDetector?.trackTask(trackingKey, { dispose: () => session?.dispose() }, taskDetail.id);
 
+          const sessionModel = await describeAgentModel(session);
           stepExecLog.log(
             `Step ${stepIndex} attempt ${attempt + 1} session created ` +
-            `(model=${describeModel(session)}) for task ${taskDetail.id}`,
+            `(model=${sessionModel}) for task ${taskDetail.id}`,
           );
 
           // Send prompt
-          await promptWithFallback(session, stepPrompt);
+          await promptWithAutoRetry(session, stepPrompt);
 
           // Re-raise errors that pi-coding-agent swallowed after exhausting retries.
           // session.prompt() resolves normally even when retries are exhausted —
@@ -990,7 +1000,7 @@ export class StepSessionExecutor {
             recoveryAttempts++;
             try {
               stuckTaskDetector?.recordActivity(trackingKey);
-              await promptWithFallback(session, reducedStepPrompt);
+              await promptWithAutoRetry(session, reducedStepPrompt);
               checkSessionError(session);
               stepExecLog.log(`Step ${stepIndex} reduced-prompt recovery succeeded`);
               await this.store.appendAgentLog(
