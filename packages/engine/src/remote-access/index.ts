@@ -22,6 +22,9 @@ export type {
   TunnelProviderAdapter,
   TunnelProviderConfig,
   TunnelReadinessEvent,
+  TunnelRestoreDiagnostics,
+  TunnelRestoreOutcome,
+  TunnelRestoreReasonCode,
   TunnelStatusListener,
   TunnelStatusSnapshot,
 } from "./types.js";

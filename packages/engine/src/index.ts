@@ -102,6 +102,9 @@ export {
   type TunnelProviderAdapter,
   type TunnelProviderConfig,
   type TunnelReadinessEvent,
+  type TunnelRestoreDiagnostics,
+  type TunnelRestoreOutcome,
+  type TunnelRestoreReasonCode,
   type TunnelStatusListener,
   type TunnelStatusSnapshot,
 } from "./remote-access/index.js";

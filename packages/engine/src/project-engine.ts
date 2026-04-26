@@ -9,6 +9,8 @@ import type {
   ScheduledTask,
   AutomationRunResult,
 } from "@fusion/core";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
 import { InProcessRuntime } from "./runtimes/in-process-runtime.js";
 import type { ProjectRuntimeConfig } from "./project-runtime.js";
 import { PrMonitor } from "./pr-monitor.js";
@@ -21,6 +23,13 @@ import { PRIORITY_MERGE } from "./concurrency.js";
 import { runtimeLog } from "./logger.js";
 import type { HeartbeatTriggerScheduler } from "./agent-heartbeat.js";
 import { TunnelProcessManager } from "./remote-access/tunnel-process-manager.js";
+import type {
+  TunnelProvider,
+  TunnelProviderConfig,
+  TunnelRestoreDiagnostics,
+  TunnelRestoreReasonCode,
+  TunnelStatusSnapshot,
+} from "./remote-access/types.js";
 
 /**
  * Callback for processing pull-request merge strategy.
@@ -31,6 +40,15 @@ export type ProcessPullRequestMergeFn = (
   cwd: string,
   taskId: string,
 ) => Promise<"merged" | "waiting" | "skipped">;
+
+const execFileAsync = promisify(execFile);
+
+interface RemoteLifecycleEvaluation {
+  provider: TunnelProvider;
+  config?: TunnelProviderConfig;
+  reason?: TunnelRestoreReasonCode;
+  message?: string;
+}
 
 export interface ProjectEngineOptions {
   /** Project identifier for notification deep links */
@@ -92,6 +110,12 @@ export class ProjectEngine {
   private cronRunner?: CronRunner;
   private automationStore?: AutomationStoreType;
   private remoteTunnelManager?: TunnelProcessManager;
+  private remoteTunnelRestoreDiagnostics: TunnelRestoreDiagnostics = {
+    outcome: "skipped",
+    reason: "not_attempted",
+    at: new Date().toISOString(),
+    provider: null,
+  };
 
   // ── Auto-merge state ──
   private mergeQueue: string[] = [];
@@ -143,6 +167,13 @@ export class ProjectEngine {
     const cwd = this.config.workingDirectory;
 
     this.remoteTunnelManager = new TunnelProcessManager();
+    try {
+      await this.restoreRemoteTunnelIfNeeded(store);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.setRestoreDiagnostics("failed", "restore_start_failed", null, message);
+      runtimeLog.warn(`Remote tunnel restore evaluation failed (continuing startup): ${message}`);
+    }
 
     // 2. Initialize PrMonitor + PrCommentHandler
     this.prMonitor = new PrMonitor();
@@ -288,6 +319,22 @@ export class ProjectEngine {
     const tunnelManager = this.remoteTunnelManager;
     this.remoteTunnelManager = undefined;
     if (tunnelManager) {
+      let shutdownStore: TaskStore | null = null;
+      try {
+        shutdownStore = this.runtime.getTaskStore();
+      } catch {
+        shutdownStore = null;
+      }
+
+      if (shutdownStore) {
+        try {
+          await this.persistShutdownRemoteLifecycle(shutdownStore, tunnelManager.getStatus());
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          runtimeLog.warn(`Failed to persist remote lifecycle shutdown markers: ${message}`);
+        }
+      }
+
       try {
         await tunnelManager.stop();
       } catch (error) {
@@ -359,6 +406,80 @@ export class ProjectEngine {
     return this.remoteTunnelManager;
   }
 
+  getRemoteTunnelRestoreDiagnostics(): TunnelRestoreDiagnostics {
+    return { ...this.remoteTunnelRestoreDiagnostics };
+  }
+
+  async startRemoteTunnel(): Promise<TunnelStatusSnapshot> {
+    const manager = this.remoteTunnelManager;
+    if (!manager) {
+      throw new Error("remote_tunnel_unavailable:remote tunnel manager is not initialized");
+    }
+
+    const store = this.runtime.getTaskStore();
+    const settings = await store.getSettings();
+    const remoteAccess = settings.remoteAccess;
+    if (!remoteAccess?.enabled) {
+      throw new Error("invalid_config:remote access is disabled");
+    }
+
+    const provider = remoteAccess.activeProvider;
+    if (!provider) {
+      throw new Error("invalid_config:no active remote provider configured");
+    }
+
+    const lifecycle = await this.evaluateRemoteLifecycle(settings, provider);
+    if (!lifecycle.config) {
+      throw new Error(`${lifecycle.reason ?? "invalid_config"}:${lifecycle.message ?? "remote provider prerequisites are not met"}`);
+    }
+
+    const current = manager.getStatus();
+    if (current.state === "running" && current.provider === provider) {
+      await this.writeRemoteLifecycleState(store, remoteAccess, {
+        ...remoteAccess.lifecycle,
+        wasRunningOnShutdown: true,
+        lastRunningProvider: provider,
+      });
+      return manager.getStatus();
+    }
+
+    if (current.state === "running" && current.provider && current.provider !== provider) {
+      await manager.switchProvider(provider, lifecycle.config);
+    } else {
+      await manager.start(provider, lifecycle.config);
+    }
+
+    await this.writeRemoteLifecycleState(store, remoteAccess, {
+      ...remoteAccess.lifecycle,
+      wasRunningOnShutdown: true,
+      lastRunningProvider: provider,
+    });
+
+    return manager.getStatus();
+  }
+
+  async stopRemoteTunnel(): Promise<TunnelStatusSnapshot> {
+    const manager = this.remoteTunnelManager;
+    if (!manager) {
+      throw new Error("remote_tunnel_unavailable:remote tunnel manager is not initialized");
+    }
+
+    await manager.stop();
+
+    const store = this.runtime.getTaskStore();
+    const settings = await store.getSettings();
+    const remoteAccess = settings.remoteAccess;
+    if (remoteAccess) {
+      await this.writeRemoteLifecycleState(store, remoteAccess, {
+        ...remoteAccess.lifecycle,
+        wasRunningOnShutdown: false,
+        lastRunningProvider: null,
+      });
+    }
+
+    return manager.getStatus();
+  }
+
   /** Get the RoutineRunner (if initialized). */
   getRoutineRunner(): RoutineRunner | undefined {
     return this.runtime.getRoutineRunner();
@@ -399,6 +520,206 @@ export class ProjectEngine {
       this.manualMergeResolvers.set(taskId, { resolve, reject });
       this.internalEnqueueMerge(taskId);
     });
+  }
+
+  private setRestoreDiagnostics(
+    outcome: TunnelRestoreDiagnostics["outcome"],
+    reason: TunnelRestoreReasonCode,
+    provider: TunnelProvider | null,
+    message?: string,
+  ): void {
+    this.remoteTunnelRestoreDiagnostics = {
+      outcome,
+      reason,
+      provider,
+      message,
+      at: new Date().toISOString(),
+    };
+  }
+
+  private async restoreRemoteTunnelIfNeeded(store: TaskStore): Promise<void> {
+    const manager = this.remoteTunnelManager;
+    if (!manager) {
+      return;
+    }
+
+    const settings = await store.getSettings();
+    const remoteAccess = settings.remoteAccess;
+    if (!remoteAccess?.enabled) {
+      this.setRestoreDiagnostics("skipped", "remote_access_disabled", null);
+      return;
+    }
+
+    const lifecycle = remoteAccess.lifecycle;
+    if (!lifecycle.rememberLastRunning) {
+      this.setRestoreDiagnostics("skipped", "remember_last_running_disabled", null);
+      if (lifecycle.wasRunningOnShutdown || lifecycle.lastRunningProvider) {
+        await this.writeRemoteLifecycleState(store, remoteAccess, {
+          ...lifecycle,
+          wasRunningOnShutdown: false,
+          lastRunningProvider: null,
+        });
+      }
+      return;
+    }
+
+    if (!lifecycle.wasRunningOnShutdown) {
+      this.setRestoreDiagnostics("skipped", "no_prior_running_marker", null);
+      return;
+    }
+
+    const provider = lifecycle.lastRunningProvider ?? remoteAccess.activeProvider;
+    if (!provider) {
+      this.setRestoreDiagnostics("skipped", "provider_missing", null);
+      await this.writeRemoteLifecycleState(store, remoteAccess, {
+        ...lifecycle,
+        wasRunningOnShutdown: false,
+        lastRunningProvider: null,
+      });
+      return;
+    }
+
+    const evaluation = await this.evaluateRemoteLifecycle(settings, provider);
+    if (!evaluation.config) {
+      this.setRestoreDiagnostics("skipped", evaluation.reason ?? "provider_not_configured", provider, evaluation.message);
+      await this.writeRemoteLifecycleState(store, remoteAccess, {
+        ...lifecycle,
+        wasRunningOnShutdown: false,
+        lastRunningProvider: null,
+      });
+      return;
+    }
+
+    try {
+      await manager.start(provider, evaluation.config);
+      this.setRestoreDiagnostics("applied", "restore_started", provider);
+      await this.writeRemoteLifecycleState(store, remoteAccess, {
+        ...lifecycle,
+        wasRunningOnShutdown: true,
+        lastRunningProvider: provider,
+      }, provider);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.setRestoreDiagnostics("failed", "restore_start_failed", provider, message);
+      runtimeLog.warn(`Remote tunnel restore failed for ${provider}: ${message}`);
+      await this.writeRemoteLifecycleState(store, remoteAccess, {
+        ...lifecycle,
+        wasRunningOnShutdown: false,
+        lastRunningProvider: null,
+      });
+    }
+  }
+
+  private async persistShutdownRemoteLifecycle(
+    store: TaskStore,
+    status: TunnelStatusSnapshot,
+  ): Promise<void> {
+    const settings = await store.getSettings();
+    const remoteAccess = settings.remoteAccess;
+    if (!remoteAccess) {
+      return;
+    }
+
+    const shouldRememberRunning =
+      (status.state === "running" || status.state === "starting" || status.state === "stopping") &&
+      status.provider !== null;
+
+    await this.writeRemoteLifecycleState(store, remoteAccess, {
+      ...remoteAccess.lifecycle,
+      wasRunningOnShutdown: shouldRememberRunning,
+      lastRunningProvider: shouldRememberRunning ? status.provider : null,
+    }, shouldRememberRunning ? status.provider : remoteAccess.activeProvider);
+  }
+
+  private async writeRemoteLifecycleState(
+    store: TaskStore,
+    remoteAccess: NonNullable<Settings["remoteAccess"]>,
+    lifecycle: NonNullable<Settings["remoteAccess"]>["lifecycle"],
+    activeProviderOverride?: TunnelProvider | null,
+  ): Promise<void> {
+    await store.updateSettings({
+      remoteAccess: {
+        ...remoteAccess,
+        activeProvider: activeProviderOverride === undefined ? remoteAccess.activeProvider : activeProviderOverride,
+        lifecycle,
+      },
+    });
+  }
+
+  private async evaluateRemoteLifecycle(
+    settings: Settings,
+    provider: TunnelProvider,
+  ): Promise<RemoteLifecycleEvaluation> {
+    const remoteAccess = settings.remoteAccess;
+    if (!remoteAccess?.enabled) {
+      return { provider, reason: "remote_access_disabled", message: "Remote access is disabled" };
+    }
+
+    if (provider === "tailscale") {
+      const tailscale = remoteAccess.providers.tailscale;
+      if (!tailscale.enabled) {
+        return { provider, reason: "provider_not_enabled", message: "Tailscale provider is disabled" };
+      }
+      if (!tailscale.hostname?.trim() || !Number.isFinite(tailscale.targetPort) || tailscale.targetPort <= 0) {
+        return { provider, reason: "provider_not_configured", message: "Tailscale hostname and target port must be configured" };
+      }
+
+      const executable = await this.checkExecutableAvailable("tailscale");
+      if (!executable.available) {
+        return { provider, reason: "runtime_prerequisite_missing", message: executable.message };
+      }
+
+      return {
+        provider,
+        config: {
+          provider: "tailscale",
+          executablePath: "tailscale",
+          args: ["funnel", String(Math.floor(tailscale.targetPort))],
+        },
+      };
+    }
+
+    const cloudflare = remoteAccess.providers.cloudflare;
+    if (!cloudflare.enabled) {
+      return { provider, reason: "provider_not_enabled", message: "Cloudflare provider is disabled" };
+    }
+    if (!cloudflare.tunnelName?.trim() || !cloudflare.ingressUrl?.trim()) {
+      return { provider, reason: "provider_not_configured", message: "Cloudflare tunnel name and ingress URL must be configured" };
+    }
+    if (!cloudflare.tunnelToken?.trim()) {
+      return { provider, reason: "provider_not_configured", message: "Cloudflare tunnel token is required" };
+    }
+
+    const executable = await this.checkExecutableAvailable("cloudflared");
+    if (!executable.available) {
+      return { provider, reason: "runtime_prerequisite_missing", message: executable.message };
+    }
+
+    return {
+      provider,
+      config: {
+        provider: "cloudflare",
+        executablePath: "cloudflared",
+        args: ["tunnel", "--no-autoupdate", "run", cloudflare.tunnelName.trim()],
+        tokenEnvVar: "TUNNEL_TOKEN",
+        env: {
+          TUNNEL_TOKEN: cloudflare.tunnelToken,
+        },
+      },
+    };
+  }
+
+  private async checkExecutableAvailable(command: string): Promise<{ available: boolean; message?: string }> {
+    const checker = process.platform === "win32" ? "where" : "which";
+    try {
+      await execFileAsync(checker, [command]);
+      return { available: true };
+    } catch {
+      return {
+        available: false,
+        message: `${command} is not available on PATH`,
+      };
+    }
   }
 
   // ── Merge eligibility helpers (richer logic from dashboard.ts) ──

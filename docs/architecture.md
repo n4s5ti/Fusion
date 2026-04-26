@@ -361,7 +361,11 @@ Implemented in `agent-heartbeat.ts`:
 - Redaction is applied to command previews and emitted log lines before publishing status/log events.
 - Deterministic stop semantics: graceful shutdown (`SIGTERM`) first, bounded wait, then force-kill fallback (`SIGKILL`).
 - Safe provider switching is stop-first: active provider fully stops before target start is attempted; failed starts emit `switch_failed` terminal status.
-- `ProjectEngine.start()` instantiates a per-project tunnel manager and exposes it through `getRemoteTunnelManager()` for API/UI consumers.
+- `ProjectEngine.start()` instantiates a per-project tunnel manager and applies startup restore policy from `remoteAccess.lifecycle`:
+  - restore is attempted only when `rememberLastRunning` is true, a prior-running marker exists, provider config is valid, and runtime prerequisites are available.
+  - restore skips/failures are non-fatal to engine startup and clear stale running markers to avoid restart loops.
+- Manual lifecycle remains explicit: only `startRemoteTunnel()` / `stopRemoteTunnel()` transitions mutate runtime state; provider/settings updates do not auto-start tunnels.
+- `ProjectEngine` exposes restore diagnostics via `getRemoteTunnelRestoreDiagnostics()` (`applied|skipped|failed` + machine-readable reason).
 
 ### Multi-runtime support + IPC
 - Runtime contracts: `project-runtime.ts`
@@ -388,6 +392,8 @@ Implemented in `agent-heartbeat.ts`:
 Key server capabilities:
 - REST APIs for tasks, git, GitHub, agents, missions, planning, automations/routines, settings
 - Remote access APIs (`/api/remote/*`) for provider config, activation, tunnel lifecycle, status, token issuance, authenticated URL generation, and QR payload generation
+  - `/api/remote/tunnel/start` and `/api/remote/tunnel/stop` are the only lifecycle transition endpoints.
+  - `/api/remote/status` includes tunnel status plus restore diagnostics (`restore.outcome` + `restore.reason`) with parity between dashboard and headless `fn serve` runtimes.
 - Remote auth handoff endpoints:
   - `POST /api/remote-access/auth/login-url` (daemon-auth protected) issues a tokenized phone-login URL for either `persistent` or `short-lived` mode.
   - `GET /remote-login?rt=<token>` (public) validates remote token strategy and redirects to dashboard auth handoff (`/?token=<daemonToken>` when daemon auth is enabled, otherwise `/`).

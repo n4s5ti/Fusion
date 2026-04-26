@@ -15,6 +15,7 @@ const mocks = vi.hoisted(() => ({
   runtimeStart: vi.fn(async () => undefined),
   runtimeStop: vi.fn(async () => undefined),
   aiMergeTask: vi.fn(),
+  execFile: vi.fn(),
   currentStore: null as Record<string, unknown> | null,
 }));
 
@@ -46,6 +47,14 @@ vi.mock("../cron-runner.js", () => {
 vi.mock("../merger.js", () => ({
   aiMergeTask: mocks.aiMergeTask,
 }));
+
+vi.mock("node:child_process", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("node:child_process")>();
+  return {
+    ...actual,
+    execFile: mocks.execFile,
+  };
+});
 
 vi.mock("../pr-monitor.js", () => ({
   PrMonitor: vi.fn().mockImplementation(() => ({
@@ -86,15 +95,22 @@ type SettingsHandlerPayload = {
 };
 
 function createMockStore(initialSettings: Record<string, unknown>) {
-  let settings = { ...initialSettings };
+  let settings = structuredClone(initialSettings);
   const settingsHandlers = new Set<(payload: SettingsHandlerPayload) => void | Promise<void>>();
 
   const store = {
-    getSettings: vi.fn(async () => ({ ...settings })),
+    getSettings: vi.fn(async () => structuredClone(settings)),
     listTasks: vi.fn(async () => []),
     getTask: vi.fn(async (taskId: string) => ({ id: taskId, column: "in-review", mergeRetries: 0, status: null })),
     updateTask: vi.fn(async () => undefined),
     moveTask: vi.fn(async () => undefined),
+    updateSettings: vi.fn(async (patch: Record<string, unknown>) => {
+      settings = {
+        ...settings,
+        ...patch,
+      };
+      return structuredClone(settings);
+    }),
     logEntry: vi.fn(async () => undefined),
     addTaskComment: vi.fn(async () => undefined),
     getActiveMergingTask: vi.fn(() => null),
@@ -116,14 +132,51 @@ function createMockStore(initialSettings: Record<string, unknown>) {
     next: Record<string, unknown>,
     previous: Record<string, unknown>,
   ) => {
-    settings = { ...next };
+    settings = structuredClone(next);
     for (const handler of settingsHandlers) {
-      await handler({ settings: { ...next }, previous: { ...previous } });
+      await handler({ settings: structuredClone(next), previous: structuredClone(previous) });
     }
   };
 
-  return { store, emitSettingsUpdated };
+  const getCurrentSettings = () => structuredClone(settings);
+
+  return { store, emitSettingsUpdated, getCurrentSettings };
 }
+
+const baseRemoteAccess = {
+  enabled: true,
+  activeProvider: "cloudflare" as const,
+  providers: {
+    tailscale: {
+      enabled: true,
+      hostname: "tail.example.ts.net",
+      targetPort: 4040,
+      acceptRoutes: false,
+    },
+    cloudflare: {
+      enabled: true,
+      tunnelName: "demo",
+      tunnelToken: "cf-secret-token",
+      ingressUrl: "https://remote.example.com",
+    },
+  },
+  tokenStrategy: {
+    persistent: {
+      enabled: true,
+      token: "frt_persistent",
+    },
+    shortLived: {
+      enabled: true,
+      ttlMs: 120_000,
+      maxTtlMs: 86_400_000,
+    },
+  },
+  lifecycle: {
+    rememberLastRunning: true,
+    wasRunningOnShutdown: false,
+    lastRunningProvider: null,
+  },
+};
 
 const baseSettings: Record<string, unknown> = {
   autoMerge: false,
@@ -139,6 +192,7 @@ const baseSettings: Record<string, unknown> = {
   insightExtractionEnabled: false,
   insightExtractionSchedule: "0 3 * * *",
   insightExtractionMinIntervalMs: 0,
+  remoteAccess: baseRemoteAccess,
 };
 
 function createEngine() {
@@ -154,6 +208,26 @@ function createEngine() {
     { skipNotifier: true },
   );
 }
+
+beforeEach(() => {
+  mocks.execFile.mockImplementation((
+    _file: string,
+    _args: string[],
+    _options: unknown,
+    callback?: (error: Error | null, result: { stdout: string; stderr: string }) => void,
+  ) => {
+    if (typeof _options === "function") {
+      (_options as (error: Error | null, result: { stdout: string; stderr: string }) => void)(null, {
+        stdout: "/usr/bin/mock\n",
+        stderr: "",
+      });
+      return {} as never;
+    }
+
+    callback?.(null, { stdout: "/usr/bin/mock\n", stderr: "" });
+    return {} as never;
+  });
+});
 
 describe("ProjectEngine auto-summarize wiring", () => {
   beforeEach(() => {
@@ -281,6 +355,228 @@ describe("ProjectEngine remote tunnel manager wiring", () => {
 
     stopSpy.mockRestore();
     warnSpy.mockRestore();
+  });
+});
+
+describe("ProjectEngine remote lifecycle restore policy", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    const mockStore = createMockStore(baseSettings);
+    mocks.currentStore = mockStore.store;
+  });
+
+  it("attempts restore on startup when rememberLastRunning and prior-running markers are set", async () => {
+    const restoreSettings = {
+      ...baseSettings,
+      remoteAccess: {
+        ...baseRemoteAccess,
+        lifecycle: {
+          ...baseRemoteAccess.lifecycle,
+          rememberLastRunning: true,
+          wasRunningOnShutdown: true,
+          lastRunningProvider: "cloudflare" as const,
+        },
+      },
+    };
+    const mockStore = createMockStore(restoreSettings);
+    mocks.currentStore = mockStore.store;
+
+    const startSpy = vi.spyOn(TunnelProcessManager.prototype, "start").mockResolvedValue(undefined);
+    const engine = createEngine();
+
+    await engine.start();
+
+    expect(startSpy).toHaveBeenCalledTimes(1);
+    expect(startSpy.mock.calls[0]?.[0]).toBe("cloudflare");
+    expect(engine.getRemoteTunnelRestoreDiagnostics()).toMatchObject({
+      outcome: "applied",
+      reason: "restore_started",
+      provider: "cloudflare",
+    });
+
+    await engine.stop();
+    startSpy.mockRestore();
+  });
+
+  it("skips restore when rememberLastRunning is disabled", async () => {
+    const restoreSettings = {
+      ...baseSettings,
+      remoteAccess: {
+        ...baseRemoteAccess,
+        lifecycle: {
+          ...baseRemoteAccess.lifecycle,
+          rememberLastRunning: false,
+          wasRunningOnShutdown: true,
+          lastRunningProvider: "cloudflare" as const,
+        },
+      },
+    };
+    const mockStore = createMockStore(restoreSettings);
+    mocks.currentStore = mockStore.store;
+
+    const startSpy = vi.spyOn(TunnelProcessManager.prototype, "start").mockResolvedValue(undefined);
+    const engine = createEngine();
+
+    await engine.start();
+
+    expect(startSpy).not.toHaveBeenCalled();
+    expect(engine.getRemoteTunnelRestoreDiagnostics()).toMatchObject({
+      outcome: "skipped",
+      reason: "remember_last_running_disabled",
+      provider: null,
+    });
+
+    expect(mockStore.store.updateSettings).toHaveBeenCalledWith(expect.objectContaining({
+      remoteAccess: expect.objectContaining({
+        lifecycle: expect.objectContaining({
+          wasRunningOnShutdown: false,
+          lastRunningProvider: null,
+        }),
+      }),
+    }));
+
+    await engine.stop();
+    startSpy.mockRestore();
+  });
+
+  it("skips restore with explicit reason and clears stale marker when prerequisites are missing", async () => {
+    const restoreSettings = {
+      ...baseSettings,
+      remoteAccess: {
+        ...baseRemoteAccess,
+        providers: {
+          ...baseRemoteAccess.providers,
+          cloudflare: {
+            ...baseRemoteAccess.providers.cloudflare,
+            tunnelToken: null,
+          },
+        },
+        lifecycle: {
+          ...baseRemoteAccess.lifecycle,
+          rememberLastRunning: true,
+          wasRunningOnShutdown: true,
+          lastRunningProvider: "cloudflare" as const,
+        },
+      },
+    };
+    const mockStore = createMockStore(restoreSettings);
+    mocks.currentStore = mockStore.store;
+
+    const startSpy = vi.spyOn(TunnelProcessManager.prototype, "start").mockResolvedValue(undefined);
+    const engine = createEngine();
+
+    await engine.start();
+
+    expect(startSpy).not.toHaveBeenCalled();
+    expect(engine.getRemoteTunnelRestoreDiagnostics()).toMatchObject({
+      outcome: "skipped",
+      reason: "provider_not_configured",
+      provider: "cloudflare",
+    });
+    expect(mockStore.store.updateSettings).toHaveBeenCalledWith(expect.objectContaining({
+      remoteAccess: expect.objectContaining({
+        lifecycle: expect.objectContaining({
+          wasRunningOnShutdown: false,
+          lastRunningProvider: null,
+        }),
+      }),
+    }));
+
+    await engine.stop();
+    startSpy.mockRestore();
+  });
+
+  it("reconciles stale persisted running marker to avoid restore loops", async () => {
+    const restoreSettings = {
+      ...baseSettings,
+      remoteAccess: {
+        ...baseRemoteAccess,
+        providers: {
+          ...baseRemoteAccess.providers,
+          cloudflare: {
+            ...baseRemoteAccess.providers.cloudflare,
+            tunnelToken: null,
+          },
+        },
+        lifecycle: {
+          ...baseRemoteAccess.lifecycle,
+          rememberLastRunning: true,
+          wasRunningOnShutdown: true,
+          lastRunningProvider: "cloudflare" as const,
+        },
+      },
+    };
+    const mockStore = createMockStore(restoreSettings);
+    mocks.currentStore = mockStore.store;
+
+    const startSpy = vi.spyOn(TunnelProcessManager.prototype, "start").mockResolvedValue(undefined);
+
+    const firstEngine = createEngine();
+    await firstEngine.start();
+    await firstEngine.stop();
+
+    const secondEngine = createEngine();
+    await secondEngine.start();
+    await secondEngine.stop();
+
+    expect(startSpy).not.toHaveBeenCalled();
+    expect(secondEngine.getRemoteTunnelRestoreDiagnostics()).toMatchObject({
+      outcome: "skipped",
+      reason: "no_prior_running_marker",
+    });
+
+    startSpy.mockRestore();
+  });
+
+  it("does not auto-start on settings updates and manual stop clears future restore intent", async () => {
+    const mockStore = createMockStore(baseSettings);
+    mocks.currentStore = mockStore.store;
+
+    const startSpy = vi.spyOn(TunnelProcessManager.prototype, "start").mockResolvedValue(undefined);
+    const stopSpy = vi.spyOn(TunnelProcessManager.prototype, "stop").mockResolvedValue(undefined);
+    const statusSpy = vi.spyOn(TunnelProcessManager.prototype, "getStatus").mockReturnValue({
+      provider: null,
+      state: "stopped",
+      pid: null,
+      startedAt: null,
+      stoppedAt: null,
+      url: null,
+      lastError: null,
+    });
+
+    const engine = createEngine();
+    await engine.start();
+
+    await mockStore.emitSettingsUpdated(
+      {
+        ...baseSettings,
+        remoteAccess: {
+          ...baseRemoteAccess,
+          activeProvider: "tailscale" as const,
+        },
+      },
+      baseSettings,
+    );
+
+    const startsBeforeManualAction = startSpy.mock.calls.length;
+    await engine.startRemoteTunnel();
+    await engine.stopRemoteTunnel();
+
+    expect(startSpy.mock.calls.length).toBe(startsBeforeManualAction + 1);
+    expect(stopSpy).toHaveBeenCalled();
+    expect(mockStore.store.updateSettings).toHaveBeenCalledWith(expect.objectContaining({
+      remoteAccess: expect.objectContaining({
+        lifecycle: expect.objectContaining({
+          wasRunningOnShutdown: false,
+          lastRunningProvider: null,
+        }),
+      }),
+    }));
+
+    await engine.stop();
+    startSpy.mockRestore();
+    stopSpy.mockRestore();
+    statusSpy.mockRestore();
   });
 });
 

@@ -96,6 +96,14 @@ export async function getProjectContext(
     }
   }
 
+  if (!projectId && options?.engine) {
+    try {
+      return { store: options.engine.getTaskStore(), engine: options.engine, projectId };
+    } catch {
+      // Fall back to scoped store resolution.
+    }
+  }
+
   const scopedStore = await getScopedStore(req, store);
   return { store: scopedStore, engine: undefined, projectId };
 }

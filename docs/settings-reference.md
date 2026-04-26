@@ -198,9 +198,9 @@ The canonical persisted shape is a nested `remoteAccess` object.
 | `remoteAccess.tokenStrategy.shortLived.enabled` | `boolean` | `false` | Enables short-lived token generation. |
 | `remoteAccess.tokenStrategy.shortLived.ttlMs` | `number` | `900000` | Default short-lived token TTL in milliseconds (15 minutes). |
 | `remoteAccess.tokenStrategy.shortLived.maxTtlMs` | `number` | `86400000` | Maximum allowed short-lived token TTL (24 hours). |
-| `remoteAccess.lifecycle.rememberLastRunning` | `boolean` | `false` | Restore prior running tunnel at startup when valid. |
-| `remoteAccess.lifecycle.wasRunningOnShutdown` | `boolean` | `false` | Internal state flag persisted on shutdown. |
-| `remoteAccess.lifecycle.lastRunningProvider` | `"tailscale" \| "cloudflare" \| null` | `null` | Internal last-known running provider for restore decisions. |
+| `remoteAccess.lifecycle.rememberLastRunning` | `boolean` | `false` | Enables safe startup restore attempts when prior-running markers + prerequisites are valid. |
+| `remoteAccess.lifecycle.wasRunningOnShutdown` | `boolean` | `false` | Internal marker written by runtime lifecycle management; explicit manual stop clears this to prevent unintended restart restore. |
+| `remoteAccess.lifecycle.lastRunningProvider` | `"tailscale" \| "cloudflare" \| null` | `null` | Internal provider marker used for startup restore gating; stale markers are cleared when restore is skipped/failed. |
 
 Patch semantics for `PUT /api/settings`:
 - `remoteAccess` patches are **deep-merged** so sibling branches are preserved.
@@ -247,6 +247,11 @@ Runtime provider config/credential contract (engine remote-access manager):
   - `credentialsPath` (Cloudflare credentials file path)
 - Missing/invalid credential references fail fast with `invalid_config` status/error behavior.
 - Secret-bearing values are redacted in command previews and emitted tunnel logs before they are published to subscribers.
+
+Runtime lifecycle semantics:
+- Provider/settings edits remain manual-only and do not auto-start tunnel processes.
+- Startup restore is best-effort and non-fatal; failed/skipped restore attempts surface machine-readable diagnostics through `/api/remote/status` and do not loop indefinitely.
+- Tunnel status payloads redact secret values (persistent/short-lived tokens and tokenized URLs are never returned raw from status diagnostics).
 
 Short-lived token bounds are enforced server-side:
 - Minimum TTL: `60_000` ms (60s)

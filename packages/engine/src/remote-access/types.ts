@@ -37,6 +37,28 @@ export interface TunnelStatusSnapshot {
   lastError: TunnelError | null;
 }
 
+export type TunnelRestoreOutcome = "applied" | "skipped" | "failed";
+
+export type TunnelRestoreReasonCode =
+  | "not_attempted"
+  | "remote_access_disabled"
+  | "remember_last_running_disabled"
+  | "no_prior_running_marker"
+  | "provider_missing"
+  | "provider_not_enabled"
+  | "provider_not_configured"
+  | "runtime_prerequisite_missing"
+  | "restore_start_failed"
+  | "restore_started";
+
+export interface TunnelRestoreDiagnostics {
+  outcome: TunnelRestoreOutcome;
+  reason: TunnelRestoreReasonCode;
+  at: string;
+  provider: TunnelProvider | null;
+  message?: string;
+}
+
 export type TunnelLogLevel = "info" | "warn" | "error";
 
 export interface TunnelLogEntry {

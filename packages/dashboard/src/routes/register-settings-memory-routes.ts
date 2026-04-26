@@ -303,13 +303,24 @@ export function registerSettingsMemoryRoutes(ctx: ApiRoutesContext, deps: Settin
 
   router.get("/remote/status", async (req, res) => {
     try {
-      const { store: scopedStore } = await getProjectContext(req);
+      const { store: scopedStore, engine } = await getProjectContext(req);
       const settings = await scopedStore.getSettings();
+      const manager = engine?.getRemoteTunnelManager();
+      const tunnelStatus = manager?.getStatus();
+      const restore = engine?.getRemoteTunnelRestoreDiagnostics();
+
       res.json({
-        provider: settings.remoteAccess?.activeProvider ?? null,
-        state: "stopped",
-        url: null,
-        lastError: null,
+        provider: tunnelStatus?.provider ?? settings.remoteAccess?.activeProvider ?? null,
+        state: tunnelStatus?.state ?? "stopped",
+        url: tunnelStatus?.url ?? null,
+        lastError: tunnelStatus?.lastError?.message ?? null,
+        lastErrorCode: tunnelStatus?.lastError?.code ?? null,
+        restore: restore ?? {
+          outcome: "skipped",
+          reason: "not_attempted",
+          at: new Date().toISOString(),
+          provider: null,
+        },
       });
     } catch (err: unknown) {
       if (err instanceof ApiError) throw err;
@@ -345,25 +356,57 @@ export function registerSettingsMemoryRoutes(ctx: ApiRoutesContext, deps: Settin
 
   router.post("/remote/tunnel/start", async (req, res) => {
     try {
-      const { store: scopedStore } = await getProjectContext(req);
+      const { store: scopedStore, engine } = await getProjectContext(req);
       const settings = await scopedStore.getSettings();
       const provider = settings.remoteAccess?.activeProvider ?? null;
       if (!provider) {
         throw new ApiError(409, "No active provider configured", { code: "NO_ACTIVE_PROVIDER" });
       }
-      res.json({ state: "starting", provider });
+
+      if (!engine) {
+        res.json({ state: "starting", provider });
+        return;
+      }
+
+      const status = await engine.startRemoteTunnel();
+      res.json({
+        state: status.state,
+        provider: status.provider,
+        url: status.url,
+        lastError: status.lastError?.message ?? null,
+        lastErrorCode: status.lastError?.code ?? null,
+      });
     } catch (err: unknown) {
       if (err instanceof ApiError) throw err;
+      const message = err instanceof Error ? err.message : String(err);
+      if (message.startsWith("invalid_config:") || message.startsWith("runtime_prerequisite_missing:")) {
+        throw new ApiError(409, message.split(":").slice(1).join(":") || "Remote tunnel prerequisites are not met", {
+          code: "REMOTE_TUNNEL_PREREQUISITE_MISSING",
+        });
+      }
       rethrowAsApiError(err, "Failed to start remote tunnel");
     }
   });
 
   router.post("/remote/tunnel/stop", async (req, res) => {
     try {
-      const { store: scopedStore } = await getProjectContext(req);
+      const { store: scopedStore, engine } = await getProjectContext(req);
       const settings = await scopedStore.getSettings();
       const provider = settings.remoteAccess?.activeProvider ?? null;
-      res.json({ state: "stopped", provider });
+
+      if (!engine) {
+        res.json({ state: "stopped", provider });
+        return;
+      }
+
+      const status = await engine.stopRemoteTunnel();
+      res.json({
+        state: status.state,
+        provider: status.provider,
+        url: status.url,
+        lastError: status.lastError?.message ?? null,
+        lastErrorCode: status.lastError?.code ?? null,
+      });
     } catch (err: unknown) {
       if (err instanceof ApiError) throw err;
       rethrowAsApiError(err, "Failed to stop remote tunnel");

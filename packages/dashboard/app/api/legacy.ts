@@ -425,9 +425,17 @@ export interface RemoteSettings {
 
 export interface RemoteStatus {
   provider: "tailscale" | "cloudflare" | null;
-  state: "stopped" | "starting" | "running" | "error";
+  state: "stopped" | "starting" | "running" | "stopping" | "failed";
   url: string | null;
   lastError: string | null;
+  lastErrorCode?: string | null;
+  restore?: {
+    outcome: "applied" | "skipped" | "failed";
+    reason: string;
+    at: string;
+    provider: "tailscale" | "cloudflare" | null;
+    message?: string;
+  };
 }
 
 export function fetchRemoteSettings(projectId?: string): Promise<{ settings: RemoteSettings }> {
