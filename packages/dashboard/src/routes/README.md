@@ -17,8 +17,8 @@ The context provides core cross-cutting plumbing:
 - Request/project scoping: `getProjectIdFromRequest`, `getScopedStore`, `getProjectContext`
   - These are also exported from `context.ts` as canonical helpers for future extraction tasks.
 - Engine-aware fallback behavior for project-bound and root-store APIs
-- Runtime loggers and diagnostics emitters (`runtimeLogger`, `planningLogger`, `proxyLogger`, `chatLogger`)
-- Proxy/auth/audit helpers (`proxyToRemoteNode`, `emitRemoteRouteDiagnostic`, `emitAuthSyncAuditLog`)
+- Runtime loggers and diagnostics emitters (`runtimeLogger`, `planningLogger`, `chatLogger`)
+- Proxy/auth/audit helpers (`emitRemoteRouteDiagnostic`, `emitAuthSyncAuditLog`)
 - Automation/routine resolvers and scope parsing helpers
 - Shared error normalization (`rethrowAsApiError`)
 
@@ -66,7 +66,16 @@ The context provides core cross-cutting plumbing:
 - `register-agent-import-export-generation-routes.ts` — agent import/export, companies catalog, and `/agents/generate/*` session/spec lifecycle
 - `register-agent-skills-routes.ts` — skills discovery/content/execution/catalog endpoints coupled to agent capability flow
 - `register-plugins-automation.ts` — plugin CRUD, automation, routines/webhooks
-- `register-proxy.ts` — remote-node proxy forwarding and SSE proxy routes
+- `register-proxy-routes.ts` — remote-node proxy forwarding and SSE proxy routes
+  - Injected dependencies: `{ store, runtimeLogger }`
+  - Endpoint inventory (must remain in this order):
+    1. `GET /proxy/:nodeId/health`
+    2. `GET /proxy/:nodeId/projects`
+    3. `GET /proxy/:nodeId/tasks`
+    4. `GET /proxy/:nodeId/project-health`
+    5. `GET /proxy/:nodeId/events` (SSE pass-through, 30s timeout, client-disconnect cleanup)
+    6. `ALL /proxy/:nodeId/{*splat}` (generic wildcard forwarder)
+  - Shared diagnostics: imports `emitRemoteRouteDiagnostic` and `classifyRemoteRouteError` from `routes/context.ts` so proxy and non-proxy registrars (for example mesh/sync routes) keep one diagnostic classification contract.
 
 ## Ordering rules (critical)
 
@@ -76,6 +85,7 @@ Express matches in registration order. Keep registrar and in-registrar route ord
 2. **Specific operation routes before wildcard paths** (`/files/{*filepath}/copy|move|delete|rename|download|download-zip` before `POST /files/{*filepath}`)
    - Why: Express route matching is first-win. If the wildcard write route is registered first, paths like `/files/somefolder/delete` will be treated as file writes instead of delete operations.
 3. **Do not move proxy/script/message/file wildcards ahead of specific routes**
+   - For proxy routes specifically, keep all explicit `GET /proxy/:nodeId/*` handlers ahead of `ALL /proxy/:nodeId/{*splat}` and keep proxy registration last in `createApiRoutes()`.
 4. **Project/node/sync/discovery ordering constraints must stay intact**:
    - `/projects/across-nodes` and `/projects/detect` must be registered before `/projects/:id`
    - `/nodes/:id/settings` must be registered before `/nodes/:id/settings/push|pull|sync-status` and before `/nodes/:id/auth/sync`

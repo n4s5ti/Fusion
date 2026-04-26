@@ -1,15 +1,17 @@
-import { Router, type Request, type Response } from "express";
+import { Router, type Request } from "express";
 import { resolve, sep } from "node:path";
 import type { TaskStore } from "@fusion/core";
 import type { ServerOptions } from "../server.js";
-import { badRequest, notFound, ApiError, internalError } from "../api-error.js";
+import { ApiError, internalError } from "../api-error.js";
 import { getOrCreateProjectStore } from "../project-store-resolver.js";
 import { createRuntimeLogger } from "../runtime-logger.js";
+import type { RuntimeLogger } from "../runtime-logger.js";
 import type {
   ApiRoutesContext,
   AuthSyncAuditLogInput,
   ProjectContext,
   RemoteRouteDiagnosticInput,
+  RemoteRouteErrorClassification,
   ScopeValue,
 } from "./types.js";
 
@@ -25,11 +27,7 @@ function rethrowAsApiError(error: unknown, fallbackMessage = "Internal server er
   throw internalError(fallbackMessage);
 }
 
-function classifyRemoteRouteError(error: unknown): {
-  classification: "timeout" | "transport" | "unexpected";
-  errorClass: string;
-  errorMessage: string;
-} {
+export function classifyRemoteRouteError(error: unknown): RemoteRouteErrorClassification {
   const fallbackMessage = String(error);
 
   if (error instanceof Error) {
@@ -108,11 +106,45 @@ export async function getProjectContext(
   return { store: scopedStore, engine: undefined, projectId };
 }
 
+export function emitRemoteRouteDiagnostic(
+  runtimeLogger: RuntimeLogger,
+  input: RemoteRouteDiagnosticInput,
+): void {
+  const logger = runtimeLogger.child("remote-route").child(input.route);
+  const level = input.level ?? "error";
+
+  const context: Record<string, unknown> = {
+    ...(input.nodeId !== undefined ? { nodeId: input.nodeId } : {}),
+    ...(input.upstreamPath !== undefined ? { upstreamPath: input.upstreamPath } : {}),
+    ...(input.stage !== undefined ? { stage: input.stage } : {}),
+    ...(input.operationStage !== undefined ? { operationStage: input.operationStage } : {}),
+    ...(input.context ?? {}),
+  };
+
+  if (input.error !== undefined) {
+    const classified = classifyRemoteRouteError(input.error);
+    context.transportClassification = classified.classification;
+    context.errorClass = classified.errorClass;
+    context.errorMessage = classified.errorMessage;
+  }
+
+  if (level === "info") {
+    logger.info(input.message, context);
+    return;
+  }
+
+  if (level === "warn") {
+    logger.warn(input.message, context);
+    return;
+  }
+
+  logger.error(input.message, context);
+}
+
 export function createApiRoutesContext(store: TaskStore, options?: ServerOptions): ApiRoutesContext {
   const router = Router();
   const runtimeLogger = options?.runtimeLogger?.child("routes") ?? createRuntimeLogger("routes");
   const planningLogger = runtimeLogger.child("planning");
-  const proxyLogger = runtimeLogger.child("proxy");
   const chatLogger = runtimeLogger.child("chat");
 
   function prioritizeProjectsForCurrentDirectory<T extends { path: string }>(projects: T[]): T[] {
@@ -141,38 +173,6 @@ export function createApiRoutesContext(store: TaskStore, options?: ServerOptions
   const resolveScopedStore = (req: Request): Promise<TaskStore> => getScopedStore(req, store);
   const resolveProjectContext = (req: Request): Promise<ProjectContext> => getProjectContext(req, store, options);
 
-  function emitRemoteRouteDiagnostic(input: RemoteRouteDiagnosticInput): void {
-    const logger = runtimeLogger.child("remote-route").child(input.route);
-    const level = input.level ?? "error";
-
-    const context: Record<string, unknown> = {
-      ...(input.nodeId !== undefined ? { nodeId: input.nodeId } : {}),
-      ...(input.upstreamPath !== undefined ? { upstreamPath: input.upstreamPath } : {}),
-      ...(input.stage !== undefined ? { stage: input.stage } : {}),
-      ...(input.operationStage !== undefined ? { operationStage: input.operationStage } : {}),
-      ...(input.context ?? {}),
-    };
-
-    if (input.error !== undefined) {
-      const classified = classifyRemoteRouteError(input.error);
-      context.transportClassification = classified.classification;
-      context.errorClass = classified.errorClass;
-      context.errorMessage = classified.errorMessage;
-    }
-
-    if (level === "info") {
-      logger.info(input.message, context);
-      return;
-    }
-
-    if (level === "warn") {
-      logger.warn(input.message, context);
-      return;
-    }
-
-    logger.error(input.message, context);
-  }
-
   function emitAuthSyncAuditLog(input: AuthSyncAuditLogInput): void {
     const logger = runtimeLogger.child("settings-sync").child("auth");
     const level = input.level ?? "info";
@@ -199,103 +199,6 @@ export function createApiRoutesContext(store: TaskStore, options?: ServerOptions
     }
 
     logger.info("Auth sync diagnostic event", context);
-  }
-
-  async function proxyToRemoteNode(
-    req: Request,
-    res: Response,
-    remotePath: string,
-    proxyOptions?: { timeoutMs?: number },
-  ): Promise<void> {
-    const nodeId = req.params.nodeId as string;
-    const timeoutMs = proxyOptions?.timeoutMs ?? 10_000;
-
-    const { CentralCore } = await import("@fusion/core");
-    const central = new CentralCore(store.getFusionDir());
-
-    try {
-      await central.init();
-
-      const node = await central.getNode(nodeId);
-      if (!node) throw notFound("Node not found");
-      if (node.type === "local") throw badRequest("Cannot proxy to local node");
-      if (!node.url) throw badRequest("Node has no URL configured");
-
-      const parsedUrl = new URL(req.url, "http://localhost");
-      const queryString = parsedUrl.search;
-      const targetPath = `/api${remotePath}${queryString}`;
-      const targetUrl = new URL(targetPath, node.url).toString();
-
-      const headers: Record<string, string> = {};
-      if (node.apiKey) {
-        headers.Authorization = `Bearer ${node.apiKey}`;
-      }
-
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), timeoutMs);
-
-      const response = await fetch(targetUrl, { headers, signal: controller.signal });
-      clearTimeout(timeout);
-
-      const hopByHopHeaders = new Set([
-        "transfer-encoding",
-        "connection",
-        "keep-alive",
-        "upgrade",
-        "proxy-authenticate",
-        "proxy-authorization",
-        "te",
-        "trailers",
-      ]);
-
-      response.headers.forEach((value, key) => {
-        if (!hopByHopHeaders.has(key.toLowerCase())) {
-          res.setHeader(key, value);
-        }
-      });
-
-      res.status(response.status);
-
-      if (!response.body) {
-        res.end();
-        return;
-      }
-
-      const { Readable } = await import("node:stream");
-      const nodeStream = Readable.fromWeb(response.body as import("node:stream/web").ReadableStream);
-
-      nodeStream.on("data", (chunk: Buffer) => {
-        res.write(chunk);
-      });
-
-      nodeStream.on("end", () => {
-        res.end();
-      });
-
-      nodeStream.on("error", (err: Error) => {
-        proxyLogger.error(`Stream error for node ${nodeId}`, { error: err.message });
-        if (!res.writableEnded) {
-          res.end();
-        }
-      });
-    } catch (err: unknown) {
-      if (res.headersSent) {
-        return;
-      }
-      if (err instanceof Error && err.name === "AbortError") {
-        res.status(504).json({ error: "Remote node timeout" });
-      } else if (err instanceof TypeError) {
-        res.status(502).json({ error: "Remote node unreachable" });
-      } else if (err instanceof ApiError) {
-        throw err;
-      } else if (err instanceof Error && err.message) {
-        throw new ApiError(500, err.message);
-      } else {
-        throw new ApiError(500, "Proxy request failed");
-      }
-    } finally {
-      await central.close();
-    }
   }
 
   function parseScopeParam(req: Request): ScopeValue | undefined {
@@ -402,15 +305,13 @@ export function createApiRoutesContext(store: TaskStore, options?: ServerOptions
     options,
     runtimeLogger,
     planningLogger,
-    proxyLogger,
     chatLogger,
     prioritizeProjectsForCurrentDirectory,
     getProjectIdFromRequest,
     getScopedStore: resolveScopedStore,
     getProjectContext: resolveProjectContext,
-    emitRemoteRouteDiagnostic,
+    emitRemoteRouteDiagnostic: (input) => emitRemoteRouteDiagnostic(runtimeLogger, input),
     emitAuthSyncAuditLog,
-    proxyToRemoteNode,
     parseScopeParam,
     resolveAutomationStore,
     resolveRoutineStore,

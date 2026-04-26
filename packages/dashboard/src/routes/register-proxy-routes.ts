@@ -1,14 +1,139 @@
-import { type Request, type Response } from "express";
-import { ApiError } from "../api-error.js";
-import type { ApiRoutesContext } from "./types.js";
+import { type Request, type Response, type Router } from "express";
+import type { TaskStore } from "@fusion/core";
+import type { RuntimeLogger } from "../runtime-logger.js";
+import { ApiError, badRequest, internalError, notFound } from "../api-error.js";
+import { emitRemoteRouteDiagnostic } from "./context.js";
 
-export function registerProxyRoutes(ctx: ApiRoutesContext): void {
-  const { router, store, proxyToRemoteNode, emitRemoteRouteDiagnostic, rethrowAsApiError } = ctx;
+export interface ProxyRoutesDeps {
+  store: TaskStore;
+  runtimeLogger: RuntimeLogger;
+}
+
+function rethrowAsApiError(error: unknown, fallbackMessage = "Internal server error"): never {
+  if (error instanceof ApiError) {
+    throw error;
+  }
+
+  if (error instanceof Error) {
+    throw internalError(error.message || fallbackMessage);
+  }
+
+  throw internalError(fallbackMessage);
+}
+
+async function proxyToRemoteNode(
+  req: Request,
+  res: Response,
+  remotePath: string,
+  deps: ProxyRoutesDeps,
+  proxyOptions?: { timeoutMs?: number },
+): Promise<void> {
+  const { store, runtimeLogger } = deps;
+  const proxyLogger = runtimeLogger.child("proxy");
+  const nodeId = req.params.nodeId as string;
+  const timeoutMs = proxyOptions?.timeoutMs ?? 10_000;
+
+  const { CentralCore } = await import("@fusion/core");
+  const central = new CentralCore(store.getFusionDir());
+
+  try {
+    await central.init();
+
+    const node = await central.getNode(nodeId);
+    if (!node) throw notFound("Node not found");
+    if (node.type === "local") throw badRequest("Cannot proxy to local node");
+    if (!node.url) throw badRequest("Node has no URL configured");
+
+    const parsedUrl = new URL(req.url, "http://localhost");
+    const queryString = parsedUrl.search;
+    const targetPath = `/api${remotePath}${queryString}`;
+    const targetUrl = new URL(targetPath, node.url).toString();
+
+    const headers: Record<string, string> = {};
+    if (node.apiKey) {
+      headers.Authorization = `Bearer ${node.apiKey}`;
+    }
+
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), timeoutMs);
+
+    const response = await fetch(targetUrl, { headers, signal: controller.signal });
+    clearTimeout(timeout);
+
+    const hopByHopHeaders = new Set([
+      "transfer-encoding",
+      "connection",
+      "keep-alive",
+      "upgrade",
+      "proxy-authenticate",
+      "proxy-authorization",
+      "te",
+      "trailers",
+    ]);
+
+    response.headers.forEach((value, key) => {
+      if (!hopByHopHeaders.has(key.toLowerCase())) {
+        res.setHeader(key, value);
+      }
+    });
+
+    res.status(response.status);
+
+    if (!response.body) {
+      res.end();
+      return;
+    }
+
+    const { Readable } = await import("node:stream");
+    const nodeStream = Readable.fromWeb(response.body as import("node:stream/web").ReadableStream);
+
+    nodeStream.on("data", (chunk: Buffer) => {
+      res.write(chunk);
+    });
+
+    nodeStream.on("end", () => {
+      res.end();
+    });
+
+    nodeStream.on("error", (err: Error) => {
+      proxyLogger.error(`Stream error for node ${nodeId}`, { error: err.message });
+      if (!res.writableEnded) {
+        res.end();
+      }
+    });
+  } catch (err: unknown) {
+    if (res.headersSent) {
+      return;
+    }
+    if (err instanceof Error && err.name === "AbortError") {
+      res.status(504).json({ error: "Remote node timeout" });
+    } else if (err instanceof TypeError) {
+      res.status(502).json({ error: "Remote node unreachable" });
+    } else if (err instanceof ApiError) {
+      throw err;
+    } else if (err instanceof Error && err.message) {
+      throw new ApiError(500, err.message);
+    } else {
+      throw new ApiError(500, "Proxy request failed");
+    }
+  } finally {
+    await central.close();
+  }
+}
+
+/**
+ * Registers remote-node proxy forwarding routes.
+ *
+ * Route order is required behavior: specific proxy endpoints must remain ahead of the
+ * wildcard proxy catch-all, and the SSE proxy retains explicit timeout/cleanup semantics.
+ */
+export function registerProxyRoutes(router: Router, deps: ProxyRoutesDeps): void {
+  const { store, runtimeLogger } = deps;
 
   /** GET /api/proxy/:nodeId/health — Forward health check to remote node */
   router.get("/proxy/:nodeId/health", async function (req, res) {
     try {
-      await proxyToRemoteNode(req, res, "/health");
+      await proxyToRemoteNode(req, res, "/health", deps);
     } catch (err: unknown) {
       if (err instanceof ApiError) {
         throw err;
@@ -20,7 +145,7 @@ export function registerProxyRoutes(ctx: ApiRoutesContext): void {
   /** GET /api/proxy/:nodeId/projects — Forward projects list to remote node */
   router.get("/proxy/:nodeId/projects", async function (req, res) {
     try {
-      await proxyToRemoteNode(req, res, "/projects");
+      await proxyToRemoteNode(req, res, "/projects", deps);
     } catch (err: unknown) {
       if (err instanceof ApiError) {
         throw err;
@@ -32,7 +157,7 @@ export function registerProxyRoutes(ctx: ApiRoutesContext): void {
   /** GET /api/proxy/:nodeId/tasks — Forward tasks list to remote node (forwards projectId, q query params) */
   router.get("/proxy/:nodeId/tasks", async function (req, res) {
     try {
-      await proxyToRemoteNode(req, res, "/tasks");
+      await proxyToRemoteNode(req, res, "/tasks", deps);
     } catch (err: unknown) {
       if (err instanceof ApiError) {
         throw err;
@@ -44,7 +169,7 @@ export function registerProxyRoutes(ctx: ApiRoutesContext): void {
   /** GET /api/proxy/:nodeId/project-health — Forward project health to remote node (forwards projectId query param) */
   router.get("/proxy/:nodeId/project-health", async function (req, res) {
     try {
-      await proxyToRemoteNode(req, res, "/project-health");
+      await proxyToRemoteNode(req, res, "/project-health", deps);
     } catch (err: unknown) {
       if (err instanceof ApiError) {
         throw err;
@@ -128,7 +253,7 @@ export function registerProxyRoutes(ctx: ApiRoutesContext): void {
       req.on("close", () => {
         if (!destroyed) {
           destroyed = true;
-          emitRemoteRouteDiagnostic({
+          emitRemoteRouteDiagnostic(runtimeLogger, {
             route: "proxy-sse",
             message: "Closing SSE proxy stream after client disconnect",
             nodeId,
@@ -154,7 +279,7 @@ export function registerProxyRoutes(ctx: ApiRoutesContext): void {
       });
 
       nodeStream.on("error", (err: Error) => {
-        emitRemoteRouteDiagnostic({
+        emitRemoteRouteDiagnostic(runtimeLogger, {
           route: "proxy-sse",
           message: "SSE proxy stream error",
           nodeId,
@@ -172,7 +297,7 @@ export function registerProxyRoutes(ctx: ApiRoutesContext): void {
       const upstreamPath = `/api/events${queryString}`;
 
       if (err instanceof Error && err.name === "AbortError") {
-        emitRemoteRouteDiagnostic({
+        emitRemoteRouteDiagnostic(runtimeLogger, {
           route: "proxy-sse",
           message: "SSE proxy request timed out",
           nodeId,
@@ -187,7 +312,7 @@ export function registerProxyRoutes(ctx: ApiRoutesContext): void {
           res.end();
         }
       } else if (err instanceof TypeError) {
-        emitRemoteRouteDiagnostic({
+        emitRemoteRouteDiagnostic(runtimeLogger, {
           route: "proxy-sse",
           message: "SSE proxy transport failure",
           nodeId,
@@ -202,7 +327,7 @@ export function registerProxyRoutes(ctx: ApiRoutesContext): void {
           res.end();
         }
       } else {
-        emitRemoteRouteDiagnostic({
+        emitRemoteRouteDiagnostic(runtimeLogger, {
           route: "proxy-sse",
           message: "SSE proxy unexpected failure",
           nodeId,
@@ -330,7 +455,7 @@ export function registerProxyRoutes(ctx: ApiRoutesContext): void {
       });
 
       nodeStream.on("error", (err: Error) => {
-        emitRemoteRouteDiagnostic({
+        emitRemoteRouteDiagnostic(runtimeLogger, {
           route: "proxy-wildcard",
           message: "Wildcard proxy stream error",
           nodeId,
@@ -350,7 +475,7 @@ export function registerProxyRoutes(ctx: ApiRoutesContext): void {
       const errorObj = err as { name?: string } | null;
       const isAbortError = errorObj?.name === "AbortError";
       if (isAbortError) {
-        emitRemoteRouteDiagnostic({
+        emitRemoteRouteDiagnostic(runtimeLogger, {
           route: "proxy-wildcard",
           message: "Wildcard proxy request timed out",
           nodeId,
@@ -364,7 +489,7 @@ export function registerProxyRoutes(ctx: ApiRoutesContext): void {
         }
         res.status(504).json({ error: "Gateway Timeout" });
       } else if (err instanceof TypeError) {
-        emitRemoteRouteDiagnostic({
+        emitRemoteRouteDiagnostic(runtimeLogger, {
           route: "proxy-wildcard",
           message: "Wildcard proxy transport failure",
           nodeId,
@@ -378,7 +503,7 @@ export function registerProxyRoutes(ctx: ApiRoutesContext): void {
         }
         res.status(502).json({ error: "Bad Gateway" });
       } else {
-        emitRemoteRouteDiagnostic({
+        emitRemoteRouteDiagnostic(runtimeLogger, {
           route: "proxy-wildcard",
           message: "Wildcard proxy unexpected failure",
           nodeId,

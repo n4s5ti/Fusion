@@ -56,7 +56,7 @@ import { registerAgentReflectionRatingRoutes } from "./routes/register-agent-ref
 import { registerAgentImportExportRoutes, registerAgentGenerationRoutes } from "./routes/register-agent-import-export-generation-routes.js";
 import { registerAgentSkillsRoutes } from "./routes/register-agent-skills-routes.js";
 import { registerPluginsAutomationRoutes } from "./routes/register-plugins-automation.js";
-import { registerProxyRoutes } from "./routes/register-proxy.js";
+import { registerProxyRoutes } from "./routes/register-proxy-routes.js";
 import { registerModelRoutes } from "./routes/register-model-routes.js";
 import { registerUsageRoutes } from "./routes/register-usage-routes.js";
 import { registerAuthRoutes } from "./routes/register-auth-routes.js";
@@ -820,7 +820,6 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
     router,
     runtimeLogger,
     planningLogger,
-    proxyLogger,
     chatLogger,
     prioritizeProjectsForCurrentDirectory,
     getProjectIdFromRequest,
@@ -828,7 +827,6 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
     getProjectContext,
     emitRemoteRouteDiagnostic,
     emitAuthSyncAuditLog,
-    proxyToRemoteNode,
     parseScopeParam,
     resolveAutomationStore,
     resolveRoutineStore,
@@ -846,7 +844,6 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
     options,
     runtimeLogger,
     planningLogger,
-    proxyLogger,
     chatLogger,
     prioritizeProjectsForCurrentDirectory,
     getProjectIdFromRequest,
@@ -854,7 +851,6 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
     getProjectContext,
     emitRemoteRouteDiagnostic,
     emitAuthSyncAuditLog,
-    proxyToRemoteNode,
     parseScopeParam,
     resolveAutomationStore,
     resolveRoutineStore,
@@ -902,7 +898,6 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
   registerFileWorkspaceRoutes(routeContext);
   registerAgentsProjectsNodesRoutes(routeContext);
   registerPluginsAutomationRoutes(routeContext);
-  registerProxyRoutes(routeContext);
 
   // HeartbeatMonitor for triggering agent execution runs
   const heartbeatMonitor = options?.heartbeatMonitor;
@@ -3741,7 +3736,9 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
 
   registerAgentSkillsRoutes(routeContext);
 
-  // Remote node proxy routes are registered by registerProxyRoutes().
+  // Remote node proxy routes stay last so explicit handlers always precede
+  // the wildcard /proxy/:nodeId/{*splat} route in Express match order.
+  registerProxyRoutes(router, { store, runtimeLogger });
 
   return router;
 }

@@ -1,4 +1,4 @@
-import type { Request, Response, Router } from "express";
+import type { Request, Router } from "express";
 import type { AutomationStore, RoutineStore, TaskStore } from "@fusion/core";
 import type { ServerOptions } from "../server.js";
 import type { RuntimeLogger } from "../runtime-logger.js";
@@ -21,6 +21,12 @@ export interface RemoteRouteDiagnosticInput {
   context?: Record<string, unknown>;
 }
 
+export interface RemoteRouteErrorClassification {
+  classification: "timeout" | "transport" | "unexpected";
+  errorClass: string;
+  errorMessage: string;
+}
+
 export interface AuthSyncAuditLogInput {
   level?: "info" | "warn" | "error";
   operation: "receive" | "sync";
@@ -39,7 +45,6 @@ export interface ApiRoutesContext {
   options?: ServerOptions;
   runtimeLogger: RuntimeLogger;
   planningLogger: RuntimeLogger;
-  proxyLogger: RuntimeLogger;
   chatLogger: RuntimeLogger;
   getProjectIdFromRequest(req: Request): string | undefined;
   getScopedStore(req: Request): Promise<TaskStore>;
@@ -47,7 +52,6 @@ export interface ApiRoutesContext {
   prioritizeProjectsForCurrentDirectory<T extends { path: string }>(projects: T[]): T[];
   emitRemoteRouteDiagnostic(input: RemoteRouteDiagnosticInput): void;
   emitAuthSyncAuditLog(input: AuthSyncAuditLogInput): void;
-  proxyToRemoteNode(req: Request, res: Response, remotePath: string, options?: { timeoutMs?: number }): Promise<void>;
   parseScopeParam(req: Request): ScopeValue | undefined;
   resolveAutomationStore(req: Request, scope: ScopeValue | undefined): AutomationStore;
   resolveRoutineStore(req: Request, scope: ScopeValue | undefined): RoutineStore;
