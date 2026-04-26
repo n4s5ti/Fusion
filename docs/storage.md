@@ -6,7 +6,7 @@
 - **Backend settings keys defined in `@fusion/core`:** **78** total
   - **Global settings:** 17 (`GlobalSettings`)
   - **Project settings:** 61 (`ProjectSettings`)
-- **SQLite tables in project DB schema (`packages/core/src/db.ts`):** **34** (including migration-created tables)
+- **SQLite tables in project DB schema (`packages/core/src/db.ts`):** **36** (including migration-created tables)
 - **Issues identified:** **9**
   - High: 2
   - Medium: 5
@@ -191,6 +191,8 @@ Additional backend notes:
 | `roadmap_features` | Features within roadmap milestones (`milestoneId` FK). |
 | `project_insights` | Extracted project insights with fingerprint-based deduplication and provenance metadata. |
 | `project_insight_runs` | Insight extraction run history and run-level metrics/status. |
+| `todo_lists` | Project-scoped todo list metadata (`projectId`, title, created/updated timestamps). |
+| `todo_items` | Todo list items (`listId` FK) with completion state, completion timestamp, and deterministic `sortOrder`. |
 | `ai_sessions` *(migration-created)* | Persisted AI interactive sessions (planning/interview/subtask) with status and conversation history. |
 | `messages` *(migration-created)* | Inter-agent/user message mailbox storage. |
 | `agentRatings` *(migration-created)* | Agent performance ratings (1-5), optional reviewer metadata, and run/task attribution. |

@@ -14,6 +14,7 @@ import { MissionStore } from "./mission-store.js";
 import { PluginStore } from "./plugin-store.js";
 import { RoadmapStore } from "./roadmap-store.js";
 import { InsightStore } from "./insight-store.js";
+import { TodoStore } from "./todo-store.js";
 import { BackwardCompat, ProjectRequiredError } from "./migration.js";
 import { CentralCore } from "./central-core.js";
 import { getTaskMergeBlocker } from "./task-merge.js";
@@ -359,6 +360,8 @@ export class TaskStore extends EventEmitter<TaskStoreEvents> {
   private roadmapStore: RoadmapStore | null = null;
   /** Cached InsightStore instance */
   private insightStore: InsightStore | null = null;
+  /** Cached TodoStore instance */
+  private todoStore: TodoStore | null = null;
 
   constructor(private rootDir: string, globalSettingsDir?: string) {
     super();
@@ -5664,6 +5667,17 @@ ${notificationsSection}`;
       this.insightStore = new InsightStore(this.db);
     }
     return this.insightStore;
+  }
+
+  /**
+   * Get the TodoStore instance for project-scoped todo list operations.
+   * Lazily initializes the TodoStore on first access.
+   */
+  getTodoStore(): TodoStore {
+    if (!this.todoStore) {
+      this.todoStore = new TodoStore(this.db);
+    }
+    return this.todoStore;
   }
 
   // ── Backward Compatibility (Multi-Project Support) ────────────────────────

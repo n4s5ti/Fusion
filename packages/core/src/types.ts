@@ -925,6 +925,50 @@ export interface TaskCreateInput {
   executionMode?: ExecutionMode;
 }
 
+// ── Todo List Types ──────────────────────────────────────────────────────
+
+export interface TodoList {
+  id: string;
+  projectId: string;
+  title: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface TodoItem {
+  id: string;
+  listId: string;
+  text: string;
+  completed: boolean;
+  completedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+  sortOrder: number;
+}
+
+export interface TodoListCreateInput {
+  title: string;
+}
+
+export interface TodoListUpdateInput {
+  title?: string;
+}
+
+export interface TodoItemCreateInput {
+  text: string;
+  sortOrder?: number;
+}
+
+export interface TodoItemUpdateInput {
+  text?: string;
+  completed?: boolean;
+  sortOrder?: number;
+}
+
+export interface TodoListWithItems extends TodoList {
+  items: TodoItem[];
+}
+
 // ── Settings Scope Types ────────────────────────────────────────────────
 //
 // Settings are split into two scopes:

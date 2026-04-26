@@ -86,7 +86,7 @@ export function probeFts5(db: DatabaseSync): boolean {
 
 // ── Schema Definition ────────────────────────────────────────────────
 
-const SCHEMA_VERSION = 45;
+const SCHEMA_VERSION = 46;
 
 function normalizeTaskComments(
   steeringComments: SteeringComment[] | undefined,
@@ -619,6 +619,33 @@ CREATE INDEX IF NOT EXISTS idxProjectInsightsCategory
 -- Index for filtering runs by projectId
 CREATE INDEX IF NOT EXISTS idxInsightRunsProjectId
   ON project_insight_runs(projectId);
+
+-- Todo list persistence tables (FN-2575)
+-- Project-scoped todo lists and ordered checklist items
+
+CREATE TABLE IF NOT EXISTS todo_lists (
+  id TEXT PRIMARY KEY,
+  projectId TEXT NOT NULL,
+  title TEXT NOT NULL,
+  createdAt TEXT NOT NULL,
+  updatedAt TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS todo_items (
+  id TEXT PRIMARY KEY,
+  listId TEXT NOT NULL,
+  text TEXT NOT NULL,
+  completed INTEGER NOT NULL DEFAULT 0,
+  completedAt TEXT,
+  sortOrder INTEGER NOT NULL DEFAULT 0,
+  createdAt TEXT NOT NULL,
+  updatedAt TEXT NOT NULL,
+  FOREIGN KEY (listId) REFERENCES todo_lists(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idxTodoListsProjectId ON todo_lists(projectId);
+CREATE INDEX IF NOT EXISTS idxTodoItemsListId ON todo_items(listId);
+CREATE INDEX IF NOT EXISTS idxTodoItemsSortOrder ON todo_items(listId, sortOrder);
 `;
 
 // ── Database Class ───────────────────────────────────────────────────
@@ -1750,6 +1777,38 @@ export class Database {
         this.addColumnIfMissing("tasks", "sourceIssueExternalIssueId", "TEXT");
         this.addColumnIfMissing("tasks", "sourceIssueNumber", "INTEGER");
         this.addColumnIfMissing("tasks", "sourceIssueUrl", "TEXT");
+      });
+    }
+
+    if (version < 46) {
+      this.applyMigration(46, () => {
+        this.db.exec(`
+          CREATE TABLE IF NOT EXISTS todo_lists (
+            id TEXT PRIMARY KEY,
+            projectId TEXT NOT NULL,
+            title TEXT NOT NULL,
+            createdAt TEXT NOT NULL,
+            updatedAt TEXT NOT NULL
+          )
+        `);
+
+        this.db.exec(`
+          CREATE TABLE IF NOT EXISTS todo_items (
+            id TEXT PRIMARY KEY,
+            listId TEXT NOT NULL,
+            text TEXT NOT NULL,
+            completed INTEGER NOT NULL DEFAULT 0,
+            completedAt TEXT,
+            sortOrder INTEGER NOT NULL DEFAULT 0,
+            createdAt TEXT NOT NULL,
+            updatedAt TEXT NOT NULL,
+            FOREIGN KEY (listId) REFERENCES todo_lists(id) ON DELETE CASCADE
+          )
+        `);
+
+        this.db.exec("CREATE INDEX IF NOT EXISTS idxTodoListsProjectId ON todo_lists(projectId)");
+        this.db.exec("CREATE INDEX IF NOT EXISTS idxTodoItemsListId ON todo_items(listId)");
+        this.db.exec("CREATE INDEX IF NOT EXISTS idxTodoItemsSortOrder ON todo_items(listId, sortOrder)");
       });
     }
 
