@@ -488,6 +488,8 @@ export class TaskExecutor {
   private loopRecoveryState = new Map<string, { attempts: number; pending: boolean }>();
   /** Spawned child agent IDs per parent task ID. Used for lifecycle tracking. */
   private spawnedAgents = new Map<string, Set<string>>();
+  /** Per-task baseline of agent cumulative token counters used for delta persistence. */
+  private tokenUsageBaselines = new Map<string, { agentId: string; inputTokens: number; outputTokens: number }>();
 
   private async finalizeAlreadyReviewedTask(taskId: string): Promise<"merged" | "blocked" | "missing"> {
     const latestTask = await this.store.getTask(taskId);
@@ -874,6 +876,80 @@ export class TaskExecutor {
     return getTaskCompletionBlockerForStore(this.store, task);
   }
 
+  private async initializeTokenUsageBaseline(taskId: string, task?: Task): Promise<void> {
+    if (!this.options.agentStore) return;
+
+    const currentTask = task ?? await this.store.getTask(taskId);
+    const assignedAgentId = currentTask.assignedAgentId?.trim();
+    if (!assignedAgentId) return;
+
+    const existing = this.tokenUsageBaselines.get(taskId);
+    if (existing?.agentId === assignedAgentId) return;
+
+    const agent = await this.options.agentStore.getAgent(assignedAgentId);
+    if (!agent) return;
+
+    this.tokenUsageBaselines.set(taskId, {
+      agentId: assignedAgentId,
+      inputTokens: agent.totalInputTokens ?? 0,
+      outputTokens: agent.totalOutputTokens ?? 0,
+    });
+  }
+
+  private async persistTokenUsage(taskId: string): Promise<void> {
+    if (!this.options.agentStore) return;
+
+    const task = await this.store.getTask(taskId);
+    const assignedAgentId = task.assignedAgentId?.trim();
+    if (!assignedAgentId) return;
+
+    const agent = await this.options.agentStore.getAgent(assignedAgentId);
+    if (!agent) return;
+
+    const currentInputTokens = agent.totalInputTokens ?? 0;
+    const currentOutputTokens = agent.totalOutputTokens ?? 0;
+    const baseline = this.tokenUsageBaselines.get(taskId);
+
+    if (!baseline || baseline.agentId !== assignedAgentId) {
+      this.tokenUsageBaselines.set(taskId, {
+        agentId: assignedAgentId,
+        inputTokens: currentInputTokens,
+        outputTokens: currentOutputTokens,
+      });
+      return;
+    }
+
+    const inputDelta = Math.max(0, currentInputTokens - baseline.inputTokens);
+    const outputDelta = Math.max(0, currentOutputTokens - baseline.outputTokens);
+
+    this.tokenUsageBaselines.set(taskId, {
+      agentId: assignedAgentId,
+      inputTokens: currentInputTokens,
+      outputTokens: currentOutputTokens,
+    });
+
+    if (inputDelta === 0 && outputDelta === 0 && !task.tokenUsage) {
+      return;
+    }
+
+    const now = new Date().toISOString();
+    const mergedInputTokens = (task.tokenUsage?.inputTokens ?? 0) + inputDelta;
+    const mergedOutputTokens = (task.tokenUsage?.outputTokens ?? 0) + outputDelta;
+    const cachedTokens = task.tokenUsage?.cachedTokens ?? 0;
+    const totalTokens = mergedInputTokens + mergedOutputTokens + cachedTokens;
+
+    await this.store.updateTask(taskId, {
+      tokenUsage: {
+        inputTokens: mergedInputTokens,
+        outputTokens: mergedOutputTokens,
+        cachedTokens,
+        totalTokens,
+        firstUsedAt: task.tokenUsage?.firstUsedAt ?? now,
+        lastUsedAt: now,
+      },
+    });
+  }
+
   /**
    * Execute a review handoff: move the task to in-review column with
    * awaiting-user-review status, assign the requesting user, and dispose
@@ -908,6 +984,7 @@ export class TaskExecutor {
 
       // Move the task to in-review column (this will also emit task:moved event)
       // The task:moved handler will clean up activeSessions
+      await this.persistTokenUsage(task.id);
       await this.store.moveTask(task.id, "in-review");
 
       // Dispose the agent session (this may already be done by task:moved handler)
@@ -960,6 +1037,7 @@ export class TaskExecutor {
         }
       }
 
+      await this.persistTokenUsage(task.id);
       await this.store.moveTask(task.id, "in-review");
       await this.store.logEntry(task.id, "Auto-recovered: task work was complete but stuck in in-progress — moved to in-review");
       executorLog.log(`✓ ${task.id} auto-recovered completed task → in-review`);
@@ -1454,6 +1532,7 @@ export class TaskExecutor {
 
       const detail = await this.store.getTask(task.id);
       executorLog.log(`${task.id}: fetched task detail (${detail.steps.length} steps, prompt length=${detail.prompt?.length ?? 0})`);
+      await this.initializeTokenUsageBaseline(task.id, detail);
 
       // Initialize steps from PROMPT.md if empty
       if (detail.steps.length === 0) {
@@ -1575,6 +1654,7 @@ export class TaskExecutor {
             // Reset retry counters on success
             await this.store.updateTask(task.id, { workflowStepRetries: undefined, taskDoneRetryCount: null });
 
+            await this.persistTokenUsage(task.id);
             await this.store.moveTask(task.id, "in-review");
             // Audit trail: record task move (FN-1404)
             await audit.database({ type: "task:move", target: task.id, metadata: { to: "in-review" } });
@@ -1584,6 +1664,7 @@ export class TaskExecutor {
             const failedSteps = results.filter(r => !r.success);
             const errorSummary = failedSteps.map(r => `Step ${r.stepIndex}: ${r.error || "unknown error"}`).join("; ");
             await this.store.updateTask(task.id, { status: "failed", error: errorSummary });
+            await this.persistTokenUsage(task.id);
             await this.store.moveTask(task.id, "in-review");
             executorLog.log(`✗ ${task.id} step-session failed → in-review: ${errorSummary}`);
             this.options.onError?.(task, new Error(errorSummary));
@@ -1665,6 +1746,7 @@ export class TaskExecutor {
               recoveryRetryCount: null,
               nextRecoveryAt: null,
             });
+            await this.persistTokenUsage(task.id);
             await this.store.moveTask(task.id, "in-review");
             executorLog.log(`✗ ${task.id} transient retries exhausted → in-review`);
             this.options.onError?.(task, err instanceof Error ? err : new Error(errorMessage));
@@ -1672,6 +1754,7 @@ export class TaskExecutor {
             executorLog.error(`✗ ${task.id} step-session execution failed:`, errorDetail);
             await this.store.logEntry(task.id, `Step-session execution failed: ${errorMessage}`, errorStack ?? errorDetail, this.currentRunContext);
             await this.store.updateTask(task.id, { status: "failed", error: errorMessage });
+            await this.persistTokenUsage(task.id);
             await this.store.moveTask(task.id, "in-review");
             executorLog.log(`✗ ${task.id} step-session execution failed → in-review`);
             this.options.onError?.(task, err instanceof Error ? err : new Error(errorMessage));
@@ -1986,6 +2069,7 @@ export class TaskExecutor {
             if (await this.shouldFinalizeCompletedTask(task.id, taskDone)) {
               executorLog.log(`${task.id} paused after completion (graceful session exit) — finalizing to in-review`);
               await this.store.logEntry(task.id, "Execution paused after completion — finalizing to in-review");
+              await this.persistTokenUsage(task.id);
               await this.store.moveTask(task.id, "in-review");
               this.options.onComplete?.(task);
             } else {
@@ -2055,6 +2139,7 @@ export class TaskExecutor {
             // Reset retry counters on success
             await this.store.updateTask(task.id, { workflowStepRetries: undefined, taskDoneRetryCount: null });
 
+            await this.persistTokenUsage(task.id);
             await this.store.moveTask(task.id, "in-review");
             executorLog.log(`✓ ${task.id} completed → in-review`);
             this.options.onComplete?.(task);
@@ -2164,6 +2249,7 @@ export class TaskExecutor {
 
               await this.store.updateTask(task.id, { workflowStepRetries: undefined, taskDoneRetryCount: null });
 
+              await this.persistTokenUsage(task.id);
               await this.store.moveTask(task.id, "in-review");
               executorLog.log(`✓ ${task.id} completed on retry → in-review`);
               this.options.onComplete?.(task);
@@ -2189,6 +2275,7 @@ export class TaskExecutor {
               } else {
                 await this.store.updateTask(task.id, { status: "failed", error: errorMessage });
                 await this.store.logEntry(task.id, `${errorMessage} — moved to in-review for inspection`, undefined, this.currentRunContext);
+                await this.persistTokenUsage(task.id);
                 await this.store.moveTask(task.id, "in-review");
                 executorLog.log(`✗ ${task.id} failed after ${MAX_TASK_DONE_SESSION_RETRIES} retries — no fn_task_done → in-review`);
               }
@@ -2266,6 +2353,7 @@ export class TaskExecutor {
         if (await this.shouldFinalizeCompletedTask(task.id, taskDone)) {
           executorLog.log(`${task.id} paused after completion — finalizing to in-review`);
           await this.store.logEntry(task.id, "Execution paused after completion — finalizing to in-review", undefined, this.currentRunContext);
+          await this.persistTokenUsage(task.id);
           await this.store.moveTask(task.id, "in-review");
           this.options.onComplete?.(task);
         } else {
@@ -2431,6 +2519,7 @@ export class TaskExecutor {
             recoveryRetryCount: null,
             nextRecoveryAt: null,
           });
+          await this.persistTokenUsage(task.id);
           await this.store.moveTask(task.id, "in-review");
           executorLog.log(`✗ ${task.id} transient retries exhausted → in-review`);
           this.options.onError?.(task, err instanceof Error ? err : new Error(errorMessage));
@@ -2439,6 +2528,7 @@ export class TaskExecutor {
         executorLog.error(`✗ ${task.id} execution failed:`, errorDetail);
         await this.store.logEntry(task.id, `Execution failed: ${errorMessage}`, errorStack ?? errorDetail, this.currentRunContext);
         await this.store.updateTask(task.id, { status: "failed", error: errorMessage });
+        await this.persistTokenUsage(task.id);
         await this.store.moveTask(task.id, "in-review");
         executorLog.log(`✗ ${task.id} execution failed → in-review`);
         this.options.onError?.(task, err instanceof Error ? err : new Error(errorMessage));
@@ -2461,6 +2551,7 @@ export class TaskExecutor {
       // Reset loop recovery state at end of execute() lifecycle.
       // State is in-memory and per-run — should not persist across attempts.
       this.loopRecoveryState.delete(task.id);
+      this.tokenUsageBaselines.delete(task.id);
 
       // Requeue stuck-killed task AFTER this.executing is cleared.
       // This prevents the race where the scheduler re-dispatches the task

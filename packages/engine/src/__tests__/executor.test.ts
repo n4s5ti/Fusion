@@ -10706,6 +10706,34 @@ describe("StepSessionExecutor integration", () => {
     return store;
   }
 
+  function createTokenUsageStepSessionStore(overrides: Partial<Task> = {}) {
+    const store = createStepSessionStore();
+    const taskState: Task = {
+      ...createTaskWithSteps({
+        assignedAgentId: "agent-001",
+        baseCommitSha: "abc123",
+        enabledWorkflowSteps: [],
+      }),
+      ...overrides,
+    };
+
+    store.getTask.mockImplementation(async () => ({ ...taskState }));
+    store.updateTask.mockImplementation(async (_taskId: string, updates: Record<string, unknown>) => {
+      if (updates.tokenUsage !== undefined) {
+        (taskState as Task).tokenUsage = updates.tokenUsage as Task["tokenUsage"];
+      }
+      if (updates.status !== undefined) {
+        (taskState as Task).status = updates.status as Task["status"];
+      }
+      if (updates.error !== undefined) {
+        (taskState as Task).error = updates.error as Task["error"];
+      }
+      return {};
+    });
+
+    return { store, taskState };
+  }
+
   it("uses step-session path when runStepsInNewSessions is true", async () => {
     const store = createStepSessionStore();
 
@@ -10809,6 +10837,110 @@ describe("StepSessionExecutor integration", () => {
       expect.objectContaining({ message: "Step 1: compilation error" }),
     );
     expect(onComplete).not.toHaveBeenCalled();
+  });
+
+  it("persists task tokenUsage on successful completion when agent has token totals", async () => {
+    const { store } = createTokenUsageStepSessionStore();
+    const totals = { input: 120, output: 45 };
+    mockExecuteAll.mockImplementation(async () => {
+      totals.input = 170;
+      totals.output = 66;
+      return [
+        { stepIndex: 0, success: true, retries: 0 },
+        { stepIndex: 1, success: true, retries: 0 },
+      ];
+    });
+
+    const agentStore = {
+      getAgent: vi.fn().mockImplementation(async () => ({
+        id: "agent-001",
+        totalInputTokens: totals.input,
+        totalOutputTokens: totals.output,
+      })),
+    };
+
+    const executor = new TaskExecutor(store, "/tmp/test", { agentStore: agentStore as any });
+    await executor.execute(createTaskWithSteps());
+
+    const tokenUsageUpdate = store.updateTask.mock.calls.find(([, updates]: [string, Record<string, unknown>]) => updates.tokenUsage);
+    expect(tokenUsageUpdate).toBeDefined();
+    const tokenUsage = tokenUsageUpdate![1].tokenUsage as Record<string, unknown>;
+    expect(tokenUsage.inputTokens).toBe(50);
+    expect(tokenUsage.outputTokens).toBe(21);
+    expect(tokenUsage.cachedTokens).toBe(0);
+    expect(tokenUsage.totalTokens).toBe(71);
+    expect(typeof tokenUsage.firstUsedAt).toBe("string");
+    expect(typeof tokenUsage.lastUsedAt).toBe("string");
+    expect(Number.isNaN(new Date(tokenUsage.firstUsedAt as string).getTime())).toBe(false);
+    expect(Number.isNaN(new Date(tokenUsage.lastUsedAt as string).getTime())).toBe(false);
+  });
+
+  it("persists task tokenUsage on failure paths so partial usage is visible", async () => {
+    const { store } = createTokenUsageStepSessionStore();
+    const totals = { input: 30, output: 10 };
+    mockExecuteAll.mockImplementation(async () => {
+      totals.input = 44;
+      totals.output = 19;
+      return [
+        { stepIndex: 0, success: true, retries: 0 },
+        { stepIndex: 1, success: false, error: "lint failed", retries: 1 },
+      ];
+    });
+
+    const agentStore = {
+      getAgent: vi.fn().mockImplementation(async () => ({
+        id: "agent-001",
+        totalInputTokens: totals.input,
+        totalOutputTokens: totals.output,
+      })),
+    };
+
+    const executor = new TaskExecutor(store, "/tmp/test", { agentStore: agentStore as any });
+    await executor.execute(createTaskWithSteps());
+
+    expect(store.updateTask).toHaveBeenCalledWith(
+      "FN-200",
+      expect.objectContaining({
+        tokenUsage: expect.objectContaining({
+          inputTokens: 14,
+          outputTokens: 9,
+          totalTokens: 23,
+        }),
+      }),
+    );
+  });
+
+  it("skips tokenUsage persistence when agentStore is not configured", async () => {
+    const { store } = createTokenUsageStepSessionStore();
+    mockExecuteAll.mockResolvedValue([
+      { stepIndex: 0, success: true, retries: 0 },
+      { stepIndex: 1, success: true, retries: 0 },
+    ]);
+
+    const executor = new TaskExecutor(store, "/tmp/test", {});
+    await executor.execute(createTaskWithSteps());
+
+    const tokenUsageUpdate = store.updateTask.mock.calls.find(([, updates]: [string, Record<string, unknown>]) => updates.tokenUsage);
+    expect(tokenUsageUpdate).toBeUndefined();
+  });
+
+  it("skips tokenUsage persistence when task has no assignedAgentId", async () => {
+    const { store } = createTokenUsageStepSessionStore({ assignedAgentId: undefined });
+    mockExecuteAll.mockResolvedValue([
+      { stepIndex: 0, success: true, retries: 0 },
+      { stepIndex: 1, success: true, retries: 0 },
+    ]);
+
+    const agentStore = {
+      getAgent: vi.fn().mockResolvedValue({ id: "agent-001", totalInputTokens: 20, totalOutputTokens: 20 }),
+    };
+
+    const executor = new TaskExecutor(store, "/tmp/test", { agentStore: agentStore as any });
+    await executor.execute(createTaskWithSteps({ assignedAgentId: undefined }));
+
+    const tokenUsageUpdate = store.updateTask.mock.calls.find(([, updates]: [string, Record<string, unknown>]) => updates.tokenUsage);
+    expect(tokenUsageUpdate).toBeUndefined();
+    expect(agentStore.getAgent).not.toHaveBeenCalled();
   });
 
   it("moves task to in-review when step-session execution fails", async () => {
