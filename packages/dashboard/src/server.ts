@@ -51,6 +51,23 @@ import { validateRemoteAuthToken } from "./remote-auth.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
+const PACKAGE_VERSION = (() => {
+  try {
+    const packageJsonPath = join(__dirname, "..", "package.json");
+    const packageJson = JSON.parse(readFileSync(packageJsonPath, "utf-8")) as {
+      version?: unknown;
+    };
+
+    if (typeof packageJson.version === "string" && packageJson.version.length > 0) {
+      return packageJson.version;
+    }
+  } catch {
+    // Fall through to environment fallback.
+  }
+
+  return process.env.npm_package_version ?? "0.0.0";
+})();
+
 const DEFAULT_AI_SESSION_TTL_MS = SESSION_CLEANUP_DEFAULT_MAX_AGE_MS;
 const MIN_AI_SESSION_TTL_MS = 10 * 60 * 1000;
 const MAX_AI_SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000;
@@ -899,7 +916,7 @@ export function createServer(store: TaskStore, options?: ServerOptions): ReturnT
   app.get("/api/health", (_req, res) => {
     res.json({
       status: "ok",
-      version: process.env.npm_package_version ?? "0.4.0",
+      version: PACKAGE_VERSION,
       uptime: Math.floor(process.uptime()),
     });
   });

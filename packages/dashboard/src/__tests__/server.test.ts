@@ -3,6 +3,9 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import http from "node:http";
 import { createHmac } from "node:crypto";
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import express from "express";
 import { createServer, setupTerminalWebSocket } from "../server.js";
 import { toSessionTag } from "../terminal-websocket-diagnostics.js";
@@ -31,6 +34,15 @@ vi.mock("../terminal-service.js", () => {
 
 // Access the mock terminal service
 const { __mockTerminalService: mockTerminalService } = await import("../terminal-service.js") as any;
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const DASHBOARD_PACKAGE_VERSION = (() => {
+  const packageJsonPath = join(__dirname, "..", "..", "package.json");
+  const packageJson = JSON.parse(readFileSync(packageJsonPath, "utf-8")) as {
+    version?: unknown;
+  };
+  return typeof packageJson.version === "string" ? packageJson.version : "";
+})();
 
 function createMockStore(overrides: Partial<TaskStore> = {}): TaskStore {
   return {
@@ -293,9 +305,24 @@ describe("createServer health and headless mode", () => {
     expect(res.status).toBe(200);
     expect(res.body).toEqual({
       status: "ok",
-      version: expect.any(String),
+      version: DASHBOARD_PACKAGE_VERSION,
       uptime: expect.any(Number),
     });
+  });
+
+  it("does not return stale hardcoded 0.4.0 unless package version is 0.4.0", async () => {
+    const store = createMockStore();
+    const app = createServer(store);
+
+    const res = await GET(app, "/api/health");
+
+    expect(res.status).toBe(200);
+    if (DASHBOARD_PACKAGE_VERSION === "0.4.0") {
+      expect(res.body.version).toBe("0.4.0");
+      return;
+    }
+
+    expect(res.body.version).not.toBe("0.4.0");
   });
 
   it("serves API routes but no frontend when headless=true", async () => {
