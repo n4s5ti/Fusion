@@ -550,28 +550,7 @@ export class DashboardTUI {
         const rows = process.stdout?.rows ?? 0;
         const cols = process.stdout?.columns ?? 0;
         if (rows <= 0 || cols <= 0) return;
-        // Full alt-screen wipe + cursor home before Ink redraws. Ink's
-        // clear() only resets log-update's tracked line count; if the
-        // previous frame painted more rows than the new terminal height
-        // (or content shrunk past a layout tier), those rows linger in the
-        // alt-screen buffer and the new frame paints on top, leaving
-        // garbage visible at the bottom. Writing \x1b[2J\x1b[H wipes the
-        // buffer so log-update's next render starts from a known-empty
-        // surface. Order matters: wipe first, then reset Ink's tracking,
-        // then notify so React reads fresh dims and rerenders cleanly.
-        if (process.stdout?.isTTY && typeof process.stdout.write === "function") {
-          try {
-            process.stdout.write("\x1b[2J\x1b[H");
-          } catch {
-            // Ignore — wipe is best-effort.
-          }
-        }
-        try {
-          this.inkInstance?.clear?.();
-        } catch {
-          // Ignore — clear is best-effort.
-        }
-        this.notify();
+        this.recoverFrame(cols, rows);
       }, 50);
     };
     if (process.stdout && typeof process.stdout.on === "function") {
@@ -611,32 +590,57 @@ export class DashboardTUI {
       };
       try {
         const [trueCols, trueRows] = stdout.getWindowSize?.() ?? [0, 0];
+        if (trueCols <= 0 || trueRows <= 0) return;
         const cachedCols = stdout.columns ?? 0;
         const cachedRows = stdout.rows ?? 0;
-        if (
-          trueCols > 0 &&
-          trueRows > 0 &&
-          (trueCols !== cachedCols || trueRows !== cachedRows)
-        ) {
-          // Node's cache is stale — force a refresh, which also emits
-          // 'resize' so the existing listener handles cleanup.
+        if (trueCols !== cachedCols || trueRows !== cachedRows) {
+          // Node's cache is stale — poke it to re-read so React reads the
+          // new dims on the next render.
           stdout._refreshSize?.();
-          this.lastObservedCols = trueCols;
-          this.lastObservedRows = trueRows;
-        } else if (
-          trueCols > 0 &&
-          trueRows > 0 &&
-          (trueCols !== this.lastObservedCols || trueRows !== this.lastObservedRows)
-        ) {
-          // Cache and OS agree but we never recorded this size — likely
-          // a resize event we already handled; just sync the baseline.
-          this.lastObservedCols = trueCols;
-          this.lastObservedRows = trueRows;
+        }
+        if (trueCols !== this.lastObservedCols || trueRows !== this.lastObservedRows) {
+          // We haven't recovered to this size yet. Run the full recovery
+          // path directly rather than relying on a 'resize' event from
+          // _refreshSize, which doesn't always propagate under tmux+ssh
+          // (or when Node's cache already happens to match the OS but
+          // Ink's frame buffer is still pinned to the previous layout).
+          this.recoverFrame(trueCols, trueRows);
         }
       } catch {
         // ioctl can fail in edge cases (detached pty, etc.) — ignore.
       }
     }, 2000);
+  }
+
+  // Reset Ink's internal frame buffer (log-update line tracking) and wipe
+  // the alt-screen so a fresh render lands on a known-empty surface. Used
+  // by both the resize listener (SIGWINCH path) and the dim-poll fallback
+  // (tmux+ssh path where SIGWINCH is dropped). Idempotent: a redundant
+  // call is at worst a 1-frame flicker.
+  //
+  // Why: Ink's clear() only resets log-update's tracked line count; if the
+  // previous frame painted more rows than the new terminal height (or
+  // content shrunk past a layout tier), those rows linger in the
+  // alt-screen buffer and the new frame paints on top, leaving garbage
+  // visible at the bottom. \x1b[2J\x1b[H wipes the buffer first.
+  // Order: wipe → reset Ink's tracking → record dims → notify so React
+  // reads fresh dims and rerenders cleanly.
+  private recoverFrame(cols: number, rows: number): void {
+    if (process.stdout?.isTTY && typeof process.stdout.write === "function") {
+      try {
+        process.stdout.write("\x1b[2J\x1b[H");
+      } catch {
+        // Ignore — wipe is best-effort.
+      }
+    }
+    try {
+      this.inkInstance?.clear?.();
+    } catch {
+      // Ignore — clear is best-effort.
+    }
+    this.lastObservedCols = cols;
+    this.lastObservedRows = rows;
+    this.notify();
   }
 
   async stop(): Promise<void> {
