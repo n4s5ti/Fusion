@@ -1,25 +1,42 @@
 /**
- * OpenClaw Runtime Plugin - Type Definitions
+ * OpenClaw runtime adapter contracts.
  *
- * The runtime contract is defined locally to avoid compile-time coupling to
- * internal engine exports.
+ * These mirror the engine runtime interface while keeping this plugin package
+ * decoupled from internal engine modules.
  */
 
-/** Minimal session shape used by the runtime adapter. */
-export interface AgentSession {
+export type GatewayRole = "developer" | "user" | "assistant";
+
+export interface GatewayMessage {
+  role: GatewayRole;
+  content: string;
+}
+
+export interface GatewayConfig {
+  gatewayUrl: string;
+  gatewayToken?: string;
+  agentId: string;
+}
+
+export interface GatewayCallbacks {
+  onText?: (text: string) => void;
+  onThinking?: (text: string) => void;
+  onToolStart?: (toolName: string, args?: unknown) => void;
+  onToolEnd?: (toolName: string, isError: boolean, result?: unknown) => void;
+}
+
+export interface GatewaySession extends GatewayConfig {
+  sessionId: string;
+  messages: GatewayMessage[];
+  callbacks?: GatewayCallbacks;
   dispose?: () => Promise<void> | void;
 }
 
-/** Options for creating an agent session. Mirrors createFnAgent inputs used by the adapter. */
-export interface AgentRuntimeOptions {
+export interface AgentRuntimeOptions extends GatewayCallbacks {
   cwd: string;
   systemPrompt: string;
   tools?: unknown;
   customTools?: unknown;
-  onText?: (text: string) => void;
-  onThinking?: (text: string) => void;
-  onToolStart?: (toolName: string, args?: unknown) => void;
-  onToolEnd?: (toolName: string, result?: unknown) => void;
   defaultProvider?: string;
   defaultModelId?: string;
   fallbackProvider?: string;
@@ -30,18 +47,16 @@ export interface AgentRuntimeOptions {
   skills?: string[];
 }
 
-/** Result of creating a session. */
 export interface AgentSessionResult {
-  session: AgentSession;
+  session: GatewaySession;
   sessionFile?: string;
 }
 
-/** Agent runtime adapter interface. */
 export interface AgentRuntime {
   id: string;
   name: string;
   createSession(options: AgentRuntimeOptions): Promise<AgentSessionResult>;
-  promptWithFallback(session: AgentSession, prompt: string, options?: unknown): Promise<void>;
-  describeModel(session: AgentSession): string;
-  dispose?(session: AgentSession): Promise<void>;
+  promptWithFallback(session: GatewaySession, prompt: string, options?: unknown): Promise<void>;
+  describeModel(session: GatewaySession): string;
+  dispose?(session: GatewaySession): Promise<void>;
 }

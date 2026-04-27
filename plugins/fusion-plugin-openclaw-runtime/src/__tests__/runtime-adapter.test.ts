@@ -1,97 +1,116 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
 import { OpenClawRuntimeAdapter } from "../runtime-adapter.js";
 
-const { mockCreateFnAgent, mockPromptWithFallback, mockDescribeModel } = vi.hoisted(() => ({
-  mockCreateFnAgent: vi.fn(),
-  mockPromptWithFallback: vi.fn(),
-  mockDescribeModel: vi.fn(),
+const {
+  mockResolveGatewayConfig,
+  mockCreateGatewaySession,
+  mockPromptGateway,
+  mockDescribeGatewayModel,
+} = vi.hoisted(() => ({
+  mockResolveGatewayConfig: vi.fn(),
+  mockCreateGatewaySession: vi.fn(),
+  mockPromptGateway: vi.fn(),
+  mockDescribeGatewayModel: vi.fn(),
 }));
 
 vi.mock("../pi-module.js", () => ({
-  createFnAgent: mockCreateFnAgent,
-  promptWithFallback: mockPromptWithFallback,
-  describeModel: mockDescribeModel,
+  resolveGatewayConfig: mockResolveGatewayConfig,
+  createGatewaySession: mockCreateGatewaySession,
+  promptGateway: mockPromptGateway,
+  describeGatewayModel: mockDescribeGatewayModel,
 }));
 
 describe("OpenClawRuntimeAdapter", () => {
-  let adapter: OpenClawRuntimeAdapter;
-
   beforeEach(() => {
     vi.clearAllMocks();
-    mockDescribeModel.mockReturnValue("mock/anthropic-claude");
-    adapter = new OpenClawRuntimeAdapter();
-  });
-
-  afterEach(() => {
-    vi.restoreAllMocks();
+    mockResolveGatewayConfig.mockReturnValue({
+      gatewayUrl: "http://127.0.0.1:18789",
+      gatewayToken: "token",
+      agentId: "main",
+    });
+    mockDescribeGatewayModel.mockReturnValue("openclaw/main");
+    mockCreateGatewaySession.mockImplementation((options) => ({
+      gatewayUrl: options.gatewayUrl,
+      gatewayToken: options.gatewayToken,
+      agentId: options.agentId,
+      sessionId: "session-123",
+      messages: [{ role: "developer", content: options.systemPrompt }],
+      callbacks: options.callbacks,
+    }));
   });
 
   it("has stable runtime identity", () => {
+    const adapter = new OpenClawRuntimeAdapter();
     expect(adapter.id).toBe("openclaw");
     expect(adapter.name).toBe("OpenClaw Runtime");
   });
 
-  it("delegates createSession to createFnAgent with mapped options", async () => {
-    const mockSession = { dispose: vi.fn() };
-    mockCreateFnAgent.mockResolvedValue({ session: mockSession, sessionFile: "/tmp/session.json" });
+  it("createSession returns gateway session with initial developer message", async () => {
+    const adapter = new OpenClawRuntimeAdapter({ gatewayUrl: "http://localhost:18789", agentId: "ops" });
 
     const result = await adapter.createSession({
       cwd: "/project",
       systemPrompt: "You are helpful",
-      defaultProvider: "anthropic",
-      defaultModelId: "claude-sonnet-4-5",
-      fallbackProvider: "openai",
-      fallbackModelId: "gpt-4o",
-      skills: ["bash"],
+      onText: vi.fn(),
+      onThinking: vi.fn(),
+      onToolStart: vi.fn(),
+      onToolEnd: vi.fn(),
     });
 
-    expect(mockCreateFnAgent).toHaveBeenCalledWith({
-      cwd: "/project",
-      systemPrompt: "You are helpful",
-      tools: undefined,
-      customTools: undefined,
-      onText: undefined,
-      onThinking: undefined,
-      onToolStart: undefined,
-      onToolEnd: undefined,
-      defaultProvider: "anthropic",
-      defaultModelId: "claude-sonnet-4-5",
-      fallbackProvider: "openai",
-      fallbackModelId: "gpt-4o",
-      defaultThinkingLevel: undefined,
-      sessionManager: undefined,
-      skillSelection: undefined,
-      skills: ["bash"],
+    expect(mockResolveGatewayConfig).toHaveBeenCalledWith({ gatewayUrl: "http://localhost:18789", agentId: "ops" });
+    expect(mockCreateGatewaySession).toHaveBeenCalledWith(
+      expect.objectContaining({
+        gatewayUrl: "http://127.0.0.1:18789",
+        gatewayToken: "token",
+        agentId: "main",
+        systemPrompt: "You are helpful",
+      }),
+    );
+    expect(result.session.messages).toEqual([{ role: "developer", content: "You are helpful" }]);
+    expect(result.sessionFile).toBeUndefined();
+  });
+
+  it("promptWithFallback appends user message and delegates assistant handling to gateway client", async () => {
+    const adapter = new OpenClawRuntimeAdapter();
+    const session = {
+      gatewayUrl: "http://127.0.0.1:18789",
+      gatewayToken: "token",
+      agentId: "main",
+      sessionId: "session-123",
+      messages: [{ role: "developer" as const, content: "System" }],
+    };
+    mockPromptGateway.mockImplementation(async (activeSession) => {
+      activeSession.messages.push({ role: "assistant", content: "Gateway response" });
+      return "Gateway response";
     });
-    expect(result.session).toBe(mockSession);
-    expect(result.sessionFile).toBe("/tmp/session.json");
+
+    await adapter.promptWithFallback(session, "Hello", { onText: vi.fn() });
+
+    expect(mockPromptGateway).toHaveBeenCalledWith(session, "Hello", { onText: expect.any(Function) });
+    expect(session.messages).toEqual([
+      { role: "developer", content: "System" },
+      { role: "user", content: "Hello" },
+      { role: "assistant", content: "Gateway response" },
+    ]);
   });
 
-  it("delegates promptWithFallback to pi seam", async () => {
-    const session = { id: "s-1" };
-    mockPromptWithFallback.mockResolvedValue(undefined);
-
-    await adapter.promptWithFallback(session as any, "Hello", { images: [] });
-
-    expect(mockPromptWithFallback).toHaveBeenCalledWith(session, "Hello", { images: [] });
-  });
-
-  it("delegates describeModel to pi seam", () => {
-    const session = { id: "s-2" };
-    mockDescribeModel.mockReturnValue("anthropic/claude-sonnet-4-5");
+  it("describeModel returns openclaw/<agentId>", () => {
+    const adapter = new OpenClawRuntimeAdapter();
+    const session = {
+      gatewayUrl: "http://127.0.0.1:18789",
+      agentId: "ops",
+      sessionId: "session-123",
+      messages: [],
+    };
 
     const result = adapter.describeModel(session as any);
 
-    expect(mockDescribeModel).toHaveBeenCalledWith(session);
-    expect(result).toBe("anthropic/claude-sonnet-4-5");
+    expect(mockDescribeGatewayModel).toHaveBeenCalledWith(session);
+    expect(result).toBe("openclaw/main");
   });
 
-  it("dispose calls session.dispose when present and no-ops otherwise", async () => {
-    const disposeMock = vi.fn().mockResolvedValue(undefined);
-
-    await adapter.dispose({ dispose: disposeMock });
-    await expect(adapter.dispose({ id: "no-dispose" } as any)).resolves.toBeUndefined();
-
-    expect(disposeMock).toHaveBeenCalledTimes(1);
+  it("dispose is a no-op", async () => {
+    const adapter = new OpenClawRuntimeAdapter();
+    await expect(adapter.dispose({} as any)).resolves.toBeUndefined();
   });
 });

@@ -1,49 +1,58 @@
 import type {
   AgentRuntime,
   AgentRuntimeOptions,
-  AgentSession,
   AgentSessionResult,
+  GatewayConfig,
+  GatewaySession,
 } from "./types.js";
-import { createFnAgent, describeModel, promptWithFallback } from "./pi-module.js";
-
-const getModelDescription = describeModel;
+import {
+  createGatewaySession,
+  describeGatewayModel,
+  promptGateway,
+  resolveGatewayConfig,
+} from "./pi-module.js";
 
 export class OpenClawRuntimeAdapter implements AgentRuntime {
   readonly id = "openclaw";
   readonly name = "OpenClaw Runtime";
 
+  private readonly config: GatewayConfig;
+
+  constructor(settings?: Partial<GatewayConfig>) {
+    this.config = resolveGatewayConfig(settings as Record<string, unknown> | undefined);
+  }
+
   async createSession(options: AgentRuntimeOptions): Promise<AgentSessionResult> {
-    return createFnAgent({
-      cwd: options.cwd,
+    const session = createGatewaySession({
+      gatewayUrl: this.config.gatewayUrl,
+      gatewayToken: this.config.gatewayToken,
+      agentId: this.config.agentId,
       systemPrompt: options.systemPrompt,
-      tools: options.tools,
-      customTools: options.customTools,
-      onText: options.onText,
-      onThinking: options.onThinking,
-      onToolStart: options.onToolStart,
-      onToolEnd: options.onToolEnd,
-      defaultProvider: options.defaultProvider,
-      defaultModelId: options.defaultModelId,
-      fallbackProvider: options.fallbackProvider,
-      fallbackModelId: options.fallbackModelId,
-      defaultThinkingLevel: options.defaultThinkingLevel,
-      sessionManager: options.sessionManager,
-      skillSelection: options.skillSelection,
-      skills: options.skills,
+      callbacks: {
+        onText: options.onText,
+        onThinking: options.onThinking,
+        onToolStart: options.onToolStart,
+        onToolEnd: options.onToolEnd,
+      },
     });
+
+    return {
+      session,
+      sessionFile: undefined,
+    };
   }
 
-  async promptWithFallback(session: AgentSession, prompt: string, options?: unknown): Promise<void> {
-    return promptWithFallback(session, prompt, options);
+  async promptWithFallback(session: GatewaySession, prompt: string, options?: unknown): Promise<void> {
+    session.messages.push({ role: "user", content: prompt });
+
+    await promptGateway(session, prompt, options as Parameters<typeof promptGateway>[2]);
   }
 
-  describeModel(session: AgentSession): string {
-    return getModelDescription(session);
+  describeModel(session: GatewaySession): string {
+    return describeGatewayModel(session);
   }
 
-  async dispose(session: AgentSession): Promise<void> {
-    if (typeof (session as { dispose?: () => Promise<void> }).dispose === "function") {
-      await (session as { dispose: () => Promise<void> }).dispose();
-    }
+  async dispose(_session: GatewaySession): Promise<void> {
+    // OpenClaw gateway sessions are managed remotely; no local cleanup required.
   }
 }
