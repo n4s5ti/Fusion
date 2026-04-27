@@ -3,11 +3,11 @@ import { act, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { SystemStatsModal } from "../SystemStatsModal";
 
 vi.mock("lucide-react", () => ({
-  Monitor: () => <span data-testid="icon-monitor" />,
-  RefreshCw: () => <span data-testid="icon-refresh" />,
-  ShieldAlert: () => <span data-testid="icon-shield-alert" />,
-  Skull: () => <span data-testid="icon-skull" />,
-  X: () => <span data-testid="icon-x" />,
+  Monitor: (props: { className?: string }) => <span data-testid="icon-monitor" {...props} />,
+  RefreshCw: (props: { className?: string }) => <span data-testid="icon-refresh" {...props} />,
+  ShieldAlert: (props: { className?: string }) => <span data-testid="icon-shield-alert" {...props} />,
+  Skull: (props: { className?: string }) => <span data-testid="icon-skull" {...props} />,
+  X: (props: { className?: string }) => <span data-testid="icon-x" {...props} />,
 }));
 
 const mockFetchSystemStats = vi.fn();
@@ -111,6 +111,62 @@ describe("SystemStatsModal", () => {
 
     const criticalValues = document.querySelectorAll(".system-stats-modal__value--critical");
     expect(criticalValues.length).toBeGreaterThan(0);
+  });
+
+  it("shows refresh button icon when the modal is open", async () => {
+    render(<SystemStatsModal isOpen={true} onClose={vi.fn()} />);
+
+    const refreshButton = await screen.findByRole("button", { name: "Refresh system stats" });
+    const refreshIcon = screen.getByTestId("icon-refresh");
+
+    expect(refreshButton).toBeDefined();
+    expect(refreshIcon).toBeDefined();
+    expect(refreshButton.contains(refreshIcon)).toBe(true);
+  });
+
+  it("shows auto-refresh indicator when stats are loaded", async () => {
+    render(<SystemStatsModal isOpen={true} onClose={vi.fn()} />);
+
+    expect(await screen.findByText("Auto-refresh · 5s")).toBeDefined();
+    expect(screen.getByText(/Updated|Waiting for first update/)).toBeDefined();
+  });
+
+  it("applies spinning class to refresh icon during background refresh", async () => {
+    vi.useFakeTimers();
+
+    let callCount = 0;
+    let resolveBackgroundRefresh: (() => void) | undefined;
+    const backgroundRefreshPromise = new Promise<typeof sampleStats>((resolve) => {
+      resolveBackgroundRefresh = () => resolve(sampleStats);
+    });
+
+    mockFetchSystemStats.mockImplementation(() => {
+      callCount += 1;
+      if (callCount === 1) {
+        return Promise.resolve(sampleStats);
+      }
+      return backgroundRefreshPromise;
+    });
+
+    render(<SystemStatsModal isOpen={true} onClose={vi.fn()} />);
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(screen.getByText("Auto-refresh · 5s")).toBeDefined();
+
+    act(() => {
+      vi.advanceTimersByTime(5_000);
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(screen.getByTestId("icon-refresh").className).toContain("system-stats-modal__refresh--spinning");
+
+    resolveBackgroundRefresh?.();
+    await act(async () => {
+      await Promise.resolve();
+    });
   });
 
   it("shows error state when initial fetch fails", async () => {

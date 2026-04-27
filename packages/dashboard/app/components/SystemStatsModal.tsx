@@ -82,6 +82,7 @@ export function SystemStatsModal({ isOpen, onClose, projectId }: SystemStatsModa
   const [confirmKill, setConfirmKill] = useState(false);
   const [killResult, setKillResult] = useState<KillVitestResponse | null>(null);
   const [settingsError, setSettingsError] = useState<string | null>(null);
+  const [lastRefreshedAt, setLastRefreshedAt] = useState<number | null>(null);
 
   const loadStats = useCallback(async (options?: { preserveKillResult?: boolean }) => {
     setLoading(true);
@@ -89,6 +90,7 @@ export function SystemStatsModal({ isOpen, onClose, projectId }: SystemStatsModa
       const response = await fetchSystemStats(projectId);
       setStats(response);
       setError(null);
+      setLastRefreshedAt(Date.now());
       if (!options?.preserveKillResult) {
         setKillResult(null);
       }
@@ -197,6 +199,14 @@ export function SystemStatsModal({ isOpen, onClose, projectId }: SystemStatsModa
   if (!isOpen) return null;
 
   const system = stats?.systemStats;
+  const isBackgroundRefreshing = loading && Boolean(stats);
+  const refreshLabel = lastRefreshedAt
+    ? `Updated ${new Date(lastRefreshedAt).toLocaleTimeString([], {
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+      })}`
+    : "Waiting for first update";
   const taskStats = stats?.taskStats;
   const usedSystemMem = system ? system.systemTotalMem - system.systemFreeMem : 0;
   const usedSystemClassName = system
@@ -228,6 +238,10 @@ export function SystemStatsModal({ isOpen, onClose, projectId }: SystemStatsModa
             <span>System Stats</span>
           </h2>
           <div className="system-stats-modal__header-actions">
+            <span className="system-stats-modal__auto-refresh" aria-live="polite">
+              <span>Auto-refresh · 5s</span>
+              <span className="system-stats-modal__auto-refresh-time">{refreshLabel}</span>
+            </span>
             <button
               type="button"
               className="btn btn-icon"
@@ -235,7 +249,10 @@ export function SystemStatsModal({ isOpen, onClose, projectId }: SystemStatsModa
               title="Refresh"
               aria-label="Refresh system stats"
             >
-              <RefreshCw />
+              <RefreshCw
+                size={16}
+                className={isBackgroundRefreshing ? "system-stats-modal__refresh--spinning" : undefined}
+              />
             </button>
             <button type="button" className="modal-close" onClick={onClose} aria-label="Close">
               <X />
