@@ -212,7 +212,13 @@ export function HermesRuntimeCard() {
   return (
     <RuntimeCardShell
       testId="hermes-runtime-card"
-      logo={<ProviderIcon provider="hermes" size="lg" />}
+      logo={
+        <img
+          src="/brands/hermes-logo.svg"
+          alt="Nous Research"
+          style={{ width: 40, height: 40, display: "block", filter: "invert(1)" }}
+        />
+      }
       name="Hermes"
       subname="by Nous Research"
       learnMoreHref={HERMES_LEARN_MORE}

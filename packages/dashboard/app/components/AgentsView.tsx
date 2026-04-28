@@ -1205,23 +1205,14 @@ export function AgentsView({ addToast, projectId }: AgentsViewProps) {
 
                   <div className="agent-card-actions">
                     {agent.state === "idle" && (
-                      <>
-                        <button
-                          className="btn btn--sm"
-                          onClick={() => void handleStateChange(agent.id, "active")}
-                          disabled={transitioningAgentIds.has(agent.id)}
-                          title="Activate"
-                        >
-                          <Play size={14} /> Start
-                        </button>
-                        <button
-                          className="btn btn--sm btn--danger"
-                          onClick={() => void handleDelete(agent.id, agent.name)}
-                          title="Delete"
-                        >
-                          <Trash2 size={14} /> Delete
-                        </button>
-                      </>
+                      <button
+                        className="btn btn--sm"
+                        onClick={() => void handleStateChange(agent.id, "active")}
+                        disabled={transitioningAgentIds.has(agent.id)}
+                        title="Activate"
+                      >
+                        <Play size={14} /> Start
+                      </button>
                     )}
                     {agent.state === "active" && (
                       <>
@@ -1285,23 +1276,14 @@ export function AgentsView({ addToast, projectId }: AgentsViewProps) {
                       </button>
                     )}
                     {agent.state === "terminated" && (
-                      <>
-                        <button
-                          className="btn btn--sm"
-                          onClick={() => void handleStateChange(agent.id, "active")}
-                          disabled={transitioningAgentIds.has(agent.id)}
-                          title="Start"
-                        >
-                          <Play size={14} /> Start
-                        </button>
-                        <button
-                          className="btn btn--sm btn--danger"
-                          onClick={() => void handleDelete(agent.id, agent.name)}
-                          title="Delete"
-                        >
-                          <Trash2 size={14} /> Delete
-                        </button>
-                      </>
+                      <button
+                        className="btn btn--sm"
+                        onClick={() => void handleStateChange(agent.id, "active")}
+                        disabled={transitioningAgentIds.has(agent.id)}
+                        title="Start"
+                      >
+                        <Play size={14} /> Start
+                      </button>
                     )}
                     <button
                       className="btn btn--sm agent-card-details-btn"
@@ -1310,6 +1292,13 @@ export function AgentsView({ addToast, projectId }: AgentsViewProps) {
                       aria-label={`View details for ${agent.name}`}
                     >
                       View Details
+                    </button>
+                    <button
+                      className="btn btn--sm btn--danger"
+                      onClick={() => void handleDelete(agent.id, agent.name)}
+                      title="Delete"
+                    >
+                      <Trash2 size={14} /> Delete
                     </button>
                   </div>
                 </div>

@@ -5,10 +5,18 @@
 /* === Settings Modal header action buttons (Star on GitHub, Help) === */
 .settings-header-actions {
   display: flex;
-  align-items: center;
+  align-items: stretch;
   gap: var(--space-xs);
   margin-left: auto;
   margin-right: var(--space-sm);
+}
+
+/* Keep the GitHub Star and Help buttons at matching heights regardless of
+   their differing icon sizes (provider icon 16px vs. HelpCircle 13px). */
+.settings-header-actions > .settings-github-star-btn,
+.settings-header-actions > .btn {
+  height: 26px;
+  box-sizing: border-box;
 }
 
 /* GitHub star button — split-pill layout: [Star half | Count half] */
