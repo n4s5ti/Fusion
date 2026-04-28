@@ -338,7 +338,10 @@ See [Memory Plugin Contract](./memory-plugin-contract.md) for the full plan.
 ### Observability and reflection
 - `AgentLogger` (`agent-logger.ts`) — structured per-agent run logging
 - `RunAudit` (`run-audit.ts`) — mutation audit tracking (DB/git/filesystem)
-- `Notifier` (`notifier.ts`) — notification delivery (`NtfyNotifier`)
+- `Notifier` (`notifier.ts`) — legacy ntfy compatibility shim (`NtfyNotifier`) plus shared ntfy helpers
+- `NotificationService` (`notification/notification-service.ts`) — provider lifecycle + event dispatch orchestration
+- `NotificationProvider` interface (`@fusion/core` `notification/provider.ts`) — pluggable provider contract
+- Built-in providers: `NtfyNotificationProvider` (`notification/ntfy-provider.ts`), `WebhookNotificationProvider` (`notification/webhook-provider.ts`)
 - `AgentReflection` (`agent-reflection.ts`) — reflection extraction and persistence
 
 ### Heartbeat execution
@@ -750,7 +753,7 @@ Settings are split by scope.
 ### Global scope
 - File: `~/.fusion/settings.json`
 - Managed by `GlobalSettingsStore` (`packages/core/src/global-settings.ts`)
-- Examples: `themeMode`, `colorTheme`, default model/provider, notification preferences
+- Examples: `themeMode`, `colorTheme`, default model/provider, notification preferences (`ntfy*` legacy fields and `notificationProviders`)
 
 ### Project scope
 - Stored in per-project config (`config` table + compatibility file `.fusion/config.json`)

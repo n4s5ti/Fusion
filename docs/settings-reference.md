@@ -43,6 +43,7 @@ Defaults from `DEFAULT_GLOBAL_SETTINGS`; key scope from `GLOBAL_SETTINGS_KEYS`.
 | `ntfyBaseUrl` | `string` | `undefined` | Optional custom ntfy server base URL (must use `http://` or `https://`). If blank/unset, Fusion uses `https://ntfy.sh` for both runtime and test notifications. |
 | `ntfyEvents` | `("in-review" \| "merged" \| "failed" \| "awaiting-approval" \| "awaiting-user-review" \| "planning-awaiting-input" \| "gridlock")[]` | `["in-review","merged","failed","awaiting-approval","awaiting-user-review","planning-awaiting-input","gridlock"]` | Event types that trigger ntfy notifications. `planning-awaiting-input` fires when planning mode is waiting on user input. `gridlock` fires when all schedulable todo tasks are blocked. |
 | `ntfyDashboardHost` | `string` | `undefined` | Dashboard host used to build deep links in notifications. |
+| `notificationProviders` | `NotificationProviderConfig[]` | `[]` | Array of pluggable notification provider configurations. Each entry uses `{ id, name, enabled, config }` and is dispatched by provider ID (for example `ntfy` or `webhook`). |
 | `defaultProjectId` | `string` | `undefined` | Default project for multi-project CLI operations when `--project` is omitted. |
 | `setupComplete` | `boolean` | `undefined` | Tracks completion of first-run setup. |
 | `favoriteProviders` | `string[]` | `undefined` | Pinned providers shown first in model selectors. |
@@ -67,6 +68,39 @@ Defaults from `DEFAULT_GLOBAL_SETTINGS`; key scope from `GLOBAL_SETTINGS_KEYS`.
 | `settingsSyncConflictResolution` | `"last-write-wins" \| "always-ask" \| "keep-local" \| "keep-remote"` | `"last-write-wins"` | Conflict strategy for divergent synced settings. |
 | `dashboardCurrentNodeId` | `string` | `undefined` | Currently selected dashboard node ID. Restores the last-viewed node on fresh browser/PWA sessions. `undefined` means viewing the local node. |
 | `dashboardCurrentProjectIdByNode` | `Record<string, string>` | `undefined` | Map of node ID to last-selected project ID. Use key `"local"` for the local node. Persists project context across browser restarts and PWA sessions. |
+
+### Notification providers (pluggable)
+
+Fusion now supports a provider-list notification model via `notificationProviders` while keeping legacy flat ntfy/webhook settings intact.
+
+- **Recommended for new setups:** configure providers in `notificationProviders`.
+- **Backward compatible:** existing `ntfyEnabled`, `ntfyTopic`, `ntfyBaseUrl`, `ntfyEvents`, and `ntfyDashboardHost` still work unchanged.
+- This is additive/non-breaking; no migration is required for existing ntfy users.
+
+`notificationProviders` entry shape (`NotificationProviderConfig`):
+
+```ts
+{
+  id: string;
+  name: string;
+  enabled: boolean;
+  config: Record<string, unknown>;
+}
+```
+
+Built-in provider IDs:
+- `ntfy`
+- `webhook`
+
+#### Webhook provider config
+
+When `id` is `"webhook"`, the provider `config` supports:
+
+| Field | Type | Default | Notes |
+|---|---|---:|---|
+| `webhookUrl` | `string` | _required_ | Must be a valid `http://` or `https://` URL. |
+| `webhookFormat` | `"slack" \| "discord" \| "generic"` | `"generic"` | Invalid/omitted values fall back to `"generic"`. |
+| `events` | `string[]` | `[]` | Event filter list. Empty/omitted means all events are sent. |
 
 Disable daily update checks globally:
 

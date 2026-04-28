@@ -2998,13 +2998,21 @@ export function SettingsModal({
                   setForm((f) => ({ ...f, mergeConflictStrategy: e.target.value as "smart" | "ai-only" | "prefer-main" | "abort" }))
                 }
               >
-                <option value="smart">Smart — AI, then auto-resolve, then prefer task branch (default)</option>
-                <option value="ai-only">AI only — never silently pick a side</option>
-                <option value="prefer-main">Prefer main — fall back to keeping main's version</option>
-                <option value="abort">Abort — fail merge if AI can't resolve (manual review)</option>
+                <option value="smart">Smart, prefer task on fallback — AI → auto-resolve → -X theirs (default, original behavior)</option>
+                <option value="prefer-main">Smart, prefer main on fallback — AI → auto-resolve → -X ours (protects just-merged sibling work)</option>
+                <option value="ai-only">AI only — AI → auto-resolve → AI retry; never silently pick a side</option>
+                <option value="abort">Abort — one AI attempt; require manual resolution if it fails</option>
               </select>
               <small>
-                What to do on the final merge attempt when AI and auto-resolve haven't fully resolved the conflict. <strong>Smart</strong> matches the historical behavior — the task branch wins on hard conflicts, which is fast but can resurrect code an earlier sibling task deleted. <strong>Prefer main</strong> sides with main instead, protecting just-merged sibling work. <strong>AI only</strong> retries the AI agent rather than silently choosing a side. <strong>Abort</strong> requires manual resolution for any conflict the AI can't handle.
+                Every option starts with the same first two attempts: an AI agent resolves the conflict, then auto-resolve handles lock/generated/trivial files. They differ only in the <em>final fallback</em>:
+                {" "}
+                <strong>Smart, prefer task</strong> uses <code>-X theirs</code> so the task branch wins — fast, but can resurrect code an earlier sibling task deleted (the FN-2887 class of regression).
+                {" "}
+                <strong>Smart, prefer main</strong> uses <code>-X ours</code> so main wins instead — same speed, protects just-merged sibling work.
+                {" "}
+                <strong>AI only</strong> retries the AI agent rather than auto-picking a side.
+                {" "}
+                <strong>Abort</strong> stops after the first AI attempt and waits for a human.
               </small>
             </div>
             <div className="form-group">
