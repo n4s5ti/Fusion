@@ -8,10 +8,11 @@
 
 **Multi-node agent orchestrator** — tasks, agents, missions, git, files, and worktrees, with any model, local or cloud.
 
-[**runfusion.ai →**](https://runfusion.ai) · [Docs](./docs/README.md) · [GitHub](https://github.com/Runfusion/Fusion) · [npm](https://www.npmjs.com/package/@runfusion/fusion)
+[**runfusion.ai →**](https://runfusion.ai) · [Docs](./docs/README.md) · [GitHub](https://github.com/Runfusion/Fusion) · [npm](https://www.npmjs.com/package/@runfusion/fusion) · [Discord](https://discord.gg/ksrfuy7WYR)
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-3fb950.svg)](./LICENSE)
 [![npm](https://img.shields.io/npm/v/@runfusion/fusion.svg?color=58a6ff)](https://www.npmjs.com/package/@runfusion/fusion)
+[![Discord](https://img.shields.io/badge/Discord-join-5865F2?logo=discord&logoColor=white)](https://discord.gg/ksrfuy7WYR)
 ![Status](https://img.shields.io/badge/status-early%20preview-d29922.svg)
 ![Shipping](https://img.shields.io/badge/shipping-weekly-bc8cff.svg)
 
