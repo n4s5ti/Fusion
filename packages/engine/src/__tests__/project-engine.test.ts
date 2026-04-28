@@ -316,6 +316,143 @@ describe("ProjectEngine auto-summarize wiring", () => {
   });
 });
 
+describe("ProjectEngine memory dreams wiring", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    const mockStore = createMockStore(baseSettings);
+    mocks.currentStore = mockStore.store;
+  });
+
+  it("starts cron after memory dreams startup sync", async () => {
+    const engine = createEngine();
+
+    await engine.start();
+
+    const cronRunnerStartOrder = mocks.cronRunnerStart.mock.invocationCallOrder[0];
+    expect(mocks.syncMemoryDreamsAutomation).toHaveBeenCalledTimes(1);
+    expect(mocks.syncMemoryDreamsAutomation.mock.invocationCallOrder[0]).toBeLessThan(
+      cronRunnerStartOrder,
+    );
+
+    await engine.stop();
+  });
+
+  it("re-syncs memory dreams automation when memoryDreamsEnabled changes", async () => {
+    const mockStore = createMockStore(baseSettings);
+    mocks.currentStore = mockStore.store;
+    const engine = createEngine();
+
+    await engine.start();
+    mocks.syncMemoryDreamsAutomation.mockClear();
+
+    const previous = { ...baseSettings };
+    const next = {
+      ...previous,
+      memoryDreamsEnabled: true,
+    };
+
+    await mockStore.emitSettingsUpdated(next, previous);
+
+    expect(mocks.syncMemoryDreamsAutomation).toHaveBeenCalledTimes(1);
+    expect(mocks.syncMemoryDreamsAutomation).toHaveBeenCalledWith(expect.anything(), next);
+
+    await engine.stop();
+  });
+
+  it("re-syncs memory dreams automation when memoryDreamsSchedule changes", async () => {
+    const mockStore = createMockStore(baseSettings);
+    mocks.currentStore = mockStore.store;
+    const engine = createEngine();
+
+    await engine.start();
+    mocks.syncMemoryDreamsAutomation.mockClear();
+
+    const previous = { ...baseSettings };
+    const next = {
+      ...previous,
+      memoryDreamsSchedule: "0 */8 * * *",
+    };
+
+    await mockStore.emitSettingsUpdated(next, previous);
+
+    expect(mocks.syncMemoryDreamsAutomation).toHaveBeenCalledTimes(1);
+
+    await engine.stop();
+  });
+
+  it("does not re-sync memory dreams automation on unrelated settings changes", async () => {
+    const mockStore = createMockStore(baseSettings);
+    mocks.currentStore = mockStore.store;
+    const engine = createEngine();
+
+    await engine.start();
+    mocks.syncMemoryDreamsAutomation.mockClear();
+
+    const previous = { ...baseSettings };
+    const next = {
+      ...previous,
+      pollIntervalMs: 30_000,
+    };
+
+    await mockStore.emitSettingsUpdated(next, previous);
+
+    expect(mocks.syncMemoryDreamsAutomation).not.toHaveBeenCalled();
+
+    await engine.stop();
+  });
+
+  it("logs warning and continues startup when memory dreams startup sync fails", async () => {
+    const warnSpy = vi.spyOn(runtimeLog, "warn").mockImplementation(() => {});
+    mocks.syncMemoryDreamsAutomation.mockRejectedValueOnce(new Error("dream startup sync failed"));
+
+    const engine = createEngine();
+
+    await expect(engine.start()).resolves.toBeUndefined();
+
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining("Memory dreams automation startup sync failed"),
+    );
+    expect(engine.getAutomationSubsystemHealth()).toMatchObject({
+      status: "degraded",
+    });
+    expect(engine.getCronRunner()).toBeDefined();
+
+    await engine.stop();
+    warnSpy.mockRestore();
+  });
+
+  it("catches and logs memory dreams sync failures on settings changes", async () => {
+    const warnSpy = vi.spyOn(runtimeLog, "warn").mockImplementation(() => {});
+    const mockStore = createMockStore(baseSettings);
+    mocks.currentStore = mockStore.store;
+    const engine = createEngine();
+
+    await engine.start();
+    warnSpy.mockClear();
+    mocks.syncMemoryDreamsAutomation.mockRejectedValueOnce(new Error("dream settings sync failed"));
+
+    await expect(
+      mockStore.emitSettingsUpdated(
+        {
+          ...baseSettings,
+          memoryDreamsEnabled: true,
+        },
+        {
+          ...baseSettings,
+          memoryDreamsEnabled: false,
+        },
+      ),
+    ).resolves.toBeUndefined();
+
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining("Failed to sync memory maintenance automation"),
+    );
+
+    await engine.stop();
+    warnSpy.mockRestore();
+  });
+});
+
 describe("ProjectEngine remote tunnel manager wiring", () => {
   beforeEach(() => {
     vi.clearAllMocks();

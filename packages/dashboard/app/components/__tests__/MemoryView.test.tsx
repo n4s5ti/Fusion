@@ -202,7 +202,7 @@ describe("MemoryView", () => {
     expect(screen.getByRole("button", { name: "Dream Now" })).toBeInTheDocument();
   });
 
-  it("triggers dream processing and refreshes memory files", async () => {
+  it("clicking Dream Now triggers processing API once and refreshes memory files", async () => {
     const triggerDreamNow = vi.fn().mockResolvedValue({});
     const reloadMemoryFiles = vi.fn().mockResolvedValue(undefined);
     const addToast = vi.fn();
@@ -232,6 +232,52 @@ describe("MemoryView", () => {
     expect(addToast).toHaveBeenCalledWith("Dream processing completed", "success");
   });
 
+  it("shows error toast when Dream Now processing fails", async () => {
+    const triggerDreamNow = vi.fn().mockRejectedValue(new Error("dream failed"));
+    const addToast = vi.fn();
+    mockUseMemoryData.mockReturnValue(
+      createMemoryData({
+        triggerDreamNow,
+        memorySettings: {
+          memoryEnabled: true,
+          memoryAutoSummarizeEnabled: false,
+          memoryAutoSummarizeThresholdChars: 50000,
+          memoryAutoSummarizeSchedule: "0 3 * * *",
+          memoryDreamsEnabled: true,
+          memoryDreamsSchedule: "0 4 * * *",
+        },
+      }),
+    );
+
+    render(<MemoryView addToast={addToast} />);
+
+    await userEvent.click(screen.getByRole("button", { name: "Dream Now" }));
+
+    await waitFor(() => {
+      expect(addToast).toHaveBeenCalledWith("dream failed", "error");
+    });
+  });
+
+  it("shows Dreaming loading state while processing is running", () => {
+    mockUseMemoryData.mockReturnValue(
+      createMemoryData({
+        dreamRunning: true,
+        memorySettings: {
+          memoryEnabled: true,
+          memoryAutoSummarizeEnabled: false,
+          memoryAutoSummarizeThresholdChars: 50000,
+          memoryAutoSummarizeSchedule: "0 3 * * *",
+          memoryDreamsEnabled: true,
+          memoryDreamsSchedule: "0 4 * * *",
+        },
+      }),
+    );
+
+    render(<MemoryView addToast={vi.fn()} />);
+
+    const button = screen.getByRole("button", { name: /Dreaming…/i });
+    expect(button).toBeDisabled();
+  });
   it("hides Dream Now button when dreams are disabled", () => {
     render(<MemoryView addToast={vi.fn()} />);
 
