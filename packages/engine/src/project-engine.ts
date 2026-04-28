@@ -195,8 +195,28 @@ export class ProjectEngine {
     // Let the runtime's SelfHealingManager re-enqueue tasks directly into our
     // auto-merge queue when it clears a stale `merging` status, instead of
     // relying on the 15s polling sweep to eventually catch them.
+    //
+    // Critically: clear the in-memory `mergeActive` entry before re-enqueueing.
+    // A stale-merge recovery means the prior merge attempt is dead — but its
+    // `try/finally` may never have fired (e.g. an AI provider call is wedged
+    // mid-await), so the entry is still in `mergeActive` and would otherwise
+    // cause `internalEnqueueMerge` to silently no-op.
+    //
     // Tests substitute a minimal runtime mock that may not implement this hook.
-    this.runtime.setMergeEnqueuer?.((taskId) => this.internalEnqueueMerge(taskId));
+    this.runtime.setMergeEnqueuer?.((taskId) => {
+      // If the wedged attempt was the active one, abort its in-flight signal
+      // and dispose its session so subsequent code paths can release file
+      // handles / child processes promptly.
+      if (this.activeMergeTaskId === taskId) {
+        this.mergeAbortController?.abort();
+        this.mergeAbortController = null;
+        this.activeMergeSession?.dispose();
+        this.activeMergeSession = null;
+        this.activeMergeTaskId = null;
+      }
+      this.mergeActive.delete(taskId);
+      this.internalEnqueueMerge(taskId);
+    });
   }
 
   /**
