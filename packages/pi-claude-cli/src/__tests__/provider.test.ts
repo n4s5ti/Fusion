@@ -2,9 +2,9 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { EventEmitter } from "node:events";
 import { PassThrough } from "node:stream";
 
-// Mock cross-spawn with PassThrough streams for readline compatibility
-vi.mock("cross-spawn", () => ({
-  default: vi.fn(() => {
+// Mock child_process.spawn with PassThrough streams for readline compatibility
+vi.mock("node:child_process", () => ({
+  spawn: vi.fn(() => {
     const proc = new EventEmitter();
     const stdin = { write: vi.fn(), end: vi.fn() };
     const stdout = new PassThrough();
@@ -20,10 +20,6 @@ vi.mock("cross-spawn", () => ({
     (proc as any).pid = 99999;
     return proc;
   }),
-}));
-
-// Mock child_process.execSync for validateCliPresence/validateCliAuth
-vi.mock("node:child_process", () => ({
   execSync: vi.fn(() => Buffer.from("1.0.0")),
 }));
 
@@ -69,7 +65,7 @@ vi.mock("@mariozechner/pi-ai", () => ({
   calculateCost: vi.fn(),
 }));
 
-import spawn from "cross-spawn";
+import { spawn } from "node:child_process";
 import { streamViaCli } from "../provider";
 
 describe("provider registration (default export)", () => {

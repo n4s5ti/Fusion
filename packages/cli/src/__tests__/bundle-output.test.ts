@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeAll } from "vitest";
 import { readFileSync, existsSync, readdirSync } from "node:fs";
 import { join } from "node:path";
+import { pathToFileURL } from "node:url";
 import {
   buildCliWithRealDashboardAssets,
   bundlePath,
@@ -9,6 +10,7 @@ import {
   dashboardClientStubMarker,
   readClientIndexHtml,
 } from "./bundle-output-helpers";
+import { resolveClaudeCliExtensionFromModuleUrl } from "../commands/claude-cli-extension";
 
 const tsupConfigPath = join(cliRoot, "tsup.config.ts");
 
@@ -94,6 +96,41 @@ describe("CLI bundle output", () => {
     // Verify removeNodeProtocol: false is effective for other node: imports
     expect(content).toMatch(/from\s+["']node:fs["']/);
     expect(content).toMatch(/from\s+["']node:path["']/);
+  });
+
+  it("resolveClaudeCliExtension succeeds against the staged dist/ layout", () => {
+    const result = resolveClaudeCliExtensionFromModuleUrl(pathToFileURL(bundlePath).href);
+
+    expect(result.status).toBe("ok");
+    if (result.status === "ok") {
+      expect(result.path).toBe(join(cliRoot, "dist", "pi-claude-cli", "index.ts"));
+      expect(result.packageVersion).toMatch(/\d+\.\d+\.\d+/);
+    }
+  });
+
+  it("dist/pi-claude-cli/ is staged with correct files", () => {
+    const stagedRoot = join(cliRoot, "dist", "pi-claude-cli");
+
+    expect(existsSync(join(stagedRoot, "package.json"))).toBe(true);
+    expect(existsSync(join(stagedRoot, "index.ts"))).toBe(true);
+    expect(existsSync(join(stagedRoot, "src", "process-manager.ts"))).toBe(true);
+  });
+
+  it("pi-claude-cli source does not import cross-spawn", () => {
+    const processManagerSource = readFileSync(join(cliRoot, "dist", "pi-claude-cli", "src", "process-manager.ts"), "utf-8");
+
+    expect(processManagerSource).not.toMatch(/import\s+.*cross-spawn/);
+    expect(processManagerSource).toMatch(/import\s*\{[^}]*spawn[^}]*\}\s*from\s*["']node:child_process["']/);
+  });
+
+  it("pi-claude-cli package.json has no cross-spawn dependency", () => {
+    const packageJson = JSON.parse(
+      readFileSync(join(cliRoot, "dist", "pi-claude-cli", "package.json"), "utf-8"),
+    ) as {
+      dependencies?: Record<string, string>;
+    };
+
+    expect(packageJson.dependencies?.["cross-spawn"]).toBeUndefined();
   });
 
   it("runtime native assets are staged after build:exe", () => {

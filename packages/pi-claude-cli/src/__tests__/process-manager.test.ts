@@ -1,9 +1,9 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import type { ChildProcess } from "node:child_process";
 
-// Mock cross-spawn before importing process-manager
-vi.mock("cross-spawn", () => ({
-  default: vi.fn(() => {
+// Mock child_process.spawn before importing process-manager
+vi.mock("node:child_process", () => ({
+  spawn: vi.fn(() => {
     const EventEmitter = require("node:events");
     const proc = new EventEmitter();
     proc.stdin = { write: vi.fn(), end: vi.fn() };
@@ -16,10 +16,6 @@ vi.mock("cross-spawn", () => ({
     proc.pid = 12345;
     return proc;
   }),
-}));
-
-// Mock child_process.execSync for validation tests
-vi.mock("node:child_process", () => ({
   execSync: vi.fn(),
 }));
 
@@ -42,8 +38,7 @@ vi.mock("node:os", () => ({
   tmpdir: mocks.tmpdir,
 }));
 
-import spawn from "cross-spawn";
-import { execSync } from "node:child_process";
+import { spawn, execSync } from "node:child_process";
 import {
   spawnClaude,
   writeUserMessage,

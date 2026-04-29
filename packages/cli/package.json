@@ -40,6 +40,8 @@
   "scripts": {
     "dev": "tsx src/bin.ts",
     "prebuild": "node ../../scripts/sync-fusion-skill-tools.mjs",
+    "prepack": "node ./scripts/prepare-publish-manifest.mjs prepack",
+    "postpack": "node ./scripts/prepare-publish-manifest.mjs postpack",
     "build": "tsup",
     "build:exe": "bun run build.ts",
     "build:exe:all": "bun run build.ts --all",

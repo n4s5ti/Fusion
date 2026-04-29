@@ -49,13 +49,15 @@ export type ClaudeCliExtensionResolution =
  * module's location, and fall back to `require.resolve` for monorepo
  * dev/test runs where this file executes from `src/` rather than `dist/`.
  */
-export function resolveClaudeCliExtension(): ClaudeCliExtensionResolution {
+export function resolveClaudeCliExtensionFromModuleUrl(
+  moduleUrl: string,
+): ClaudeCliExtensionResolution {
   let pkgJsonPath: string | undefined;
 
   // Bundled lookup: when running from dist/, sibling dir dist/pi-claude-cli/
   // holds the staged extension. Walk up a few levels to also catch nested
   // layouts (e.g. dist/commands/foo.js) without hard-coding depth.
-  const here = dirname(fileURLToPath(import.meta.url));
+  const here = dirname(fileURLToPath(moduleUrl));
   for (const rel of ["pi-claude-cli", "../pi-claude-cli", "../../pi-claude-cli"]) {
     const candidate = resolve(here, rel, "package.json");
     if (existsSync(candidate)) {
@@ -111,6 +113,10 @@ export function resolveClaudeCliExtension(): ClaudeCliExtensionResolution {
     path: entryPath,
     packageVersion: pkgJson.version ?? "unknown",
   };
+}
+
+export function resolveClaudeCliExtension(): ClaudeCliExtensionResolution {
+  return resolveClaudeCliExtensionFromModuleUrl(import.meta.url);
 }
 
 /**

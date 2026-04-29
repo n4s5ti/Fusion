@@ -6,12 +6,10 @@
  * Also provides startup validation for CLI presence and authentication.
  */
 
-import spawn from "cross-spawn";
-import { execSync } from "node:child_process";
+import { spawn, execSync, type ChildProcess } from "node:child_process";
 import { writeFileSync, unlinkSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import type { ChildProcess } from "node:child_process";
 
 /**
  * Spawn a Claude CLI subprocess with all required flags for stream-json communication.
