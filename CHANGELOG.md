@@ -2,6 +2,74 @@
 
 User-facing release notes aggregated across all packages. This file is auto-synced from each `packages/*/CHANGELOG.md` by `scripts/release.mjs` — do not edit by hand.
 
+## 0.8.0
+
+### @fusion/dashboard
+
+#### Patch Changes
+
+- @fusion/core@0.8.0
+- @fusion/engine@0.8.0
+- @fusion-plugin-examples/hermes-runtime@0.2.2
+- @fusion-plugin-examples/openclaw-runtime@0.2.2
+- @fusion-plugin-examples/paperclip-runtime@0.2.2
+
+### @fusion/engine
+
+#### Patch Changes
+
+- @fusion/core@0.8.0
+- @fusion/pi-claude-cli@0.8.0
+
+### @fusion/plugin-sdk
+
+#### Patch Changes
+
+- @fusion/core@0.8.0
+
+### @runfusion/fusion
+
+#### Minor Changes
+
+- 58510e1: Add CLI support for multi-node routing: configure project default node (`fn settings set defaultNodeId`), unavailable-node policy (`fn settings set unavailableNodePolicy`), per-task node overrides (`fn task set-node`, `fn task clear-node`), and `--node` flag for `fn task create`.
+- 81c6f01: Add node routing policy enforcement: when a task is routed to a node that is offline or unhealthy, the project's `unavailableNodePolicy` setting controls whether execution is blocked (task stays in todo) or falls back to local execution. Supports `defaultNodeId` project setting for pinned default nodes and per-task `nodeId` overrides. Routing decisions are logged to task activity for visibility.
+- c9241d8: Add pluggable notification provider system with built-in ntfy and webhook support.
+- 22bac2d: Refactor merge conflict strategies into two `smart-*` flavors and change the default to "prefer main".
+
+  Both smart strategies now run a best-effort `git fetch` + fast-forward of local main from `origin` before the merge cascade — a freshly-pushed sibling commit no longer gets clobbered when the fallback resolves a conflict against a stale base. They differ only in the per-file final fallback:
+
+  - **`smart-prefer-main`** (new default): `-X ours` — main wins. Best when concurrent agents could regress just-merged sibling work.
+  - **`smart-prefer-branch`**: `-X theirs` — task branch wins. Equivalent to the previous `"smart"` behavior.
+
+  Legacy enum values are accepted for backwards compatibility and normalized at load time: `"smart"` → `"smart-prefer-branch"`, `"prefer-main"` → `"smart-prefer-main"`. Settings on disk continue to work without changes.
+
+#### Patch Changes
+
+- f19ecac: Add dedicated POST /api/memory/dream endpoint and triggerMemoryDreams() client helper for manual dream processing.
+- cc9181d: Recover automatically from SQLite FTS5 corruption during task upserts by rebuilding the `tasks_fts` index and retrying once, and add FTS5 integrity checks to database health monitoring.
+- 5cc7597: Fix npm bundle reliability for the published CLI package by removing the vendored pi-claude-cli `cross-spawn` runtime dependency, validating bundled pi-claude-cli resolution from `dist/`, and preventing private `@fusion/*` workspace dev dependencies from leaking into the packed manifest.
+- 2029968: Fix project-level model overrides so they take precedence over the default model fallback consistently across dashboard and engine AI flows.
+- cd03c6a: Add runfusion.ai links to dashboard update-available notices in the banner and settings modal.
+- 7227b87: Add a retry button to failed task error boxes on dashboard task cards so users can retry directly from the card without opening task details.
+- 198f85c: Fix dashboard onboarding: the "Welcome to Fusion" setup wizard is now scrollable on short viewports (older laptops / browsers without `dvh` support), and the model-onboarding modal reliably opens after the wizard closes on a fresh install instead of racing it or being suppressed.
+
+### runfusion.ai
+
+#### Patch Changes
+
+- Updated dependencies [f19ecac]
+- Updated dependencies [58510e1]
+- Updated dependencies [cc9181d]
+- Updated dependencies [5cc7597]
+- Updated dependencies [2029968]
+- Updated dependencies [cd03c6a]
+- Updated dependencies [7227b87]
+- Updated dependencies [81c6f01]
+- Updated dependencies [c9241d8]
+- Updated dependencies [198f85c]
+- Updated dependencies [22bac2d]
+  - @runfusion/fusion@0.8.0
+
 ## 0.7.1
 
 ### @fusion/core
@@ -675,6 +743,16 @@ User-facing release notes aggregated across all packages. This file is auto-sync
   - @runfusion/fusion@0.4.0
 
 ## Unreleased
+
+### @fusion/pi-claude-cli
+
+#### Patch Changes
+
+- Add missing Anthropic model metadata entries to provider registration: `claude-sonnet-4-6`, `claude-sonnet-4-5`, and `claude-haiku-4-5` (alongside existing `claude-opus-4-7`) so they appear in the model picker even before upstream catalog updates.
+- Improve subprocess diagnostics in `streamViaCli` by:
+  - logging Claude stderr on close at warn level even when exit code is 0,
+  - logging debug spawn correlation details (PID + effective args) when `PI_CLAUDE_CLI_DEBUG=1`,
+  - warning when a subprocess closes without producing any content events.
 
 ### @runfusion/fusion
 

@@ -1,5 +1,22 @@
 # runfusion.ai
 
+## 0.8.0
+
+### Patch Changes
+
+- Updated dependencies [f19ecac]
+- Updated dependencies [58510e1]
+- Updated dependencies [cc9181d]
+- Updated dependencies [5cc7597]
+- Updated dependencies [2029968]
+- Updated dependencies [cd03c6a]
+- Updated dependencies [7227b87]
+- Updated dependencies [81c6f01]
+- Updated dependencies [c9241d8]
+- Updated dependencies [198f85c]
+- Updated dependencies [22bac2d]
+  - @runfusion/fusion@0.8.0
+
 ## 0.7.1
 
 ### Patch Changes
