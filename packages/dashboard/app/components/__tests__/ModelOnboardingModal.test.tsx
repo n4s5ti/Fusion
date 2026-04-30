@@ -4051,8 +4051,8 @@ describe("ModelOnboardingModal progressive disclosure", () => {
   });
 });
 
-describe("ModelOnboardingModal custom provider disclosure", () => {
-  it("renders Add custom provider disclosure collapsed by default", async () => {
+describe("Custom providers disclosure", () => {
+  it("shows add custom provider control on ai-setup and keeps form collapsed initially", async () => {
     render(
       <ModelOnboardingModal
         isOpen
@@ -4062,12 +4062,14 @@ describe("ModelOnboardingModal custom provider disclosure", () => {
       />,
     );
 
-    fireEvent.click(await screen.findByRole("button", { name: /Advanced provider settings/i }));
+    expect(await screen.findByText("Set Up AI", { exact: false })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /Advanced provider settings/i }));
+
     expect(await screen.findByText("Add custom provider")).toBeInTheDocument();
     expect(screen.queryByTestId("custom-providers-section")).toBeNull();
   });
 
-  it("expands Add custom provider disclosure on click", async () => {
+  it("expands custom provider form when add custom provider is clicked", async () => {
     render(
       <ModelOnboardingModal
         isOpen
@@ -4078,11 +4080,12 @@ describe("ModelOnboardingModal custom provider disclosure", () => {
     );
 
     fireEvent.click(await screen.findByRole("button", { name: /Advanced provider settings/i }));
-    fireEvent.click(await screen.findByText("Add custom provider"));
+    fireEvent.click(await screen.findByRole("button", { name: /Add custom provider/i }));
+
     expect(await screen.findByTestId("custom-providers-section")).toBeInTheDocument();
   });
 
-  it("refreshes models when custom provider changes", async () => {
+  it("refreshes auth status and models after custom provider save", async () => {
     render(
       <ModelOnboardingModal
         isOpen
@@ -4093,13 +4096,15 @@ describe("ModelOnboardingModal custom provider disclosure", () => {
     );
 
     fireEvent.click(await screen.findByRole("button", { name: /Advanced provider settings/i }));
-    fireEvent.click(await screen.findByText("Add custom provider"));
+    fireEvent.click(await screen.findByRole("button", { name: /Add custom provider/i }));
+
     const modelCallsBefore = mockFetchModels.mock.calls.length;
 
     fireEvent.click(await screen.findByTestId("custom-providers-section"));
 
     await waitFor(() => {
       expect(mockCreateCustomProvider).toHaveBeenCalled();
+      expect(mockFetchCustomProviders).toHaveBeenCalled();
       expect(mockFetchModels.mock.calls.length).toBeGreaterThan(modelCallsBefore);
     });
   });
