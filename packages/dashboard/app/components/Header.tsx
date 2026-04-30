@@ -219,7 +219,7 @@ export interface HeaderProps {
   /** Whether the current view is a remote node */
   isRemote?: boolean;
   /** Experimental feature flags controlling visibility of nav items. */
-  experimentalFeatures?: { insights?: boolean; roadmap?: boolean; memoryView?: boolean; devServer?: boolean; devServerView?: boolean; todoView?: boolean };
+  experimentalFeatures?: { insights?: boolean; roadmap?: boolean; memoryView?: boolean; devServer?: boolean; devServerView?: boolean; todoView?: boolean; researchView?: boolean };
 }
 
 export function Header({
@@ -328,6 +328,7 @@ export function Header({
 
   const hasViewOverflowItems = useMemo(() => {
     return !!(
+      experimentalFeatures?.researchView ||
       experimentalFeatures?.todoView ||
       experimentalFeatures?.insights ||
       experimentalFeatures?.roadmap ||
@@ -1127,18 +1128,20 @@ export function Header({
                     role="menu"
                     aria-label="More views"
                   >
-                    <button
-                      className={`view-toggle-overflow-item${view === "research" ? " active" : ""}`}
-                      onClick={() => {
-                        onChangeView("research");
-                        setIsViewOverflowOpen(false);
-                      }}
-                      role="menuitem"
-                      data-testid="view-overflow-research"
-                    >
-                      <Search size={14} />
-                      <span>Research</span>
-                    </button>
+                    {experimentalFeatures?.researchView && (
+                      <button
+                        className={`view-toggle-overflow-item${view === "research" ? " active" : ""}`}
+                        onClick={() => {
+                          onChangeView("research");
+                          setIsViewOverflowOpen(false);
+                        }}
+                        role="menuitem"
+                        data-testid="view-overflow-research"
+                      >
+                        <Search size={14} />
+                        <span>Research</span>
+                      </button>
+                    )}
                     {experimentalFeatures?.insights && (
                       <button
                         className={`view-toggle-overflow-item${view === "insights" ? " active" : ""}`}

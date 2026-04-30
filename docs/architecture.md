@@ -421,6 +421,7 @@ Key server capabilities:
   - Note: this **hyphenated `dev-server-*` family is the canonical runtime owner** today; see `docs/dev-server-module-boundary-audit.md` for the FN-2212 boundary/consolidation audit covering parallel `devserver-*` modules.
 - Plugin management routes (`plugin-routes.ts`)
 - Insights routes (`insights-routes.ts`)
+- Research routes (`research-routes.ts`) — `/api/research` surface for runs, details, cancel/retry, exports, create-task, and attach-task actions; supports graceful degradation envelopes via availability payloads when capabilities are unavailable
 - Roadmap routes (`roadmap-routes.ts`)
 - Project-scoped store reuse via `project-store-resolver.ts`
 - Rate limiting (`rate-limit.ts`)
@@ -437,7 +438,7 @@ Key server capabilities:
 
 ### Real-time channels
 - **SSE**: `/api/events` (`sse.ts`)
-  - Emits `task:*`, mission events, AI session updates, and automation schedule events (`schedule:created`, `schedule:updated`, `schedule:deleted`, `schedule:run`)
+  - Emits `task:*`, mission events, AI session updates, automation schedule events (`schedule:created`, `schedule:updated`, `schedule:deleted`, `schedule:run`), and research run lifecycle events (`research:run:created`, `research:run:updated`, `research:run:completed`, `research:run:failed`, `research:run:cancelled`) when available
   - Project-scoped: resolves project context from query param or engine manager
 - **Chat streaming**: `/api/chat/sessions/:id/messages` (`routes.ts` + `chat.ts`)
   - Streams assistant responses as SSE events for chat sessions
@@ -479,8 +480,8 @@ The dashboard's CSS is split between a consolidated global stylesheet and modula
   - Component-specific CSS rules live in the component's `.css` file, not in the root stylesheet
 
 **Lazy-loaded views** (bundle size optimization):
-The following 14 views are lazy-loaded via `React.lazy()` with `<Suspense fallback={null}>`:
-- `AgentsView`, `RoadmapsView`, `TodoView`, `NodesView`, `ChatView`, `MemoryView`
+The following 15 views are lazy-loaded via `React.lazy()` with `<Suspense fallback={null}>`:
+- `AgentsView`, `RoadmapsView`, `TodoView`, `NodesView`, `ChatView`, `MemoryView`, `ResearchView`
 - `DevServerView`, `InsightsView`, `DocumentsView`, `SkillsView`
 - `SetupWizardModal`, `PluginManager`, `PiExtensionsManager`, `AgentDetailView
 

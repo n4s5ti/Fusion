@@ -105,6 +105,27 @@ Documents view supports toggling between raw text and formatted markdown when vi
 
 The toggle button is accessible with `aria-pressed` for screen readers. Toggle state is scoped per-document, so switching between documents resets the view to raw mode.
 
+## Research View
+
+Research view is a standalone dashboard surface for creating and managing research runs.
+
+> Available when `experimentalFeatures.researchView` is enabled.
+
+Features:
+
+- Create-run form with required query text and selectable provider options
+- Searchable run history list with project-scoped state
+- Selected-run reader with summary, citations, findings, and run event history
+- Run lifecycle controls: cancel, retry, and refresh
+- Export actions for supported formats (`markdown`, `json`, `html` as advertised by backend availability)
+- Task-facing actions to create a new task from findings or attach findings to an existing task
+- Graceful unavailable/setup messaging when research backend capability is disabled or not configured
+
+Navigation:
+- Desktop: **Header → More views** overflow menu
+- Mobile: **More** sheet in `MobileNavBar`
+- Research is intentionally not shown in the primary board/list/agents/missions/chat toggle row
+
 ## Memory View
 
 Memory view provides a multi-file editor for project and daily memory files.

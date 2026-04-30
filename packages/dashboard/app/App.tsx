@@ -371,6 +371,7 @@ function AppInner() {
 
   const skillsEnabled = experimentalFeatures.skillsView === true;
   const nodesEnabled = experimentalFeatures.nodesView === true;
+  const researchEnabled = experimentalFeatures.researchView === true;
   const agentsEnabled = true;
 
   // Redirect to board if feature-gated views are disabled.
@@ -397,7 +398,10 @@ function AppInner() {
     if (taskView === "todos" && !todosEnabled) {
       handleChangeTaskView("board");
     }
-  }, [taskView, settingsLoaded, skillsEnabled, insightsEnabled, roadmapEnabled, handleChangeTaskView, agentsEnabled, memoryEnabled, devServerEnabled, todosEnabled]);
+    if (taskView === "research" && !researchEnabled) {
+      handleChangeTaskView("board");
+    }
+  }, [taskView, settingsLoaded, skillsEnabled, insightsEnabled, roadmapEnabled, handleChangeTaskView, agentsEnabled, memoryEnabled, devServerEnabled, todosEnabled, researchEnabled]);
 
   // Auto-close nodes overlay if feature flag is toggled off while overlay is open
   useEffect(() => {
@@ -721,6 +725,9 @@ function AppInner() {
     }
 
     if (taskView === "research") {
+      if (!settingsLoaded || !researchEnabled) {
+        return null;
+      }
       return (
         <PageErrorBoundary>
           <Suspense fallback={null}>
@@ -911,6 +918,7 @@ function AppInner() {
           devServer: devServerEnabled,
           devServerView: devServerEnabled,
           todoView: todosEnabled,
+          researchView: researchEnabled,
         }}
       />
       {viewMode === "project" && currentProject && !nodesOpen && taskView !== "missions" && !modalManager.isPlanningOpen && (
@@ -997,6 +1005,7 @@ function AppInner() {
           devServer: devServerEnabled,
           devServerView: devServerEnabled,
           todoView: todosEnabled,
+          researchView: researchEnabled,
         }}
       />
       {viewMode === "project" && currentProject && taskView !== "chat" && taskView !== "mailbox" && taskView !== "insights" && taskView !== "devserver" && taskView !== "dev-server" && (

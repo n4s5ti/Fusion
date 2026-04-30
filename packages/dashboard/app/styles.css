@@ -92,6 +92,10 @@ html {
   animation: status-dot-pulse var(--transition-slow) ease-in-out infinite;
 }
 
+.status-dot--pending {
+  background: var(--color-warning);
+}
+
 @keyframes status-dot-pulse {
   0%,
   100% {

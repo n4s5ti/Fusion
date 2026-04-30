@@ -3,14 +3,24 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { Header } from "../Header";
 import { ResearchView } from "../ResearchView";
 
-const mockListResearchRuns = vi.fn();
-const mockGetResearchStats = vi.fn();
+const mockUseResearch = vi.fn();
+
+vi.mock("../../hooks/useResearch", () => ({
+  useResearch: (...args: unknown[]) => mockUseResearch(...args),
+}));
 
 vi.mock("../../api", () => ({
   fetchScripts: vi.fn().mockResolvedValue({}),
-  listResearchRuns: (...args: unknown[]) => mockListResearchRuns(...args),
-  getResearchStats: (...args: unknown[]) => mockGetResearchStats(...args),
 }));
+
+vi.mock("lucide-react", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("lucide-react")>();
+  return {
+    ...actual,
+    Search: () => null,
+    Loader2: ({ className }: { className?: string }) => <span data-testid="loader-icon" className={className}>Loader</span>,
+  };
+});
 
 function mockMatchMediaDesktop() {
   Object.defineProperty(window, "matchMedia", {
@@ -41,131 +51,120 @@ describe("Research navigation", () => {
         onToggleEnginePause={vi.fn()}
         view="board"
         onChangeView={onChangeView}
+        experimentalFeatures={{ researchView: true }}
       />,
     );
 
     fireEvent.click(screen.getByTestId("view-toggle-overflow-trigger"));
-
-    await waitFor(() => {
-      expect(screen.getByTestId("view-overflow-research")).toBeInTheDocument();
-    });
-
+    await waitFor(() => expect(screen.getByTestId("view-overflow-research")).toBeInTheDocument());
     fireEvent.click(screen.getByTestId("view-overflow-research"));
     expect(onChangeView).toHaveBeenCalledWith("research");
   });
 });
 
 describe("ResearchView", () => {
+  const baseHookValue = {
+    runs: [],
+    selectedRun: null,
+    selectedRunId: null,
+    setSelectedRunId: vi.fn(),
+    availability: { available: true, supportedProviders: ["web-search"], supportedExportFormats: ["markdown", "json", "html"] },
+    loading: false,
+    error: null,
+    searchQuery: "",
+    setSearchQuery: vi.fn(),
+    createRun: vi.fn(),
+    cancelRun: vi.fn().mockResolvedValue({}),
+    retryRun: vi.fn().mockResolvedValue({}),
+    exportRun: vi.fn().mockResolvedValue({ filename: "run.md", content: "# test", format: "markdown" }),
+    createTaskFromRun: vi.fn().mockResolvedValue({}),
+    attachRunToTask: vi.fn().mockResolvedValue({}),
+    statusCounts: { pending: 0, running: 0, completed: 0, failed: 0, cancelled: 0 },
+    refresh: vi.fn(),
+  };
+
   beforeEach(() => {
     vi.clearAllMocks();
+    mockUseResearch.mockReturnValue(baseHookValue);
   });
 
-  it("renders empty state", async () => {
-    mockListResearchRuns.mockResolvedValue({ runs: [] });
-    mockGetResearchStats.mockResolvedValue({
-      total: 0,
-      byStatus: { pending: 0, running: 0, completed: 0, failed: 0, cancelled: 0 },
+  it("renders empty state", () => {
+    render(<ResearchView projectId="p1" />);
+    expect(screen.getByTestId("research-state-empty")).toBeInTheDocument();
+  });
+
+  it("renders selected run details", () => {
+    mockUseResearch.mockReturnValue({
+      ...baseHookValue,
+      runs: [{ id: "RR-1", title: "t", query: "q", status: "running" }],
+      selectedRun: { id: "RR-1", title: "t", query: "q", status: "running", events: [], results: { summary: "Summary", findings: [], citations: [] } },
+      selectedRunId: "RR-1",
+      statusCounts: { pending: 0, running: 1, completed: 0, failed: 0, cancelled: 0 },
+    });
+
+    render(<ResearchView projectId="p1" />);
+    expect(screen.getByTestId("research-state-results")).toHaveTextContent("Summary");
+  });
+
+  it("triggers lifecycle/task/export actions", async () => {
+    const cancelRun = vi.fn().mockResolvedValue({});
+    const retryRun = vi.fn().mockResolvedValue({});
+    const createTaskFromRun = vi.fn().mockResolvedValue({});
+    const attachRunToTask = vi.fn().mockResolvedValue({});
+    const exportRun = vi.fn().mockResolvedValue({ filename: "run.md", content: "# test", format: "markdown" });
+
+    mockUseResearch.mockReturnValue({
+      ...baseHookValue,
+      runs: [{ id: "RR-1", title: "t", query: "q", status: "pending" }],
+      selectedRun: { id: "RR-1", title: "t", query: "q", status: "pending", events: [{ id: "E-1", message: "queued" }], results: { summary: "Summary", findings: [], citations: [] } },
+      selectedRunId: "RR-1",
+      cancelRun,
+      retryRun,
+      createTaskFromRun,
+      attachRunToTask,
+      exportRun,
     });
 
     render(<ResearchView projectId="p1" />);
 
+    fireEvent.click(screen.getByText("Cancel"));
+    fireEvent.click(screen.getByText("Retry"));
+    fireEvent.click(screen.getByText("Create Task"));
+    fireEvent.change(screen.getByPlaceholderText("Task ID"), { target: { value: "FN-1" } });
+    fireEvent.click(screen.getByText("Attach to Task"));
+    fireEvent.click(screen.getByText("Export MD"));
+
     await waitFor(() => {
-      expect(screen.getByTestId("research-state-empty")).toBeInTheDocument();
+      expect(cancelRun).toHaveBeenCalled();
+      expect(retryRun).toHaveBeenCalled();
+      expect(createTaskFromRun).toHaveBeenCalled();
+      expect(attachRunToTask).toHaveBeenCalled();
+      expect(exportRun).toHaveBeenCalled();
     });
   });
 
-  it("renders loading and then running/results states", async () => {
-    mockListResearchRuns.mockResolvedValue({
-      runs: [
-        {
-          id: "RR-1",
-          query: "evaluate release automation",
-          topic: "Release automation",
-          status: "running",
-          providerConfig: {},
-          sources: [],
-          events: [],
-          results: { summary: "Initial synthesis complete", findings: [], citations: [], synthesizedOutput: "" },
-          error: null,
-          tokenUsage: null,
-          tags: [],
-          metadata: null,
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-          startedAt: null,
-          completedAt: null,
-          cancelledAt: null,
-        },
-      ],
-    });
-    mockGetResearchStats.mockResolvedValue({
-      total: 1,
-      byStatus: { pending: 0, running: 1, completed: 0, failed: 0, cancelled: 0 },
-    });
-
+  it("renders unavailable state without interactive workflow controls", () => {
+    mockUseResearch.mockReturnValue({ ...baseHookValue, availability: { available: false, reason: "disabled" } });
     render(<ResearchView projectId="p1" />);
-    expect(screen.getByTestId("research-state-loading")).toBeInTheDocument();
-
-    await waitFor(() => {
-      expect(screen.getByTestId("research-state-running")).toBeInTheDocument();
-      expect(screen.getByTestId("research-state-results")).toBeInTheDocument();
-    });
+    expect(screen.getByTestId("research-state-unavailable")).toBeInTheDocument();
+    expect(screen.queryByLabelText("Query")).not.toBeInTheDocument();
+    expect(screen.queryByText("Create Run")).not.toBeInTheDocument();
   });
 
-  it("uses failure badge treatment for failed runs", async () => {
-    mockListResearchRuns.mockResolvedValue({
-      runs: [
-        {
-          id: "RR-2",
-          query: "evaluate failed orchestration",
-          topic: "Failure case",
-          status: "failed",
-          providerConfig: {},
-          sources: [],
-          events: [],
-          results: null,
-          error: "provider timeout",
-          tokenUsage: null,
-          tags: [],
-          metadata: null,
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-          startedAt: null,
-          completedAt: null,
-          cancelledAt: null,
-        },
-      ],
+  it("renders human-readable provider labels", () => {
+    mockUseResearch.mockReturnValue({
+      ...baseHookValue,
+      availability: { available: true, supportedProviders: ["web-search", "page-fetch", "llm-synthesis"] },
     });
-    mockGetResearchStats.mockResolvedValue({
-      total: 1,
-      byStatus: { pending: 0, running: 0, completed: 0, failed: 1, cancelled: 0 },
-    });
-
     render(<ResearchView projectId="p1" />);
-
-    await waitFor(() => {
-      expect(screen.getByText("Failed")).toHaveClass("failed");
-      expect(screen.getByText("Failed")).toHaveClass("card-status-badge");
-    });
-  });
-
-  it("renders error state when fetch fails", async () => {
-    mockListResearchRuns.mockRejectedValue(new Error("boom"));
-    mockGetResearchStats.mockResolvedValue({
-      total: 0,
-      byStatus: { pending: 0, running: 0, completed: 0, failed: 0, cancelled: 0 },
-    });
-
-    render(<ResearchView projectId="p1" />);
-
-    await waitFor(() => {
-      expect(screen.getByTestId("research-state-error")).toBeInTheDocument();
-    });
+    expect(screen.getByText("Web Search")).toBeInTheDocument();
+    expect(screen.getByText("Page Fetch")).toBeInTheDocument();
+    expect(screen.getByText("LLM Synthesis")).toBeInTheDocument();
   });
 
   it("includes mobile layout media rule", async () => {
     const css = await import("../ResearchView.css?inline");
     expect(css.default).toContain("@media (max-width: 768px)");
-    expect(css.default).toContain(".research-view__stats");
+    expect(css.default).toContain(".research-view__layout");
   });
 });

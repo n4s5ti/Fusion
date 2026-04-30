@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
-import type { ResearchRun, ResearchRunStatus } from "@fusion/core";
-import { getResearchStats, listResearchRuns } from "../api";
+import { useMemo, useState } from "react";
+import { Loader2, Search } from "lucide-react";
+import { useResearch } from "../hooks/useResearch";
+import type { ResearchProviderOption } from "../research-types";
 import "./ResearchView.css";
 
 interface ResearchViewProps {
@@ -8,148 +9,266 @@ interface ResearchViewProps {
   addToast?: (message: string, type?: "success" | "error" | "info") => void;
 }
 
-interface ResearchStats {
-  total: number;
-  byStatus: Record<ResearchRunStatus, number>;
-}
+const DEFAULT_PROVIDERS: ResearchProviderOption[] = ["web-search", "page-fetch", "github", "local-docs", "llm-synthesis"];
 
-const STATUS_LABELS: Record<ResearchRunStatus, string> = {
-  pending: "Pending",
-  running: "Running",
-  completed: "Completed",
-  failed: "Failed",
-  cancelled: "Cancelled",
+const PROVIDER_LABELS: Record<ResearchProviderOption, string> = {
+  "web-search": "Web Search",
+  "page-fetch": "Page Fetch",
+  github: "GitHub",
+  "local-docs": "Local Docs",
+  "llm-synthesis": "LLM Synthesis",
 };
 
 export function ResearchView({ projectId, addToast }: ResearchViewProps) {
-  const [runs, setRuns] = useState<ResearchRun[]>([]);
-  const [stats, setStats] = useState<ResearchStats | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const {
+    runs,
+    selectedRun,
+    selectedRunId,
+    setSelectedRunId,
+    availability,
+    loading,
+    error,
+    searchQuery,
+    setSearchQuery,
+    createRun,
+    cancelRun,
+    retryRun,
+    exportRun,
+    createTaskFromRun,
+    attachRunToTask,
+    statusCounts,
+    refresh,
+  } = useResearch({ projectId });
+  const [query, setQuery] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [selectedProviders, setSelectedProviders] = useState<ResearchProviderOption[]>(["web-search", "llm-synthesis"]);
+  const [taskIdToAttach, setTaskIdToAttach] = useState("");
+  const [actionLoading, setActionLoading] = useState<string | null>(null);
 
-  const load = useCallback(async () => {
-    setIsLoading(true);
-    setError(null);
+  const providerOptions = availability.supportedProviders ?? DEFAULT_PROVIDERS;
+
+  const statusLabel = useMemo(() => {
+    if (!selectedRun) return "No run selected";
+    return selectedRun.status;
+  }, [selectedRun]);
+
+  const statusDotClass = useMemo(() => {
+    if (!selectedRun) return "status-dot";
+    if (selectedRun.status === "pending") return "status-dot status-dot--pending";
+    if (selectedRun.status === "running") return "status-dot status-dot--connecting";
+    if (selectedRun.status === "completed") return "status-dot status-dot--online";
+    if (selectedRun.status === "failed" || selectedRun.status === "cancelled") return "status-dot status-dot--error";
+    return "status-dot";
+  }, [selectedRun]);
+
+  const supportedExportFormats = availability.supportedExportFormats ?? ["markdown", "json", "html"];
+
+  const runAction = async (key: string, action: () => Promise<unknown>, successMessage: string) => {
+    setActionLoading(key);
     try {
-      const [runsResponse, statsResponse] = await Promise.all([
-        listResearchRuns({ limit: 50 }, projectId),
-        getResearchStats(projectId),
-      ]);
-      setRuns(runsResponse.runs);
-      setStats(statsResponse);
+      await action();
+      addToast?.(successMessage, "success");
+      await refresh();
     } catch (err) {
-      const message = err instanceof Error ? err.message : "Failed to load research runs";
-      setError(message);
-      addToast?.(message, "error");
+      addToast?.(err instanceof Error ? err.message : "Action failed", "error");
     } finally {
-      setIsLoading(false);
+      setActionLoading(null);
     }
-  }, [projectId, addToast]);
+  };
 
-  useEffect(() => {
-    void load();
-  }, [load]);
+  const handleExport = async (format: "markdown" | "json" | "html") => {
+    if (!selectedRun) return;
+    setActionLoading(`export-${format}`);
+    try {
+      const payload = await exportRun(selectedRun.id, format);
+      const blob = new Blob([payload.content], { type: "text/plain;charset=utf-8" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = payload.filename;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+      addToast?.(`Exported ${payload.filename}`, "success");
+    } catch (err) {
+      addToast?.(err instanceof Error ? err.message : "Export failed", "error");
+    } finally {
+      setActionLoading(null);
+    }
+  };
 
-  const hasResults = useMemo(
-    () => runs.some((run) => run.status === "completed" && run.results?.summary),
-    [runs],
-  );
+  const handleCreateRun = async () => {
+    if (!query.trim()) return;
+    setSubmitting(true);
+    try {
+      const response = await createRun({ query: query.trim(), providers: selectedProviders });
+      setSelectedRunId(response.run.id);
+      setQuery("");
+      addToast?.("Research run created", "success");
+      await refresh();
+    } catch (err) {
+      addToast?.(err instanceof Error ? err.message : "Failed to create run", "error");
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
   return (
     <section className="research-view" aria-label="Research view">
       <header className="research-view__header">
         <div>
           <h2 className="research-view__title">Research</h2>
-          <p className="research-view__subtitle">Track synthesis runs, source collection, and export artifacts.</p>
+          <p className="research-view__subtitle">Create and track research runs with cited findings.</p>
         </div>
-        <button className="btn" type="button" onClick={() => void load()}>
+        <button className="btn" type="button" onClick={() => void refresh()}>
           Refresh
         </button>
       </header>
 
-      <div className="research-view__content">
-        {isLoading && (
-          <div className="research-view__state card" data-testid="research-state-loading">
-            Loading research runs…
-          </div>
-        )}
-
-        {!isLoading && error && (
-          <div className="research-view__state research-view__state--error card" data-testid="research-state-error">
-            <p>{error}</p>
-            <button className="btn btn-danger" type="button" onClick={() => void load()}>
-              Retry
+      {!availability.available ? (
+        <div className="research-view__state research-view__state--error card" data-testid="research-state-unavailable">
+          <p>{availability.reason ?? "Research is unavailable for this project."}</p>
+          {availability.setupInstructions && <p>{availability.setupInstructions}</p>}
+        </div>
+      ) : (
+      <div className="research-view__layout">
+        <aside className="research-view__sidebar card">
+          <div className="research-view__form">
+            <div className="form-group">
+              <label htmlFor="research-query">Query</label>
+              <textarea id="research-query" className="input research-view__textarea" value={query} onChange={(event) => setQuery(event.target.value)} />
+            </div>
+            <div className="form-group">
+              <label>Providers</label>
+              <div className="research-view__providers">
+                {providerOptions.map((provider) => (
+                  <label key={provider} className="checkbox-label">
+                    <input
+                      type="checkbox"
+                      checked={selectedProviders.includes(provider)}
+                      onChange={() => {
+                        setSelectedProviders((current) =>
+                          current.includes(provider) ? current.filter((entry) => entry !== provider) : [...current, provider],
+                        );
+                      }}
+                    />
+                    <span>{PROVIDER_LABELS[provider] ?? provider}</span>
+                  </label>
+                ))}
+              </div>
+            </div>
+            <button className="btn btn-primary" type="button" disabled={!query.trim() || submitting} onClick={() => void handleCreateRun()}>
+              {submitting ? <Loader2 className="animate-spin" size={14} /> : null}
+              Create Run
             </button>
           </div>
-        )}
 
-        {!isLoading && !error && runs.length === 0 && (
-          <div className="research-view__state card" data-testid="research-state-empty">
-            <p className="research-view__state-title">No research runs yet</p>
-            <p className="research-view__state-copy">
-              Connect a research provider to begin collecting sources and generating synthesis reports. New runs can be
-              started through the API today and will appear here automatically.
-            </p>
+          <div className="research-view__history-header form-group">
+            <label htmlFor="research-run-search">Search</label>
+            <div className="research-view__history-search-row">
+              <Search size={14} />
+              <input
+                id="research-run-search"
+                className="input"
+                placeholder="Search runs"
+                value={searchQuery}
+                onChange={(event) => setSearchQuery(event.target.value)}
+              />
+            </div>
           </div>
-        )}
+          <div className="research-view__history" data-testid="research-state-running">
+            {runs.map((run) => (
+              <button key={run.id} className={`research-view__history-item${selectedRunId === run.id ? " research-view__history-item--active" : ""}`} onClick={() => setSelectedRunId(run.id)}>
+                <span className="card-id">{run.id}</span>
+                <span>{run.title}</span>
+              </button>
+            ))}
+          </div>
+        </aside>
 
-        {!isLoading && !error && runs.length > 0 && (
-          <>
-            <div className="research-view__stats" data-testid="research-state-running">
-              <div className="card research-view__stat-card">
-                <div className="research-view__stat-label">Total Runs</div>
-                <div className="research-view__stat-value">{stats?.total ?? runs.length}</div>
+        <div className="research-view__reader card">
+          {loading && <p data-testid="research-state-loading">Loading research runs…</p>}
+          {!loading && error && <p data-testid="research-state-error">{error}</p>}
+          {!loading && !error && runs.length === 0 && <p data-testid="research-state-empty">No research runs yet</p>}
+          {selectedRun && (
+            <div>
+              <div className="research-view__status-row">
+                <span className={statusDotClass} />
+                <strong>{statusLabel}</strong>
               </div>
-              <div className="card research-view__stat-card">
-                <div className="research-view__stat-label">Running</div>
-                <div className="research-view__stat-value">{stats?.byStatus.running ?? 0}</div>
+              <h3 className="research-view__run-title">{selectedRun.title}</h3>
+              <p className="research-view__run-query">{selectedRun.query}</p>
+              <p className="research-view__run-summary" data-testid="research-state-results">{selectedRun.results?.summary ?? "No summary yet."}</p>
+              <div className="research-view__actions">
+                <button className="btn" type="button" disabled={actionLoading === "cancel"} onClick={() => void runAction("cancel", () => cancelRun(selectedRun.id), "Run cancelled")}>
+                  Cancel
+                </button>
+                <button className="btn" type="button" disabled={actionLoading === "retry"} onClick={() => void runAction("retry", () => retryRun(selectedRun.id), "Run retried")}>
+                  Retry
+                </button>
+                {supportedExportFormats.includes("markdown") && <button className="btn" type="button" disabled={actionLoading === "export-markdown"} onClick={() => void handleExport("markdown")}>Export MD</button>}
+                {supportedExportFormats.includes("json") && <button className="btn" type="button" disabled={actionLoading === "export-json"} onClick={() => void handleExport("json")}>Export JSON</button>}
+                {supportedExportFormats.includes("html") && <button className="btn" type="button" disabled={actionLoading === "export-html"} onClick={() => void handleExport("html")}>Export HTML</button>}
               </div>
-              <div className="card research-view__stat-card">
-                <div className="research-view__stat-label">Completed</div>
-                <div className="research-view__stat-value">{stats?.byStatus.completed ?? 0}</div>
+              <div className="research-view__actions">
+                <button className="btn btn-primary" type="button" disabled={actionLoading === "create-task"} onClick={() => void runAction("create-task", () => createTaskFromRun(selectedRun.id, `Research: ${selectedRun.title}`), "Task created from research") }>
+                  Create Task
+                </button>
+                <div className="form-group">
+                  <label htmlFor="research-task-id">Task ID</label>
+                  <input
+                    id="research-task-id"
+                    className="input"
+                    placeholder="Task ID"
+                    value={taskIdToAttach}
+                    onChange={(event) => setTaskIdToAttach(event.target.value)}
+                  />
+                </div>
+                <button className="btn" type="button" disabled={!taskIdToAttach.trim() || actionLoading === "attach-task"} onClick={() => void runAction("attach-task", () => attachRunToTask(selectedRun.id, taskIdToAttach.trim(), "document"), "Attached to task")}>
+                  Attach to Task
+                </button>
               </div>
+              {selectedRun.error && <p className="research-view__error">{selectedRun.error}</p>}
+              {Array.isArray(selectedRun.results?.findings) && selectedRun.results.findings.length > 0 && (
+                <div className="research-view__findings">
+                  {selectedRun.results.findings.map((finding) => (
+                    <article key={finding.heading} className="research-view__finding card">
+                      <h4>{finding.heading}</h4>
+                      <p>{finding.content}</p>
+                    </article>
+                  ))}
+                </div>
+              )}
+              {Array.isArray(selectedRun.results?.citations) && selectedRun.results!.citations!.length > 0 && (
+                <ul className="research-view__citations">
+                  {selectedRun.results!.citations!.map((citation) => (
+                    <li key={citation}><a href={citation} target="_blank" rel="noreferrer">{citation}</a></li>
+                  ))}
+                </ul>
+              )}
+              {selectedRun.events.length > 0 && (
+                <details>
+                  <summary>Run history</summary>
+                  <ul className="research-view__events">
+                    {selectedRun.events.map((event) => (
+                      <li key={event.id}>{event.message}</li>
+                    ))}
+                  </ul>
+                </details>
+              )}
             </div>
+          )}
+          {!selectedRun && runs.length > 0 && <p>Select a run to view details.</p>}
 
-            <div className="research-view__list">
-              {runs.map((run) => (
-                <article key={run.id} className="card research-view__run-card">
-                  <div className="research-view__run-head">
-                    <span
-                      className={`card-status-badge ${
-                        run.status === "failed"
-                          ? "failed"
-                          : `card-status-badge--${
-                              run.status === "pending"
-                                ? "todo"
-                                : run.status === "running"
-                                  ? "in-progress"
-                                  : run.status === "completed"
-                                    ? "done"
-                                    : "archived"
-                            }`
-                      }`}
-                    >
-                      {STATUS_LABELS[run.status]}
-                    </span>
-                    <span className="card-id">{run.id}</span>
-                  </div>
-                  <h3 className="research-view__run-title">{run.topic || run.query}</h3>
-                  <p className="research-view__run-query">{run.query}</p>
-                  {run.results?.summary && (
-                    <p className="research-view__run-summary" data-testid="research-state-results">
-                      {run.results.summary}
-                    </p>
-                  )}
-                </article>
-              ))}
-            </div>
-
-            {!hasResults && (
-              <p className="research-view__hint">Runs are active, but no summarized results are available yet.</p>
-            )}
-          </>
-        )}
+          <div className="research-view__stats">
+            <div className="research-view__stat-card"><div className="research-view__stat-label">Running</div><div className="research-view__stat-value">{statusCounts.running}</div></div>
+            <div className="research-view__stat-card"><div className="research-view__stat-label">Completed</div><div className="research-view__stat-value">{statusCounts.completed}</div></div>
+            <div className="research-view__stat-card"><div className="research-view__stat-label">Failed</div><div className="research-view__stat-value">{statusCounts.failed}</div></div>
+          </div>
+        </div>
       </div>
+      )}
     </section>
   );
 }

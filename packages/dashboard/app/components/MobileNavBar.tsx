@@ -66,7 +66,7 @@ export interface MobileNavBarProps {
   /** Whether to show the skills tab */
   showSkillsTab?: boolean;
   /** Experimental feature flags controlling visibility of nav items. */
-  experimentalFeatures?: { insights?: boolean; roadmap?: boolean; memoryView?: boolean; devServer?: boolean; devServerView?: boolean; todoView?: boolean };
+  experimentalFeatures?: { insights?: boolean; roadmap?: boolean; memoryView?: boolean; devServer?: boolean; devServerView?: boolean; todoView?: boolean; researchView?: boolean };
 }
 
 function GitHubLogo({ size = 20 }: { size?: number }) {
@@ -564,15 +564,17 @@ export function MobileNavBar({
               </button>
             )}
 
-            <button
-              type="button"
-              className="mobile-more-item"
-              data-testid="mobile-more-item-research"
-              onClick={() => handleMoreAction(() => onChangeView("research"))}
-            >
-              <Search />
-              <span>Research</span>
-            </button>
+            {experimentalFeatures?.researchView && (
+              <button
+                type="button"
+                className="mobile-more-item"
+                data-testid="mobile-more-item-research"
+                onClick={() => handleMoreAction(() => onChangeView("research"))}
+              >
+                <Search />
+                <span>Research</span>
+              </button>
+            )}
 
             {experimentalFeatures?.insights && (
               <button
