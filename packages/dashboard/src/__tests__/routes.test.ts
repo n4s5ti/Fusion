@@ -29,6 +29,7 @@ import * as subtaskBreakdownModule from "../subtask-breakdown.js";
 import { SESSION_CLEANUP_DEFAULT_MAX_AGE_MS } from "../ai-session-store.js";
 import * as usageModule from "../usage.js";
 import * as claudeCliProbeModule from "../claude-cli-probe.js";
+import * as droidCliProbeModule from "../droid-cli-probe.js";
 import * as projectStoreResolver from "../project-store-resolver.js";
 import * as terminalServiceModule from "../terminal-service.js";
 import { get as performGet, request as performRequest } from "../test-request.js";
@@ -4715,10 +4716,9 @@ describe("GET /auth/status", () => {
     const res = await GET(buildApp(), "/api/auth/status");
 
     expect(res.status).toBe(200);
-    // Filter out the synthetic claude-cli provider — it's unconditionally
-    // injected when a store is attached and has its own dedicated tests.
+    // Filter out synthetic CLI providers — they have dedicated route tests.
     // Structural assertions here are about OAuth + API-key paths only.
-    const providers = res.body.providers.filter((p: any) => p.id !== "claude-cli");
+    const providers = res.body.providers.filter((p: any) => p.id !== "claude-cli" && p.id !== "droid-cli");
     expect(providers).toEqual([
       { id: "anthropic", name: "Anthropic", authenticated: true, type: "oauth", loginInProgress: false },
       { id: "openrouter", name: "OpenRouter", authenticated: false, type: "api_key" },
@@ -4743,7 +4743,7 @@ describe("GET /auth/status", () => {
     const res = await GET(buildApp(), "/api/auth/status");
 
     expect(res.status).toBe(200);
-    const providers = res.body.providers.filter((p: any) => p.id !== "claude-cli");
+    const providers = res.body.providers.filter((p: any) => p.id !== "claude-cli" && p.id !== "droid-cli");
     expect(providers).toEqual([
       { id: "anthropic", name: "Anthropic", authenticated: true, type: "oauth", loginInProgress: false },
       { id: "github-copilot", name: "GitHub Copilot", authenticated: false, type: "oauth", loginInProgress: false },
@@ -4923,6 +4923,197 @@ describe("GET /providers/claude-cli/status", () => {
     expect(res.body.ready).toBe(true);
     expect(res.body.binary).toMatchObject({ available: true, version: "claude 1.0.0" });
     expect(res.body.extension).toMatchObject({ status: "ok" });
+  });
+});
+
+describe("Droid CLI auth routes", () => {
+  let store: TaskStore;
+
+  beforeEach(() => {
+    store = createMockStore({
+      updateGlobalSettings: vi.fn().mockResolvedValue({ useDroidCli: true }),
+      getGlobalSettingsStore: vi.fn().mockReturnValue({
+        ...createMockGlobalSettingsStore(),
+        getSettings: vi.fn().mockResolvedValue({ useDroidCli: false }),
+      }),
+    });
+  });
+
+  function buildApp(options?: Parameters<typeof createApiRoutes>[1]) {
+    const app = express();
+    app.use(express.json());
+    app.use("/api", createApiRoutes(store, { authStorage: createMockAuthStorage(), ...options }));
+    return app;
+  }
+
+  it("enables Droid CLI when binary is available", async () => {
+    const probeSpy = vi.spyOn(droidCliProbeModule, "probeDroidCli").mockResolvedValue({
+      available: true,
+      version: "droid 1.0.0",
+      probeDurationMs: 20,
+    });
+
+    const res = await REQUEST(buildApp(), "POST", "/api/auth/droid-cli", JSON.stringify({ enabled: true }), {
+      "Content-Type": "application/json",
+    });
+
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ enabled: true, restartRequired: false });
+    expect(store.updateGlobalSettings).toHaveBeenCalledWith({ useDroidCli: true });
+    probeSpy.mockRestore();
+  });
+
+  it("returns 400 when enabling without available binary", async () => {
+    const probeSpy = vi.spyOn(droidCliProbeModule, "probeDroidCli").mockResolvedValue({
+      available: false,
+      reason: "`droid` not found on PATH",
+      probeDurationMs: 20,
+    });
+
+    const res = await REQUEST(buildApp(), "POST", "/api/auth/droid-cli", JSON.stringify({ enabled: true }), {
+      "Content-Type": "application/json",
+    });
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toContain("Cannot enable Droid CLI routing");
+    probeSpy.mockRestore();
+  });
+
+  it("disabling works without probing binary", async () => {
+    const probeSpy = vi.spyOn(droidCliProbeModule, "probeDroidCli");
+
+    const res = await REQUEST(buildApp(), "POST", "/api/auth/droid-cli", JSON.stringify({ enabled: false }), {
+      "Content-Type": "application/json",
+    });
+
+    expect(res.status).toBe(200);
+    expect(probeSpy).not.toHaveBeenCalled();
+    probeSpy.mockRestore();
+  });
+
+  it("returns 400 for non-boolean enabled", async () => {
+    const res = await REQUEST(buildApp(), "POST", "/api/auth/droid-cli", JSON.stringify({ enabled: "yes" }), {
+      "Content-Type": "application/json",
+    });
+
+    expect(res.status).toBe(400);
+  });
+
+  it("fires onUseDroidCliToggled hook on transition", async () => {
+    const onUseDroidCliToggled = vi.fn();
+    vi.spyOn(droidCliProbeModule, "probeDroidCli").mockResolvedValue({
+      available: true,
+      version: "droid 1.0.0",
+      probeDurationMs: 20,
+    });
+
+    const res = await REQUEST(
+      buildApp({ onUseDroidCliToggled } as Parameters<typeof createApiRoutes>[1]),
+      "POST",
+      "/api/auth/droid-cli",
+      JSON.stringify({ enabled: true }),
+      { "Content-Type": "application/json" },
+    );
+
+    expect(res.status).toBe(200);
+    expect(onUseDroidCliToggled).toHaveBeenCalledWith(false, true);
+  });
+
+  it("returns binary + toggle + extension diagnostics and computed readiness", async () => {
+    vi.spyOn(droidCliProbeModule, "probeDroidCli").mockResolvedValue({
+      available: true,
+      version: "droid 1.0.0",
+      probeDurationMs: 10,
+    });
+    store.getGlobalSettingsStore = vi.fn().mockReturnValue({
+      ...createMockGlobalSettingsStore(),
+      getSettings: vi.fn().mockResolvedValue({ useDroidCli: true }),
+    });
+
+    const res = await GET(
+      buildApp({ getDroidCliExtensionStatus: () => ({ status: "ok", path: "/tmp/ext" }) } as Parameters<
+        typeof createApiRoutes
+      >[1]),
+      "/api/providers/droid-cli/status",
+    );
+
+    expect(res.status).toBe(200);
+    expect(res.body.enabled).toBe(true);
+    expect(res.body.ready).toBe(true);
+    expect(res.body.binary).toMatchObject({ available: true, version: "droid 1.0.0" });
+    expect(res.body.extension).toMatchObject({ status: "ok" });
+  });
+
+  it("returns ready false when binary unavailable", async () => {
+    vi.spyOn(droidCliProbeModule, "probeDroidCli").mockResolvedValue({
+      available: false,
+      reason: "missing",
+      probeDurationMs: 10,
+    });
+    store.getGlobalSettingsStore = vi.fn().mockReturnValue({
+      ...createMockGlobalSettingsStore(),
+      getSettings: vi.fn().mockResolvedValue({ useDroidCli: true }),
+    });
+
+    const res = await GET(buildApp(), "/api/providers/droid-cli/status");
+    expect(res.status).toBe(200);
+    expect(res.body.ready).toBe(false);
+  });
+
+  it("returns ready false when toggle is off", async () => {
+    vi.spyOn(droidCliProbeModule, "probeDroidCli").mockResolvedValue({
+      available: true,
+      version: "droid 1.0.0",
+      probeDurationMs: 10,
+    });
+
+    const res = await GET(buildApp(), "/api/providers/droid-cli/status");
+    expect(res.status).toBe(200);
+    expect(res.body.ready).toBe(false);
+  });
+
+  it("GET /auth/status includes droid-cli provider with cli type", async () => {
+    vi.spyOn(droidCliProbeModule, "probeDroidCli").mockResolvedValue({
+      available: true,
+      version: "droid 1.0.0",
+      probeDurationMs: 10,
+    });
+    store.getGlobalSettingsStore = vi.fn().mockReturnValue({
+      ...createMockGlobalSettingsStore(),
+      getSettings: vi.fn().mockResolvedValue({ useDroidCli: true }),
+    });
+
+    const res = await GET(buildApp(), "/api/auth/status");
+    expect(res.status).toBe(200);
+    expect(res.body.providers).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: "droid-cli",
+          name: "Factory AI — via Droid CLI",
+          type: "cli",
+        }),
+      ]),
+    );
+  });
+
+  it("PUT /settings/global with useDroidCli fires onUseDroidCliToggled", async () => {
+    const onUseDroidCliToggled = vi.fn();
+    store.updateGlobalSettings = vi.fn().mockResolvedValue({ useDroidCli: true });
+    store.getGlobalSettingsStore = vi.fn().mockReturnValue({
+      ...createMockGlobalSettingsStore(),
+      getSettings: vi.fn().mockResolvedValue({ useDroidCli: false, useClaudeCli: false }),
+    });
+
+    const res = await REQUEST(
+      buildApp({ onUseDroidCliToggled } as Parameters<typeof createApiRoutes>[1]),
+      "PUT",
+      "/api/settings/global",
+      JSON.stringify({ useDroidCli: true }),
+      { "Content-Type": "application/json" },
+    );
+
+    expect(res.status).toBe(200);
+    expect(onUseDroidCliToggled).toHaveBeenCalledWith(false, true);
   });
 });
 

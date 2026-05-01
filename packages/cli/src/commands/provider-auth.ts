@@ -49,7 +49,7 @@ const BUILT_IN_API_KEY_PROVIDERS: Array<{ id: string; name: string }> = [
   { id: "zai", name: "Zai" },
 ];
 
-const CLI_PROVIDER_IDS = new Set(["pi-claude-cli"]);
+const CLI_PROVIDER_IDS = new Set(["pi-claude-cli", "droid-cli"]);
 
 function getProviderDisplayName(providerId: string): string {
   const knownProviderNames = new Map(

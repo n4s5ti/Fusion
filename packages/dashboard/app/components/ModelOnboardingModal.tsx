@@ -1737,18 +1737,6 @@ export function ModelOnboardingModal({
       );
     }
 
-    if (provider.id === "droid-cli" && provider.type === "cli") {
-      return (
-        <DroidCliProviderCard
-          key={provider.id}
-          authenticated={provider.authenticated}
-          onToggled={() => {
-            void loadAuthStatus();
-          }}
-        />
-      );
-    }
-
     if (provider.type === "api_key") {
       const providerInfo = getProviderInfo(provider.id);
       const apiKeyInfo = getApiKeyInfo(provider);

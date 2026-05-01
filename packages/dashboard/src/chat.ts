@@ -23,7 +23,9 @@ import type {
 } from "@fusion/core";
 import { summarizeTitle } from "@fusion/core";
 import { EventEmitter } from "node:events";
+import { existsSync } from "node:fs";
 import { join, resolve, relative } from "node:path";
+import { SessionManager } from "@mariozechner/pi-coding-agent";
 import { SessionEventBuffer } from "./sse-buffer.js";
 
 import { createFnAgent as engineCreateFnAgent } from "@fusion/engine";
@@ -430,6 +432,50 @@ export class ChatManager {
     private agentStore?: AgentStore,
   ) {}
 
+  /**
+   * Resolve the per-chat pi/Claude CLI SessionManager.
+   *
+   * - If the chat has a recorded session file that still exists on disk,
+   *   reopen it so the CLI --resume sees the full prior transcript.
+   * - Otherwise, create a fresh file-backed session and persist its path
+   *   on the chat row. The path is computed synchronously by SessionManager
+   *   on construction, so we can store it before the first prompt() call.
+   * - If a recorded path has gone missing (manual cleanup, disk wipe), fall
+   *   through to "create" and overwrite the stale pointer.
+   *
+   * Note: we deliberately use file-backed sessions even though pi's history
+   * is also tracked in chat_messages. The file is what the Claude CLI's
+   * --resume reads, and its session id is what pi-claude-cli passes as
+   * `--session-id`. Pinning both via SessionManager.open is the only way to
+   * keep the CLI session stable across user messages.
+   */
+  private resolveCliSessionManager(session: ChatSession): SessionManager {
+    if (session.cliSessionFile && existsSync(session.cliSessionFile)) {
+      try {
+        return SessionManager.open(session.cliSessionFile);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        diagnostics.warn(
+          `Failed to reopen chat ${session.id} CLI session at ${session.cliSessionFile} (${message}); starting fresh`,
+        );
+      }
+    }
+
+    const manager = SessionManager.create(this.rootDir);
+    const sessionFile = manager.getSessionFile();
+    if (sessionFile) {
+      try {
+        this.chatStore.setCliSessionFile(session.id, sessionFile);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        diagnostics.warn(
+          `Failed to persist CLI session file for chat ${session.id}: ${message}`,
+        );
+      }
+    }
+    return manager;
+  }
+
   private async listAgentsForMentions(): Promise<Agent[]> {
     if (!this.agentStore) {
       return [];
@@ -679,12 +725,6 @@ export class ChatManager {
         }
       }
 
-      const allMessages = this.chatStore.getMessages(sessionId, { limit: 10000 }) ?? [];
-      const previousMessages = allMessages.slice(-51, -1);
-      const conversationMessages = previousMessages.filter(
-        (message) => message.role === "user" || message.role === "assistant",
-      );
-
       // Resolve #file references in the current message before sending to AI
       const resolvedContent = await resolveFileReferences(content, this.rootDir);
 
@@ -694,27 +734,24 @@ export class ChatManager {
           .join(", ")}]`
         : "";
 
-      const promptContent = conversationMessages.length > 0
-        ? [
-            "## Previous Conversation",
-            "",
-            ...conversationMessages.map((message) => {
-              const speaker = message.role === "user" ? "User" : "Assistant";
-              return `[${speaker}]: ${message.content}`;
-            }),
-            "",
-            "## Current Message",
-            "",
-            attachmentSummary,
-            resolvedContent,
-          ].filter(Boolean).join("\n")
-        : [attachmentSummary, resolvedContent].filter(Boolean).join("\n\n");
+      // Send only the new user content. Prior turns are reloaded by the
+      // pi/Claude CLI session via SessionManager.open() below — stuffing the
+      // transcript back into the user message would balloon the on-disk
+      // session every turn (and previously did, see chat-store.ts:setCliSessionFile).
+      const promptContent = [attachmentSummary, resolvedContent].filter(Boolean).join("\n\n");
+
+      // Per-chat session continuity: the pi SessionManager (and, transitively,
+      // the Claude CLI --resume session it owns) is keyed off the chat. On the
+      // first user message we create a fresh, file-backed session and persist
+      // its path; subsequent messages reopen the same file.
+      const sessionManager = this.resolveCliSessionManager(session);
 
       // Create AI agent session
       agentResult = await createFnAgent({
         cwd: this.rootDir,
         systemPrompt,
         tools: "coding",
+        sessionManager,
         ...(effectiveModelProvider && effectiveModelId
           ? {
               defaultProvider: effectiveModelProvider,

@@ -2115,6 +2115,17 @@ export class Database {
       });
     }
 
+    // Persist the pi/Claude CLI session file path per chat so quick-chat
+    // turns reuse the same on-disk session instead of starting fresh each
+    // user message.
+    if (version < 56) {
+      this.applyMigration(56, () => {
+        if (this.hasTable("chat_sessions")) {
+          this.addColumnIfMissing("chat_sessions", "cliSessionFile", "TEXT");
+        }
+      });
+    }
+
   }
 
   /**

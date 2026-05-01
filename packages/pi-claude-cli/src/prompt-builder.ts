@@ -166,44 +166,36 @@ function buildCustomToolResultPrompt(messages: PiMessage[]): string | null {
 /**
  * Build a prompt for a resumed session.
  *
- * When resuming via --resume, the CLI already has the full conversation history.
- * We only need to send the new content since the last turn: the last assistant
- * response's tool results (if any) followed by the latest user message.
+ * When resuming via --resume, the CLI already has the full conversation history
+ * up through (and including) the most recent assistant turn that it produced.
+ * We only need to send the *delta* since that turn: any trailing tool results
+ * for the last assistant tool_use, and/or a new user message.
  *
- * For tool_use flows: pi sends [user, assistant(toolCall), toolResult, ...]
- * We need to include tool results so the resumed session sees them, plus the
- * final user message.
+ * Why anchor on the last assistant message (not the last user message)?
+ * Pi's tool-use loop appends `[user, assistant(toolUse), toolResult,
+ * assistant(toolUse), toolResult, ...]` — the only `user` entry stays at index
+ * 0 across many provider invocations. Anchoring on the last user message and
+ * walking forward (the prior implementation) re-sent the entire transcript on
+ * every tool-loop iteration, so each --resume turn appended a duplicate of the
+ * original query plus a growing stack of tool results to the on-disk session.
  *
- * Falls back to full prompt if the message structure is unexpected.
+ * Returns "" when there's nothing new to send (e.g. only an assistant message
+ * exists in the context — can happen mid-shutdown).
  */
 export function buildResumePrompt(context: PiContext): string | AnthropicContentBlock[] {
   const messages = context.messages;
   if (messages.length === 0) return "";
 
-  // Find the last user message
-  const finalUserIndex = findFinalUserMessageIndex(messages);
-  if (finalUserIndex < 0) return "";
-
-  // Collect new messages: everything from the last assistant turn onwards
-  // (tool results from the last assistant + the new user message)
-  const newMessages: PiMessage[] = [];
-
-  // Walk backwards from finalUserIndex to find where new content starts.
-  // Include trailing toolResult messages that follow the last assistant turn.
-  let startIdx = finalUserIndex;
-  for (let i = finalUserIndex - 1; i >= 0; i--) {
-    if (messages[i].role === "toolResult") {
-      startIdx = i;
-    } else {
+  let lastAssistantIdx = -1;
+  for (let i = messages.length - 1; i >= 0; i--) {
+    if (messages[i].role === "assistant") {
+      lastAssistantIdx = i;
       break;
     }
   }
+  const newMessages = messages.slice(lastAssistantIdx + 1);
+  if (newMessages.length === 0) return "";
 
-  for (let i = startIdx; i < messages.length; i++) {
-    newMessages.push(messages[i]);
-  }
-
-  // If there are only tool results + one user message, build a combined prompt
   const parts: string[] = [];
   for (const msg of newMessages) {
     if (msg.role === "toolResult") {
@@ -217,7 +209,6 @@ export function buildResumePrompt(context: PiContext): string | AnthropicContent
       }
       parts.push(toolResultContentToText(msg.content));
     } else if (msg.role === "user") {
-      // Check for images in the final user message
       if (contentHasImages(msg.content)) {
         const textSoFar = parts.join("\n");
         const userContent = buildFinalUserContent(msg.content);

@@ -1349,6 +1349,13 @@ export interface GlobalSettings {
    *  array in the agent settings for `"npm:pi-claude-cli"` (legacy signal).
    *  Setting this field explicitly (true/false) always wins. */
   useClaudeCli?: boolean;
+  /** When true, route Factory AI model calls through the locally-installed Droid CLI
+   *  via the `droid-cli` provider path (instead of direct API provider calls).
+   *
+   *  When left undefined, Droid CLI routing stays disabled unless explicitly enabled
+   *  by the dashboard auth toggle. Setting this field explicitly (true/false)
+   *  always wins. */
+  useDroidCli?: boolean;
   /** Global baseline AI model provider for task execution (executor agent).
    *  This is the global lane that project-level `executionProvider` can override.
    *  Must be set together with `executionGlobalModelId`. Falls back to

@@ -283,6 +283,9 @@ function DroidCliActionToast({
       {action.kind === "enabled"
         ? "Factory AI (via Droid CLI) models are now visible in the model picker."
         : "Factory AI (via Droid CLI) models are hidden from the model picker."}
+      {action.restartRequired
+        ? " Restart required: restart your active CLI/chat session for routing changes to take effect."
+        : ""}
     </p>
   );
 }

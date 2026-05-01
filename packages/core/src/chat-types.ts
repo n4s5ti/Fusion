@@ -37,6 +37,14 @@ export interface ChatSession {
   createdAt: string;
   /** When the session was last updated */
   updatedAt: string;
+  /**
+   * Absolute path to the pi/Claude CLI session file backing this chat, if
+   * any. Set on the first assistant turn (when SessionManager.create
+   * provisions the file) and reused by SessionManager.open on subsequent
+   * turns so the on-disk CLI session is resumed instead of recreated. Null
+   * for sessions that have never produced an assistant reply.
+   */
+  cliSessionFile: string | null;
 }
 
 /**

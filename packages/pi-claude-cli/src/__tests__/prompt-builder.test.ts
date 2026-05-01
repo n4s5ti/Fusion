@@ -1145,6 +1145,42 @@ describe("buildResumePrompt", () => {
     expect(buildResumePrompt(context)).toBe("Hello from blocks");
   });
 
+  // Regression: multi-iteration tool loops re-anchor on the LAST assistant
+  // turn, not the (only) user message at index 0. Previously this dumped the
+  // entire transcript into a "user" prompt every iteration, ballooning the
+  // resumed session.
+  it("returns ONLY the trailing tool result during a multi-iteration tool loop", () => {
+    const context = {
+      messages: [
+        { role: "user", content: "Find foo" },
+        {
+          role: "assistant",
+          content: [{ type: "toolCall", name: "find", arguments: { pattern: "foo" } }],
+        },
+        { role: "toolResult", toolName: "find", content: "no matches (turn 1)" },
+        {
+          role: "assistant",
+          content: [{ type: "toolCall", name: "find", arguments: { pattern: "foo" } }],
+        },
+        { role: "toolResult", toolName: "find", content: "no matches (turn 2)" },
+      ],
+    };
+    const result = buildResumePrompt(context) as string;
+    expect(result).toContain("no matches (turn 2)");
+    expect(result).not.toContain("no matches (turn 1)");
+    expect(result).not.toContain("Find foo");
+  });
+
+  it("returns empty string mid-loop when only an assistant turn exists since the last delta", () => {
+    const context = {
+      messages: [
+        { role: "user", content: "Hi" },
+        { role: "assistant", content: "Working..." },
+      ],
+    };
+    expect(buildResumePrompt(context)).toBe("");
+  });
+
   it("handles images in the final user message by returning ContentBlock[]", () => {
     const context = {
       messages: [

@@ -1,5 +1,6 @@
 import { isGhAvailable, isGhAuthenticated } from "@fusion/core";
 import { probeClaudeCli } from "../claude-cli-probe.js";
+import { probeDroidCli } from "../droid-cli-probe.js";
 import { ApiError, badRequest, conflict } from "../api-error.js";
 import { clearUsageCache } from "../usage.js";
 import { invalidateAllGlobalSettingsCaches } from "../project-store-resolver.js";
@@ -184,6 +185,26 @@ export const registerAuthRoutes: ApiRouteRegistrar = (ctx) => {
         });
       }
 
+      // Inject the synthetic "Factory AI — via Droid CLI" provider.
+      if (store) {
+        let droidEnabled = false;
+        try {
+          const globalSettings = await store.getGlobalSettingsStore().getSettings();
+          droidEnabled = globalSettings.useDroidCli === true;
+        } catch {
+          // Unreadable settings — fall through with enabled=false
+        }
+        const droidExtension = options?.getDroidCliExtensionStatus?.() ?? null;
+        const droidBinary = await probeDroidCli();
+        const droidExtensionOk = droidExtension === null || droidExtension.status === "ok";
+        providers.push({
+          id: "droid-cli",
+          name: "Factory AI — via Droid CLI",
+          authenticated: droidEnabled && droidBinary.available && droidExtensionOk,
+          type: "cli" as const,
+        });
+      }
+
       const ghCli = {
         available: isGhAvailable(),
         authenticated: isGhAuthenticated(),
@@ -291,6 +312,70 @@ export const registerAuthRoutes: ApiRouteRegistrar = (ctx) => {
     }
   });
 
+  router.post("/auth/droid-cli", async (req, res) => {
+    try {
+      if (!store) {
+        throw new ApiError(500, "Settings store unavailable");
+      }
+      const enabled = req.body?.enabled;
+      if (typeof enabled !== "boolean") {
+        throw badRequest("enabled must be a boolean");
+      }
+
+      if (enabled) {
+        const binary = await probeDroidCli();
+        if (!binary.available) {
+          throw new ApiError(
+            400,
+            `Cannot enable Droid CLI routing: ${binary.reason ?? "droid binary not available"}`,
+          );
+        }
+      }
+
+      // Snapshot prior value so we only fire the toggle hook on an actual
+      // transition — mirrors the logic in PUT /api/settings/global.
+      let prev = false;
+      try {
+        const priorGlobal = await store.getGlobalSettingsStore().getSettings();
+        prev = priorGlobal.useDroidCli === true;
+      } catch {
+        // Unreadable prior — treat as false so a first enable still fires.
+      }
+
+      const settings = await store.updateGlobalSettings({ useDroidCli: enabled });
+      invalidateAllGlobalSettingsCaches();
+      const engineManager = options?.engineManager;
+      if (engineManager) {
+        for (const engine of engineManager.getAllEngines().values()) {
+          engine.getTaskStore().getGlobalSettingsStore().invalidateCache();
+        }
+      }
+
+      const next = settings.useDroidCli === true;
+      if (options?.onUseDroidCliToggled && prev !== next) {
+        try {
+          options.onUseDroidCliToggled(prev, next);
+        } catch (hookErr) {
+          console.warn(
+            `[auth/droid-cli] onUseDroidCliToggled callback threw: ${hookErr instanceof Error ? hookErr.message : String(hookErr)}`,
+          );
+        }
+      }
+
+      res.json({
+        enabled: next,
+        // The droid-cli provider toggle flips provider routing state and takes
+        // effect immediately for new model selections. No restart needed.
+        restartRequired: false,
+      });
+    } catch (err: unknown) {
+      if (err instanceof ApiError) {
+        throw err;
+      }
+      rethrowAsApiError(err);
+    }
+  });
+
   router.get("/providers/claude-cli/status", async (_req, res) => {
     try {
       const binary = await probeClaudeCli();
@@ -318,6 +403,33 @@ export const registerAuthRoutes: ApiRouteRegistrar = (ctx) => {
           binary.available &&
           enabled &&
           (extension === null || extension.status === "ok"),
+      });
+    } catch (err: unknown) {
+      if (err instanceof ApiError) {
+        throw err;
+      }
+      rethrowAsApiError(err);
+    }
+  });
+
+  router.get("/providers/droid-cli/status", async (_req, res) => {
+    try {
+      const binary = await probeDroidCli();
+      let enabled = false;
+      if (store) {
+        try {
+          const globalSettings = await store.getGlobalSettingsStore().getSettings();
+          enabled = globalSettings.useDroidCli === true;
+        } catch {
+          // Best-effort
+        }
+      }
+      const extension = options?.getDroidCliExtensionStatus?.() ?? null;
+      res.json({
+        binary,
+        enabled,
+        extension,
+        ready: binary.available && enabled && (extension === null || extension.status === "ok"),
       });
     } catch (err: unknown) {
       if (err instanceof ApiError) {

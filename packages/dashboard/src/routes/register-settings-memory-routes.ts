@@ -1607,6 +1607,14 @@ export function registerSettingsMemoryRoutes(ctx: ApiRoutesContext, deps: Settin
         // Best-effort: on read failure assume false so a flip-on still fires.
       }
 
+      let prevUseDroidCli = false;
+      try {
+        const priorGlobal = await store.getGlobalSettingsStore().getSettings();
+        prevUseDroidCli = priorGlobal.useDroidCli === true;
+      } catch {
+        // Best-effort: on read failure assume false so a flip-on still fires.
+      }
+
       const settings = await store.updateGlobalSettings(req.body);
       // Invalidate global settings caches in all project-scoped stores so the
       // next GET /settings?projectId=xxx reads fresh values from disk rather
@@ -1630,6 +1638,17 @@ export function registerSettingsMemoryRoutes(ctx: ApiRoutesContext, deps: Settin
         } catch (hookErr) {
           runtimeLogger.warn(
             `onUseClaudeCliToggled callback threw: ${hookErr instanceof Error ? hookErr.message : String(hookErr)}`,
+          );
+        }
+      }
+
+      const nextUseDroidCli = settings.useDroidCli === true;
+      if (options?.onUseDroidCliToggled && prevUseDroidCli !== nextUseDroidCli) {
+        try {
+          options.onUseDroidCliToggled(prevUseDroidCli, nextUseDroidCli);
+        } catch (hookErr) {
+          runtimeLogger.warn(
+            `onUseDroidCliToggled callback threw: ${hookErr instanceof Error ? hookErr.message : String(hookErr)}`,
           );
         }
       }

@@ -275,6 +275,34 @@ export interface ServerOptions {
         reason?: string;
       }
     | null;
+  /**
+   * Called when the user toggles the `useDroidCli` global setting via
+   * PUT /api/settings/global. Invoked only on an actual transition (prev
+   * !== next). Consumers use this to run project-wide setup for Droid CLI
+   * integrations without requiring a server restart.
+   *
+   * Failures should be swallowed by the callback — they must not cause the
+   * settings PUT to fail.
+   */
+  onUseDroidCliToggled?: (prev: boolean, next: boolean) => void;
+  /**
+   * Returns the host's last-observed resolution of the bundled `droid-cli`
+   * extension wiring. Populated by serve/daemon/dashboard startup checks.
+   *
+   * The shape intentionally mirrors the Claude CLI extension status shape so
+   * provider cards and auth routes can consume a consistent contract.
+   *
+   * Returns `null` when the host hasn't evaluated the setting yet (very
+   * early startup) — callers should treat null as "unknown, try again".
+   */
+  getDroidCliExtensionStatus?: () =>
+    | {
+        status: "ok" | "not-installed" | "missing-entry" | "error";
+        path?: string;
+        packageVersion?: string;
+        reason?: string;
+      }
+    | null;
   /** Optional SkillsAdapter for skills discovery, execution toggling, and catalog fetching */
   skillsAdapter?: SkillsAdapter;
   /** Daemon mode configuration with bearer token authentication.

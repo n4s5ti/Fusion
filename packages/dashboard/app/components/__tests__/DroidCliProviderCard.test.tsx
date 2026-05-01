@@ -82,6 +82,7 @@ describe("DroidCliProviderCard", () => {
     render(<DroidCliProviderCard authenticated={false} />);
     fireEvent.click(await screen.findByRole("button", { name: "Enable" }));
     expect(await screen.findByText(/Factory AI \(via Droid CLI\) models are now visible/i)).toBeInTheDocument();
+    expect(await screen.findByText(/Restart required: restart your active CLI\/chat session/i)).toBeInTheDocument();
   });
 
   it("shows error toast when toggle fails", async () => {

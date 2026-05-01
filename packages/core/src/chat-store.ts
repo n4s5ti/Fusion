@@ -56,6 +56,7 @@ interface ChatSessionRow {
   modelId: string | null;
   createdAt: string;
   updatedAt: string;
+  cliSessionFile: string | null;
 }
 
 /** Database row shape for chat_messages. */
@@ -97,6 +98,7 @@ export class ChatStore extends EventEmitter<ChatStoreEvents> {
       modelId: row.modelId ?? null,
       createdAt: row.createdAt,
       updatedAt: row.updatedAt,
+      cliSessionFile: row.cliSessionFile ?? null,
     };
   }
 
@@ -138,6 +140,7 @@ export class ChatStore extends EventEmitter<ChatStoreEvents> {
       modelId: input.modelId ?? null,
       createdAt: now,
       updatedAt: now,
+      cliSessionFile: null,
     };
 
     this.db.prepare(`
@@ -329,6 +332,24 @@ export class ChatStore extends EventEmitter<ChatStoreEvents> {
    */
   archiveSession(id: string): ChatSession | undefined {
     return this.updateSession(id, { status: "archived" });
+  }
+
+  /**
+   * Persist the pi/Claude CLI session file path for a chat. Called once,
+   * after the SessionManager for the chat first creates its on-disk file,
+   * so subsequent turns can reopen it via SessionManager.open.
+   *
+   * Does not bump updatedAt or emit events — this is internal plumbing,
+   * not a user-visible state change.
+   *
+   * @param id - Session ID
+   * @param cliSessionFile - Absolute path to the session file, or null to clear
+   */
+  setCliSessionFile(id: string, cliSessionFile: string | null): void {
+    this.db
+      .prepare("UPDATE chat_sessions SET cliSessionFile = ? WHERE id = ?")
+      .run(cliSessionFile, id);
+    this.db.bumpLastModified();
   }
 
   /**
