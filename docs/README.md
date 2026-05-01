@@ -42,7 +42,7 @@ For a full walkthrough (installation, onboarding, first task, and daily workflow
 | Guide | Description |
 |---|---|
 | [Architecture](./architecture.md) | System architecture, package layout, storage model, and engine execution flow |
-| [Dashboard Real-Time](./dashboard-realtime.md) | Canonical SSE ownership/lifecycle contract for dashboard `/api/events`, project scoping, reconnect/cleanup behavior, and realtime pitfalls |
+| [Dashboard Real-Time](./dashboard-realtime.md) | Canonical event-stream architecture contract (shared `/api/events` bus + dedicated stream boundaries), with project/node scoping, reconnect/cleanup behavior, and realtime pitfalls |
 | [Storage](./storage.md) | Storage architecture, migration, archive system, and SQLite schema |
 | [Contributing](./contributing.md) | Local development setup, testing, release flow, and contributor conventions |
 | [Docker](./docker.md) | Container builds, deployment, and persistence configuration |

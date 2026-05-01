@@ -442,7 +442,7 @@ Key server capabilities:
 - **SSE**: `/api/events` (`sse.ts`)
   - Emits `task:*`, mission events, AI session updates, automation schedule events (`schedule:created`, `schedule:updated`, `schedule:deleted`, `schedule:run`), and research run lifecycle events (`research:run:created`, `research:run:updated`, `research:run:completed`, `research:run:failed`, `research:run:cancelled`) when available
   - Project-scoped: resolves project context from query param or engine manager
-  - Canonical maintainer contract (ownership/lifecycle/scoping/pitfalls): [`docs/dashboard-realtime.md`](./dashboard-realtime.md)
+  - Canonical maintainer contract (ownership/lifecycle/scoping/pitfalls and shared-vs-dedicated stream boundaries): [`docs/dashboard-realtime.md`](./dashboard-realtime.md)
 - **Chat streaming**: `/api/chat/sessions/:id/messages` (`routes.ts` + `chat.ts`)
   - Streams assistant responses as SSE events for chat sessions
 - **Chat session queries**: `/api/chat/sessions` (`routes.ts`)

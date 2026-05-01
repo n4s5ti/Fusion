@@ -70,6 +70,14 @@ Before submitting changes, verify:
 - [ ] `pnpm verify:workspace` — canonical lint → test → build gate
 - [ ] `pnpm typecheck` — type checking passes
 
+## Realtime/SSE change note
+
+If your change touches dashboard realtime behavior (`/api/events`, SSE hooks, proxy event streams, or dedicated stream endpoints), review and update the canonical contract doc:
+
+- [`docs/dashboard-realtime.md`](./dashboard-realtime.md)
+
+Do not create parallel SSE architecture docs. Keep ownership/scoping/cleanup guidance centralized there.
+
 ## Testing Requirements
 
 Use real test runs (not manual verification substitutes):

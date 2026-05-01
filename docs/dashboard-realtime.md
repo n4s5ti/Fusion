@@ -2,251 +2,232 @@
 
 [← Docs index](./README.md) · [Architecture](./architecture.md)
 
-This document is the **canonical maintainer contract** for dashboard Server-Sent Events (SSE) ownership and lifecycle behavior.
+This document is the **canonical maintainer contract** for dashboard/event-stream architecture.
 
-If you change realtime behavior, validate this guide against code and tests before merging.
+- If this file and other docs differ, treat this file as source-of-truth and update the others.
+- Do not add parallel SSE architecture docs; link here instead.
 
 ---
 
-## 1) Scope and ownership model
+## 1) Stream inventory and ownership boundaries
 
-Fusion dashboard uses multiple realtime channels. They are intentionally different and **must not be collapsed into one pattern**.
+Fusion intentionally uses multiple realtime mechanisms. Keep their ownership boundaries explicit.
 
-### Shared browser SSE bus (board/state stream)
+### A. Shared browser SSE bus for `/api/events`
 
 - Endpoint: `GET /api/events`
 - Browser owner: `packages/dashboard/app/sse-bus.ts`
-- Main consumer: `packages/dashboard/app/hooks/useTasks.ts`
-- Additional consumers can subscribe through `subscribeSse(...)` (e.g. mailbox unread updates in `App.tsx`)
+- Main task consumer: `packages/dashboard/app/hooks/useTasks.ts`
+- Additional consumers: `packages/dashboard/app/App.tsx` (mailbox unread updates)
 
-This path uses **one `EventSource` per URL** and fans out events to many subscribers to avoid duplicate browser connections.
+Contract: **one `EventSource` per URL**, fan-out via `subscribeSse(...)`.
 
-### Dedicated SSE endpoints with separate lifecycles
+### B. Dedicated streams that are intentionally separate
 
-These are intentionally separate from `/api/events` ownership:
+These should not be collapsed into `/api/events` unless product architecture changes:
 
-- Task log stream: `GET /api/tasks/:id/logs/stream` in `packages/dashboard/src/server.ts`
-- Legacy terminal stream: `GET /api/terminal/sessions/:id/stream` in `packages/dashboard/src/server.ts`
-- Chat response streaming: session message streaming in `packages/dashboard/src/chat.ts` / chat routes
-- Dev server logs stream: `GET /api/dev-server/logs/stream` (dev-server route module)
-
-**Rule:** Do not force these dedicated streams through the `/api/events` contract unless the product behavior itself changes.
-
----
-
-## 2) Why shared `/api/events` exists
-
-`packages/dashboard/app/sse-bus.ts` exists because browsers have limited HTTP/1.1 per-origin connections (commonly ~6). Multiple independent `EventSource` instances can consume all slots and stall normal `fetch` requests.
-
-The bus prevents this by:
-
-1. Creating at most one `EventSource` per exact URL (`channels: Map<string, Channel>`)
-2. Multiplexing event handlers to subscribers
-3. Closing the channel when the last subscriber unsubscribes
-4. Reconnecting with a controlled heartbeat/retry strategy
-
-This is also the pattern used by remote-node event subscriptions (`useRemoteNodeEvents.ts`) so proxied SSE URLs are shared the same way.
+- Task logs SSE: `GET /api/tasks/:id/logs/stream` in `packages/dashboard/src/server.ts`
+- Legacy terminal SSE: `GET /api/terminal/sessions/:id/stream` in `packages/dashboard/src/server.ts`
+- Chat session stream manager + SSE route plumbing: `packages/dashboard/src/chat.ts` + `packages/dashboard/src/routes.ts`
+- Planning/session stream manager + SSE route plumbing: `packages/dashboard/src/planning.ts` + `packages/dashboard/src/routes.ts`
+- Dev-server logs SSE: `GET /api/dev-server/logs/stream` in `packages/dashboard/src/dev-server-routes.ts`
+- Remote node `/api/events` proxy stream: `GET /api/proxy/:nodeId/events` in `packages/dashboard/src/routes/register-proxy-routes.ts`
 
 ---
 
-## 3) Client lifecycle contract (`sse-bus.ts`)
+## 2) Shared `/api/events` browser contract (`sse-bus.ts`)
 
-### 3.1 Channel keying and project isolation
+Why this exists: browsers have limited HTTP/1.1 per-origin connection slots (commonly ~6). Multiple raw `EventSource` instances cause slot starvation and can stall normal `fetch` calls.
 
-Channel identity is URL-based. These are different channels:
+`packages/dashboard/app/sse-bus.ts` enforces:
+
+1. one channel per exact URL (`Map<string, Channel>`)
+2. subscription multiplexing (`subscribeSse`)
+3. close on last unsubscribe
+4. reconnect + heartbeat liveness
+5. unload/bfcache cleanup
+
+### URL identity and scoping
+
+Channel identity is URL-based. These are distinct channels:
 
 - `/api/events`
 - `/api/events?projectId=A`
 - `/api/events?projectId=B`
-- `/api/proxy/:nodeId/events?...`
+- `/api/proxy/<nodeId>/events?...`
 
-That means project scope and remote node scope are isolated by URL and do not share the same underlying `EventSource`.
+This is the first line of project/node isolation in the browser.
 
-### 3.2 `clientId` behavior and control endpoints
+### `clientId` and keepalive/disconnect controls (local `/api/events` only)
 
-For local `/api/events` URLs only, the bus appends a session-scoped `clientId` query parameter and uses control endpoints:
+For same-origin `/api/events`, the bus appends session-scoped `clientId` and uses:
 
 - `POST /api/events/keepalive?clientId=...&projectId=...`
 - `POST /api/events/disconnect?clientId=...&projectId=...`
 
-`clientId` is stored in `sessionStorage` (`fusion:sse-client-id`) with in-memory fallback.
+`clientId` storage:
+
+- primary: `sessionStorage` key `fusion:sse-client-id`
+- fallback: in-memory random id
 
 Purpose:
 
-- Let server reap stale browser streams even when transport close is delayed
-- Let page unload explicitly release server listeners
-- Let newest stream supersede older stream for same `(clientId, projectId)`
+- stale stream reaping on server
+- explicit unload release (`sendBeacon`/`fetch keepalive` fallback)
+- supersede older stream for same `(clientId, projectId)`
 
-### 3.3 Heartbeat + reconnect
+### Reconnect and liveness constants
 
-Key constants in `sse-bus.ts`:
+From `sse-bus.ts`:
 
-- Heartbeat timeout: `45_000ms`
-- Reconnect delay: `3_000ms`
-- Client keepalive interval: `2_000ms`
+- heartbeat timeout: `45_000ms`
+- reconnect delay: `3_000ms`
+- keepalive interval: `2_000ms`
 
-Reconnect behavior:
+Behavior:
 
-- Any stream error triggers `forceReconnect(...)`
-- Subscribers receive `onReconnect` to trigger state resync
-- Heartbeat timeout also triggers reconnect
-- Reconnect is blocked if channel has been closed/unsubscribed
+- stream `error` → `forceReconnect(...)`
+- missing heartbeat/message > timeout → reconnect
+- `onReconnect` callback lets consumers refetch authoritative state
+- reconnect is suppressed once channel is closed/unsubscribed
 
-### 3.4 Unload / bfcache cleanup
+### Unload / bfcache lifecycle
 
-The bus listens to `pagehide`, `beforeunload`, and `pageshow` to:
+`sse-bus.ts` listens to:
 
-- close local channels and send disconnect beacons during unload
-- reopen persisted channels when page is restored from bfcache
+- `pagehide`
+- `beforeunload`
+- `pageshow` (`persisted` bfcache restore)
 
-This is a key defense against connection leakage across refresh/navigation.
-
----
-
-## 4) View-aware subscription gating (`App.tsx` + `useTasks.ts`)
-
-Task SSE should be active only when task stream updates are needed:
-
-- Enabled in `board` and `list` views
-- Disabled for other views (e.g. missions) to free connection budget
-
-Implementation:
-
-- `App.tsx` computes `taskSseEnabled = taskView === "board" || taskView === "list"`
-- `useTasks({ sseEnabled })` skips subscription when false
-
-`useTasks` still performs fetch/refresh behavior without SSE:
-
-- initial fetch
-- visibility-change refresh
-- reconnect-triggered resync when SSE is enabled
-
-This split avoids stale board data while preventing unnecessary streams in non-task views.
+This prevents background/leaked connections after refresh/navigation and safely reopens persisted subscriptions.
 
 ---
 
-## 5) Server ownership of `/api/events` (`server.ts` + `sse.ts`)
+## 3) View-aware gating and stale-event protection (`useTasks.ts`, `App.tsx`)
 
-### 5.1 Route owner and scope resolution
+`useTasks` is the reference consumer for `/api/events` task lifecycle updates.
 
-`packages/dashboard/src/server.ts` owns `GET /api/events` and resolves scope via `projectId` query parameter.
+### View-aware gating
 
-For project-scoped streams, server prefers engine-owned stores:
+`App.tsx` computes:
 
-1. If `engineManager.getEngine(projectId)` exists, use that engine's stores
-2. Otherwise fallback to `getOrCreateProjectStore(projectId)`
+- `taskSseEnabled = taskView === "board" || taskView === "list"`
 
-This avoids attaching SSE listeners to a different TaskStore/EventEmitter than the engine is mutating.
+and passes it into `useTasks({ sseEnabled })`.
 
-### 5.2 Shared EventEmitter expectation
+This disables board-task SSE in non-task views to reduce unnecessary background connections.
 
-`createSSE(...)` in `packages/dashboard/src/sse.ts` subscribes with `on(...)` to store emitters (`task:*`, mission, AI session, plugin, message, chat, automation) and must always mirror teardown with `off(...)` during cleanup.
+### Project-switch stale guards
 
-Any new event forwarding must preserve this **subscribe/unsubscribe symmetry**.
+`useTasks.ts` protects against stale cross-project callbacks via:
 
-### 5.3 Connection management, heartbeat, stale reaping
+- `projectContextVersionRef`
+- captured request `projectId` checks in `refreshTasks`
+- stale handler checks before applying SSE updates
 
-Server-side SSE connection handling includes:
-
-- active connection tracking and high-water metrics
-- named `heartbeat` event every 30s
-- safe write with backpressure guard (`SSE_MAX_BUFFERED_BYTES`)
-- stale-client timer keyed by `(clientId, projectId)`
-- superseding older same-client streams
-- explicit disconnect (`disconnectSSEClient`) and keepalive (`markSSEClientAlive`) endpoints
-
-Cleanup paths include request close/aborted, response close, socket close/error, send failures, stale timeout, supersede, and backpressure.
+This is the primary defense against old-project events mutating current-project state.
 
 ---
 
-## 6) Project and remote-node scoping
+## 4) Server `/api/events` ownership and store coherence (`server.ts`, `sse.ts`, `project-store-resolver.ts`)
 
-### Local project scoping
+### Route ownership
 
-Use:
+`packages/dashboard/src/server.ts` owns:
 
-- `/api/events?projectId=<projectId>`
+- `GET /api/events`
+- `POST /api/events/keepalive`
+- `POST /api/events/disconnect`
 
-This keeps task/missions/events scoped to the selected project store.
+### Project-scoped store resolution order
 
-### Remote node scoping
+For `projectId` streams, server prefers engine-owned stores to keep EventEmitter identity coherent with mutation paths:
 
-Proxy route:
+1. `engineManager.getEngine(projectId)?.getTaskStore()` (plus engine message/agent/automation stores)
+2. fallback `getOrCreateProjectStore(projectId)`
 
-- `GET /api/proxy/:nodeId/events` in `packages/dashboard/src/routes/register-proxy-routes.ts`
+`packages/dashboard/src/project-store-resolver.ts` caches per-project `TaskStore` instances so API routes and SSE listeners share the same in-memory emitter graph.
 
-The proxy forwards upstream `/api/events` (including query string) and preserves SSE framing to the browser.
+### SSE listener symmetry and teardown
 
-Client side:
+`createSSE(...)` in `packages/dashboard/src/sse.ts` subscribes to task/mission/AI-session/plugin/agent/message/chat/automation events with `on(...)` and removes every one with `off(...)` in cleanup.
 
-- `useRemoteNodeEvents.ts` subscribes via `subscribeSse("/api/proxy/:nodeId/events")`
+**Invariant:** any new forwarded event must preserve strict `on(...)`/`off(...)` symmetry.
 
-Because it reuses the shared bus, remote-node consumers get the same multiplexing/reconnect behavior and avoid duplicate proxied streams per URL.
+### Connection safety controls (`sse.ts`)
+
+- active connection tracking + high-water stats
+- heartbeat event every 30s (`event: heartbeat`)
+- stale client timer (`SSE_CLIENT_STALE_MS = 5_000`) refreshed by keepalive endpoint
+- supersede prior same `(clientId, projectId)` connection
+- backpressure guard (`SSE_MAX_BUFFERED_BYTES`)
+- cleanup paths: request close/aborted, response close, socket close/error, send failure, stale timeout, supersede, backpressure
 
 ---
 
-## 7) Validation points (tests to run before changing conventions)
+## 5) Remote-node SSE proxy contract (`register-proxy-routes.ts`, `useRemoteNodeEvents.ts`)
 
-At minimum, verify these suites:
+Proxy endpoint:
+
+- `GET /api/proxy/:nodeId/events`
+
+Server behavior (`register-proxy-routes.ts`):
+
+- forwards query string to upstream `/api/events`
+- forwards bearer auth from node `apiKey`
+- preserves SSE framing
+- aborts upstream and destroys stream on downstream client disconnect
+
+Client behavior (`useRemoteNodeEvents.ts`):
+
+- subscribes via `subscribeSse(...)`
+- inherits shared bus multiplexing/reconnect semantics per proxy URL
+
+---
+
+## 6) Known pitfalls to explicitly avoid
+
+1. **Raw `new EventSource(...)` in feature hooks/components**
+   - bypasses bus multiplexing, creates duplicate streams, risks HTTP/1.1 slot starvation.
+2. **Missing `off(...)` during SSE server cleanup**
+   - leaks listeners and cross-session events.
+3. **Project-switch stale callbacks not guarded**
+   - old project events mutate current project state.
+4. **Store instance mismatch for project streams**
+   - same SQLite DB is not enough; EventEmitter instance identity matters for realtime propagation.
+5. **Background SSE when view does not need it**
+   - unnecessary connection pressure and noisy updates.
+6. **Ambiguous stream ownership**
+   - do not route chat/planning/task-logs/dev-server streams through `/api/events` by default.
+
+---
+
+## 7) Test suites that protect this contract
+
+Run these whenever changing SSE/event-stream behavior:
 
 - `packages/dashboard/app/__tests__/sse-bus.test.ts`
-  - one-EventSource-per-URL multiplexing
-  - reconnect and teardown behavior
+  - URL-scoped multiplexing, reconnect, teardown
 - `packages/dashboard/app/hooks/__tests__/useTasks.test.ts`
-  - task event reconciliation
-  - stale project-event guard on project switches
-  - heartbeat/reconnect resync behavior
+  - stale project-event guards, reconnect resync, heartbeat behavior
 - `packages/dashboard/src/__tests__/sse.test.ts`
-  - server-side clientId disconnect/keepalive/supersede behavior
-  - listener cleanup expectations
+  - server clientId keepalive/disconnect/supersede, listener cleanup, backpressure close
 - `packages/dashboard/src/__tests__/server.events.test.ts`
-  - events endpoint wiring/integration contracts
+  - `/api/events` wiring integration
+- `packages/dashboard/src/__tests__/proxy-routes.test.ts`
+  - remote SSE proxy forwarding, timeout/transport failure handling, disconnect cleanup
 
 ---
 
-## 8) Common pitfalls and troubleshooting
+## 8) Maintainer checklist for adding/modifying streams
 
-### Pitfall: opening native EventSource in each hook/component
+Before merge:
 
-Anti-pattern: bypassing `subscribeSse` and creating raw `new EventSource("/api/events")` per consumer.
-
-Impact:
-
-- duplicate connections
-- HTTP/1.1 slot exhaustion
-- stalled fetches and flaky UI updates
-
-Fix: always route `/api/events` consumers through `sse-bus.ts`.
-
-### Pitfall: stale events after project switch
-
-`useTasks` guards SSE handlers with `projectContextVersionRef`.
-
-If changing project-switch behavior, keep stale-event guards and late-response guards intact so old project events cannot mutate new project state.
-
-### Pitfall: missing symmetric cleanup
-
-Any new `on(...)` registration in SSE server code must have matching `off(...)` in cleanup.
-
-Missing cleanup causes listener leaks and cross-session event bleed.
-
-### Pitfall: assuming reconnect implies full consistency
-
-Reconnect may miss transient events while disconnected. Consumers should use `onReconnect` to refetch authoritative state (as `useTasks` does).
-
-### Pitfall: collapsing dedicated streams into `/api/events`
-
-Task logs/chat/dev-server streams have distinct payload and lifecycle semantics. Keep boundaries clear unless changing product architecture intentionally.
-
----
-
-## 9) Maintainer checklist for SSE changes
-
-Before merging SSE-related changes:
-
-1. Confirm ownership layer (`sse-bus`, `useTasks`, `server.ts`, `sse.ts`, proxy route) is still correct
-2. Confirm project-scoped and remote-node isolation still hold by URL and query forwarding
-3. Confirm subscribe/unsubscribe symmetry for every new forwarded event
-4. Confirm reconnect/resync behavior for affected consumers
-5. Run and update relevant tests listed above
-6. Update this document if the contract changed
+1. **Choose ownership intentionally**: shared `/api/events` bus vs dedicated stream.
+2. **Preserve scoping**: URL/query-based project and remote-node isolation.
+3. **Preserve emitter coherence**: use engine-owned project stores when available.
+4. **Preserve cleanup symmetry**: every `on(...)` has matching `off(...)`.
+5. **Preserve reconnect semantics**: consumers refetch on reconnect when consistency matters.
+6. **Preserve view-aware gating**: avoid unnecessary background SSE.
+7. **Update this doc** if the contract changed.
+8. **Run contract tests** listed above.
