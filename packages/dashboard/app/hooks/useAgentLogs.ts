@@ -3,22 +3,7 @@ import type { AgentLogEntry } from "@fusion/core";
 import { fetchAgentLogsWithMeta } from "../api";
 import { subscribeSse } from "../sse-bus";
 
-export const MAX_LOG_ENTRIES = 500;
 const INITIAL_LOAD_LIMIT = 100;
-
-/**
- * Cap the total number of log entries to `MAX_LOG_ENTRIES`.
- *
- * This is a **whole-list cap** — it limits how many entries are kept
- * in memory, not the content of any individual entry.  Per-entry `text`
- * and `detail` fields are never truncated anywhere in the pipeline
- * (persistence → API → SSE → hook → rendering).
- */
-function capLogEntries(entries: AgentLogEntry[]): AgentLogEntry[] {
-  return entries.length > MAX_LOG_ENTRIES
-    ? entries.slice(-MAX_LOG_ENTRIES)
-    : entries;
-}
 
 /**
  * Hook that manages agent log fetching and live SSE streaming for a task.
@@ -127,7 +112,7 @@ export function useAgentLogs(taskId: string | null, enabled: boolean, projectId?
             requestVersionRef.current !== requestVersion) {
           return;
         }
-        setEntries(capLogEntries(result.entries));
+        setEntries(result.entries);
         setHasMore(result.hasMore);
         setTotal(result.total);
       } catch {
@@ -162,7 +147,7 @@ export function useAgentLogs(taskId: string | null, enabled: boolean, projectId?
               }
               try {
                 const entry: AgentLogEntry = JSON.parse(e.data);
-                setEntries((prev) => capLogEntries([...prev, entry]));
+                setEntries((prev) => [...prev, entry]);
                 setTotal((prev) => (prev !== null ? prev + 1 : null));
               } catch {
                 // skip malformed events
@@ -209,10 +194,7 @@ export function useAgentLogs(taskId: string | null, enabled: boolean, projectId?
       }
 
       // Prepend older entries to the existing list
-      setEntries((prev) => {
-        const combined = [...result.entries, ...prev];
-        return capLogEntries(combined);
-      });
+      setEntries((prev) => [...result.entries, ...prev]);
       setHasMore(result.hasMore);
       setTotal(result.total);
     } catch {

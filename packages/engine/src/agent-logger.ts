@@ -160,14 +160,13 @@ export class AgentLogger {
    *
    * @param name - The tool name
    * @param isError - Whether the tool execution resulted in an error
-   * @param result - Optional result value (truncated for persistence)
+   * @param result - Optional result value (persisted in full)
    */
   onToolEnd(name: string, isError: boolean, result?: unknown): void {
     const type = isError ? "tool_error" : "tool_result";
     let detail: string | undefined;
     if (result !== undefined && result !== null) {
-      const str = typeof result === "string" ? result : JSON.stringify(result);
-      detail = str.length > 500 ? str.slice(0, 500) + "…" : str;
+      detail = typeof result === "string" ? result : JSON.stringify(result);
     }
     this.store.appendAgentLog(this.taskId, name, type, detail, this.agent).catch((err) => {
       this.log.warn(`Failed to log tool end "${name}" (${type}) for ${this.taskId}: ${err instanceof Error ? err.message : String(err)}`);

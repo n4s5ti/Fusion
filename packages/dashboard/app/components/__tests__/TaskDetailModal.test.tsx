@@ -229,10 +229,10 @@ describe("TaskDetailModal", () => {
   it("styles agent log viewer scroll container scrollbar rules", () => {
     const css = loadAllAppCss();
 
-    expectBaseRule(css, ".detail-section--agent-log .agent-log-viewer-scroll", "scrollbar-color: var(--border) transparent;");
-    expectBaseRule(css, ".detail-section--agent-log .agent-log-viewer-scroll", "scrollbar-width: thin;");
-    expectBaseRule(css, ".detail-section--agent-log .agent-log-viewer-scroll::-webkit-scrollbar", "width: 6px;");
-    expectBaseRule(css, ".detail-section--agent-log .agent-log-viewer-scroll::-webkit-scrollbar-thumb", "background: var(--border);");
+    expectBaseRule(css, ".agent-log-viewer-scroll", "scrollbar-color: var(--border) transparent;");
+    expectBaseRule(css, ".agent-log-viewer-scroll", "scrollbar-width: thin;");
+    expectBaseRule(css, ".agent-log-viewer-scroll::-webkit-scrollbar", "width: 6px;");
+    expectBaseRule(css, ".agent-log-viewer-scroll::-webkit-scrollbar-thumb", "background: var(--border);");
   });
 
   it("renders markdown-body without detail-prompt class when prompt exists", () => {

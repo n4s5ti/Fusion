@@ -1,10 +1,11 @@
 import type { AgentLogEntry } from "@fusion/core";
 import { ProviderIcon } from "./ProviderIcon";
-import { useRef, useEffect, useState, useCallback, useLayoutEffect, useMemo } from "react";
+import { useRef, useEffect, useState, useCallback, useLayoutEffect, useMemo, type ReactElement } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import type { Components } from "react-markdown";
 import { Maximize2, Minimize2, Loader2, ChevronDown, ChevronRight } from "lucide-react";
+import "./AgentLogViewer.css";
 
 function formatTimestamp(iso: string): string {
   const date = new Date(iso);
@@ -82,6 +83,11 @@ function buildEntryRenderKeys(entries: AgentLogEntry[]): string[] {
 
 function isToolLikeType(type: AgentLogEntry["type"]): boolean {
   return type === "tool" || type === "tool_result" || type === "tool_error";
+}
+
+function renderToolDetail(detail?: string): ReactElement | null {
+  if (!detail) return null;
+  return <pre className="agent-log-tool-detail">{detail}</pre>;
 }
 
 function shouldShowBadge(entry: AgentLogEntry, previousEntry?: AgentLogEntry): boolean {
@@ -485,8 +491,9 @@ export function AgentLogViewer({
             if (entry.type === "tool") {
               return (
                 <div key={group.key} className="agent-log-tool">
-                  {agentBadge}⚡ {entry.text}
-                  {entry.detail && <span className="agent-log-tool-detail">— {entry.detail}</span>}
+                  {agentBadge}
+                  <div className="agent-log-tool-title">⚡ {entry.text}</div>
+                  {renderToolDetail(entry.detail)}
                 </div>
               );
             }
@@ -494,8 +501,9 @@ export function AgentLogViewer({
             if (entry.type === "tool_result") {
               return (
                 <div key={group.key} className="agent-log-tool-result">
-                  {agentBadge}✓ {entry.text}
-                  {entry.detail && <span className="agent-log-tool-detail">— {entry.detail}</span>}
+                  {agentBadge}
+                  <div className="agent-log-tool-title">✓ {entry.text}</div>
+                  {renderToolDetail(entry.detail)}
                 </div>
               );
             }
@@ -503,8 +511,9 @@ export function AgentLogViewer({
             if (entry.type === "tool_error") {
               return (
                 <div key={group.key} className="agent-log-tool-error">
-                  {agentBadge}✗ {entry.text}
-                  {entry.detail && <span className="agent-log-tool-detail">— {entry.detail}</span>}
+                  {agentBadge}
+                  <div className="agent-log-tool-title">✗ {entry.text}</div>
+                  {renderToolDetail(entry.detail)}
                 </div>
               );
             }
@@ -525,7 +534,7 @@ export function AgentLogViewer({
                     </ReactMarkdown>
                   </div>
                 ) : (
-                  groupedText
+                  <pre className="agent-log-plain-block">{groupedText}</pre>
                 )}
               </div>
             );
@@ -541,7 +550,7 @@ export function AgentLogViewer({
                   </ReactMarkdown>
                 </div>
               ) : (
-                groupedText
+                <pre className="agent-log-plain-block">{groupedText}</pre>
               )}
             </div>
           );

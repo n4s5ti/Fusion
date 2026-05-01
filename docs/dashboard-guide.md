@@ -138,6 +138,16 @@ Memory view provides a multi-file editor for project and daily memory files.
 
 Inspect task definition, logs, comments, documents, workflow outcomes, model overrides, and task routing from a single modal.
 
+### Logs → Agent Log view
+
+The **Logs** tab includes an **Agent Log** subview designed for debugging long-running and tool-heavy sessions:
+
+- Full `thinking`, `tool_result`, and `tool_error` payloads are shown without entry-content truncation.
+- Raw tool output is rendered as multiline blocks, preserving line breaks and indentation.
+- The initial load fetches a recent page, then **Load More** progressively prepends older history.
+- Live streaming appends new entries in chronological order while preserving your scroll position when loading older pages.
+- The **Markdown / Plain** toggle lets you switch between formatted markdown and literal/raw text rendering.
+
 The **Routing** tab shows:
 - effective node
 - routing source (task override vs project default vs local)

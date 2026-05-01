@@ -478,6 +478,84 @@
   color: var(--text-muted);
 }
 
+.run-logs-container {
+  padding: var(--space-md);
+  background: var(--bg-secondary);
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+}
+
+.run-details-loading-state {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  padding: var(--space-sm) 0;
+}
+
+.run-output-sections {
+  margin-bottom: var(--space-md);
+}
+
+.run-output-section {
+  margin-bottom: var(--space-sm);
+}
+
+.run-output-label {
+  margin-bottom: var(--space-xs);
+  color: var(--text-muted);
+  font-size: calc(var(--space-sm) + var(--space-xs));
+  font-weight: 600;
+  letter-spacing: calc(var(--space-xs) * 0.1);
+  text-transform: uppercase;
+}
+
+.run-output-label--error {
+  color: var(--color-error);
+}
+
+.run-output-panel {
+  margin: 0;
+  max-height: calc(var(--space-2xl) * 6.25);
+  overflow: auto;
+  border-radius: var(--radius-sm);
+  padding: var(--space-sm) var(--space-md);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-size: calc(var(--space-sm) + var(--space-xs));
+  line-height: 1.5;
+}
+
+.run-output-panel--error {
+  color: var(--color-error);
+  border-color: color-mix(in srgb, var(--color-error) 35%, var(--border));
+  background: color-mix(in srgb, var(--color-error) 10%, transparent);
+}
+
+.run-context-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-xs) var(--space-md);
+  font-size: calc(var(--space-sm) + var(--space-xs));
+}
+
+.run-context-item {
+  line-height: 1.5;
+}
+
+.run-output-empty {
+  padding: var(--space-sm) 0;
+  font-style: italic;
+  font-size: calc(var(--space-sm) + var(--space-xs));
+}
+
+.run-agent-logs-section {
+  margin-top: var(--space-xs);
+  padding-top: var(--space-sm);
+  border-top: 1px solid var(--border);
+}
+
 /* --- Tasks Tab --- */
 .agent-tasks-list {
   display: flex;
@@ -1209,6 +1287,19 @@
 
   .run-details {
     flex-wrap: wrap;
+  }
+
+  .run-logs-container {
+    padding: var(--space-sm);
+  }
+
+  .run-output-panel {
+    max-height: calc(var(--space-2xl) * 5);
+  }
+
+  .run-context-grid {
+    flex-direction: column;
+    gap: var(--space-xs);
   }
 
   .run-details .text-muted {

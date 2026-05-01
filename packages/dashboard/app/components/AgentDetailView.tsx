@@ -1303,50 +1303,28 @@ function RunsTab({
           </div>
         </div>
         {isSelected && (
-          <div 
-            className="run-logs-container"
-            style={{
-              padding: "12px",
-              background: "var(--bg-secondary)",
-              borderBottom: "1px solid var(--border-color)",
-              borderTop: "1px solid var(--border-color)",
-            }}
-          >
+          <div className="run-logs-container">
             {/* Execution Details */}
             {isLoadingDetail ? (
-              <div style={{ display: "flex", alignItems: "center", gap: "8px", padding: "8px 0" }}>
+              <div className="run-details-loading-state">
                 <Loader2 size={14} className="animate-spin" />
                 <span className="text-muted">Loading details...</span>
               </div>
             ) : detailRun && (
-              <div style={{ marginBottom: "12px" }}>
+              <div className="run-output-sections">
                 {/* Token Usage */}
                 {detailRun.usageJson && (
-                  <div style={{ marginBottom: "8px" }}>
-                    <div style={{ fontSize: "11px", fontWeight: 600, textTransform: "uppercase", color: "var(--text-secondary)", marginBottom: "4px" }}>
-                      Token Usage
-                    </div>
+                  <div className="run-output-section">
+                    <div className="run-output-label">Token Usage</div>
                     {renderUsage(detailRun.usageJson)}
                   </div>
                 )}
 
                 {/* Output */}
                 {detailRun.stdoutExcerpt && (
-                  <div style={{ marginBottom: "8px" }}>
-                    <div style={{ fontSize: "11px", fontWeight: 600, textTransform: "uppercase", color: "var(--text-secondary)", marginBottom: "4px" }}>
-                      Output
-                    </div>
-                    <pre style={{
-                      background: "var(--bg-tertiary, #161b22)",
-                      padding: "8px 12px",
-                      borderRadius: "6px",
-                      fontSize: "12px",
-                      maxHeight: "200px",
-                      overflow: "auto",
-                      margin: 0,
-                      whiteSpace: "pre-wrap",
-                      wordBreak: "break-word",
-                    }}>
+                  <div className="run-output-section">
+                    <div className="run-output-label">Output</div>
+                    <pre className="run-output-panel">
                       {detailRun.stdoutExcerpt.length > 2000
                         ? `${detailRun.stdoutExcerpt.slice(0, 2000)}\n\n... (truncated, ${detailRun.stdoutExcerpt.length} chars total)`
                         : detailRun.stdoutExcerpt}
@@ -1356,58 +1334,27 @@ function RunsTab({
 
                 {/* Errors */}
                 {detailRun.stderrExcerpt && (
-                  <div style={{ marginBottom: "8px" }}>
-                    <div style={{ fontSize: "11px", fontWeight: 600, textTransform: "uppercase", color: "var(--color-error, #f85149)", marginBottom: "4px" }}>
-                      Errors
-                    </div>
-                    <pre style={{
-                      background: "rgba(248, 81, 73, 0.1)",
-                      color: "var(--color-error, #f85149)",
-                      padding: "8px 12px",
-                      borderRadius: "6px",
-                      fontSize: "12px",
-                      maxHeight: "200px",
-                      overflow: "auto",
-                      margin: 0,
-                      whiteSpace: "pre-wrap",
-                      wordBreak: "break-word",
-                    }}>
-                      {detailRun.stderrExcerpt}
-                    </pre>
+                  <div className="run-output-section">
+                    <div className="run-output-label run-output-label--error">Errors</div>
+                    <pre className="run-output-panel run-output-panel--error">{detailRun.stderrExcerpt}</pre>
                   </div>
                 )}
 
                 {/* Result */}
                 {detailRun.resultJson && (
-                  <div style={{ marginBottom: "8px" }}>
-                    <div style={{ fontSize: "11px", fontWeight: 600, textTransform: "uppercase", color: "var(--text-secondary)", marginBottom: "4px" }}>
-                      Result
-                    </div>
-                    <pre style={{
-                      background: "var(--bg-tertiary, #161b22)",
-                      padding: "8px 12px",
-                      borderRadius: "6px",
-                      fontSize: "12px",
-                      maxHeight: "200px",
-                      overflow: "auto",
-                      margin: 0,
-                      whiteSpace: "pre-wrap",
-                      wordBreak: "break-word",
-                    }}>
-                      {JSON.stringify(detailRun.resultJson, null, 2)}
-                    </pre>
+                  <div className="run-output-section">
+                    <div className="run-output-label">Result</div>
+                    <pre className="run-output-panel">{JSON.stringify(detailRun.resultJson, null, 2)}</pre>
                   </div>
                 )}
 
                 {/* Context */}
                 {detailRun.contextSnapshot && Object.keys(detailRun.contextSnapshot).length > 0 && (
-                  <div style={{ marginBottom: "8px" }}>
-                    <div style={{ fontSize: "11px", fontWeight: 600, textTransform: "uppercase", color: "var(--text-secondary)", marginBottom: "4px" }}>
-                      Context
-                    </div>
-                    <div style={{ display: "flex", flexWrap: "wrap", gap: "4px 12px", fontSize: "12px" }}>
+                  <div className="run-output-section">
+                    <div className="run-output-label">Context</div>
+                    <div className="run-context-grid">
                       {Object.entries(detailRun.contextSnapshot).map(([key, value]) => (
-                        <span key={key}>
+                        <span key={key} className="run-context-item">
                           <span className="text-muted">{key}:</span>{" "}
                           <span>{String(value)}</span>
                         </span>
@@ -1418,27 +1365,21 @@ function RunsTab({
 
                 {/* No output state */}
                 {!detailRun.stdoutExcerpt && !detailRun.stderrExcerpt && !detailRun.resultJson && (
-                  <div className="text-muted" style={{ padding: "8px 0", fontStyle: "italic", fontSize: "12px" }}>
-                    No output captured
-                  </div>
+                  <div className="text-muted run-output-empty">No output captured</div>
                 )}
               </div>
             )}
 
             {/* Run Logs */}
-            <div style={{ borderTop: "1px solid var(--border-color)", paddingTop: "8px", marginTop: "4px" }}>
-              <div style={{ fontSize: "11px", fontWeight: 600, textTransform: "uppercase", color: "var(--text-secondary)", marginBottom: "4px" }}>
-                Agent Logs
-              </div>
+            <div className="run-agent-logs-section">
+              <div className="run-output-label">Agent Logs</div>
               {isLoadingLogs ? (
-                <div style={{ display: "flex", alignItems: "center", gap: "8px", padding: "8px 0" }}>
+                <div className="run-details-loading-state">
                   <Loader2 size={14} className="animate-spin" />
                   <span className="text-muted">Loading logs...</span>
                 </div>
               ) : runLogs.length === 0 ? (
-                <div className="text-muted" style={{ padding: "8px 0", fontStyle: "italic" }}>
-                  No logs available for this run
-                </div>
+                <div className="text-muted run-output-empty">No logs available for this run</div>
               ) : (
                 <AgentLogViewer entries={runLogs} loading={false} />
               )}

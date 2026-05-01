@@ -327,7 +327,23 @@ describe("AgentLogger", () => {
     expect(store.appendAgentLog).toHaveBeenCalledWith("FN-016", "Read", "tool_error", "file not found", "executor");
   });
 
-  it("truncates long tool results to 500 chars", async () => {
+  it("preserves long tool errors without truncation", async () => {
+    const store = createMockStore();
+    const logger = new AgentLogger({
+      store,
+      taskId: "FN-016B",
+      agent: "executor",
+    });
+
+    const longError = "error:" + "y".repeat(1200);
+    logger.onToolEnd("Read", true, longError);
+    await vi.advanceTimersByTimeAsync(0);
+
+    const call = (store.appendAgentLog as ReturnType<typeof vi.fn>).mock.calls[0];
+    expect(call[3]).toBe(longError);
+  });
+
+  it("preserves long tool results without truncation", async () => {
     const store = createMockStore();
     const logger = new AgentLogger({
       store,
@@ -340,7 +356,7 @@ describe("AgentLogger", () => {
     await vi.advanceTimersByTimeAsync(0);
 
     const call = (store.appendAgentLog as ReturnType<typeof vi.fn>).mock.calls[0];
-    expect(call[3]).toBe("x".repeat(500) + "…");
+    expect(call[3]).toBe(longResult);
   });
 
   it("handles undefined result in onToolEnd", async () => {

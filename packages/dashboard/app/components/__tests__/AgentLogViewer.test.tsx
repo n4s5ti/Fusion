@@ -1123,7 +1123,7 @@ describe("AgentLogViewer", () => {
       const detail = container.querySelector(".agent-log-tool-detail");
       expect(detail).toBeTruthy();
       expect(detail!.textContent).toContain(longDetail);
-      expect(detail!.textContent!.length).toBeGreaterThan(5000); // " — " prefix adds a few chars
+      expect(detail!.textContent!.length).toBe(5000);
     });
 
     it("renders multiline text content without truncation", () => {
@@ -1167,6 +1167,16 @@ describe("AgentLogViewer", () => {
       const detail = container.querySelector(".agent-log-tool-detail");
       expect(detail).toBeTruthy();
       expect(detail!.textContent).toContain(longDetail);
+    });
+
+    it("preserves raw whitespace in tool detail blocks", () => {
+      const detailText = "stdout:\n  line one\n    indented line two\n";
+      const entries = [makeEntry({ text: "Bash", type: "tool_result", detail: detailText })];
+      const { container } = render(<AgentLogViewer entries={entries} loading={false} />);
+      const detail = container.querySelector(".agent-log-tool-detail") as HTMLElement;
+      expect(detail).toBeTruthy();
+      expect(detail.tagName).toBe("PRE");
+      expect(detail.textContent).toBe(detailText);
     });
   });
 
@@ -1350,6 +1360,8 @@ describe("AgentLogViewer", () => {
       const textSpans = container.querySelectorAll(".agent-log-text");
       expect(textSpans).toHaveLength(1);
       expect(textSpans[0].textContent).toContain("**bold** and *italic*");
+      const plainBlock = textSpans[0].querySelector(".agent-log-plain-block") as HTMLElement;
+      expect(plainBlock).toBeTruthy();
       // Plain mode should remove markdown rendering/prose container
       expect(textSpans[0].querySelector(".markdown-body")).toBeNull();
       expect(textSpans[0].querySelector("strong")).toBeNull();
@@ -1405,6 +1417,18 @@ describe("AgentLogViewer", () => {
       const strong = textSpans[0].querySelector("strong");
       expect(strong).toBeTruthy();
       expect(strong!.textContent).toBe("bold");
+    });
+
+    it("preserves line breaks in plain text mode for thinking entries", () => {
+      const entries = [makeEntry({ text: "line1\nline2\nline3", type: "thinking", agent: "executor" })];
+      const { container } = render(<AgentLogViewer entries={entries} loading={false} />);
+      const toggle = container.querySelector("[data-testid='agent-log-mode-toggle']") as HTMLButtonElement;
+
+      fireEvent.click(toggle);
+
+      const plainThinking = container.querySelector(".agent-log-thinking .agent-log-plain-block") as HTMLElement;
+      expect(plainThinking).toBeTruthy();
+      expect(plainThinking.textContent).toContain("line1\nline2\nline3");
     });
 
     it("shows raw markdown syntax literally in plain text mode for text entries", () => {

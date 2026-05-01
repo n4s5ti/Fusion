@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { renderHook, act, waitFor } from "@testing-library/react";
-import { MAX_LOG_ENTRIES, useAgentLogs } from "../useAgentLogs";
+import { useAgentLogs } from "../useAgentLogs";
 import { fetchAgentLogsWithMeta } from "../../api";
 
 // Mock the api module
@@ -191,8 +191,9 @@ describe("useAgentLogs", () => {
     expect(es.close).toHaveBeenCalled();
   });
 
-  it("truncates oversized historical logs to the most recent entries", async () => {
-    const historicalLogs = Array.from({ length: MAX_LOG_ENTRIES + 25 }, (_, index) => ({
+  it("keeps oversized historical logs without truncating older entries", async () => {
+    const oversizedCount = 525;
+    const historicalLogs = Array.from({ length: oversizedCount }, (_, index) => ({
       timestamp: `2026-01-01T00:${String(index).padStart(2, "0")}:00Z`,
       taskId: "FN-001",
       text: `entry-${index}`,
@@ -207,15 +208,16 @@ describe("useAgentLogs", () => {
     const { result } = renderHook(() => useAgentLogs("FN-001", true));
 
     await waitFor(() => {
-      expect(result.current.entries).toHaveLength(MAX_LOG_ENTRIES);
+      expect(result.current.entries).toHaveLength(oversizedCount);
     });
 
-    expect(result.current.entries[0].text).toBe("entry-25");
-    expect(result.current.entries.at(-1)?.text).toBe(`entry-${MAX_LOG_ENTRIES + 24}`);
+    expect(result.current.entries[0].text).toBe("entry-0");
+    expect(result.current.entries.at(-1)?.text).toBe(`entry-${oversizedCount - 1}`);
   });
 
-  it("truncates live SSE entries to the most recent entries", async () => {
-    mockFetchAgentLogsWithMeta.mockResolvedValueOnce({ entries: [], total: MAX_LOG_ENTRIES + 20, hasMore: false });
+  it("keeps oversized live SSE history without truncation", async () => {
+    const streamedCount = 520;
+    mockFetchAgentLogsWithMeta.mockResolvedValueOnce({ entries: [], total: streamedCount, hasMore: false });
 
     const { result } = renderHook(() => useAgentLogs("FN-001", true));
 
@@ -225,7 +227,7 @@ describe("useAgentLogs", () => {
 
     const es = MockEventSource.instances[0];
     act(() => {
-      for (let index = 0; index < MAX_LOG_ENTRIES + 20; index++) {
+      for (let index = 0; index < streamedCount; index++) {
         es._emit("agent:log", {
           timestamp: `2026-01-01T00:${String(index).padStart(2, "0")}:00Z`,
           taskId: "FN-001",
@@ -236,11 +238,11 @@ describe("useAgentLogs", () => {
     });
 
     await waitFor(() => {
-      expect(result.current.entries).toHaveLength(MAX_LOG_ENTRIES);
+      expect(result.current.entries).toHaveLength(streamedCount);
     });
 
-    expect(result.current.entries[0].text).toBe("live-20");
-    expect(result.current.entries.at(-1)?.text).toBe(`live-${MAX_LOG_ENTRIES + 19}`);
+    expect(result.current.entries[0].text).toBe("live-0");
+    expect(result.current.entries.at(-1)?.text).toBe(`live-${streamedCount - 1}`);
   });
 
   it("does not fetch when taskId is null", () => {
@@ -368,6 +370,56 @@ describe("useAgentLogs", () => {
         "middle",
         "newest",
       ]);
+    });
+
+    it("keeps full history across initial load, loadMore, and live streaming", async () => {
+      const initialLogs = Array.from({ length: 300 }, (_, index) => ({
+        timestamp: `2026-01-02T00:${String(index).padStart(2, "0")}:00Z`,
+        taskId: "FN-001",
+        text: `initial-${index}`,
+        type: "text" as const,
+      }));
+      const olderLogs = Array.from({ length: 250 }, (_, index) => ({
+        timestamp: `2026-01-01T00:${String(index).padStart(2, "0")}:00Z`,
+        taskId: "FN-001",
+        text: `older-${index}`,
+        type: "text" as const,
+      }));
+
+      mockFetchAgentLogsWithMeta
+        .mockResolvedValueOnce({ entries: initialLogs, total: 550, hasMore: true })
+        .mockResolvedValueOnce({ entries: olderLogs, total: 550, hasMore: false });
+
+      const { result } = renderHook(() => useAgentLogs("FN-001", true));
+
+      await waitFor(() => {
+        expect(result.current.entries).toHaveLength(300);
+      });
+
+      await act(async () => {
+        await result.current.loadMore();
+      });
+
+      await waitFor(() => {
+        expect(result.current.entries).toHaveLength(550);
+      });
+
+      const es = MockEventSource.instances[0];
+      act(() => {
+        es._emit("agent:log", {
+          timestamp: "2026-01-03T00:00:00Z",
+          taskId: "FN-001",
+          text: "live-after-large-history",
+          type: "text",
+        });
+      });
+
+      await waitFor(() => {
+        expect(result.current.entries).toHaveLength(551);
+      });
+
+      expect(result.current.entries[0].text).toBe("older-0");
+      expect(result.current.entries.at(-1)?.text).toBe("live-after-large-history");
     });
 
     it("loadMore does not trigger when already loading more", async () => {
