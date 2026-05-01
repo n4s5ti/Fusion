@@ -594,6 +594,50 @@ describe("createFnAgent", () => {
     });
   });
 
+  it("keeps caller customTools in readonly sessions", async () => {
+    createReadOnlyToolsMock.mockReturnValueOnce([{ name: "read" }] as any);
+    const delegationTool = {
+      name: "fn_list_agents",
+      label: "List Agents",
+      description: "List available agents",
+      parameters: {},
+      execute: vi.fn(),
+    };
+
+    const { createFnAgent } = await import("../pi.js");
+    await createFnAgent({
+      cwd: "/tmp",
+      systemPrompt: "test",
+      tools: "readonly",
+      customTools: [delegationTool as any],
+    });
+
+    const createSessionArgs = createAgentSessionMock.mock.calls[0]?.[0] as { customTools: Array<{ name: string }> };
+    expect(createSessionArgs.customTools.map((tool) => tool.name)).toContain("fn_list_agents");
+  });
+
+  it("keeps caller customTools in coding sessions", async () => {
+    createCodingToolsMock.mockReturnValueOnce([{ name: "read" }, { name: "write" }] as any);
+    const customTool = {
+      name: "fn_heartbeat_done",
+      label: "Heartbeat Done",
+      description: "Complete heartbeat",
+      parameters: {},
+      execute: vi.fn(),
+    };
+
+    const { createFnAgent } = await import("../pi.js");
+    await createFnAgent({
+      cwd: "/tmp",
+      systemPrompt: "test",
+      tools: "coding",
+      customTools: [customTool as any],
+    });
+
+    const createSessionArgs = createAgentSessionMock.mock.calls[0]?.[0] as { customTools: Array<{ name: string }> };
+    expect(createSessionArgs.customTools.map((tool) => tool.name)).toContain("fn_heartbeat_done");
+  });
+
   it("logs createFnAgent startup diagnostics without leaking cwd", async () => {
     const { piLog } = await import("../logger.js");
     const logSpy = vi.spyOn(piLog, "log").mockImplementation(() => {});
