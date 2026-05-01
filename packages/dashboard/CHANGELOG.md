@@ -1,5 +1,15 @@
 # @fusion/dashboard
 
+## 0.11.0
+
+### Patch Changes
+
+- @fusion/core@0.11.0
+- @fusion/engine@0.11.0
+- @fusion-plugin-examples/hermes-runtime@0.2.13
+- @fusion-plugin-examples/openclaw-runtime@0.2.13
+- @fusion-plugin-examples/paperclip-runtime@0.2.13
+
 ## 0.10.0
 
 ### Patch Changes
