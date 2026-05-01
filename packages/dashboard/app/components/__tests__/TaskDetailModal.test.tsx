@@ -142,7 +142,7 @@ describe("TaskDetailModal", () => {
   describe("provenance display", () => {
     it.each([
       ["dashboard_ui", undefined, "Created via Dashboard"],
-      ["agent_heartbeat", "agent-123", "Created via Agent (agent-123)"],
+      ["agent_heartbeat", "agent-123", "Created by"],
     ] as const)("renders provenance text for %s", (sourceType, sourceAgentId, expectedText) => {
       render(
         <TaskDetailModal
@@ -156,7 +156,10 @@ describe("TaskDetailModal", () => {
         />,
       );
 
-      expect(screen.getByText(expectedText)).toBeInTheDocument();
+      expect(screen.getByText(new RegExp(expectedText))).toBeInTheDocument();
+      if (sourceType === "agent_heartbeat" && sourceAgentId) {
+        expect(screen.getByRole("button", { name: sourceAgentId })).toBeInTheDocument();
+      }
     });
 
     it("renders parent task link for refinement provenance", async () => {

@@ -1,5 +1,5 @@
 import "./TaskDetailModal.css";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Pencil, Bot, X, ChevronDown, ChevronRight, GitBranch } from "lucide-react";
 import { useModalResizePersist } from "../hooks/useModalResizePersist";
 import { useOverlayDismiss } from "../hooks/useOverlayDismiss";
@@ -227,6 +227,11 @@ interface ProvenanceDisplay {
   label: string;
   parentTaskId?: string;
   contextInfo?: string;
+  sourceAgentId?: string;
+}
+
+interface ProvenanceLabelOptions {
+  sourceAgentName?: string;
 }
 
 function getIssueUrlFromMetadata(metadata: Task["sourceMetadata"]): string | undefined {
@@ -234,7 +239,9 @@ function getIssueUrlFromMetadata(metadata: Task["sourceMetadata"]): string | und
   return typeof issueUrl === "string" && issueUrl.length > 0 ? issueUrl : undefined;
 }
 
-function getProvenanceLabel(task: Task | TaskDetail): ProvenanceDisplay | null {
+const AgentDetailView = lazy(() => import("./AgentDetailView").then((m) => ({ default: m.AgentDetailView })));
+
+function getProvenanceLabel(task: Task | TaskDetail, options: ProvenanceLabelOptions = {}): ProvenanceDisplay | null {
   switch (task.sourceType) {
     case "dashboard_ui":
       return { label: "Dashboard" };
@@ -242,10 +249,13 @@ function getProvenanceLabel(task: Task | TaskDetail): ProvenanceDisplay | null {
       return { label: "Quick Chat" };
     case "chat_session":
       return { label: "Chat Session" };
-    case "agent_heartbeat":
+    case "agent_heartbeat": {
+      const sourceLabel = options.sourceAgentName ?? task.sourceAgentId;
       return {
-        label: task.sourceAgentId ? `Agent (${task.sourceAgentId})` : "Agent",
+        label: sourceLabel ?? "agent",
+        sourceAgentId: task.sourceAgentId,
       };
+    }
     case "automation":
       return { label: "Automation" };
     case "cron":
@@ -361,7 +371,11 @@ export function TaskDetailModal({
     (task.stuckKillCount ?? 0) > 0 ||
     (task.recoveryRetryCount ?? 0) > 0 ||
     Boolean(task.nextRecoveryAt);
-  const provenanceDisplay = getProvenanceLabel(workingTask);
+  const [sourceAgent, setSourceAgent] = useState<Agent | null>(null);
+  const [selectedSourceAgentId, setSelectedSourceAgentId] = useState<string | null>(null);
+  const provenanceDisplay = getProvenanceLabel(workingTask, {
+    sourceAgentName: sourceAgent?.name,
+  });
 
   // Sync activeTab when the caller changes initialTab (e.g. opening a different tab)
   useEffect(() => {
@@ -553,6 +567,32 @@ export function TaskDetailModal({
       cancelled = true;
     };
   }, [task.assignedAgentId, projectId, agents]);
+
+  useEffect(() => {
+    if (!task.sourceAgentId) {
+      setSourceAgent(null);
+      return;
+    }
+
+    const knownAgent = agents.find((agent) => agent.id === task.sourceAgentId);
+    if (knownAgent) {
+      setSourceAgent(knownAgent);
+      return;
+    }
+
+    let cancelled = false;
+    void Promise.resolve(fetchAgent(task.sourceAgentId, projectId))
+      .then((agent) => {
+        if (!cancelled) setSourceAgent(agent ?? null);
+      })
+      .catch(() => {
+        if (!cancelled) setSourceAgent(null);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [task.sourceAgentId, projectId, agents]);
 
   useEffect(() => {
     setShowAgentPicker(false);
@@ -1566,7 +1606,24 @@ export function TaskDetailModal({
                   <div className="detail-provenance">
                     <GitBranch aria-hidden="true" />
                     <span>
-                      Created via {provenanceDisplay.label}
+                      {workingTask.sourceType === "agent_heartbeat" ? (
+                        <>
+                          Created by{" "}
+                          {provenanceDisplay.sourceAgentId ? (
+                            <button
+                              type="button"
+                              className="detail-provenance-link"
+                              onClick={() => setSelectedSourceAgentId(provenanceDisplay.sourceAgentId!)}
+                            >
+                              {provenanceDisplay.label}
+                            </button>
+                          ) : (
+                            provenanceDisplay.label
+                          )}
+                        </>
+                      ) : (
+                        <>Created via {provenanceDisplay.label}</>
+                      )}
                       {provenanceDisplay.parentTaskId && (
                         <>
                           {" "}of{" "}
@@ -2479,6 +2536,16 @@ export function TaskDetailModal({
               </div>
             </div>
           </div>
+        )}
+        {selectedSourceAgentId && (
+          <Suspense fallback={null}>
+            <AgentDetailView
+              agentId={selectedSourceAgentId}
+              projectId={projectId}
+              onClose={() => setSelectedSourceAgentId(null)}
+              addToast={addToast}
+            />
+          </Suspense>
         )}
       </div>
     </div>
