@@ -4172,6 +4172,55 @@ describe("TaskExecutor global pause behavior", () => {
     expect(store.moveTask).not.toHaveBeenCalledWith("FN-001", "todo");
   });
 
+  it("promotes todo tasks to in-progress when fn_task_done is called while paused", async () => {
+    const store = createMockStore();
+    let capturedCustomTools: any[] = [];
+
+    const todoTask = {
+      id: "FN-001",
+      title: "Test",
+      description: "T",
+      prompt: "# test\n## Steps\n### Step 0: Preflight\n- [ ] check",
+      column: "todo",
+      paused: true,
+      dependencies: [],
+      steps: [{ name: "Step 1", status: "pending" }],
+      currentStep: 0,
+      log: [],
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+
+    store.getTask.mockResolvedValue(todoTask);
+    store.moveTask.mockImplementation(async (_id: string, to: string) => ({ ...todoTask, column: to, paused: undefined }));
+
+    mockedCreateFnAgent.mockImplementation((async (opts: any) => {
+      capturedCustomTools = opts.customTools || [];
+      return {
+        session: {
+          prompt: vi.fn().mockImplementation(async () => {
+            const taskDoneTool = capturedCustomTools.find((tool: any) => tool.name === "fn_task_done");
+            if (taskDoneTool) {
+              await taskDoneTool.execute("call-1", { summary: "done" });
+            }
+          }),
+          dispose: vi.fn(),
+        },
+      };
+    }) as any);
+
+    const executor = new TaskExecutor(store, "/tmp/test");
+    await executor.execute(todoTask as any);
+
+    expect(store.updateTask).toHaveBeenCalledWith("FN-001", { paused: false, status: null });
+    expect(store.moveTask).toHaveBeenCalledWith("FN-001", "in-progress");
+    expect(store.moveTask).toHaveBeenCalledWith("FN-001", "in-review");
+    expect(store.logEntry).toHaveBeenCalledWith(
+      "FN-001",
+      expect.stringContaining("fn_task_done called while task was in todo"),
+    );
+  });
+
   it("takes no action when globalPause remains false", async () => {
     const store = createMockStore();
     const disposeFn = vi.fn();

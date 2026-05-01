@@ -3413,8 +3413,24 @@ export class TaskExecutor {
         if (params.summary) {
           await store.updateTask(taskId, { summary: params.summary });
         }
+        await store.updateTask(taskId, { paused: false, status: null });
         await store.logEntry(taskId, "Task marked done by agent");
-        this.scheduleCompletedTaskWatchdog(taskId, "fn_task_done");
+
+        const latestTask = await store.getTask(taskId);
+        let latestColumn = latestTask.column;
+        if (latestColumn === "todo") {
+          await store.logEntry(
+            taskId,
+            "fn_task_done called while task was in todo — promoting to in-progress before completion handoff",
+          );
+          await store.moveTask(taskId, "in-progress");
+          latestColumn = "in-progress";
+        }
+
+        if (latestColumn === "in-progress") {
+          this.scheduleCompletedTaskWatchdog(taskId, "fn_task_done");
+        }
+
         const successMessage = params.summary
           ? "Task marked complete with summary. All steps done. Moving to in-review."
           : "Task marked complete. All steps done. Moving to in-review.";
