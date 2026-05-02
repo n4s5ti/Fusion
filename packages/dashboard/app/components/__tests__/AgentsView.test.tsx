@@ -31,8 +31,10 @@ vi.mock("../../api", async (importOriginal) => {
 });
 
 vi.mock("../AgentDetailView", () => ({
-  AgentDetailView: ({ agentId, inline }: { agentId: string; inline?: boolean }) => (
-    <div data-testid="agent-detail-view" data-inline={inline ? "true" : "false"}>Agent detail: {agentId}</div>
+  AgentDetailView: ({ agentId, inline, initialTab, initialRunId, preferActiveRun }: { agentId: string; inline?: boolean; initialTab?: string; initialRunId?: string | null; preferActiveRun?: boolean }) => (
+    <div data-testid="agent-detail-view" data-inline={inline ? "true" : "false"} data-initial-tab={initialTab ?? "dashboard"} data-initial-run-id={initialRunId ?? ""} data-prefer-active-run={preferActiveRun ? "true" : "false"}>
+      Agent detail: {agentId}
+    </div>
   ),
   relativeTime: () => "just now",
 }));
@@ -591,7 +593,44 @@ describe("AgentsView", () => {
       fireEvent.click(clickableIdentity!);
 
       await waitFor(() => {
-        expect(screen.getByTestId("agent-detail-view")).toHaveTextContent("agent-001");
+        const detail = screen.getByTestId("agent-detail-view");
+        expect(detail).toHaveTextContent("agent-001");
+        expect(detail).toHaveAttribute("data-initial-tab", "dashboard");
+        expect(detail).toHaveAttribute("data-initial-run-id", "");
+      });
+    });
+
+    it("opens agent detail in Runs context when clicking Running control", async () => {
+      const runningAgent: Agent = {
+        id: "agent-005",
+        name: "Runner",
+        role: "executor",
+        state: "running",
+        activeRun: {
+          id: "run-555",
+          agentId: "agent-005",
+          startedAt: new Date().toISOString(),
+          endedAt: null,
+          status: "active",
+        },
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        metadata: {},
+      };
+      mockFetchAgents.mockResolvedValue([runningAgent]);
+      mockFetchAgentStats.mockResolvedValue({ total: 1, byState: { running: 1 }, byRole: { executor: 1 } });
+
+      render(<AgentsView addToast={mockAddToast} />);
+
+      const runningButton = await screen.findByRole("button", { name: "View live run details for Runner" });
+      fireEvent.click(runningButton);
+
+      await waitFor(() => {
+        const detail = screen.getByTestId("agent-detail-view");
+        expect(detail).toHaveTextContent("agent-005");
+        expect(detail).toHaveAttribute("data-initial-tab", "runs");
+        expect(detail).toHaveAttribute("data-initial-run-id", "");
+        expect(detail).toHaveAttribute("data-prefer-active-run", "true");
       });
     });
 

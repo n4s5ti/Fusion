@@ -188,6 +188,9 @@ export function AgentsView({ addToast, projectId, onOpenTaskLogs, agentOnboardin
   const [isImporting, setIsImporting] = useState(false);
   const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
   const isMobileDetailOpen = isMobileViewport && !!selectedAgentId;
+  const [selectedAgentInitialTab, setSelectedAgentInitialTab] = useState<"dashboard" | "runs">("dashboard");
+  const [selectedAgentInitialRunId, setSelectedAgentInitialRunId] = useState<string | null>(null);
+  const [selectedAgentPreferActiveRun, setSelectedAgentPreferActiveRun] = useState(false);
   const [agentView, setAgentView] = useState<"list" | "board" | "org">(() => {
     if (typeof window === "undefined") return "list";
     const saved = getScopedItem("fn-agent-view", projectId);
@@ -598,13 +601,23 @@ export function AgentsView({ addToast, projectId, onOpenTaskLogs, agentOnboardin
     }));
   };
 
+  const openAgentDetail = useCallback((agentId: string, options?: { initialTab?: "dashboard" | "runs"; initialRunId?: string | null; preferActiveRun?: boolean }) => {
+    setSelectedAgentId(agentId);
+    setSelectedAgentInitialTab(options?.initialTab ?? "dashboard");
+    setSelectedAgentInitialRunId(options?.initialRunId ?? null);
+    setSelectedAgentPreferActiveRun(options?.preferActiveRun ?? false);
+  }, []);
+
   const handleCloseDetail = useCallback(() => {
     setSelectedAgentId(null);
+    setSelectedAgentInitialTab("dashboard");
+    setSelectedAgentInitialRunId(null);
+    setSelectedAgentPreferActiveRun(false);
   }, []);
 
   const handleChildClick = useCallback((childId: string) => {
-    setSelectedAgentId(childId);
-  }, []);
+    openAgentDetail(childId);
+  }, [openAgentDetail]);
 
   const handleRunHeartbeat = async (agentId: string, agentName: string) => {
     try {
@@ -878,7 +891,7 @@ export function AgentsView({ addToast, projectId, onOpenTaskLogs, agentOnboardin
                 <OrgChartNode
                   key={node.agent.id}
                   node={node}
-                  onSelect={setSelectedAgentId}
+                  onSelect={openAgentDetail}
                   getHealthStatus={getHealthStatus}
                   getRoleIcon={getRoleIcon}
                   getSkillBadges={getSkillBadges}
@@ -900,7 +913,7 @@ export function AgentsView({ addToast, projectId, onOpenTaskLogs, agentOnboardin
                   <div key={agent.id} className={`agent-board-card ${stateCardClass}${selectedAgentId === agent.id ? " agent-card--selected" : ""}`}>
                     <div
                       className="agent-board-clickable"
-                      onClick={() => setSelectedAgentId(agent.id)}
+                      onClick={() => openAgentDetail(agent.id)}
                       role="button"
                       tabIndex={0}
                       onKeyDown={(e) => {
@@ -908,7 +921,7 @@ export function AgentsView({ addToast, projectId, onOpenTaskLogs, agentOnboardin
                           if (e.key === " ") {
                             e.preventDefault();
                           }
-                          setSelectedAgentId(agent.id);
+                          openAgentDetail(agent.id);
                         }
                       }}
                     >
@@ -946,7 +959,7 @@ export function AgentsView({ addToast, projectId, onOpenTaskLogs, agentOnboardin
                   <div className="agent-card-header">
                     <div
                       className="agent-info agent-info--clickable"
-                      onClick={() => setSelectedAgentId(agent.id)}
+                      onClick={() => openAgentDetail(agent.id)}
                       role="button"
                       tabIndex={0}
                       onKeyDown={(e) => {
@@ -954,7 +967,7 @@ export function AgentsView({ addToast, projectId, onOpenTaskLogs, agentOnboardin
                           if (e.key === " ") {
                             e.preventDefault();
                           }
-                          setSelectedAgentId(agent.id);
+                          openAgentDetail(agent.id);
                         }
                       }}
                     >
@@ -1188,9 +1201,9 @@ export function AgentsView({ addToast, projectId, onOpenTaskLogs, agentOnboardin
                       <>
                         <button
                           className="btn btn--sm"
-                          disabled
-                          title="Run in progress"
-                          aria-label={`Heartbeat run in progress for ${agent.name}`}
+                          onClick={() => openAgentDetail(agent.id, { initialTab: "runs", initialRunId: null, preferActiveRun: true })}
+                          title="View live run details"
+                          aria-label={`View live run details for ${agent.name}`}
                         >
                           <Activity size={14} /> Running
                         </button>
@@ -1226,7 +1239,7 @@ export function AgentsView({ addToast, projectId, onOpenTaskLogs, agentOnboardin
                     )}
                     <button
                       className="btn btn--sm agent-card-details-btn"
-                      onClick={() => setSelectedAgentId(agent.id)}
+                      onClick={() => openAgentDetail(agent.id)}
                       title={`View details for ${agent.name}`}
                       aria-label={`View details for ${agent.name}`}
                     >
@@ -1322,6 +1335,9 @@ export function AgentsView({ addToast, projectId, onOpenTaskLogs, agentOnboardin
                 onClose={handleCloseDetail}
                 addToast={addToast}
                 onChildClick={handleChildClick}
+                initialTab={selectedAgentInitialTab}
+                initialRunId={selectedAgentInitialRunId}
+                preferActiveRun={selectedAgentPreferActiveRun}
               />
             </Suspense>
           ) : (

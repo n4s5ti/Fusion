@@ -94,6 +94,16 @@ The agents surface provides:
 - Run history
 - Task assignment context
 
+### Running Control Opens Live Run Details
+
+When an agent card shows the **Running** control, that control is actionable:
+
+- Clicking **Running** opens Agent Detail directly on the **Runs** tab
+- If the agent has an active run ID, that run is automatically expanded
+- The run detail payload and log stream are loaded immediately so operators can inspect live execution without manually switching tabs
+
+Other entry points (for example, **View Details** or clicking the agent identity area) continue to open the default Agent Detail Dashboard tab.
+
 ### Token Usage Panel
 
 The **Token Usage** panel in Agents view is derived from each agent's persisted cumulative counters:

@@ -1119,6 +1119,87 @@ describe("AgentDetailView", () => {
     });
   });
 
+  it("opens directly to Runs tab and auto-expands the provided initial run", async () => {
+    const runId = "run-001";
+    mockFetchAgentRunLogs.mockResolvedValueOnce([
+      {
+        timestamp: "2024-01-01T00:00:00.000Z",
+        taskId: "agent-run",
+        text: "Run log line",
+        type: "text",
+      } as AgentLogEntry,
+    ]);
+    mockFetchAgentRunDetail.mockResolvedValueOnce({
+      id: runId,
+      agentId: "agent-001",
+      startedAt: "2024-01-01T00:00:00.000Z",
+      endedAt: null,
+      status: "active",
+      systemPrompt: "System prompt text",
+    } as AgentHeartbeatRun);
+
+    render(
+      <AgentDetailView
+        agentId="agent-001"
+        onClose={vi.fn()}
+        addToast={vi.fn()}
+        initialTab="runs"
+        initialRunId={runId}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(mockFetchAgentRunLogs).toHaveBeenCalledWith("agent-001", runId, undefined);
+      expect(mockFetchAgentRunDetail).toHaveBeenCalledWith("agent-001", runId, undefined);
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText("Run log line")).toBeInTheDocument();
+      expect(screen.getByText("System Prompt")).toBeInTheDocument();
+    });
+  });
+
+  it("auto-expands the active run when opened from running control context", async () => {
+    const activeRunId = "run-001";
+    mockFetchAgentRunLogs.mockResolvedValueOnce([
+      {
+        timestamp: "2024-01-01T00:00:00.000Z",
+        taskId: "agent-run",
+        text: "Active run log line",
+        type: "text",
+      } as AgentLogEntry,
+    ]);
+    mockFetchAgentRunDetail.mockResolvedValueOnce({
+      id: activeRunId,
+      agentId: "agent-001",
+      startedAt: "2024-01-01T00:00:00.000Z",
+      endedAt: null,
+      status: "active",
+      systemPrompt: "Active run system prompt",
+    } as AgentHeartbeatRun);
+
+    render(
+      <AgentDetailView
+        agentId="agent-001"
+        onClose={vi.fn()}
+        addToast={vi.fn()}
+        initialTab="runs"
+        initialRunId={null}
+        preferActiveRun
+      />,
+    );
+
+    await waitFor(() => {
+      expect(mockFetchAgentRunLogs).toHaveBeenCalledWith("agent-001", activeRunId, undefined);
+      expect(mockFetchAgentRunDetail).toHaveBeenCalledWith("agent-001", activeRunId, undefined);
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText("Active run log line")).toBeInTheDocument();
+      expect(screen.getByText("System Prompt")).toBeInTheDocument();
+    });
+  });
+
   describe("Logs tab", () => {
     it("loads latest run logs lazily for agents without a current task", async () => {
       const latestRun = {

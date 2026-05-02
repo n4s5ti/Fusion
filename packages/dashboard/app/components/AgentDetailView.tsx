@@ -62,6 +62,9 @@ interface AgentDetailViewProps {
   addToast: (message: string, type?: "success" | "error") => void;
   onChildClick?: (childId: string) => void;
   inline?: boolean;
+  initialTab?: TabId;
+  initialRunId?: string | null;
+  preferActiveRun?: boolean;
 }
 
 type TabId = "dashboard" | "logs" | "config" | "runs" | "tasks" | "employees" | "soul" | "instructions" | "memory" | "reflections";
@@ -119,12 +122,12 @@ function pickDefaultAgentMemoryPath(files: MemoryFileInfo[], currentPath: string
     ?? "";
 }
 
-export function AgentDetailView({ agentId, projectId, onClose, addToast, onChildClick, inline = false }: AgentDetailViewProps) {
+export function AgentDetailView({ agentId, projectId, onClose, addToast, onChildClick, inline = false, initialTab, initialRunId, preferActiveRun = false }: AgentDetailViewProps) {
   const [agent, setAgent] = useState<AgentDetail | null>(null);
   const { confirm } = useConfirm();
   const [logs, setLogs] = useState<AgentLogEntry[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<TabId>("dashboard");
+  const [activeTab, setActiveTab] = useState<TabId>(initialTab ?? "dashboard");
   const [isStreaming, setIsStreaming] = useState(false);
   const [isTransitioning, setIsTransitioning] = useState(false);
   const [latestRun, setLatestRun] = useState<AgentHeartbeatRun | null>(null);
@@ -636,6 +639,8 @@ export function AgentDetailView({ agentId, projectId, onClose, addToast, onChild
               projectId={projectId}
               agentState={agent.state}
               agentName={agent.name}
+              initialRunId={initialRunId}
+              preferActiveRun={preferActiveRun}
             />
           )}
 
@@ -1094,12 +1099,16 @@ function RunsTab({
   projectId,
   agentState,
   agentName,
+  initialRunId,
+  preferActiveRun,
 }: { 
   addToast: (msg: string, type?: "success" | "error") => void;
   agentId: string;
   projectId?: string;
   agentState?: AgentState;
   agentName?: string;
+  initialRunId?: string | null;
+  preferActiveRun?: boolean;
 }) {
   const [runs, setRuns] = useState<AgentHeartbeatRun[]>([]);
   const { confirm } = useConfirm();
@@ -1109,6 +1118,7 @@ function RunsTab({
   const [isLoadingLogs, setIsLoadingLogs] = useState(false);
   const [detailRun, setDetailRun] = useState<AgentHeartbeatRun | null>(null);
   const [isLoadingDetail, setIsLoadingDetail] = useState(false);
+  const hasAutoExpandedInitialRunRef = useRef(false);
 
   // Load runs on mount
   const loadRuns = useCallback(async () => {
@@ -1193,6 +1203,25 @@ function RunsTab({
       setIsLoadingDetail(false);
     }
   }, [selectedRunId, agentId, projectId, addToast]);
+
+  useEffect(() => {
+    hasAutoExpandedInitialRunRef.current = false;
+  }, [agentId, initialRunId, preferActiveRun]);
+
+  useEffect(() => {
+    if (runs.length === 0 || isLoadingRuns || hasAutoExpandedInitialRunRef.current) {
+      return;
+    }
+
+    const runToExpand = initialRunId
+      ? runs.find((run) => run.id === initialRunId)
+      : (preferActiveRun ? runs.find((run) => run.status === "active") : null);
+
+    hasAutoExpandedInitialRunRef.current = true;
+    if (runToExpand) {
+      void handleRunClick(runToExpand.id);
+    }
+  }, [initialRunId, preferActiveRun, runs, isLoadingRuns, handleRunClick]);
 
   const handleRunHeartbeat = async () => {
     try {
