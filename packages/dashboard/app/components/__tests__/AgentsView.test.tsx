@@ -378,11 +378,6 @@ describe("AgentsView", () => {
           expect(document.querySelector(`.agent-board-card--${state}`)).toBeTruthy();
         });
 
-        fireEvent.click(screen.getByRole("button", { name: "Tree view" }));
-        await waitFor(() => {
-          expect(document.querySelector(`.agent-tree__node--${state}`)).toBeTruthy();
-        });
-
         fireEvent.click(screen.getByRole("button", { name: "Org Chart view" }));
         await waitFor(() => {
           expect(document.querySelector(`.org-chart-node-card--${state}`)).toBeTruthy();

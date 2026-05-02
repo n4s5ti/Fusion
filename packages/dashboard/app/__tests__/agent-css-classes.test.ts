@@ -150,24 +150,6 @@ describe("Agent CSS classes", () => {
     expect(filtersBlock).toContain("border-radius: var(--radius-md)");
   });
 
-  it("should use design tokens for the updated tree view spacing and transitions", () => {
-    const treeViewBlock = extractRuleBlock(".agent-tree__view");
-    expect(treeViewBlock).toContain("gap: var(--space-xs)");
-    expect(treeViewBlock).toContain("padding: var(--space-sm) 0");
-
-    const treeNodeBlock = extractRuleBlock(".agent-tree__node");
-    expect(treeNodeBlock).toContain("gap: var(--space-sm)");
-    expect(treeNodeBlock).toContain("padding: var(--space-sm) var(--space-md)");
-    expect(treeNodeBlock).toContain("border-radius: var(--radius-sm)");
-    expect(treeNodeBlock).toContain("transition: background-color var(--transition-fast)");
-    expect(treeNodeBlock).not.toMatch(/gap:\s*4px|padding:\s*8px 12px|border-radius:\s*4px|0\.15s\s+ease/);
-
-    expect(extractRuleBlock(".agent-tree__indent--1")).toContain("padding-left: var(--space-xl)");
-    expect(extractRuleBlock(".agent-tree__indent--2")).toContain("padding-left: calc(var(--space-xl) * 2)");
-    expect(extractRuleBlock(".agent-tree__indent--3")).toContain("padding-left: calc(var(--space-xl) * 3)");
-    expect(extractRuleBlock(".agent-tree__indent--4")).toContain("padding-left: calc(var(--space-xl) * 4)");
-  });
-
   it("should use dashboard tokens in the updated org chart styles", () => {
     const agentsViewCss = fs.readFileSync(path.join(__dirname, "../components/AgentsView.css"), "utf-8");
     const orgChartStart = agentsViewCss.indexOf("/* === FN-1167: Agent Org Chart + Chain of Command === */");
@@ -384,7 +366,7 @@ describe("Agent CSS classes", () => {
 
   it("should only keep runtime health color inline styles in AgentsView", () => {
     const inlineStyleCount = (agentsViewContent.match(/style=\{\{/g) || []).length;
-    expect(inlineStyleCount).toBe(4);
+    expect(inlineStyleCount).toBe(3);
   });
 
   it("should not have inline <style> blocks in AgentDetailView", () => {

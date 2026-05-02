@@ -169,12 +169,12 @@ describe("AgentsView mobile adaptations", () => {
     });
   });
 
-  it("switches between board, list, and tree views", async () => {
+  it("switches between board, list, and org views", async () => {
     const { container } = render(<AgentsView addToast={vi.fn()} />);
     await waitFor(() => expect(screen.getByText("Agents")).toBeTruthy());
 
-    fireEvent.click(screen.getByRole("button", { name: "Tree view" }));
-    await waitFor(() => expect(container.querySelector(".agent-tree__view")).toBeTruthy());
+    fireEvent.click(screen.getByRole("button", { name: "Org Chart view" }));
+    await waitFor(() => expect(container.querySelector(".agent-org-chart")).toBeTruthy());
 
     fireEvent.click(screen.getByRole("button", { name: "Board view" }));
     await waitFor(() => expect(container.querySelector(".agent-board")).toBeTruthy());

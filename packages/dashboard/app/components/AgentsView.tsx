@@ -1,6 +1,6 @@
 import "./AgentsView.css";
 import { useState, useEffect, useCallback, useRef, useMemo, useId, lazy, Suspense } from "react";
-import { Plus, Play, Pause, Activity, Trash2, RefreshCw, Bot, List, ChevronRight, ChevronDown, GitBranch, Filter, Upload, Network, SlidersHorizontal } from "lucide-react";
+import { Plus, Play, Pause, Activity, Trash2, RefreshCw, Bot, List, ChevronRight, Filter, Upload, Network, SlidersHorizontal } from "lucide-react";
 import type { Agent, AgentCapability, AgentOnboardingSummary, AgentState, OrgTreeNode } from "../api";
 import { updateAgent, updateAgentState, deleteAgent, startAgentRun, fetchOrgTree, fetchSettings, updateSettings } from "../api";
 
@@ -11,8 +11,6 @@ import { AgentTokenStatsPanel } from "./AgentTokenStatsPanel";
 import { AgentEmptyState } from "./AgentEmptyState";
 import { useAgents } from "../hooks/useAgents";
 import { useConfirm } from "../hooks/useConfirm";
-import { useAgentHierarchy } from "../hooks/useAgentHierarchy";
-import type { AgentNode } from "../hooks/useAgentHierarchy";
 import { NewAgentDialog } from "./NewAgentDialog";
 import { ExperimentalAgentOnboardingModal } from "./ExperimentalAgentOnboardingModal";
 import { AgentImportModal } from "./AgentImportModal";
@@ -67,7 +65,7 @@ function getStateBadgeClass(state: AgentState): string {
 }
 
 function getStateCardClass(
-  prefix: "agent-card" | "agent-board-card" | "agent-tree__node" | "org-chart-node-card",
+  prefix: "agent-card" | "agent-board-card" | "org-chart-node-card",
   state: AgentState,
 ): string {
   switch (state) {
@@ -85,103 +83,6 @@ function getStateCardClass(
     default:
       return `${prefix}--idle`;
   }
-}
-
-/** Recursive tree node component for agent hierarchy */
-function AgentTreeNode({
-  node,
-  onSelect,
-  onToggle,
-  isExpanded,
-  getChildCount,
-  getHealthStatus,
-  getRoleIcon,
-  getSkillBadges,
-}: {
-  node: AgentNode;
-  onSelect: (id: string) => void;
-  onToggle: (id: string) => void;
-  isExpanded: (id: string) => boolean;
-  getChildCount: (id: string) => number;
-  getHealthStatus: (agent: Agent) => AgentHealthStatus;
-  getRoleIcon: (role: AgentCapability) => string;
-  getSkillBadges: (agent: Agent) => string[];
-}) {
-  const { agent, children, depth } = node;
-  const childCount = getChildCount(agent.id);
-  const expanded = isExpanded(agent.id);
-  const health = getHealthStatus(agent);
-  const stateBadgeClass = getStateBadgeClass(agent.state);
-  const stateNodeClass = getStateCardClass("agent-tree__node", agent.state);
-
-  return (
-    <>
-      <div
-        className={`${stateNodeClass}${agent.reportsTo ? " agent-is-child" : ""} agent-tree__indent--${Math.min(depth, 4)}`}
-      >
-        <button
-          className={`agent-tree__toggle${childCount === 0 ? " agent-tree__toggle--leaf" : ""}`}
-          onClick={() => childCount > 0 && onToggle(agent.id)}
-          title={childCount > 0 ? (expanded ? "Collapse" : "Expand") : "No employees"}
-          aria-label={childCount > 0 ? (expanded ? "Collapse" : "Expand") : "No employees"}
-        >
-          {childCount > 0 ? (
-            expanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />
-          ) : (
-            <Bot size={14} />
-          )}
-        </button>
-        <div
-          className="agent-tree__content"
-          onClick={() => onSelect(agent.id)}
-          role="button"
-          tabIndex={0}
-          onKeyDown={(e) => e.key === "Enter" && onSelect(agent.id)}
-        >
-          <span className="agent-tree__icon">{getRoleIcon(agent.role)}</span>
-          <span className="agent-tree__name">{agent.name}</span>
-          <span
-            className={`agent-tree__badge ${stateBadgeClass}`}
-          >
-            {agent.state}
-          </span>
-          <span className="agent-tree__health" style={{ color: health.color }} title={health.label}>
-            {health.icon}
-          </span>
-          {childCount > 0 && (
-            <span className="agent-tree__count text-secondary">({childCount})</span>
-          )}
-          {/* Tree view: up to 1 skill badge */}
-          {(() => {
-            const skills = getSkillBadges(agent);
-            if (skills.length === 0) return null;
-            return (
-              <span className="agent-tree__skill" title={skills.join(", ")}>
-                {skills[0]}{skills.length > 1 && ` +${skills.length - 1}`}
-              </span>
-            );
-          })()}
-        </div>
-      </div>
-      {expanded && children.length > 0 && (
-        <div className="agent-tree__children">
-          {children.map((child) => (
-            <AgentTreeNode
-              key={child.agent.id}
-              node={child}
-              onSelect={onSelect}
-              onToggle={onToggle}
-              isExpanded={isExpanded}
-              getChildCount={getChildCount}
-              getHealthStatus={getHealthStatus}
-              getRoleIcon={getRoleIcon}
-              getSkillBadges={getSkillBadges}
-            />
-          ))}
-        </div>
-      )}
-    </>
-  );
 }
 
 function OrgChartNode({
@@ -272,10 +173,10 @@ export function AgentsView({ addToast, projectId, onOpenTaskLogs, agentOnboardin
   const [onboardingDraft, setOnboardingDraft] = useState<AgentOnboardingSummary | null>(null);
   const [isImporting, setIsImporting] = useState(false);
   const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
-  const [agentView, setAgentView] = useState<"list" | "board" | "tree" | "org">(() => {
+  const [agentView, setAgentView] = useState<"list" | "board" | "org">(() => {
     if (typeof window === "undefined") return "list";
     const saved = getScopedItem("fn-agent-view", projectId);
-    return (saved === "list" || saved === "board" || saved === "tree" || saved === "org") ? saved : "list";
+    return (saved === "list" || saved === "board" || saved === "org") ? saved : "list";
   });
   const [orgTree, setOrgTree] = useState<OrgTreeNode[]>([]);
   const [isOrgTreeLoading, setIsOrgTreeLoading] = useState(false);
@@ -287,7 +188,7 @@ export function AgentsView({ addToast, projectId, onOpenTaskLogs, agentOnboardin
 
   useEffect(() => {
     const saved = getScopedItem("fn-agent-view", projectId);
-    if (saved === "list" || saved === "board" || saved === "tree" || saved === "org") {
+    if (saved === "list" || saved === "board" || saved === "org") {
       setAgentView(saved);
       return;
     }
@@ -363,7 +264,6 @@ export function AgentsView({ addToast, projectId, onOpenTaskLogs, agentOnboardin
     });
   }, [agents, optimisticStateOverrides]);
 
-  const hierarchy = useAgentHierarchy(optimisticAgents, projectId);
 
   // Filter agents for display. "All States" means all non-ephemeral agents,
   // including disabled/terminated agents that still carry configuration.
@@ -755,15 +655,6 @@ export function AgentsView({ addToast, projectId, onOpenTaskLogs, agentOnboardin
               <Activity size={16} />
             </button>
             <button
-              className={`view-toggle-btn${agentView === "tree" ? " active" : ""}`}
-              onClick={() => setAgentView("tree")}
-              title="Tree view"
-              aria-label="Tree view"
-              aria-pressed={agentView === "tree"}
-            >
-              <GitBranch size={16} />
-            </button>
-            <button
               className={`view-toggle-btn${agentView === "org" ? " active" : ""}`}
               onClick={() => setAgentView("org")}
               title="Org Chart view"
@@ -955,26 +846,6 @@ export function AgentsView({ addToast, projectId, onOpenTaskLogs, agentOnboardin
           <div className="agents-view-loading" role="status" aria-live="polite">
             <RefreshCw size={18} className="spin" />
             <span>Loading agents...</span>
-          </div>
-        ) : agentView === "tree" ? (
-          <div className="agent-tree__view">
-            {displayAgents.length === 0 ? (
-              <AgentEmptyState onCtaClick={handleOpenNewAgent} />
-            ) : (
-              hierarchy.rootNodes.map((node) => (
-                <AgentTreeNode
-                  key={node.agent.id}
-                  node={node}
-                  onSelect={setSelectedAgentId}
-                  onToggle={hierarchy.toggleExpand}
-                  isExpanded={hierarchy.isExpanded}
-                  getChildCount={(id) => hierarchy.getChildren(id).length}
-                  getHealthStatus={getHealthStatus}
-                  getRoleIcon={getRoleIcon}
-                  getSkillBadges={getSkillBadges}
-                />
-              ))
-            )}
           </div>
         ) : agentView === "org" ? (
           <div className="agent-org-chart" data-testid="agent-org-chart">

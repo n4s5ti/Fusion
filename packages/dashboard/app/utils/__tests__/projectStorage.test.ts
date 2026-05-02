@@ -82,7 +82,6 @@ describe("projectStorage", () => {
         "kb-quick-entry-text",
         "kb-inline-create-text",
         "fn-agent-view",
-        "fn-agent-tree-expanded",
         "kb-terminal-tabs",
         "kb-planning-last-description",
         "kb-subtask-last-description",
@@ -93,7 +92,7 @@ describe("projectStorage", () => {
         "kb-chat-active-session",
       ]),
     );
-    expect(PROJECT_STORAGE_KEYS).toHaveLength(17);
+    expect(PROJECT_STORAGE_KEYS).toHaveLength(16);
   });
 
   it("has no overlap between global and project-scoped keys", () => {
