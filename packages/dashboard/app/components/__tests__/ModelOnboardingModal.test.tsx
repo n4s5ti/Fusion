@@ -4064,7 +4064,7 @@ describe("ModelOnboardingModal progressive disclosure", () => {
           { id: "github", name: "GitHub", authenticated: false, type: "oauth" },
         ],
       });
-      mockFetchGlobalSettings.mockResolvedValueOnce({
+      mockFetchGlobalSettings.mockResolvedValue({
         defaultProvider: "anthropic",
         defaultModelId: "claude-sonnet-4-5",
       });

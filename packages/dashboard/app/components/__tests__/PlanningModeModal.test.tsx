@@ -951,10 +951,16 @@ describe("PlanningModeModal", () => {
       );
 
       await waitFor(() => {
-        expect(screen.getByText("Create Task")).toBeDefined();
+        expect(screen.getByText("Create Single Task")).toBeDefined();
       });
 
-      fireEvent.click(screen.getByText("Create Task"));
+      const createSingleTaskButton = screen.getByRole("button", { name: "Create Single Task" });
+      const breakIntoTasksButton = screen.getByRole("button", { name: "Break into Tasks" });
+      expect(createSingleTaskButton.className).toContain("btn");
+      expect(createSingleTaskButton.className).not.toContain("btn-primary");
+      expect(breakIntoTasksButton.className).toContain("btn-primary");
+
+      fireEvent.click(createSingleTaskButton);
 
       await waitFor(() => {
         expect(mockCreateTaskFromPlanning).toHaveBeenCalledWith("session-complete-2", resumedSummary, undefined);
@@ -1746,10 +1752,10 @@ describe("PlanningModeModal", () => {
       fireEvent.click(screen.getByText("Start Planning"));
 
       await waitFor(() => {
-        expect(screen.getByText("Create Task")).toBeDefined();
+        expect(screen.getByText("Create Single Task")).toBeDefined();
       });
 
-      fireEvent.click(screen.getByText("Create Task"));
+      fireEvent.click(screen.getByText("Create Single Task"));
 
       await waitFor(() => {
         expect(mockCreateTaskFromPlanning).toHaveBeenCalledWith("session-123", mockSummary, undefined);

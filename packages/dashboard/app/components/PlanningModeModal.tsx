@@ -1851,8 +1851,21 @@ function SummaryView({
           Refine Further
         </button>
         <div className="planning-summary-actions-right">
+          <button className="btn" onClick={onCreateTask} disabled={isLoading}>
+            {isLoading ? (
+              <>
+                <Loader2 size={16} className="spin icon-mr-8" />
+                Creating...
+              </>
+            ) : (
+              <>
+                <CheckCircle size={16} className="icon-mr-8" />
+                Create Single Task
+              </>
+            )}
+          </button>
           <button
-            className="btn"
+            className="btn btn-primary"
             onClick={onBreakIntoTasks}
             disabled={isLoading}
             title="Break the plan into multiple tasks with dependencies"
@@ -1866,23 +1879,6 @@ function SummaryView({
               <>
                 <ListTree size={16} className="icon-mr-8" />
                 Break into Tasks
-              </>
-            )}
-          </button>
-          <button
-            className="btn btn-primary"
-            onClick={onCreateTask}
-            disabled={isLoading}
-          >
-            {isLoading ? (
-              <>
-                <Loader2 size={16} className="spin icon-mr-8" />
-                Creating...
-              </>
-            ) : (
-              <>
-                <CheckCircle size={16} className="icon-mr-8" />
-                Create Task
               </>
             )}
           </button>
