@@ -490,6 +490,7 @@ Key server capabilities:
 - Root composition: `packages/dashboard/app/App.tsx`
 - Core board components: `Board.tsx`, `Column.tsx`, `TaskCard.tsx`, `TaskDetailModal.tsx`, `ListView.tsx`
 - Task detail surface is shared through `TaskDetailContent` (exported from `TaskDetailModal.tsx`): desktop/tablet `ListView` renders it inline in the split right pane, while mobile and non-list entry points continue using `TaskDetailModal`.
+- In desktop split mode, `ListView` now uses a compact sidebar-first control layout (count/actions/summary chips + collapsible "View options" panel) to keep list controls dense alongside the inline detail pane; mobile keeps the card-first flow with a toolbar "View options" entry point for the same visibility/filter toggles.
 - Chat system UI: `ChatView.tsx`, `QuickChatFAB.tsx`
 - Planning/roadmap/insight UI: `MissionManager.tsx`, `RoadmapsView.tsx`, `TodoView.tsx`, `InsightsView.tsx`, `DocumentsView.tsx`
 - Dev server UI: `DevServerView.tsx` (controls + status/log panel + embedded preview with iframe fallback messaging)

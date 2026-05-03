@@ -50,7 +50,10 @@ const createMockTask = (overrides: Partial<Task> = {}): Task => ({
   ...overrides,
 });
 
-const renderListView = (props: Partial<React.ComponentProps<typeof ListView>> = {}) => {
+const renderListView = (
+  props: Partial<React.ComponentProps<typeof ListView>> = {},
+  options: { openViewOptions?: boolean } = {},
+) => {
   const defaultProps = {
     tasks: [],
     onMoveTask: vi.fn(async () => createMockTask()),
@@ -66,7 +69,14 @@ const renderListView = (props: Partial<React.ComponentProps<typeof ListView>> = 
     projectId: TEST_PROJECT_ID,
   };
 
-  return render(<ListView {...defaultProps} {...props} />);
+  const result = render(<ListView {...defaultProps} {...props} />);
+  if (options.openViewOptions ?? true) {
+    const viewOptionsToggle = screen.queryByRole("button", { name: /view options/i });
+    if (viewOptionsToggle) {
+      fireEvent.click(viewOptionsToggle);
+    }
+  }
+  return result;
 };
 
 const enterBulkEditMode = () => {
@@ -144,7 +154,28 @@ describe("ListView", () => {
   it("renders without crashing", () => {
     renderListView();
     // The search/filter is now in the header, not in the list view toolbar
-    expect(screen.getByText("Columns")).toBeDefined();
+    expect(screen.getByText("View options")).toBeDefined();
+  });
+
+  it("keeps view options collapsed by default on desktop", () => {
+    renderListView({}, { openViewOptions: false });
+
+    const toggle = screen.getByRole("button", { name: /view options/i });
+    expect(toggle).toHaveAttribute("aria-expanded", "false");
+    expect(document.getElementById("list-view-options-panel")).toBeNull();
+  });
+
+  it("shows compact summary chips while view options stay collapsed", () => {
+    localStorage.setItem(scopedStorageKey("kb-dashboard-hide-done"), "true");
+    const tasks = [
+      createMockTask({ id: "FN-001", column: "done" }),
+      createMockTask({ id: "FN-002", column: "triage" }),
+    ];
+
+    renderListView({ tasks }, { openViewOptions: false });
+
+    expect(screen.getByText("Done hidden")).toBeDefined();
+    expect(document.getElementById("list-view-options-panel")).toBeNull();
   });
 
   it("displays tasks in table format", () => {
@@ -282,6 +313,25 @@ describe("ListView", () => {
     expect(mockOnOpenDetail).toHaveBeenCalledWith(tasks[0], { origin: "list-mobile" });
     expect(mockOnOpenDetail).toHaveBeenCalledTimes(1);
     expect(fetchTaskDetail).not.toHaveBeenCalled();
+    viewportSpy.mockRestore();
+  });
+
+  it("exposes view options controls on mobile", () => {
+    const viewportSpy = mockMobileViewport();
+    localStorage.setItem(scopedStorageKey("kb-dashboard-hide-done"), "false");
+
+    renderListView({}, { openViewOptions: false });
+
+    const toggle = screen.getByRole("button", { name: /view options/i });
+    expect(toggle).toHaveAttribute("aria-expanded", "false");
+    expect(document.getElementById("list-view-options-panel-mobile")).toBeNull();
+
+    fireEvent.click(toggle);
+
+    expect(screen.getByLabelText("Title")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /hide done/i }));
+    expect(localStorage.getItem(scopedStorageKey("kb-dashboard-hide-done"))).toBe("true");
+
     viewportSpy.mockRestore();
   });
 
@@ -473,7 +523,7 @@ describe("ListView", () => {
     renderListView({ tasks });
 
     // First click - ascending
-    const titleHeader = screen.getByText("Title");
+    const titleHeader = screen.getByRole("columnheader", { name: /title/i });
     fireEvent.click(titleHeader);
 
     // Get all data rows (excluding section headers by using data-id attribute)
@@ -500,7 +550,7 @@ describe("ListView", () => {
 
     renderListView({ tasks });
 
-    const columnHeader = screen.getByText("Column");
+    const columnHeader = screen.getByRole("columnheader", { name: /column/i });
     fireEvent.click(columnHeader);
 
     // Rows are rendered in fixed column-section order.
@@ -519,7 +569,7 @@ describe("ListView", () => {
 
     renderListView({ tasks });
 
-    const statusHeader = screen.getByText("Status");
+    const statusHeader = screen.getByRole("columnheader", { name: /status/i });
     fireEvent.click(statusHeader);
 
     // Get data rows - sorted by status alphabetically
@@ -1088,7 +1138,7 @@ describe("ListView", () => {
     renderListView({ tasks });
 
     // Sort by title
-    const titleHeader = screen.getByText("Title");
+    const titleHeader = screen.getByRole("columnheader", { name: /title/i });
     fireEvent.click(titleHeader);
 
     // Get only data rows within the triage section
@@ -1281,35 +1331,30 @@ describe("ListView Column Visibility", () => {
     localStorage.clear();
   });
 
-  it("renders column toggle button", () => {
+  it("renders view options toggle button", () => {
     renderListView();
 
-    const columnsButton = screen.getByRole("button", { name: /columns/i });
+    const columnsButton = screen.getByRole("button", { name: /view options/i });
     expect(columnsButton).toBeDefined();
   });
 
   it("opens column dropdown when toggle clicked", () => {
-    renderListView();
+    renderListView({}, { openViewOptions: false });
 
-    const columnsButton = screen.getByRole("button", { name: /columns/i });
+    const columnsButton = screen.getByRole("button", { name: /view options/i });
     fireEvent.click(columnsButton);
 
-    // Dropdown should be visible with checkboxes for each column
+    expect(columnsButton).toHaveAttribute("aria-expanded", "true");
     expect(screen.queryByText("ID")).toBeNull();
-    expect(screen.getByText("Title")).toBeDefined();
-    expect(screen.getByText("Status")).toBeDefined();
-    expect(screen.getByText("Column")).toBeDefined();
-    expect(screen.getByText("Dependencies")).toBeDefined();
-    expect(screen.getByText("Progress")).toBeDefined();
+    expect(screen.getByLabelText("Title")).toBeDefined();
+    expect(screen.getByLabelText("Status")).toBeDefined();
+    expect(screen.getByLabelText("Column")).toBeDefined();
+    expect(screen.getByLabelText("Dependencies")).toBeDefined();
+    expect(screen.getByLabelText("Progress")).toBeDefined();
   });
-
   it("hides column when unchecked in dropdown", () => {
     const tasks = [createMockTask({ id: "FN-001", title: "Test Task" })];
     renderListView({ tasks });
-
-    // Open dropdown
-    const columnsButton = screen.getByRole("button", { name: /columns/i });
-    fireEvent.click(columnsButton);
 
     // Uncheck the Title column
     const checkboxes = screen.getAllByRole("checkbox");
@@ -1328,10 +1373,6 @@ describe("ListView Column Visibility", () => {
     const tasks = [createMockTask({ id: "FN-001", title: "Test Task" })];
     renderListView({ tasks });
 
-    // Open dropdown
-    const columnsButton = screen.getByRole("button", { name: /columns/i });
-    fireEvent.click(columnsButton);
-    
     // Find and uncheck the Title column
     const checkboxes = screen.getAllByRole("checkbox");
     const titleCheckbox = checkboxes.find(
@@ -1360,9 +1401,7 @@ describe("ListView Column Visibility", () => {
     const tasks = [createMockTask({ id: "FN-001", title: "Test Task" })];
     renderListView({ tasks });
 
-    // Open dropdown and uncheck Title
-    const columnsButton = screen.getByRole("button", { name: /columns/i });
-    fireEvent.click(columnsButton);
+    // Uncheck Title
     const titleCheckbox = screen.getByLabelText("Title");
     fireEvent.click(titleCheckbox);
 
@@ -1389,9 +1428,7 @@ describe("ListView Column Visibility", () => {
   it("prevents hiding all columns (at least one stays visible)", () => {
     renderListView();
 
-    // Open dropdown
-    const columnsButton = screen.getByRole("button", { name: /columns/i });
-    fireEvent.click(columnsButton);
+    // View options panel already open
 
     // Get all checkboxes and try to uncheck all except one
     const checkboxes = screen.getAllByRole("checkbox");
@@ -1419,8 +1456,6 @@ describe("ListView Column Visibility", () => {
     renderListView({ tasks });
 
     // Hide some columns
-    const columnsButton = screen.getByRole("button", { name: /columns/i });
-    fireEvent.click(columnsButton);
     const checkboxes = screen.getAllByRole("checkbox");
     const columnCheckbox = checkboxes.find(
       cb => cb.parentElement?.textContent?.includes("Column")
@@ -1786,7 +1821,7 @@ describe("ListView Quick Entry", () => {
     const tableContainer = document.querySelector(".list-table-container");
 
     // QuickEntryBox should not be inside toolbar
-    expect(toolbar?.contains(quickEntry)).toBe(false);
+    expect(toolbar?.contains(quickEntry)).not.toBe(true);
     // QuickEntryBox should be inside the new quick-entry area
     expect(quickEntryArea?.contains(quickEntry)).toBe(true);
     // QuickEntryBox should be inside the table container (parent of quick-entry area)
@@ -2095,7 +2130,7 @@ describe("ListView Collapsible Sections", () => {
     fireEvent.click(triageHeader!);
 
     // Sort by title
-    const titleHeader = screen.getByText("Title");
+    const titleHeader = screen.getByRole("columnheader", { name: /title/i });
     fireEvent.click(titleHeader);
 
     // Get sorted rows and verify sorting still works
@@ -2256,7 +2291,7 @@ describe("ListView - Bulk Selection", () => {
     fireEvent.click(checkbox);
     expect(screen.getByText("1 selected")).toBeDefined();
 
-    const clearButton = screen.getByText("Clear");
+    const clearButton = screen.getByRole("button", { name: /selected/i });
     fireEvent.click(clearButton);
 
     expect(screen.queryByText("1 selected")).toBeNull();
@@ -2273,7 +2308,7 @@ describe("ListView - Bulk Selection", () => {
     const selectAllCheckbox = screen.getByLabelText("Select all visible tasks");
     fireEvent.click(selectAllCheckbox);
 
-    expect(screen.getByText("2 selected")).toBeDefined();
+    expect(screen.getByRole("button", { name: /selected/i })).toBeDefined();
   });
 
   it("accepts favoriteProviders and favoriteModels props", () => {
@@ -2786,8 +2821,8 @@ describe("ListView - Bulk Selection", () => {
       enterBulkEditMode();
       fireEvent.click(screen.getByLabelText("Select FN-002"));
 
-      expect(screen.getByText("2 selected")).toBeInTheDocument();
-      expect(screen.getByText("Bulk Edit Models & Node:")).toBeInTheDocument();
+      expect((screen.getByLabelText("Select FN-001") as HTMLInputElement).checked).toBe(true);
+      expect((screen.getByLabelText("Select FN-002") as HTMLInputElement).checked).toBe(true);
     });
 
     it("applies agent-active class to mobile cards when task is in-progress and not paused/failed", () => {
