@@ -142,6 +142,24 @@ function isExclusionPattern(pattern: string): boolean {
   return pattern.startsWith("-");
 }
 
+/**
+ * Extract the bare skill name for matching purposes.
+ *
+ * Fusion conventions use two-segment names like "web-research/SKILL.md" (from
+ * extractSkillName and normalizeAgentSkills), but pi-coding-agent sets Skill.name
+ * to just the parent directory (e.g. "web-research"). This helper strips common
+ * suffixes so both sides can be compared:
+ *
+ *   "web-research/SKILL.md"           → "web-research"
+ *   "skills/web-research/SKILL.md"    → "web-research"
+ *   "web-research"                    → "web-research"
+ *   "/abs/path/skills/web-research/SKILL.md" → left unchanged (absolute paths
+ *     are matched by filePath comparison, not by this helper)
+ */
+function bareSkillName(name: string): string {
+  return name.replace(/\/SKILL\.md$/i, "");
+}
+
 // ── Main Resolution Logic ────────────────────────────────────────────────────
 
 /**
@@ -331,8 +349,13 @@ export function createSkillsOverrideFromSelection(
     // Settings patterns are relative (e.g. "web-research/SKILL.md") but
     // skill.filePath is absolute. Match against skill.name instead so
     // that patterns written by toggleExecutionSkill() actually resolve.
+    //
+    // pi-coding-agent sets Skill.name to the parent directory name
+    // (e.g. "web-research") while Fusion uses two-segment names
+    // (e.g. "web-research/SKILL.md"). bareSkillName() normalizes
+    // both sides so the comparison succeeds.
     const skillNameMatches = (skill: Skill, pattern: string): boolean =>
-      skill.name.toLowerCase() === pattern.toLowerCase()
+      bareSkillName(skill.name).toLowerCase() === bareSkillName(pattern).toLowerCase()
       || skill.filePath === pattern;
     const isExcluded = (skill: Skill): boolean => {
       for (const ep of excludedSkillPaths) {
@@ -348,10 +371,10 @@ export function createSkillsOverrideFromSelection(
     };
 
     if (hasRequestedNames) {
-      // Filter by requested names (case-insensitive match)
-      const requestedNamesLower = new Set(requestedSkillNames!.map((n) => n.toLowerCase()));
+      // Filter by requested names (case-insensitive match, normalize away /SKILL.md suffix)
+      const requestedBareNamesLower = new Set(requestedSkillNames!.map((n) => bareSkillName(n).toLowerCase()));
       filteredSkills = base.skills.filter(
-        (skill) => requestedNamesLower.has(skill.name.toLowerCase()) && !isExcluded(skill)
+        (skill) => requestedBareNamesLower.has(bareSkillName(skill.name).toLowerCase()) && !isExcluded(skill)
       );
     } else if (hasPatterns) {
       // Filter by pattern (allowed AND not excluded)
@@ -371,10 +394,13 @@ export function createSkillsOverrideFromSelection(
 
     // Check for excluded paths that DO match a discovered skill (disabled)
     const purpose = sessionPurpose ? ` [${sessionPurpose}]` : "";
-    const discoveredNames = new Set(base.skills.map((s) => s.name.toLowerCase()));
+    const discoveredBareNames = new Set(base.skills.map((s) => bareSkillName(s.name).toLowerCase()));
+    const discoveredFilePaths = new Set(base.skills.map((s) => s.filePath));
+    const hasDiscoveredMatch = (pattern: string): boolean =>
+      discoveredBareNames.has(bareSkillName(pattern).toLowerCase()) || discoveredFilePaths.has(pattern);
 
     for (const excludedPath of excludedSkillPaths) {
-      if (discoveredNames.has(excludedPath.toLowerCase())) {
+      if (hasDiscoveredMatch(excludedPath)) {
         newDiagnostics.push({
           type: "warning",
           message: `Skill at '${excludedPath}' exists but is disabled by project execution settings${purpose}`,
@@ -385,7 +411,7 @@ export function createSkillsOverrideFromSelection(
 
     // Check for configured patterns (allowed paths) that don't match any discovered skill
     for (const allowedPath of allowedSkillPaths) {
-      if (!discoveredNames.has(allowedPath.toLowerCase())) {
+      if (!hasDiscoveredMatch(allowedPath)) {
         newDiagnostics.push({
           type: "warning",
           message: `Configured skill pattern '${allowedPath}' not found in discovered skills${purpose}`,
@@ -396,10 +422,10 @@ export function createSkillsOverrideFromSelection(
 
     // Check for requested names that don't match any discovered skill
     if (requestedSkillNames) {
-      const discoveredNamesLower = new Set(base.skills.map((s) => s.name.toLowerCase()));
+      const discoveredBareNamesLower = new Set(base.skills.map((s) => bareSkillName(s.name).toLowerCase()));
       for (const requestedName of requestedSkillNames) {
         if (
-          !discoveredNamesLower.has(requestedName.toLowerCase())
+          !discoveredBareNamesLower.has(bareSkillName(requestedName).toLowerCase())
           && !isBuiltInFallbackRequest(requestedName)
         ) {
           const purpose = sessionPurpose ? ` [${sessionPurpose}]` : "";

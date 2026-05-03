@@ -870,5 +870,83 @@ describe("createSkillsOverrideFromSelection", () => {
       );
       expect(missingWarnings).toHaveLength(0);
     });
+
+    it("matches Fusion two-segment patterns against pi-coding-agent bare skill names", () => {
+      // Fusion's toggleExecutionSkill saves patterns like "+web-research/SKILL.md"
+      // and normalizeAgentSkills extracts "web-research/SKILL.md" from full IDs.
+      // But pi-coding-agent sets Skill.name to just the directory name: "web-research".
+      // This test verifies the cross-format matching works.
+      const dir = createMockProjectDir({
+        skills: ["+web-research/SKILL.md"],
+      });
+
+      const resolvedSkills = resolveSessionSkills({
+        projectRootDir: dir,
+        // Simulates what normalizeAgentSkills produces from "auto::skills/web-research/SKILL.md"
+        requestedSkillNames: ["web-research/SKILL.md"],
+        sessionPurpose: "triage",
+      });
+
+      const override = createSkillsOverrideFromSelection(resolvedSkills, {
+        requestedSkillNames: resolvedSkills.allowedSkillPaths.size > 0
+          ? ["web-research/SKILL.md"]
+          : undefined,
+        sessionPurpose: "triage",
+      });
+
+      // pi-coding-agent discovers skills with bare directory names
+      const base = {
+        skills: [
+          { name: "web-research", filePath: "/home/user/.pi/agent/skills/web-research/SKILL.md", description: "Web search", baseDir: "/home/user/.pi/agent/skills/web-research", sourceInfo: {} as any, disableModelInvocation: false },
+          { name: "paperclip", filePath: "/home/user/.pi/agent/skills/paperclip/SKILL.md", description: "Paperclip", baseDir: "/home/user/.pi/agent/skills/paperclip", sourceInfo: {} as any, disableModelInvocation: false },
+        ],
+        diagnostics: [],
+      };
+
+      const result = override(base);
+
+      // web-research should match despite the naming mismatch
+      expect(result.skills).toHaveLength(1);
+      expect(result.skills[0].name).toBe("web-research");
+
+      // No spurious "not found" warnings
+      const notFoundWarnings = result.diagnostics.filter(d =>
+        d.type === "warning" && d.message.includes("not found")
+      );
+      expect(notFoundWarnings).toHaveLength(0);
+    });
+
+    it("exclusion patterns with /SKILL.md suffix correctly exclude pi-discovered skills", () => {
+      const dir = createMockProjectDir({
+        skills: ["+web-research/SKILL.md", "-paperclip/SKILL.md"],
+      });
+
+      const resolvedSkills = resolveSessionSkills({
+        projectRootDir: dir,
+      });
+
+      const override = createSkillsOverrideFromSelection(resolvedSkills, {
+        sessionPurpose: "executor",
+      });
+
+      const base = {
+        skills: [
+          { name: "web-research", filePath: "/home/user/.pi/agent/skills/web-research/SKILL.md", description: "Web search", baseDir: "", sourceInfo: {} as any, disableModelInvocation: false },
+          { name: "paperclip", filePath: "/home/user/.pi/agent/skills/paperclip/SKILL.md", description: "Paperclip", baseDir: "", sourceInfo: {} as any, disableModelInvocation: false },
+        ],
+        diagnostics: [],
+      };
+
+      const result = override(base);
+
+      expect(result.skills).toHaveLength(1);
+      expect(result.skills[0].name).toBe("web-research");
+
+      // Should have a "disabled" diagnostic for paperclip (exists but excluded)
+      const disabledWarning = result.diagnostics.find(d =>
+        d.message.includes("disabled") && d.message.includes("paperclip")
+      );
+      expect(disabledWarning).toBeDefined();
+    });
   });
 });
