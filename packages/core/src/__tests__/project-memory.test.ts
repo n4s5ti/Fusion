@@ -13,6 +13,7 @@ import {
   readProjectMemory,
   readProjectMemoryWithBackend,
   searchProjectMemory,
+  getProjectMemory,
   resolveMemoryInstructionContext,
 } from "../project-memory.js";
 
@@ -647,6 +648,47 @@ describe("project-memory", () => {
       expect(results.length).toBeGreaterThan(0);
       expect(results[0].backend).toBe("qmd");
       expect(results.some((result) => result.path === ".fusion/memory/DREAMS.md")).toBe(true);
+    });
+  });
+
+  describe("getProjectMemory", () => {
+    it("reads bounded memory window via file backend", async () => {
+      const memoryDir = join(testDir, ".fusion", "memory");
+      await mkdir(memoryDir, { recursive: true });
+      await writeFile(
+        join(memoryDir, "MEMORY.md"),
+        "# Memory\nline-a\nline-b\nline-c\nline-d\n",
+        "utf-8",
+      );
+
+      const result = await getProjectMemory(
+        testDir,
+        { path: ".fusion/memory/MEMORY.md", startLine: 2, lineCount: 2 },
+        { memoryBackendType: "file" },
+      );
+
+      expect(result.path).toBe(".fusion/memory/MEMORY.md");
+      expect(result.content).toBe("line-a\nline-b");
+      expect(result.startLine).toBe(2);
+      expect(result.endLine).toBe(3);
+      expect(result.totalLines).toBeGreaterThanOrEqual(5);
+      expect(result.backend).toBe("file");
+    });
+
+    it("returns qmd backend marker for memory_get contract", async () => {
+      const memoryDir = join(testDir, ".fusion", "memory");
+      await mkdir(memoryDir, { recursive: true });
+      await writeFile(join(memoryDir, "MEMORY.md"), "# Memory\nqmd-line\n", "utf-8");
+
+      const result = await getProjectMemory(
+        testDir,
+        { path: ".fusion/memory/MEMORY.md", startLine: 1, lineCount: 5 },
+        { memoryBackendType: "qmd" },
+      );
+
+      expect(result.path).toBe(".fusion/memory/MEMORY.md");
+      expect(result.content).toContain("qmd-line");
+      expect(result.backend).toBe("qmd");
     });
   });
 });

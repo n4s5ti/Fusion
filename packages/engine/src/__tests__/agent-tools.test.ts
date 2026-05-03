@@ -271,6 +271,35 @@ describe("createMemoryTools", () => {
     expect(getResult.content[0]!.text).toContain("roadmap sequencing");
   });
 
+  it("uses project memory backend for fn_memory_search/fn_memory_get when agent memory is absent", async () => {
+    await core.ensureOpenClawMemoryFiles(tempDir);
+    await appendFile(
+      join(tempDir, ".fusion", "memory", "MEMORY.md"),
+      "\n- Runtime import regressions should be caught in bundle tests.\n",
+      "utf-8",
+    );
+
+    const [searchTool, getTool] = createMemoryTools(tempDir, { memoryBackendType: "file" });
+
+    const searchResult = await (searchTool as any).execute("call-project-search", {
+      query: "runtime import regressions",
+      limit: 5,
+    }, undefined, undefined, undefined);
+
+    expect(searchResult.details.results.length).toBeGreaterThan(0);
+    expect(searchResult.details.results.some((hit: any) => hit.path === ".fusion/memory/MEMORY.md")).toBe(true);
+
+    const getResult = await (getTool as any).execute("call-project-get", {
+      path: ".fusion/memory/MEMORY.md",
+      startLine: 1,
+      lineCount: 30,
+    }, undefined, undefined, undefined);
+
+    expect(getResult.content[0]!.text).toContain(".fusion/memory/MEMORY.md");
+    expect(getResult.content[0]!.text).toContain("Runtime import regressions");
+    expect(getResult.details.backend).toBe("file");
+  });
+
   it("creates daily and dreams files for per-agent memory lookup", async () => {
     const [searchTool] = createMemoryTools(tempDir, { memoryBackendType: "file" }, {
       agentMemory: {

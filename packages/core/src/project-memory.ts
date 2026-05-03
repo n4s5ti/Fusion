@@ -24,6 +24,10 @@ import { existsSync } from "node:fs";
 import {
   ensureOpenClawMemoryFiles,
   memoryLongTermPath,
+  resolveMemoryBackend,
+  MEMORY_BACKEND_SETTINGS_KEYS,
+  DEFAULT_MEMORY_BACKEND,
+  scheduleQmdInstallAndRefresh,
   type MemorySearchOptions,
   type MemorySearchResult,
   type MemoryGetOptions,
@@ -93,17 +97,6 @@ type MemorySettings = {
   [key: string]: unknown;
 };
 
-// Import memory backend utilities lazily to avoid circular dependencies
-async function getMemoryBackendUtils() {
-  const module = await import("./memory-backend.js");
-  return {
-    resolveMemoryBackend: module.resolveMemoryBackend,
-    getMemoryBackendCapabilities: module.getMemoryBackendCapabilities,
-    MEMORY_BACKEND_SETTINGS_KEYS: module.MEMORY_BACKEND_SETTINGS_KEYS,
-    DEFAULT_MEMORY_BACKEND: module.DEFAULT_MEMORY_BACKEND,
-    scheduleQmdInstallAndRefresh: module.scheduleQmdInstallAndRefresh,
-  };
-}
 
 // ── Memory Instruction Context ─────────────────────────────────────────
 
@@ -236,13 +229,6 @@ export async function ensureMemoryFileWithBackend(
   rootDir: string,
   settings?: MemorySettings,
 ): Promise<boolean> {
-  const {
-    resolveMemoryBackend,
-    MEMORY_BACKEND_SETTINGS_KEYS,
-    DEFAULT_MEMORY_BACKEND,
-    scheduleQmdInstallAndRefresh,
-  } = await getMemoryBackendUtils();
-
   const backendType =
     (settings?.[MEMORY_BACKEND_SETTINGS_KEYS.MEMORY_BACKEND_TYPE] as string) ||
     DEFAULT_MEMORY_BACKEND;
@@ -296,7 +282,6 @@ export async function readProjectMemoryWithBackend(
   rootDir: string,
   settings?: MemorySettings,
 ): Promise<string> {
-  const { resolveMemoryBackend } = await getMemoryBackendUtils();
   const backend = resolveMemoryBackend(settings);
 
   try {
@@ -313,7 +298,6 @@ export async function searchProjectMemory(
   options: MemorySearchOptions,
   settings?: MemorySettings,
 ): Promise<MemorySearchResult[]> {
-  const { resolveMemoryBackend } = await getMemoryBackendUtils();
   const backend = resolveMemoryBackend(settings);
   if (!backend.search) {
     return [];
@@ -326,7 +310,6 @@ export async function getProjectMemory(
   options: MemoryGetOptions,
   settings?: MemorySettings,
 ): Promise<MemoryGetResult> {
-  const { resolveMemoryBackend } = await getMemoryBackendUtils();
   const backend = resolveMemoryBackend(settings);
   if (!backend.get) {
     throw new Error(`Memory backend '${backend.type}' does not support memory_get`);

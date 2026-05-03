@@ -42,6 +42,12 @@ describe("CLI bundle output", () => {
     expect(content).not.toContain('"@fusion/engine"');
   });
 
+  it("does not contain runtime memory-backend side-load imports", () => {
+    const content = readFileSync(bundlePath, "utf-8");
+    expect(content).not.toMatch(/await\s+import\(\s*["']\.\/memory-backend\.js["']\s*\)/);
+    expect(content).not.toMatch(/await\s+import\(\s*["']\.\.\/memory-backend\.js["']\s*\)/);
+  });
+
   it("contains inlined workspace code", () => {
     const content = readFileSync(bundlePath, "utf-8");
     // TaskStore from @fusion/core
