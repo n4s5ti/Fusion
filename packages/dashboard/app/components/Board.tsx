@@ -1,5 +1,5 @@
-import type { Task, TaskDetail, Column as ColumnType, TaskCreateInput } from "@fusion/core";
-import { COLUMNS } from "@fusion/core";
+import type { Task, TaskDetail, Column as ColumnType, TaskCreateInput, TaskPriority } from "@fusion/core";
+import { COLUMNS, TASK_PRIORITIES, DEFAULT_TASK_PRIORITY } from "@fusion/core";
 import { Column } from "./Column";
 import type { ToastType } from "../hooks/useToast";
 import { useState, useMemo, useEffect, useCallback, useRef } from "react";
@@ -53,8 +53,38 @@ interface BoardProps {
   lastFetchTimeMs?: number;
 }
 
+const PRIORITY_RANK: Record<TaskPriority, number> = {
+  low: 0,
+  normal: 1,
+  high: 2,
+  urgent: 3,
+};
+
+function normalizePriority(priority: unknown): TaskPriority {
+  if (typeof priority === "string" && (TASK_PRIORITIES as readonly string[]).includes(priority)) {
+    return priority as TaskPriority;
+  }
+  return DEFAULT_TASK_PRIORITY;
+}
+
+function compareTaskPriority(a: unknown, b: unknown): number {
+  return PRIORITY_RANK[normalizePriority(b)] - PRIORITY_RANK[normalizePriority(a)];
+}
+
+function compareTaskIdNumeric(a: string, b: string): number {
+  const aNum = Number.parseInt(a.slice(a.lastIndexOf("-") + 1), 10);
+  const bNum = Number.parseInt(b.slice(b.lastIndexOf("-") + 1), 10);
+
+  if (Number.isFinite(aNum) && Number.isFinite(bNum) && aNum !== bNum) {
+    return aNum - bNum;
+  }
+
+  return a.localeCompare(b);
+}
+
 function sortTasksForColumn(tasks: Task[], column: ColumnType): Task[] {
   return [...tasks].sort((a, b) => {
+    // In the in-review column, merging tasks stay pinned above non-merging tasks.
     if (column === "in-review") {
       const aIsMerging = a.status === "merging" || a.status === "merging-pr";
       const bIsMerging = b.status === "merging" || b.status === "merging-pr";
@@ -63,12 +93,15 @@ function sortTasksForColumn(tasks: Task[], column: ColumnType): Task[] {
       }
     }
 
-    if (a.columnMovedAt && b.columnMovedAt) {
-      return b.columnMovedAt.localeCompare(a.columnMovedAt);
+    // Primary sort: priority descending (urgent → high → normal → low).
+    // compareTaskPriority normalizes missing/invalid values to `normal`.
+    const priorityCmp = compareTaskPriority(a.priority, b.priority);
+    if (priorityCmp !== 0) {
+      return priorityCmp;
     }
-    if (a.columnMovedAt && !b.columnMovedAt) return -1;
-    if (!a.columnMovedAt && b.columnMovedAt) return 1;
-    return a.createdAt.localeCompare(b.createdAt);
+
+    // Secondary sort: numeric task ID ascending (lower number first).
+    return compareTaskIdNumeric(a.id, b.id);
   });
 }
 

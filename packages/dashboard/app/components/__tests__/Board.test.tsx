@@ -291,44 +291,65 @@ describe("Board", () => {
       expect(columnRenderCounts.done).toBeGreaterThanOrEqual(initialDoneRenders);
     });
 
-    it("filtered tasks are sorted correctly (columnMovedAt, createdAt)", () => {
-      const tasks: Task[] = [
-        createTask({
-          id: "FN-001",
-          description: "Old task with move time",
-          column: "todo",
-          columnMovedAt: "2024-01-01T10:00:00.000Z",
-          createdAt: "2024-01-01T08:00:00.000Z",
-        }),
-        createTask({
-          id: "FN-002",
-          description: "Newer task with move time",
-          column: "todo",
-          columnMovedAt: "2024-01-01T12:00:00.000Z",
-          createdAt: "2024-01-01T08:00:00.000Z",
-        }),
-        createTask({
-          id: "FN-003",
-          description: "Legacy task no move time",
-          column: "todo",
-          createdAt: "2024-01-01T09:00:00.000Z",
-        }),
-      ];
+    describe("sortTasksForColumn priority ordering", () => {
+      it("orders tasks by priority descending (urgent → high → normal → low)", () => {
+        const tasks: Task[] = [
+          createTask({ id: "FN-003", description: "Low task", column: "todo", priority: "low" }),
+          createTask({ id: "FN-001", description: "Urgent task", column: "todo", priority: "urgent" }),
+          createTask({ id: "FN-004", description: "Normal task", column: "todo", priority: "normal" }),
+          createTask({ id: "FN-002", description: "High task", column: "todo", priority: "high" }),
+        ];
 
-      renderBoard({ tasks, searchQuery: "task" });
+        renderBoard({ tasks, searchQuery: "task" });
 
-      const todoColumn = screen.getByTestId("column-todo");
-      const todoTasks = JSON.parse(todoColumn.getAttribute("data-tasks") || "[]") as Task[];
+        const todoTasks = JSON.parse(screen.getByTestId("column-todo").getAttribute("data-tasks") || "[]") as Task[];
+        expect(todoTasks).toHaveLength(4);
+        expect(todoTasks.map((t: Task) => t.id)).toEqual(["FN-001", "FN-002", "FN-004", "FN-003"]);
+      });
 
-      // Should have all 3 tasks
-      expect(todoTasks).toHaveLength(3);
+      it("orders same-priority tasks by numeric task ID ascending", () => {
+        const tasks: Task[] = [
+          createTask({ id: "FN-050", description: "Fifty", column: "in-progress", priority: "normal" }),
+          createTask({ id: "FN-010", description: "Ten", column: "in-progress", priority: "normal" }),
+          createTask({ id: "FN-030", description: "Thirty", column: "in-progress", priority: "normal" }),
+        ];
 
-      // Tasks with columnMovedAt should come first, sorted by columnMovedAt descending (newest first)
-      // So FN-002 (12:00) should be first, FN-001 (10:00) second
-      // Legacy tasks (no columnMovedAt) come last, sorted by createdAt ascending
-      expect(todoTasks[0].id).toBe("FN-002");
-      expect(todoTasks[1].id).toBe("FN-001");
-      expect(todoTasks[2].id).toBe("FN-003");
+        renderBoard({ tasks });
+
+        const ipTasks = JSON.parse(screen.getByTestId("column-in-progress").getAttribute("data-tasks") || "[]") as Task[];
+        expect(ipTasks.map((t: Task) => t.id)).toEqual(["FN-010", "FN-030", "FN-050"]);
+      });
+
+      it("normalizes missing priority values to normal", () => {
+        const noPriorityTask = createTask({ id: "FN-060", description: "No priority", column: "todo" });
+        delete noPriorityTask.priority;
+
+        const tasks: Task[] = [
+          noPriorityTask,
+          createTask({ id: "FN-061", description: "Explicit normal", column: "todo", priority: "normal" }),
+          createTask({ id: "FN-062", description: "Urgent", column: "todo", priority: "urgent" }),
+        ];
+
+        renderBoard({ tasks });
+
+        const todoTasks = JSON.parse(screen.getByTestId("column-todo").getAttribute("data-tasks") || "[]") as Task[];
+        // FN-060 (missing → normal) and FN-061 (explicit normal) are same priority,
+        // so they sort by numeric ID ascending
+        expect(todoTasks.map((t: Task) => t.id)).toEqual(["FN-062", "FN-060", "FN-061"]);
+      });
+
+      it("uses localeCompare fallback for non-numeric task IDs", () => {
+        const tasks: Task[] = [
+          createTask({ id: "TASK-002", description: "Task two", column: "todo", priority: "normal" }),
+          createTask({ id: "TASK-001", description: "Task one", column: "todo", priority: "normal" }),
+        ];
+
+        renderBoard({ tasks });
+
+        const todoTasks = JSON.parse(screen.getByTestId("column-todo").getAttribute("data-tasks") || "[]") as Task[];
+        // Both have same priority, numeric parse fails (NaN), localeCompare fallback
+        expect(todoTasks.map((t: Task) => t.id)).toEqual(["TASK-001", "TASK-002"]);
+      });
     });
 
     describe("sortTasksForColumn merging pinning", () => {
@@ -376,61 +397,71 @@ describe("Board", () => {
         expect(inReviewTasks.map((task) => task.id)).toEqual(["FN-020", "FN-021"]);
       });
 
-      it("sorts multiple merging tasks by columnMovedAt descending within the pinned group", () => {
+      it("sorts multiple merging tasks by priority then task ID within the pinned group", () => {
         const tasks: Task[] = [
           createTask({
             id: "FN-030",
             column: "in-review",
             status: "merging",
-            columnMovedAt: "2024-01-01T09:00:00.000Z",
+            priority: "high",
           }),
           createTask({
             id: "FN-031",
             column: "in-review",
             status: "merging-pr",
-            columnMovedAt: "2024-01-01T11:00:00.000Z",
+            priority: "urgent",
           }),
           createTask({
             id: "FN-032",
             column: "in-review",
             status: "review-ready",
-            columnMovedAt: "2024-01-01T12:00:00.000Z",
+            priority: "urgent",
           }),
         ];
 
         renderBoard({ tasks });
 
         const inReviewTasks = JSON.parse(screen.getByTestId("column-in-review").getAttribute("data-tasks") || "[]") as Task[];
+        // Pinned group (merging): FN-031 urgent, FN-030 high — sorted by priority desc
+        // Non-pinned group: FN-032 urgent
         expect(inReviewTasks.map((task) => task.id)).toEqual(["FN-031", "FN-030", "FN-032"]);
       });
 
-      it("does not change sort order for non-in-review columns", () => {
+      it("sorts non-in-review columns by priority then task ID regardless of status", () => {
         const tasks: Task[] = [
           createTask({
             id: "FN-040",
             column: "todo",
             status: "merging",
-            columnMovedAt: "2024-01-01T10:00:00.000Z",
+            priority: "high",
           }),
           createTask({
             id: "FN-041",
             column: "todo",
             status: "ready",
-            columnMovedAt: "2024-01-01T12:00:00.000Z",
+            priority: "urgent",
+          }),
+          createTask({
+            id: "FN-042",
+            column: "todo",
+            status: "ready",
+            priority: "high",
           }),
         ];
 
         renderBoard({ tasks });
 
         const todoTasks = JSON.parse(screen.getByTestId("column-todo").getAttribute("data-tasks") || "[]") as Task[];
-        expect(todoTasks.map((task) => task.id)).toEqual(["FN-041", "FN-040"]);
+        // No merge-pinning outside in-review, so pure priority-then-ID sort
+        // FN-041 urgent, then FN-040 and FN-042 both high (sorted by ID asc)
+        expect(todoTasks.map((task) => task.id)).toEqual(["FN-041", "FN-040", "FN-042"]);
       });
 
-      it("keeps tasks without status sorting normally in in-review", () => {
+      it("sorts tasks without status by priority then task ID in in-review", () => {
         const statuslessTask = createTask({
           id: "FN-050",
           column: "in-review",
-          columnMovedAt: "2024-01-01T11:00:00.000Z",
+          priority: "normal",
         });
         delete statuslessTask.status;
 
@@ -440,13 +471,14 @@ describe("Board", () => {
             id: "FN-051",
             column: "in-review",
             status: "review-ready",
-            columnMovedAt: "2024-01-01T12:00:00.000Z",
+            priority: "urgent",
           }),
         ];
 
         renderBoard({ tasks });
 
         const inReviewTasks = JSON.parse(screen.getByTestId("column-in-review").getAttribute("data-tasks") || "[]") as Task[];
+        // Neither is merging, so sort by priority: FN-051 urgent > FN-050 normal
         expect(inReviewTasks.map((task) => task.id)).toEqual(["FN-051", "FN-050"]);
       });
     });

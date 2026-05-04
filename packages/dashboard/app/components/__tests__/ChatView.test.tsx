@@ -2589,6 +2589,7 @@ describe("ChatView mobile behavior", () => {
 
   it("mobile mode: sets and clears keyboard overlap CSS vars on chat thread", async () => {
     const restoreMatchMedia = mockMobileViewport();
+    _resetInitialViewportHeight();
     const { listeners, mockVV } = mockMobileVisualViewport({
       innerHeight: 844,
       vvHeight: 844,
@@ -2605,6 +2606,11 @@ describe("ChatView mobile behavior", () => {
       const thread = document.querySelector(".chat-thread") as HTMLDivElement;
       expect(thread).toBeInTheDocument();
       expect(thread.style.getPropertyValue("--keyboard-overlap")).toBe("");
+
+      // Focus the chat textarea so the hook treats the active element as a
+      // keyboard-focusable target.
+      const textarea = screen.getByTestId("chat-input") as HTMLTextAreaElement;
+      textarea.focus();
 
       Object.defineProperty(window, "innerHeight", {
         value: 560,
@@ -2625,6 +2631,9 @@ describe("ChatView mobile behavior", () => {
         expect(thread.style.getPropertyValue("--keyboard-overlap")).toBe("284px");
         expect(thread.style.getPropertyValue("--vv-height")).toBe("560px");
       });
+
+      // Blur to signal keyboard dismissal
+      textarea.blur();
 
       Object.defineProperty(mockVV, "height", {
         value: 844,
@@ -2718,6 +2727,11 @@ describe("ChatView mobile behavior", () => {
         configurable: true,
       });
       messagesContainer.scrollTop = 0;
+
+      // Focus the chat textarea so the hook treats the active element as a
+      // keyboard-focusable target.
+      const textarea = screen.getByTestId("chat-input") as HTMLTextAreaElement;
+      textarea.focus();
 
       Object.defineProperty(window, "innerHeight", {
         value: 560,
