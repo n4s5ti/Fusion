@@ -1,6 +1,18 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Activity, Download, Pencil, Save, Shield, Upload, X } from "lucide-react";
-import type { NodeInfo, NodeUpdateInput, ProjectInfo } from "../api";
+import {
+  Activity,
+  Download,
+  FileText,
+  Pencil,
+  Play,
+  RotateCcw,
+  Save,
+  Shield,
+  Square,
+  Upload,
+  X,
+} from "lucide-react";
+import type { ContainerStatusInfo, ManagedDockerNodeInfo, NodeInfo, NodeUpdateInput, ProjectInfo } from "../api";
 import type { ToastType } from "../hooks/useToast";
 import { getProjectsForNode } from "../utils/nodeProjectAssignment";
 import type { ComputedNodeSyncStatus } from "../hooks/useNodeSettingsSync";
@@ -23,17 +35,36 @@ interface NodeDetailModalProps {
   onPushSettings?: (nodeId: string) => Promise<unknown>;
   onPullSettings?: (nodeId: string) => Promise<unknown>;
   onSyncAuth?: (nodeId: string) => Promise<unknown>;
-  /** Sync history entries for this node */
   syncHistory?: SyncLogEntry[];
-  /** Called when sync conflicts need resolution */
   onResolveConflicts?: (resolutions: ConflictResolutionResult[]) => Promise<void>;
+  managedDockerNode?: ManagedDockerNodeInfo;
+  containerStatus?: ContainerStatusInfo;
+  onFetchContainerStatus?: (managedId: string) => Promise<ContainerStatusInfo>;
+  onFetchLogs?: (managedId: string) => Promise<string>;
 }
+
+const SENSITIVE_ENV_KEY_PATTERN = /(KEY|TOKEN|SECRET|PASSWORD)/i;
 
 function formatTimestamp(value?: string): string {
   if (!value) return "—";
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "—";
   return date.toLocaleString();
+}
+
+function formatDockerUptime(startedAt?: string): string {
+  if (!startedAt) return "—";
+  const started = new Date(startedAt);
+  const now = Date.now();
+  if (Number.isNaN(started.getTime()) || started.getTime() > now) return "—";
+  const seconds = Math.floor((now - started.getTime()) / 1000);
+  if (seconds < 60) return `${seconds}s`;
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes}m`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ${minutes % 60}m`;
+  const days = Math.floor(hours / 24);
+  return `${days}d ${hours % 24}h`;
 }
 
 function getSyncStateDotClass(syncState: ComputedNodeSyncStatus["syncState"]): string {
@@ -52,6 +83,32 @@ function getSyncStateDotClass(syncState: ComputedNodeSyncStatus["syncState"]): s
   }
 }
 
+function getDockerStatusTone(status?: string): "success" | "warning" | "error" {
+  if (status === "running") return "success";
+  if (status === "creating" || status === "recreating" || status === "restarting") return "warning";
+  return "error";
+}
+
+function getDockerStatusLabel(status?: string): string {
+  if (!status) return "Unknown";
+  return `${status.charAt(0).toUpperCase()}${status.slice(1)}`;
+}
+
+function parsePortFromReachableUrl(url?: string): string {
+  if (!url) return "—";
+  try {
+    const parsed = new URL(url);
+    if (parsed.port) return parsed.port;
+    return parsed.protocol === "https:" ? "443" : parsed.protocol === "http:" ? "80" : "—";
+  } catch {
+    return "—";
+  }
+}
+
+function maskEnvValue(key: string, value: string): string {
+  return SENSITIVE_ENV_KEY_PATTERN.test(key) ? "••••••••" : value;
+}
+
 export function NodeDetailModal({
   isOpen,
   onClose,
@@ -66,6 +123,10 @@ export function NodeDetailModal({
   onSyncAuth,
   syncHistory = [],
   onResolveConflicts,
+  managedDockerNode,
+  containerStatus,
+  onFetchContainerStatus,
+  onFetchLogs,
 }: NodeDetailModalProps) {
   const isMountedRef = useRef(true);
   const [editMode, setEditMode] = useState(false);
@@ -75,18 +136,19 @@ export function NodeDetailModal({
   const [maxConcurrent, setMaxConcurrent] = useState(2);
   const [isSaving, setIsSaving] = useState(false);
 
-  // Sync action states
   const [isPushing, setIsPushing] = useState(false);
   const [isPulling, setIsPulling] = useState(false);
   const [isSyncingAuth, setIsSyncingAuth] = useState(false);
   const [syncError, setSyncError] = useState<string | null>(null);
 
-  // Conflict resolution modal state
   const [showConflictModal, setShowConflictModal] = useState(false);
   const [conflicts] = useState<SettingsConflictEntry[]>([]);
-  const [dockerStatus, setDockerStatus] = useState<"running" | "stopped" | "recreating">("running");
-  const [dockerEnv, setDockerEnv] = useState("FUSION_LOG_LEVEL=info");
-  const [dockerMounts, setDockerMounts] = useState("/srv/fusion:/data:rw");
+
+  const [liveContainerStatus, setLiveContainerStatus] = useState<ContainerStatusInfo | undefined>(containerStatus);
+  const [isRefreshingContainerStatus, setIsRefreshingContainerStatus] = useState(false);
+  const [logsOpen, setLogsOpen] = useState(false);
+  const [logs, setLogs] = useState("");
+  const [logsLoading, setLogsLoading] = useState(false);
 
   useEffect(() => {
     isMountedRef.current = true;
@@ -96,8 +158,14 @@ export function NodeDetailModal({
   }, []);
 
   useEffect(() => {
+    setLiveContainerStatus(containerStatus);
+  }, [containerStatus]);
+
+  useEffect(() => {
     if (!node || !isOpen) {
       setEditMode(false);
+      setLogsOpen(false);
+      setLogs("");
       return;
     }
 
@@ -127,10 +195,17 @@ export function NodeDetailModal({
     return getProjectsForNode(projects, node);
   }, [node, projects]);
 
-  const isManagedDockerNode = useMemo(
-    () => (node?.capabilities as readonly string[] | undefined)?.includes("docker-managed") ?? false,
-    [node],
-  );
+  const dockerHost = useMemo(() => {
+    if (!managedDockerNode) return "—";
+    return managedDockerNode.hostConfig.type === "remote" ? managedDockerNode.hostConfig.host ?? "—" : "Local Docker";
+  }, [managedDockerNode]);
+
+  const dockerResourceSizing = useMemo(() => {
+    if (!managedDockerNode?.resourceSizing?.cpuLimit && !managedDockerNode?.resourceSizing?.memoryLimit) {
+      return "Default";
+    }
+    return `${managedDockerNode.resourceSizing?.cpuLimit ?? "Default CPU"} / ${managedDockerNode.resourceSizing?.memoryLimit ?? "Default memory"}`;
+  }, [managedDockerNode]);
 
   const handleHealthCheck = useCallback(async () => {
     if (!node) return;
@@ -210,14 +285,42 @@ export function NodeDetailModal({
     setSyncError(null);
   }, []);
 
-  const handleDockerLifecycle = useCallback((action: "start" | "stop" | "restart" | "recreate" | "upgrade") => {
-    if (action === "start") setDockerStatus("running");
-    if (action === "stop") setDockerStatus("stopped");
-    if (action === "restart") setDockerStatus("running");
-    if (action === "recreate") setDockerStatus("recreating");
-    if (action === "upgrade") setDockerStatus("recreating");
-    addToast(`Docker action queued: ${action}`, "success");
-  }, [addToast]);
+  const handleRefreshContainerStatus = useCallback(async () => {
+    if (!managedDockerNode || !onFetchContainerStatus) return;
+    setIsRefreshingContainerStatus(true);
+    try {
+      const result = await onFetchContainerStatus(managedDockerNode.id);
+      if (!isMountedRef.current) return;
+      setLiveContainerStatus(result);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Failed to fetch container status";
+      addToast(message, "error");
+    } finally {
+      if (isMountedRef.current) {
+        setIsRefreshingContainerStatus(false);
+      }
+    }
+  }, [addToast, managedDockerNode, onFetchContainerStatus]);
+
+  const handleFetchLogs = useCallback(async () => {
+    if (!managedDockerNode || !onFetchLogs) return;
+    setLogsOpen(true);
+    setLogsLoading(true);
+    try {
+      const result = await onFetchLogs(managedDockerNode.id);
+      if (!isMountedRef.current) return;
+      setLogs(result);
+    } catch (error) {
+      if (!isMountedRef.current) return;
+      setLogs("");
+      const message = error instanceof Error ? error.message : "Failed to fetch container logs";
+      addToast(message, "error");
+    } finally {
+      if (isMountedRef.current) {
+        setLogsLoading(false);
+      }
+    }
+  }, [addToast, managedDockerNode, onFetchLogs]);
 
   const handleSave = useCallback(async () => {
     if (!node || isSaving) return;
@@ -266,6 +369,9 @@ export function NodeDetailModal({
   }, [node]);
 
   if (!isOpen || !node) return null;
+
+  const effectiveDockerStatus = liveContainerStatus?.status ?? managedDockerNode?.status;
+  const dockerStatusTone = getDockerStatusTone(effectiveDockerStatus);
 
   return (
     <div className="modal-overlay open" onClick={onClose}>
@@ -412,39 +518,88 @@ export function NodeDetailModal({
             </div>
           </section>
 
-          {isManagedDockerNode && (
-            <section className="node-detail-modal__section">
+          {managedDockerNode && (
+            <section className="node-detail-modal__section docker-management">
               <h4>Docker Management</h4>
-              <div className="node-detail-modal__health-row">
-                <span>Container: <strong>{dockerStatus}</strong></span>
-                <span>Image: <strong>runfusion/fusion:latest</strong></span>
+
+              <div className="docker-management__status-card">
+                <div className="docker-management__status-row">
+                  <span className={`docker-management__status-dot docker-management__status-dot--${dockerStatusTone}`} aria-hidden />
+                  <strong>{getDockerStatusLabel(effectiveDockerStatus)}</strong>
+                  {(effectiveDockerStatus === "creating" || effectiveDockerStatus === "recreating" || effectiveDockerStatus === "restarting") && (
+                    <RotateCcw size={14} className="spin" aria-hidden />
+                  )}
+                </div>
+                <div className="docker-management__status-meta">
+                  {effectiveDockerStatus === "running" && <span>Uptime: {formatDockerUptime(liveContainerStatus?.startedAt)}</span>}
+                  {effectiveDockerStatus !== "running" && liveContainerStatus?.exitCode !== undefined && (
+                    <span>Exit code: {liveContainerStatus.exitCode}</span>
+                  )}
+                  {(liveContainerStatus?.error || managedDockerNode.errorMessage) && (
+                    <span>{liveContainerStatus?.error ?? managedDockerNode.errorMessage}</span>
+                  )}
+                </div>
+                <button className="btn btn-sm" onClick={() => void handleRefreshContainerStatus()} disabled={!onFetchContainerStatus || isRefreshingContainerStatus}>
+                  {isRefreshingContainerStatus ? "Refreshing..." : "Refresh Status"}
+                </button>
               </div>
-              <div className="node-detail-modal__sync-actions">
-                <button className="btn btn-sm" onClick={() => handleDockerLifecycle("start")}>Start</button>
-                <button className="btn btn-sm" onClick={() => handleDockerLifecycle("stop")}>Stop</button>
-                <button className="btn btn-sm" onClick={() => handleDockerLifecycle("restart")}>Restart</button>
-                <button className="btn btn-sm" onClick={() => handleDockerLifecycle("recreate")}>Recreate</button>
-                <button className="btn btn-sm" onClick={() => handleDockerLifecycle("upgrade")}>Upgrade Image</button>
+
+              <div className="node-detail-modal__grid docker-management__info-grid">
+                <div className="node-detail-modal__field"><span>Image</span><strong><code>{managedDockerNode.imageName}:{managedDockerNode.imageTag}</code></strong></div>
+                <div className="node-detail-modal__field"><span>Container ID</span><strong><code>{managedDockerNode.containerId ? managedDockerNode.containerId.slice(0, 12) : "—"}</code></strong></div>
+                <div className="node-detail-modal__field"><span>Host</span><strong>{dockerHost}</strong></div>
+                <div className="node-detail-modal__field"><span>Persistent Storage</span><strong>{managedDockerNode.persistentStorage ? "Yes" : "No"}</strong></div>
+                <div className="node-detail-modal__field"><span>Port</span><strong>{parsePortFromReachableUrl(managedDockerNode.reachableUrl)}</strong></div>
+                <div className="node-detail-modal__field"><span>Resource Sizing</span><strong>{dockerResourceSizing}</strong></div>
               </div>
-              <div className="node-detail-modal__docker-grid">
-                <label className="node-detail-modal__field">
-                  <span>Environment Variables</span>
-                  <textarea className="input node-detail-modal__textarea" value={dockerEnv} onChange={(event) => setDockerEnv(event.target.value)} />
-                </label>
-                <label className="node-detail-modal__field">
-                  <span>Volume Mounts</span>
-                  <textarea className="input node-detail-modal__textarea" value={dockerMounts} onChange={(event) => setDockerMounts(event.target.value)} />
-                </label>
+
+              <div className="docker-management__actions">
+                <button className="btn btn-sm" disabled title="Available after FN-3113"><Play size={14} />Start</button>
+                <button className="btn btn-sm" disabled title="Available after FN-3113"><Square size={14} />Stop</button>
+                <button className="btn btn-sm" disabled title="Available after FN-3113"><RotateCcw size={14} />Restart</button>
+                <button className="btn btn-sm" onClick={() => void handleFetchLogs()} disabled={!onFetchLogs}><FileText size={14} />View Logs</button>
               </div>
-              <div className="node-detail-modal__sync-actions">
-                <button className="btn btn-sm" onClick={() => addToast("Container logs opened", "success")}>View Logs</button>
-                <button className="btn btn-sm" onClick={() => addToast("Config changes saved", "success")}>Save Config</button>
-                <button className="btn btn-danger btn-sm" onClick={() => addToast("Delete flow opened (retain/remove volumes)", "warning")}>Delete Node…</button>
-              </div>
+
+              {logsOpen && (
+                <div className="docker-management__log-viewer">
+                  <div className="docker-management__log-viewer-header">
+                    <strong>Container Logs</strong>
+                    <button className="btn-icon" onClick={() => setLogsOpen(false)} aria-label="Close logs"><X size={14} /></button>
+                  </div>
+                  {logsLoading ? (
+                    <p>Fetching logs...</p>
+                  ) : (
+                    <pre>{logs.trim() || "No logs available"}</pre>
+                  )}
+                </div>
+              )}
+
+              <details>
+                <summary>Environment Variables</summary>
+                <dl className="docker-management__env-list">
+                  {Object.entries(managedDockerNode.envVars).map(([key, value]) => (
+                    <div key={key}>
+                      <dt>{key}</dt>
+                      <dd>{maskEnvValue(key, value)}</dd>
+                    </div>
+                  ))}
+                </dl>
+              </details>
+
+              <details>
+                <summary>Volume Mounts</summary>
+                <ul className="docker-management__mounts-list">
+                  {managedDockerNode.volumeMounts.map((mount) => (
+                    <li key={`${mount.hostPath}:${mount.containerPath}`}>
+                      <span>{mount.hostPath} → {mount.containerPath}</span>
+                      {mount.readOnly && <span className="node-card__type-badge">Read-only</span>}
+                    </li>
+                  ))}
+                </ul>
+              </details>
             </section>
           )}
 
-          {/* Settings Sync section — only for remote nodes */}
           {node.type === "remote" && (
             <section className="node-detail-modal__section">
               <h4>Settings Sync</h4>
@@ -456,12 +611,7 @@ export function NodeDetailModal({
                     aria-hidden
                   />
                   <span>
-                    Last sync:{" "}
-                    <strong>
-                      {syncStatus.lastSyncAt
-                        ? formatRelativeTime(syncStatus.lastSyncAt)
-                        : "Never synced"}
-                    </strong>
+                    Last sync: <strong>{syncStatus.lastSyncAt ? formatRelativeTime(syncStatus.lastSyncAt) : "Never synced"}</strong>
                   </span>
                   {syncStatus.diffCount > 0 && (
                     <span className="node-detail-modal__sync-diff">
@@ -472,29 +622,17 @@ export function NodeDetailModal({
               )}
 
               <div className="node-detail-modal__sync-actions">
-                <button
-                  className="btn btn-sm"
-                  onClick={handlePushSettings}
-                  disabled={isPushing || !onPushSettings}
-                >
+                <button className="btn btn-sm" onClick={handlePushSettings} disabled={isPushing || !onPushSettings}>
                   <Upload size={14} />
                   {isPushing ? "Pushing..." : "Push Settings"}
                 </button>
 
-                <button
-                  className="btn btn-sm"
-                  onClick={handlePullSettings}
-                  disabled={isPulling || !onPullSettings}
-                >
+                <button className="btn btn-sm" onClick={handlePullSettings} disabled={isPulling || !onPullSettings}>
                   <Download size={14} />
                   {isPulling ? "Pulling..." : "Pull Settings"}
                 </button>
 
-                <button
-                  className="btn btn-sm"
-                  onClick={handleSyncAuth}
-                  disabled={isSyncingAuth || !onSyncAuth}
-                >
+                <button className="btn btn-sm" onClick={handleSyncAuth} disabled={isSyncingAuth || !onSyncAuth}>
                   <Shield size={14} />
                   {isSyncingAuth ? "Syncing..." : "Sync Auth"}
                 </button>
@@ -503,11 +641,7 @@ export function NodeDetailModal({
               {syncError && (
                 <div className="node-detail-modal__sync-error">
                   <span>{syncError}</span>
-                  <button
-                    className="node-detail-modal__sync-error-dismiss"
-                    onClick={handleDismissSyncError}
-                    aria-label="Dismiss error"
-                  >
+                  <button className="node-detail-modal__sync-error-dismiss" onClick={handleDismissSyncError} aria-label="Dismiss error">
                     <X size={14} />
                   </button>
                 </div>
@@ -515,15 +649,10 @@ export function NodeDetailModal({
             </section>
           )}
 
-          {/* Sync History section — only for remote nodes */}
           {node.type === "remote" && (
             <section className="node-detail-modal__section">
               <h4>Sync History</h4>
-              <SettingsSyncLog
-                nodeId={node.id}
-                entries={syncHistory}
-                singleNode={true}
-              />
+              <SettingsSyncLog nodeId={node.id} entries={syncHistory} singleNode={true} />
             </section>
           )}
         </div>
@@ -537,7 +666,6 @@ export function NodeDetailModal({
         </div>
       </div>
 
-      {/* Conflict resolution modal — rendered outside main modal container */}
       {node.type === "remote" && (
         <SettingsSyncConflictModal
           isOpen={showConflictModal}

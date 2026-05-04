@@ -9,6 +9,8 @@ const service = {
   listContexts: vi.fn(),
   testConnection: vi.fn(),
   recreateContainer: vi.fn(),
+  getContainerInfo: vi.fn(),
+  getContainerLogs: vi.fn(),
 };
 
 const mockCentralInstance = {
@@ -98,6 +100,98 @@ describe("registerDockerNodeRoutes", () => {
     const res = await request(app(), "GET", "/api/docker/local-available");
     expect(res.status).toBe(200);
     expect((res.body as any).available).toBe(false);
+  });
+
+  it("GET /api/docker/nodes returns enriched list", async () => {
+    mockCentralInstance.listManagedDockerNodes = vi.fn().mockResolvedValue([
+      {
+        id: "mdn-1",
+        nodeId: "node-1",
+        name: "Docker One",
+        status: "running",
+        hostConfig: {},
+        envVars: {},
+        imageName: "runfusion/fusion",
+        imageTag: "latest",
+        volumeMounts: [],
+        persistentStorage: true,
+        resourceSizing: {},
+        createdAt: "2026-01-01T00:00:00.000Z",
+        updatedAt: "2026-01-01T00:00:00.000Z",
+      },
+    ]);
+    mockCentralInstance.getNode.mockResolvedValue({ id: "node-1", name: "Linked", type: "remote", status: "online", maxConcurrent: 2, createdAt: "x", updatedAt: "x" });
+    const res = await request(app(), "GET", "/api/docker/nodes");
+    expect(res.status).toBe(200);
+    expect((res.body as any)[0].linkedNode.id).toBe("node-1");
+  });
+
+  it("GET /api/docker/nodes/:id/container-status handles success and errors", async () => {
+    mockCentralInstance.getManagedDockerNode.mockResolvedValueOnce({ id: "mdn-1", status: "running", hostConfig: {}, containerId: "c1" });
+    service.getContainerInfo.mockResolvedValueOnce({ state: { running: true }, status: "running" });
+    const ok = await request(app(), "GET", "/api/docker/nodes/mdn-1/container-status");
+    expect(ok.status).toBe(200);
+    expect((ok.body as any).status).toBe("running");
+
+    mockCentralInstance.getManagedDockerNode.mockResolvedValueOnce(undefined);
+    const notFound = await request(app(), "GET", "/api/docker/nodes/missing/container-status");
+    expect(notFound.status).toBe(404);
+
+    mockCentralInstance.getManagedDockerNode.mockResolvedValueOnce({ id: "mdn-1", status: "creating", hostConfig: {}, containerId: null });
+    const bad = await request(app(), "GET", "/api/docker/nodes/mdn-1/container-status");
+    expect(bad.status).toBe(400);
+
+    mockCentralInstance.getManagedDockerNode.mockResolvedValueOnce({ id: "mdn-1", status: "running", hostConfig: {}, containerId: "c1" });
+    service.getContainerInfo.mockRejectedValueOnce(new Error("down"));
+    const unavailable = await request(app(), "GET", "/api/docker/nodes/mdn-1/container-status");
+    expect(unavailable.status).toBe(503);
+  });
+
+  it("GET /api/docker/nodes/:id/logs clamps tail and handles errors", async () => {
+    mockCentralInstance.getManagedDockerNode.mockResolvedValueOnce({ id: "mdn-1", status: "running", hostConfig: {}, containerId: "c1" });
+    service.getContainerLogs.mockResolvedValueOnce("hello");
+    const ok = await request(app(), "GET", "/api/docker/nodes/mdn-1/logs?tail=5000");
+    expect(ok.status).toBe(200);
+    expect(service.getContainerLogs).toHaveBeenCalledWith("c1", {}, { tail: 1000 });
+
+    mockCentralInstance.getManagedDockerNode.mockResolvedValueOnce(undefined);
+    const notFound = await request(app(), "GET", "/api/docker/nodes/mdn-1/logs");
+    expect(notFound.status).toBe(404);
+
+    mockCentralInstance.getManagedDockerNode.mockResolvedValueOnce({ id: "mdn-1", status: "creating", hostConfig: {}, containerId: null });
+    const noContainer = await request(app(), "GET", "/api/docker/nodes/mdn-1/logs");
+    expect(noContainer.status).toBe(400);
+
+    mockCentralInstance.getManagedDockerNode.mockResolvedValueOnce({ id: "mdn-1", status: "running", hostConfig: {}, containerId: "c1" });
+    service.getContainerLogs.mockRejectedValueOnce(new Error("down"));
+    const bad = await request(app(), "GET", "/api/docker/nodes/mdn-1/logs");
+    expect(bad.status).toBe(503);
+  });
+
+  it("GET /api/docker/nodes/:id returns enriched node and 404", async () => {
+    mockCentralInstance.getManagedDockerNode.mockResolvedValueOnce({
+      id: "mdn-1",
+      nodeId: "node-1",
+      name: "Docker One",
+      status: "running",
+      hostConfig: {},
+      envVars: {},
+      imageName: "runfusion/fusion",
+      imageTag: "latest",
+      volumeMounts: [],
+      persistentStorage: true,
+      resourceSizing: {},
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+    });
+    mockCentralInstance.getNode.mockResolvedValueOnce({ id: "node-1", name: "Linked", type: "remote", status: "online", maxConcurrent: 2, createdAt: "x", updatedAt: "x" });
+    const ok = await request(app(), "GET", "/api/docker/nodes/mdn-1");
+    expect(ok.status).toBe(200);
+    expect((ok.body as any).linkedNode.id).toBe("node-1");
+
+    mockCentralInstance.getManagedDockerNode.mockResolvedValueOnce(undefined);
+    const missing = await request(app(), "GET", "/api/docker/nodes/missing");
+    expect(missing.status).toBe(404);
   });
 });
 

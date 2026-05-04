@@ -1,6 +1,6 @@
 import { memo, useCallback, useMemo, useState } from "react";
-import { Activity, Play, RotateCw, Server, Settings, Shield, Square, Trash2 } from "lucide-react";
-import type { NodeInfo, ProjectInfo } from "../api";
+import { Activity, Box, Play, RotateCw, Server, Settings, Shield, Square, Trash2 } from "lucide-react";
+import type { ManagedDockerNodeInfo, NodeInfo, ProjectInfo } from "../api";
 import { getProjectCountForNode } from "../utils/nodeProjectAssignment";
 import type { ComputedNodeSyncStatus } from "../hooks/useNodeSettingsSync";
 import { formatRelativeTime, getSyncStateColor } from "../hooks/useNodeSettingsSync";
@@ -17,13 +17,20 @@ export interface NodeCardProps {
   authSyncState?: "match" | "differs" | "not-synced";
   /** Per-provider auth match details for tooltip. Map of provider name (e.g. "anthropic") to its match status. */
   authSyncProviders?: Record<string, "match" | "differs">;
+  managedDockerNode?: ManagedDockerNodeInfo;
 }
 
-const STATUS_CONFIG: Record<NodeInfo["status"], { label: string; color: string; className: string }> = {
+const STATUS_CONFIG: Record<string, { label: string; color: string; className: string }> = {
   online: { label: "Online", color: "var(--color-success)", className: "node-card__status--online" },
   offline: { label: "Offline", color: "var(--color-error)", className: "node-card__status--offline" },
   connecting: { label: "Connecting", color: "var(--color-warning)", className: "node-card__status--connecting" },
   error: { label: "Error", color: "var(--color-error)", className: "node-card__status--error" },
+  creating: { label: "Creating", color: "var(--color-warning)", className: "node-card__status--creating" },
+  recreating: { label: "Recreating", color: "var(--color-warning)", className: "node-card__status--recreating" },
+  deleting: { label: "Deleting", color: "var(--color-error)", className: "node-card__status--deleting" },
+  running: { label: "Running", color: "var(--color-success)", className: "node-card__status--online" },
+  stopped: { label: "Stopped", color: "var(--color-error)", className: "node-card__status--offline" },
+  exited: { label: "Exited", color: "var(--color-error)", className: "node-card__status--offline" },
 };
 
 const AUTH_SYNC_COLORS: Record<string, string> = {
@@ -67,6 +74,16 @@ function areNodeCardPropsEqual(previous: NodeCardProps, next: NodeCardProps): bo
   if (prevNode.maxConcurrent !== nextNode.maxConcurrent) return false;
   if (prevNode.updatedAt !== nextNode.updatedAt) return false;
   if (previous.isLoading !== next.isLoading) return false;
+
+  const prevDocker = previous.managedDockerNode;
+  const nextDocker = next.managedDockerNode;
+  if (!!prevDocker !== !!nextDocker) return false;
+  if (prevDocker && nextDocker) {
+    if (prevDocker.id !== nextDocker.id) return false;
+    if (prevDocker.status !== nextDocker.status) return false;
+    if (prevDocker.imageTag !== nextDocker.imageTag) return false;
+    if (prevDocker.updatedAt !== nextDocker.updatedAt) return false;
+  }
 
   // Compare sync status
   const prevSync = previous.syncStatus;
@@ -113,9 +130,14 @@ function NodeCardInner({
   syncStatus,
   authSyncState,
   authSyncProviders,
+  managedDockerNode,
 }: NodeCardProps) {
   const [removeArmed, setRemoveArmed] = useState(false);
-  const statusConfig = STATUS_CONFIG[node.status];
+  const statusConfig = STATUS_CONFIG[node.status] ?? STATUS_CONFIG.offline;
+  const dockerStatusConfig = managedDockerNode ? (STATUS_CONFIG[managedDockerNode.status] ?? STATUS_CONFIG.error) : null;
+  const dockerHost = managedDockerNode?.hostConfig.type === "remote"
+    ? `Remote: ${managedDockerNode.hostConfig.host ?? "unknown"}`
+    : "Local Docker";
 
   const assignedProjectCount = useMemo(() => {
     return getProjectCountForNode(projects, node);
@@ -171,6 +193,12 @@ function NodeCardInner({
             <h3 className="node-card__name" title={node.name}>{node.name}</h3>
             <div className="node-card__meta-row">
               <span className="node-card__type-badge">{node.type === "local" ? "Local" : "Remote"}</span>
+              {managedDockerNode && (
+                <span className="node-card__docker-badge" title="Managed Docker node">
+                  <Box size={12} aria-hidden />
+                  Docker
+                </span>
+              )}
               <span
                 className={`node-card__status ${statusConfig.className}`}
                 style={{ color: statusConfig.color }}
@@ -179,6 +207,16 @@ function NodeCardInner({
                 <span className="node-card__status-indicator" style={{ backgroundColor: statusConfig.color }} aria-hidden />
                 {statusConfig.label}
               </span>
+              {managedDockerNode && dockerStatusConfig && (
+                <span
+                  className={`node-card__status ${dockerStatusConfig.className}`}
+                  style={{ color: dockerStatusConfig.color }}
+                  data-status={managedDockerNode.status}
+                >
+                  <span className="node-card__status-indicator" style={{ backgroundColor: dockerStatusConfig.color }} aria-hidden />
+                  {dockerStatusConfig.label}
+                </span>
+              )}
               {node.type === "remote" && authSyncState && (
                 <span
                   className={`node-card__auth-indicator node-card__auth-indicator--${authSyncState}`}
@@ -198,6 +236,14 @@ function NodeCardInner({
         {node.type === "remote" && node.url && (
           <div className="node-card__url" title={node.url}>
             {truncateUrl(node.url)}
+          </div>
+        )}
+        {managedDockerNode && (
+          <div className="node-card__docker-meta">
+            <span title={`${managedDockerNode.imageName}:${managedDockerNode.imageTag}`}>
+              {managedDockerNode.imageName}:{managedDockerNode.imageTag}
+            </span>
+            <span title={dockerHost}>{dockerHost}</span>
           </div>
         )}
 
@@ -256,41 +302,42 @@ function NodeCardInner({
           <span>Edit</span>
         </button>
 
-        <button
-          className="btn btn-sm node-card__action"
-          type="button"
-          onClick={handleEdit}
-          disabled={isLoading}
-          aria-label="Start node container"
-          title="Start Container"
-        >
-          <Play size={14} />
-          <span>Start</span>
-        </button>
+        {managedDockerNode && (
+          <>
+            <button
+              className="btn btn-sm node-card__action"
+              type="button"
+              disabled
+              aria-label="Start node container"
+              title="Available after FN-3113"
+            >
+              <Play size={14} />
+              <span>Start</span>
+            </button>
 
-        <button
-          className="btn btn-sm node-card__action"
-          type="button"
-          onClick={handleEdit}
-          disabled={isLoading}
-          aria-label="Stop node container"
-          title="Stop Container"
-        >
-          <Square size={14} />
-          <span>Stop</span>
-        </button>
+            <button
+              className="btn btn-sm node-card__action"
+              type="button"
+              disabled
+              aria-label="Stop node container"
+              title="Available after FN-3113"
+            >
+              <Square size={14} />
+              <span>Stop</span>
+            </button>
 
-        <button
-          className="btn btn-sm node-card__action"
-          type="button"
-          onClick={handleEdit}
-          disabled={isLoading}
-          aria-label="Restart node container"
-          title="Restart Container"
-        >
-          <RotateCw size={14} />
-          <span>Restart</span>
-        </button>
+            <button
+              className="btn btn-sm node-card__action"
+              type="button"
+              disabled
+              aria-label="Restart node container"
+              title="Available after FN-3113"
+            >
+              <RotateCw size={14} />
+              <span>Restart</span>
+            </button>
+          </>
+        )}
 
         <button
           className={`btn btn-sm node-card__action node-card__action--remove ${removeArmed ? "btn-danger is-armed" : ""}`}

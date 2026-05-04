@@ -14,6 +14,7 @@ vi.mock("lucide-react", () => ({
   Square: () => <span data-testid="square-icon">square</span>,
   RotateCw: () => <span data-testid="rotate-icon">rotate</span>,
   Trash2: () => <span data-testid="trash-icon">trash</span>,
+  Box: () => <span data-testid="box-icon">box</span>,
 }));
 
 vi.mock("../../hooks/useNodeSettingsSync", () => ({
@@ -69,6 +70,21 @@ function makeSyncStatus(overrides: Partial<ComputedNodeSyncStatus> = {}): Comput
 }
 
 describe("NodeCard", () => {
+  const managedDockerNode = {
+    id: "dn-1",
+    nodeId: "node-1",
+    name: "Docker Node",
+    status: "running",
+    hostConfig: { type: "remote" as const, host: "tcp://docker:2376" },
+    envVars: {},
+    imageName: "runfusion/fusion",
+    imageTag: "latest",
+    volumeMounts: [],
+    persistentStorage: true,
+    createdAt: "2026-01-01T00:00:00.000Z",
+    updatedAt: "2026-01-01T00:00:00.000Z",
+  };
+
   it("renders node name, type, status, project count, and concurrency", () => {
     const node = makeNode({ id: "node-abc", name: "Build Worker", type: "remote", status: "connecting", url: "https://remote.example.com" });
     const projects = [
@@ -545,6 +561,59 @@ describe("NodeCard", () => {
       const syncIndicator = screen.getByTestId("node-card-sync");
       expect(syncIndicator).toHaveAttribute("data-sync-state", "diff");
     });
+  });
+
+  it("does not render docker badge without managed docker data", () => {
+    render(
+      <NodeCard
+        node={makeNode()}
+        projects={[]}
+        onHealthCheck={vi.fn()}
+        onEdit={vi.fn()}
+        onRemove={vi.fn()}
+      />
+    );
+
+    expect(screen.queryByText("Docker")).not.toBeInTheDocument();
+  });
+
+  it("renders docker badge and metadata with managed docker data", () => {
+    render(
+      <NodeCard
+        node={makeNode({ type: "remote", url: "https://node.example" })}
+        projects={[]}
+        onHealthCheck={vi.fn()}
+        onEdit={vi.fn()}
+        onRemove={vi.fn()}
+        managedDockerNode={managedDockerNode}
+      />
+    );
+
+    expect(screen.getByText("Docker")).toBeInTheDocument();
+    expect(screen.getByTestId("box-icon")).toBeInTheDocument();
+    expect(screen.getByText("runfusion/fusion:latest")).toBeInTheDocument();
+    expect(screen.getByText("Remote: tcp://docker:2376")).toBeInTheDocument();
+  });
+
+  it.each([
+    ["running", "Running", "node-card__status--online"],
+    ["stopped", "Stopped", "node-card__status--offline"],
+    ["creating", "Creating", "node-card__status--creating"],
+    ["recreating", "Recreating", "node-card__status--recreating"],
+    ["deleting", "Deleting", "node-card__status--deleting"],
+  ])("maps docker status %s", (status, label, className) => {
+    render(
+      <NodeCard
+        node={makeNode({ type: "remote" })}
+        projects={[]}
+        onHealthCheck={vi.fn()}
+        onEdit={vi.fn()}
+        onRemove={vi.fn()}
+        managedDockerNode={{ ...managedDockerNode, status, updatedAt: `${status}` }}
+      />
+    );
+
+    expect(screen.getByText(label).className).toContain(className);
   });
 
   describe("auth sync indicator", () => {

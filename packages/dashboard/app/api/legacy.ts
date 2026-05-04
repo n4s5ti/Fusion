@@ -5311,6 +5311,41 @@ export interface DockerNodeInfo {
   updatedAt: string;
 }
 
+export interface ManagedDockerNodeInfo {
+  id: string;
+  nodeId?: string;
+  name: string;
+  containerId?: string;
+  status: string;
+  hostConfig: {
+    type: "local" | "remote";
+    host?: string;
+    context?: string;
+    tlsOptions?: Record<string, unknown>;
+  };
+  envVars: Record<string, string>;
+  reachableUrl?: string;
+  imageName: string;
+  imageTag: string;
+  volumeMounts: Array<{ hostPath: string; containerPath: string; readOnly?: boolean }>;
+  persistentStorage: boolean;
+  resourceSizing?: { cpuLimit?: string; memoryLimit?: string };
+  errorMessage?: string;
+  linkedNode?: NodeInfo;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ContainerStatusInfo {
+  running: boolean;
+  status: string;
+  startedAt?: string;
+  finishedAt?: string;
+  exitCode?: number;
+  error?: string;
+  ports?: Record<string, string>;
+}
+
 /** Node discovered over local network mDNS/DNS-SD */
 export interface DiscoveredNodeInfo {
   name: string;
@@ -5455,6 +5490,27 @@ export function fetchDiscoveryStatus(): Promise<{ active: boolean; config: Disco
 /** Fetch all managed Docker nodes */
 export function listManagedDockerNodes(): Promise<DockerNodeInfo[]> {
   return api<DockerNodeInfo[]>("/docker-nodes");
+}
+
+export function fetchManagedDockerNodes(): Promise<ManagedDockerNodeInfo[]> {
+  return api<ManagedDockerNodeInfo[]>("/docker/nodes");
+}
+
+export function fetchManagedDockerNode(id: string): Promise<ManagedDockerNodeInfo> {
+  return api<ManagedDockerNodeInfo>(`/docker/nodes/${encodeURIComponent(id)}`);
+}
+
+export function fetchManagedDockerNodeContainerStatus(id: string): Promise<ContainerStatusInfo> {
+  return api<ContainerStatusInfo>(`/docker/nodes/${encodeURIComponent(id)}/container-status`);
+}
+
+export function fetchDockerNodeLogs(id: string, options?: { tail?: number }): Promise<{ logs: string }> {
+  const params = new URLSearchParams();
+  if (typeof options?.tail === "number") {
+    params.set("tail", String(options.tail));
+  }
+  const suffix = params.size > 0 ? `?${params.toString()}` : "";
+  return api<{ logs: string }>(`/docker/nodes/${encodeURIComponent(id)}/logs${suffix}`);
 }
 
 /** Create a managed Docker node */

@@ -120,11 +120,47 @@ beforeEach(() => {
     loading: false,
     error: null,
     refresh: vi.fn().mockResolvedValue(undefined),
+    getContainerStatus: vi.fn().mockResolvedValue({ running: true, status: "running" }),
+    getLogs: vi.fn().mockResolvedValue(""),
     create: vi.fn().mockResolvedValue(undefined),
   });
 });
 
 describe("NodesView", () => {
+  it("renders docker stat and passes docker data to matching node card", () => {
+    mockUseNodes.mockReturnValue(makeUseNodesResult({
+      nodes: [makeNode({ id: "node-1", name: "Alpha", type: "remote", url: "https://alpha.node" })],
+    }));
+    mockUseManagedDockerNodes.mockReturnValue({
+      dockerNodes: [{
+        id: "mdn-1",
+        nodeId: "node-1",
+        name: "Docker Alpha",
+        status: "running",
+        hostConfig: { type: "local" },
+        envVars: {},
+        imageName: "runfusion/fusion",
+        imageTag: "latest",
+        volumeMounts: [],
+        persistentStorage: true,
+        createdAt: "2026-01-01T00:00:00.000Z",
+        updatedAt: "2026-01-01T00:00:00.000Z",
+      }],
+      loading: false,
+      error: null,
+      refresh: vi.fn().mockResolvedValue(undefined),
+      getContainerStatus: vi.fn().mockResolvedValue({ running: true, status: "running" }),
+      getLogs: vi.fn().mockResolvedValue(""),
+      create: vi.fn().mockResolvedValue(undefined),
+    });
+
+    render(<NodesView addToast={vi.fn()} onClose={vi.fn()} />);
+
+    expect(screen.getByTestId("nodes-stat-docker").textContent).toContain("1");
+    expect(screen.getAllByText("Docker").length).toBeGreaterThan(0);
+    expect(screen.getByText("runfusion/fusion:latest")).toBeInTheDocument();
+  });
+
   it("renders node cards and stats", () => {
     mockUseProjects.mockReturnValue({
       projects: [makeProject({ nodeId: "node-1" }), makeProject({ id: "proj-2", nodeId: "node-2" })],

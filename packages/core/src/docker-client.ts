@@ -165,10 +165,17 @@ export class DockerClientService {
     return this.createDockerInstance(hostConfig);
   }
 
-  async getContainerInfo(containerId: string): Promise<DockerContainerInspectResult | null> {
+  async getContainerInfo(containerId: string, hostConfig?: DockerHostConfig): Promise<DockerContainerInspectResult | null> {
     try {
-      const docker = await this.getInstance();
+      const docker = await this.getDockerInstance(hostConfig);
       const inspect = await docker.getContainer(containerId).inspect();
+      const ports = Object.entries(inspect.NetworkSettings?.Ports ?? {}).reduce<Record<string, string>>((acc, [key, value]) => {
+        const binding = Array.isArray(value) && value.length > 0 ? value[0] : undefined;
+        if (binding?.HostPort) {
+          acc[key] = binding.HostPort;
+        }
+        return acc;
+      }, {});
       return {
         id: inspect.Id,
         name: (inspect.Name ?? "").replace(/^\//, ""),
@@ -181,7 +188,11 @@ export class DockerClientService {
           restarting: Boolean(inspect.State?.Restarting),
           dead: Boolean(inspect.State?.Dead),
           error: inspect.State?.Error || undefined,
+          exitCode: typeof inspect.State?.ExitCode === "number" ? inspect.State.ExitCode : undefined,
+          startedAt: inspect.State?.StartedAt || undefined,
+          finishedAt: inspect.State?.FinishedAt || undefined,
         },
+        ports,
       };
     } catch (error) {
       const message = toErrorMessage(error);
@@ -190,6 +201,19 @@ export class DockerClientService {
       }
       throw error;
     }
+  }
+
+  async getContainerLogs(containerId: string, hostConfig?: DockerHostConfig, options?: { tail?: number }): Promise<string> {
+    const docker = await this.getDockerInstance(hostConfig);
+    const stream = await docker.getContainer(containerId).logs({
+      stdout: true,
+      stderr: true,
+      tail: options?.tail ?? 100,
+    });
+    if (Buffer.isBuffer(stream)) {
+      return stream.toString("utf8");
+    }
+    return String(stream ?? "");
   }
 
   private async getInstance(): Promise<Docker> {

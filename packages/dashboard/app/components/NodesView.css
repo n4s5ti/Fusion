@@ -14,6 +14,8 @@
 }
 
 .nodes-view {
+  --nodes-view-spin-duration: calc(var(--transition-slow) * 4);
+  --nodes-view-pulse-duration: calc(var(--transition-slow) * 5);
   display: flex;
   flex-direction: column;
   gap: var(--space-md);
@@ -64,7 +66,7 @@
 .nodes-view-stat {
   background: var(--card);
   border: 1px solid var(--border);
-  border-radius: var(--radius);
+  border-radius: var(--radius-md);
   padding: var(--space-sm) var(--space-md);
   display: flex;
   align-items: center;
@@ -101,7 +103,7 @@
 .nodes-view-empty {
   padding: var(--space-xl);
   border: 1px dashed var(--border);
-  border-radius: var(--radius);
+  border-radius: var(--radius-md);
   text-align: center;
   color: var(--text-muted);
   display: flex;
@@ -118,7 +120,7 @@
 .node-card {
   background: var(--card);
   border: 1px solid var(--border);
-  border-radius: var(--radius);
+  border-radius: var(--radius-md);
   padding: var(--space-md);
   display: flex;
   flex-direction: column;
@@ -302,6 +304,33 @@
 
 .node-card__action--remove.is-armed {
   background: color-mix(in srgb, var(--color-error) 14%, transparent);
+}
+
+.node-card__docker-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-xs);
+  border-radius: var(--radius-pill);
+  padding: var(--space-xs) var(--space-sm);
+  font-size: calc(var(--space-sm) + var(--space-xs) * 0.75);
+  background: color-mix(in srgb, var(--color-info) 15%, transparent);
+  color: var(--color-info);
+}
+
+.node-card__docker-meta {
+  display: flex;
+  gap: var(--space-sm);
+  margin-top: var(--space-xs);
+  font-family: var(--font-mono);
+  font-size: calc(var(--space-sm) + var(--space-xs));
+  color: var(--text-muted);
+}
+
+.node-card__docker-meta span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* ── Mesh Topology ──────────────────────────────────────────────────────────── */
@@ -533,7 +562,7 @@
 
 .nodes-view .node-status-indicator__dot--connecting {
   background: var(--color-warning);
-  animation: pulse-warning 1.5s ease-in-out infinite;
+  animation: pulse-warning var(--nodes-view-pulse-duration) ease-in-out infinite;
 }
 
 .nodes-view .node-status-indicator__spinner {
@@ -542,7 +571,7 @@
   border: calc(var(--space-xs) / 2) solid transparent;
   border-top-color: currentColor;
   border-radius: 50%;
-  animation: spin 1s linear infinite;
+  animation: spin var(--nodes-view-spin-duration) linear infinite;
 }
 
 .nodes-view .node-status-indicator__name {
@@ -565,6 +594,15 @@
   }
 }
 
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.spin {
+  animation: spin var(--nodes-view-spin-duration) linear infinite;
+}
+
 /* ── Nodes View Mobile Responsive ──────────────────────────────────────── */
 @media (max-width: 768px) {
   .nodes-view {
@@ -579,6 +617,18 @@
     grid-template-columns: 1fr;
   }
 
+  .node-card__docker-badge {
+    gap: var(--space-xs);
+  }
+
+  .node-card__docker-meta {
+    gap: var(--space-xs);
+  }
+
+  .node-card__docker-meta span {
+    max-width: calc(var(--space-2xl) * 4.5);
+  }
+
   /* Connect Node Modal mobile */
   .connect-node-modal {
     width: calc(100vw - (var(--space-md) * 2));
@@ -590,7 +640,6 @@
 
   /* NodesView mobile alignment */
   .nodes-view-header {
-    padding: var(--space-sm) var(--space-md);
     flex-wrap: wrap;
     gap: var(--space-sm);
   }
@@ -657,5 +706,6 @@
   .nodes-view-section-title {
     font-size: calc(var(--space-md) + var(--space-xs) / 4);
   }
+
 
 }

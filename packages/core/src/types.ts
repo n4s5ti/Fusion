@@ -2705,7 +2705,12 @@ export interface DockerContainerInspectResult {
     restarting: boolean;
     dead: boolean;
     error?: string;
+    exitCode?: number;
+    startedAt?: string;
+    finishedAt?: string;
   };
+  /** Optional exposed ports summary */
+  ports?: Record<string, string>;
 }
 
 /** Configuration for the Fusion Docker image to use for provisioning */

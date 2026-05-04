@@ -1,4 +1,12 @@
-import type { DockerExtraCli, DockerHostConfig, DockerVolumeMount, ManagedDockerNodeInput, FullProvisioningInput } from "@fusion/core";
+import type {
+  DockerExtraCli,
+  DockerHostConfig,
+  DockerVolumeMount,
+  FullProvisioningInput,
+  ManagedDockerNode,
+  ManagedDockerNodeInput,
+  NodeConfig,
+} from "@fusion/core";
 import { randomUUID } from "node:crypto";
 import { ApiError, badRequest, notFound } from "../api-error.js";
 import type { ApiRouteRegistrar } from "./types.js";
@@ -55,6 +63,33 @@ function sanitizeExtraClis(input: unknown): DockerExtraCli[] {
   return input as DockerExtraCli[];
 }
 
+function toManagedDockerNodeInfo(managedNode: ManagedDockerNode, linkedNode?: NodeConfig) {
+  return {
+    ...managedNode,
+    hostConfig: {
+      type: managedNode.hostConfig.host || managedNode.hostConfig.context ? "remote" : "local",
+      host: managedNode.hostConfig.host,
+      context: managedNode.hostConfig.context,
+      tlsOptions: {
+        tlsVerify: managedNode.hostConfig.tlsVerify,
+        tlsCaPath: managedNode.hostConfig.tlsCaPath,
+        tlsCertPath: managedNode.hostConfig.tlsCertPath,
+        tlsKeyPath: managedNode.hostConfig.tlsKeyPath,
+      },
+    },
+    volumeMounts: managedNode.volumeMounts.map((mount) => ({
+      hostPath: mount.hostPath,
+      containerPath: mount.containerPath,
+      readOnly: mount.mode === "ro" ? true : undefined,
+    })),
+    resourceSizing: {
+      cpuLimit: managedNode.resourceSizing?.cpus !== undefined ? String(managedNode.resourceSizing.cpus) : undefined,
+      memoryLimit: managedNode.resourceSizing?.memoryMB !== undefined ? `${managedNode.resourceSizing.memoryMB}MB` : undefined,
+    },
+    linkedNode: linkedNode ?? undefined,
+  };
+}
+
 export const registerDockerNodeRoutes: ApiRouteRegistrar = (ctx) => {
   const { router, rethrowAsApiError } = ctx;
 
@@ -99,6 +134,132 @@ export const registerDockerNodeRoutes: ApiRouteRegistrar = (ctx) => {
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : String(error);
       res.json({ available: false, error: message });
+    }
+  });
+
+  router.get("/docker/nodes", async (_req, res) => {
+    try {
+      const { CentralCore } = await import("@fusion/core");
+      const central = new CentralCore();
+      await central.init();
+      try {
+        const nodes = await central.listManagedDockerNodes();
+        const enriched = await Promise.all(nodes.map(async (managedNode) => {
+          const linkedNode = managedNode.nodeId ? await central.getNode(managedNode.nodeId) : undefined;
+          return toManagedDockerNodeInfo(managedNode, linkedNode);
+        }));
+        enriched.sort((a, b) => (a.name ?? "").localeCompare(b.name ?? ""));
+        res.json(enriched);
+      } finally {
+        await central.close();
+      }
+    } catch (error: unknown) {
+      if (error instanceof ApiError) {
+        throw error;
+      }
+      rethrowAsApiError(error);
+    }
+  });
+
+  router.get("/docker/nodes/:managedId/container-status", async (req, res) => {
+    try {
+      const { CentralCore, DockerClientService } = await import("@fusion/core");
+      const central = new CentralCore();
+      await central.init();
+      try {
+        const managedNode = await central.getManagedDockerNode(req.params.managedId);
+        if (!managedNode) {
+          throw notFound("Managed Docker node not found");
+        }
+        if (!managedNode.containerId) {
+          throw badRequest(`Node has no container yet (status: ${managedNode.status})`);
+        }
+        try {
+          const dockerService = new DockerClientService(managedNode.hostConfig);
+          const info = await dockerService.getContainerInfo(managedNode.containerId, managedNode.hostConfig);
+          if (!info) {
+            throw notFound("Container not found");
+          }
+          res.json({
+            running: info.state.running,
+            status: info.status,
+            startedAt: info.state.startedAt,
+            finishedAt: info.state.finishedAt,
+            exitCode: info.state.exitCode,
+            error: info.state.error,
+            ports: info.ports,
+          });
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          res.status(503).json({ error: `Docker unreachable: ${message}` });
+        }
+      } finally {
+        await central.close();
+      }
+    } catch (error: unknown) {
+      if (error instanceof ApiError) {
+        throw error;
+      }
+      rethrowAsApiError(error);
+    }
+  });
+
+  router.get("/docker/nodes/:managedId/logs", async (req, res) => {
+    try {
+      const { CentralCore, DockerClientService } = await import("@fusion/core");
+      const central = new CentralCore();
+      await central.init();
+      try {
+        const managedNode = await central.getManagedDockerNode(req.params.managedId);
+        if (!managedNode) {
+          throw notFound("Managed Docker node not found");
+        }
+        if (!managedNode.containerId) {
+          throw badRequest(`Node has no container yet (status: ${managedNode.status})`);
+        }
+
+        const tailValue = Number(req.query.tail ?? 100);
+        const tail = Number.isFinite(tailValue) ? Math.max(1, Math.min(1000, Math.floor(tailValue))) : 100;
+
+        try {
+          const dockerService = new DockerClientService(managedNode.hostConfig);
+          const logs = await dockerService.getContainerLogs(managedNode.containerId, managedNode.hostConfig, { tail });
+          res.json({ logs });
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          res.status(503).json({ error: `Docker unreachable: ${message}` });
+        }
+      } finally {
+        await central.close();
+      }
+    } catch (error: unknown) {
+      if (error instanceof ApiError) {
+        throw error;
+      }
+      rethrowAsApiError(error);
+    }
+  });
+
+  router.get("/docker/nodes/:managedId", async (req, res) => {
+    try {
+      const { CentralCore } = await import("@fusion/core");
+      const central = new CentralCore();
+      await central.init();
+      try {
+        const node = await central.getManagedDockerNode(req.params.managedId);
+        if (!node) {
+          throw notFound("Managed Docker node not found");
+        }
+        const linkedNode = node.nodeId ? await central.getNode(node.nodeId) : undefined;
+        res.json(toManagedDockerNodeInfo(node, linkedNode));
+      } finally {
+        await central.close();
+      }
+    } catch (error: unknown) {
+      if (error instanceof ApiError) {
+        throw error;
+      }
+      rethrowAsApiError(error);
     }
   });
 

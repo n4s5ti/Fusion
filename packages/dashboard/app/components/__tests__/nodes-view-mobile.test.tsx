@@ -35,10 +35,10 @@ describe("nodes-view mobile CSS", () => {
   const cssContent = loadAllAppCss();
   const mobileMediaBlock = extractMobileMediaBlocks(cssContent);
 
-  it("defines .nodes-view-header with compact padding on mobile", () => {
+  it("defines .nodes-view-header mobile wrapping without extra padding", () => {
     expect(mobileMediaBlock).toContain(".nodes-view-header");
     const block = extractRuleBlock(mobileMediaBlock, ".nodes-view-header");
-    expect(block).toMatch(/padding:\s*var\(--space-sm\)\s+var\(--space-md\)/);
+    expect(block).not.toContain("padding:");
     expect(block).toContain("flex-wrap: wrap");
   });
 

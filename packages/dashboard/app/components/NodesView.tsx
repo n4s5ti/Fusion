@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Plus, Server, Wifi, WifiOff, Globe, RefreshCw, X } from "lucide-react";
+import { Box, Plus, Server, Wifi, WifiOff, Globe, RefreshCw, X } from "lucide-react";
 import "./NodesView.css";
 import { useNodes } from "../hooks/useNodes";
 import { useProjects } from "../hooks/useProjects";
 import { useNodeSettingsSync, computeSyncState } from "../hooks/useNodeSettingsSync";
-import type { NodeInfo, NodeUpdateInput } from "../api";
+import type { ManagedDockerNodeInfo, NodeInfo, NodeUpdateInput } from "../api";
 import { NodeCard } from "./NodeCard";
 import { MeshTopology } from "./MeshTopology";
 import { AddNodeModal, type AddNodeInput } from "./AddNodeModal";
@@ -23,7 +23,14 @@ export function NodesView({ addToast, onClose }: NodesViewProps) {
   const { nodes, loading, error, refresh, register, update, unregister, healthCheck } = useNodes();
   const { projects } = useProjects();
   const { syncStatusMap, pushSettings, pullSettings, syncAuth, trackNode, getAuthSyncState, getAuthProviders } = useNodeSettingsSync();
-  const { dockerNodes, create: createDockerNode } = useManagedDockerNodes();
+  const {
+    dockerNodes,
+    loading: dockerLoading,
+    refresh: refreshDocker,
+    getContainerStatus,
+    getLogs,
+    create: createDockerNode,
+  } = useManagedDockerNodes();
   const [addModalOpen, setAddModalOpen] = useState(false);
   const [dockerOnboardingOpen, setDockerOnboardingOpen] = useState(false);
   const [selectedNode, setSelectedNode] = useState<NodeInfo | null>(null);
@@ -50,8 +57,9 @@ export function NodesView({ addToast, onClose }: NodesViewProps) {
     const synced = nodes.filter(
       (node) => node.type === "remote" && syncStatusMap[node.id] && computeSyncState(syncStatusMap[node.id]).syncState === "synced"
     ).length;
-    return { total, online, offline, remote, synced };
-  }, [nodes, syncStatusMap]);
+    const docker = dockerNodes.length;
+    return { total, online, offline, remote, synced, docker };
+  }, [dockerNodes.length, nodes, syncStatusMap]);
 
   const handleRegister = useCallback(async (input: AddNodeInput) => {
     await register(input);
@@ -69,13 +77,23 @@ export function NodesView({ addToast, onClose }: NodesViewProps) {
     }
   }, [addToast, createDockerNode]);
 
+  const dockerNodeMap = useMemo(() => {
+    const map = new Map<string, ManagedDockerNodeInfo>();
+    for (const dockerNode of dockerNodes) {
+      if (dockerNode.nodeId) {
+        map.set(dockerNode.nodeId, dockerNode);
+      }
+    }
+    return map;
+  }, [dockerNodes]);
+
   const handleRefresh = useCallback(async () => {
     try {
-      await refresh();
+      await Promise.all([refresh(), refreshDocker()]);
     } catch {
       addToast("Failed to refresh nodes", "error");
     }
-  }, [addToast, refresh]);
+  }, [addToast, refresh, refreshDocker]);
 
   const handleHealthCheck = useCallback(async (id: string) => {
     try {
@@ -123,7 +141,7 @@ export function NodesView({ addToast, onClose }: NodesViewProps) {
           >
             <X size={16} />
           </button>
-          <button className="btn btn-sm" onClick={() => void handleRefresh()} disabled={loading}>
+          <button className="btn btn-sm" onClick={() => void handleRefresh()} disabled={loading || dockerLoading}>
             <RefreshCw size={14} className={loading ? "spin" : ""} />
             Refresh
           </button>
@@ -131,9 +149,9 @@ export function NodesView({ addToast, onClose }: NodesViewProps) {
             <Plus size={14} />
             Add Node
           </button>
-          <button className="btn btn-primary btn-sm" onClick={() => setDockerOnboardingOpen(true)}>
-            <Plus size={14} />
-            Provision Docker Node
+          <button className="btn btn-sm" onClick={() => setDockerOnboardingOpen(true)} title="Add a managed Docker node">
+            <Box size={14} />
+            Add Docker Node
           </button>
         </div>
       </div>
@@ -159,20 +177,14 @@ export function NodesView({ addToast, onClose }: NodesViewProps) {
           <span><RefreshCw size={14} /> Synced</span>
           <strong>{stats.synced}</strong>
         </div>
+        <div className="nodes-view-stat" data-testid="nodes-stat-docker">
+          <span><Box size={14} /> Docker</span>
+          <strong>{stats.docker}</strong>
+        </div>
       </div>
 
       {error && <div className="nodes-view-error">{error}</div>}
 
-      <section className="nodes-view-topology" aria-label="Docker Nodes Summary">
-        <h3 className="nodes-view-section-title">Docker Nodes</h3>
-        <div className="nodes-view-stat">
-          <span>Managed Docker Nodes</span>
-          <strong>{dockerNodes.length}</strong>
-          <button className="btn btn-sm" onClick={() => setDockerOnboardingOpen(true)}>
-            Provision
-          </button>
-        </div>
-      </section>
 
       {/* Mesh Topology Visualization */}
       {!loading && nodes.length > 0 && (
@@ -214,6 +226,7 @@ export function NodesView({ addToast, onClose }: NodesViewProps) {
                 syncStatus={nodeSyncStatus}
                 authSyncState={node.type === "remote" ? getAuthSyncState(node.id) : undefined}
                 authSyncProviders={node.type === "remote" ? getAuthProviders(node.id) : undefined}
+                managedDockerNode={dockerNodeMap.get(node.id)}
               />
             );
           })}
@@ -248,6 +261,9 @@ export function NodesView({ addToast, onClose }: NodesViewProps) {
         onPushSettings={pushSettings}
         onPullSettings={pullSettings}
         onSyncAuth={syncAuth}
+        managedDockerNode={selectedNode ? dockerNodeMap.get(selectedNode.id) : undefined}
+        onFetchContainerStatus={getContainerStatus}
+        onFetchLogs={getLogs}
       />
     </div>
   );
