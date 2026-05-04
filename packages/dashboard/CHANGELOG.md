@@ -1,5 +1,17 @@
 # @fusion/dashboard
 
+## 0.17.2
+
+### Patch Changes
+
+- Updated dependencies [17a6634]
+  - @fusion/engine@0.17.2
+  - @fusion/core@0.17.2
+  - @fusion-plugin-examples/dependency-graph@0.1.5
+  - @fusion-plugin-examples/hermes-runtime@0.2.24
+  - @fusion-plugin-examples/openclaw-runtime@0.2.24
+  - @fusion-plugin-examples/paperclip-runtime@0.2.24
+
 ## 0.17.1
 
 ### Patch Changes

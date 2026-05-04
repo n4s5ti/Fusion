@@ -1,5 +1,11 @@
 # @runfusion/fusion
 
+## 0.17.2
+
+### Patch Changes
+
+- bacc103: Fix Codex auth interoperability, remote OAuth manual-code login flow, and chat fallback/error handling.
+
 ## 0.17.1
 
 ## 0.17.0
