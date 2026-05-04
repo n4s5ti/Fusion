@@ -704,6 +704,13 @@ export function AgentsView({ addToast, projectId, onOpenTaskLogs, agentOnboardin
     }
   };
 
+  const handleAgentViewChange = useCallback((nextView: "list" | "board" | "org") => {
+    setAgentView(nextView);
+    if (isMobileViewport && selectedAgentId) {
+      handleCloseDetail();
+    }
+  }, [handleCloseDetail, isMobileViewport, selectedAgentId]);
+
   const getRoleLabel = (role: AgentCapability) => AGENT_ROLES.find(r => r.value === role)?.label ?? role;
   const getRoleIcon = (role: AgentCapability) => AGENT_ROLES.find(r => r.value === role)?.icon ?? "◆";
   const selectedAgent = selectedAgentId ? displayAgents.find((agent) => agent.id === selectedAgentId) ?? null : null;
@@ -742,7 +749,7 @@ export function AgentsView({ addToast, projectId, onOpenTaskLogs, agentOnboardin
           <div className="view-toggle">
             <button
               className={`view-toggle-btn${agentView === "list" ? " active" : ""}`}
-              onClick={() => setAgentView("list")}
+              onClick={() => handleAgentViewChange("list")}
               title="List view"
               aria-label="List view"
               aria-pressed={agentView === "list"}
@@ -751,7 +758,7 @@ export function AgentsView({ addToast, projectId, onOpenTaskLogs, agentOnboardin
             </button>
             <button
               className={`view-toggle-btn${agentView === "board" ? " active" : ""}`}
-              onClick={() => setAgentView("board")}
+              onClick={() => handleAgentViewChange("board")}
               title="Board view"
               aria-label="Board view"
               aria-pressed={agentView === "board"}
@@ -760,7 +767,7 @@ export function AgentsView({ addToast, projectId, onOpenTaskLogs, agentOnboardin
             </button>
             <button
               className={`view-toggle-btn${agentView === "org" ? " active" : ""}`}
-              onClick={() => setAgentView("org")}
+              onClick={() => handleAgentViewChange("org")}
               title="Org Chart view"
               aria-label="Org Chart view"
               aria-pressed={agentView === "org"}

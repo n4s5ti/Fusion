@@ -340,6 +340,39 @@ describe("AgentsView", () => {
       expect(container.querySelector(".agents-split-detail--hidden-mobile")).toBeTruthy();
     });
 
+    it("closes mobile detail and shows org chart when switching views", async () => {
+      mockViewportMode.mockReturnValue("mobile");
+      mockFetchOrgTree.mockResolvedValue([
+        {
+          agent: {
+            id: "agent-org-1",
+            name: "Org Lead",
+            role: "scheduler",
+            state: "active",
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+            metadata: {},
+          },
+          children: [],
+        },
+      ]);
+
+      render(<AgentsView addToast={mockAddToast} />);
+
+      fireEvent.click(await screen.findByRole("button", { name: "View details for Test Agent 1" }));
+      await waitFor(() => {
+        expect(screen.getByTestId("agent-detail-view")).toBeTruthy();
+      });
+
+      fireEvent.click(screen.getByRole("button", { name: "Org Chart view" }));
+
+      await waitFor(() => {
+        expect(screen.queryByTestId("agent-detail-view")).toBeNull();
+        expect(screen.getByTestId("agent-org-chart")).toBeTruthy();
+        expect(screen.getByText("Org Lead")).toBeTruthy();
+      });
+    });
+
     it("collapses mobile overview after selecting an active agent card", async () => {
       mockViewportMode.mockReturnValue("mobile");
       render(<AgentsView addToast={mockAddToast} />);
