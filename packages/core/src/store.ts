@@ -16,6 +16,7 @@ import { RoadmapStore } from "./roadmap-store.js";
 import { InsightStore } from "./insight-store.js";
 import { ResearchStore } from "./research-store.js";
 import { TodoStore } from "./todo-store.js";
+import { EvalStore } from "./eval-store.js";
 import { BackwardCompat, ProjectRequiredError } from "./migration.js";
 import { CentralCore } from "./central-core.js";
 import { getTaskMergeBlocker } from "./task-merge.js";
@@ -512,6 +513,8 @@ export class TaskStore extends EventEmitter<TaskStoreEvents> {
   private researchStore: ResearchStore | null = null;
   /** Cached TodoStore instance */
   private todoStore: TodoStore | null = null;
+  /** Cached EvalStore instance */
+  private evalStore: EvalStore | null = null;
 
   /** Buffer for batching agent log writes to reduce WAL pressure. */
   private agentLogBuffer: Array<{
@@ -6590,6 +6593,17 @@ ${notificationsSection}`;
       this.todoStore = new TodoStore(this.db);
     }
     return this.todoStore;
+  }
+
+  /**
+   * Get the EvalStore instance for eval run and task result operations.
+   * Lazily initializes the EvalStore on first access.
+   */
+  getEvalStore(): EvalStore {
+    if (!this.evalStore) {
+      this.evalStore = new EvalStore(this.db);
+    }
+    return this.evalStore;
   }
 
   // ── Verification Cache ────────────────────────────────────────────────────

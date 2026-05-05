@@ -120,7 +120,7 @@ Concrete references:
 - **Database adapter**: `packages/core/src/db.ts`
   - SQLite (`node:sqlite`) with WAL mode + foreign keys
   - JSON helpers: `toJson`, `toJsonNullable`, `fromJson`
-  - Core schema tables include: `tasks`, `config`, `workflow_steps`, `activityLog`, `archivedTasks`, `automations`, `agents`, `agentHeartbeats`, `task_documents`, `task_document_revisions`, mission hierarchy tables (`missions`, `milestones`, `slices`, `mission_features`, `mission_events`), plugin/routine tables (`plugins`, `routines`), roadmap tables (`roadmaps`, `roadmap_milestones`, `roadmap_features`), insight tables (`project_insights`, `project_insight_runs`), todo tables (`todo_lists`, `todo_items`), `__meta`
+  - Core schema tables include: `tasks`, `config`, `workflow_steps`, `activityLog`, `archivedTasks`, `automations`, `agents`, `agentHeartbeats`, `task_documents`, `task_document_revisions`, mission hierarchy tables (`missions`, `milestones`, `slices`, `mission_features`, `mission_events`), plugin/routine tables (`plugins`, `routines`), roadmap tables (`roadmaps`, `roadmap_milestones`, `roadmap_features`), insight tables (`project_insights`, `project_insight_runs`), research tables (`research_runs`, `research_exports`, `research_run_events`), eval tables (`eval_runs`, `eval_task_results`, `eval_run_events`), todo tables (`todo_lists`, `todo_items`), `__meta`
   - Migration-created tables include: `ai_sessions`, `messages`, `agentRatings`, `chat_sessions`, `chat_messages`, `runAuditEvents`, `mission_contract_assertions`, `mission_feature_assertions`, `mission_validator_runs`, `mission_validator_failures`, `mission_fix_feature_lineage`
   - `ai_sessions.status` lifecycle includes `draft` (pre-start planning session), then `generating`, `awaiting_input`, terminal `complete` / `error`
 - **Standalone roadmap model**: `packages/core/src/roadmap-types.ts`, `roadmap-ordering.ts`, `roadmap-store.ts`
@@ -144,6 +144,7 @@ Concrete references:
   - `RoutineStore` (`routine-store.ts`) — recurring routine definitions and run history
   - `RoadmapStore` (`roadmap-store.ts`) — standalone roadmap CRUD with deterministic ordering and atomic reorder/move operations
   - `TodoStore` (`todo-store.ts`) — project-scoped todo lists/items with completion, reorder, and composite list+items queries
+  - `EvalStore` (`eval-store.ts`) — eval run persistence, per-task eval results with durable snapshots, and append-only run event trails
 
 ### Chat System
 
@@ -186,6 +187,13 @@ Concrete references:
   - `ResearchOrchestrator` owns sequencing and failure policy (phase progression, provider fallback, partial-step continuation, terminal status choice) and interacts with store only through public store methods.
   - Provider substitution must remain data-driven: source metadata can carry provider identity, and fetching should resolve providers per source rather than relying on provider ordering.
 - **Boundary note:** research and insights are parallel subsystems sharing host infrastructure, not one table/store family.
+
+### Task Evaluations
+
+- `EvalStore` (`eval-store.ts`, `eval-types.ts`) persists eval runs and task-level eval outcomes.
+- Backed by `eval_runs`, `eval_task_results`, and `eval_run_events`.
+- Data model stores structured scoring/evidence/signal payloads plus durable `taskSnapshot` metadata so historical eval results remain readable even if the live task row later changes or is removed.
+- Lifecycle safeguards mirror other core stores: deterministic list ordering, transition guards, terminal immutability for run rows, and active-run conflict protection for scheduled/task-completion triggers.
 
 ### Plugin System
 
