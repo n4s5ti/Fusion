@@ -3350,6 +3350,60 @@
 /* ── Responsive ── */
 
 @media (max-width: 768px) {
+  .gm-changes-split {
+    grid-template-columns: 1fr;
+  }
+
+  .gm-changes-lists {
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  .gm-file-section {
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  .gm-file-section-header {
+    flex-wrap: wrap;
+    gap: var(--space-sm);
+  }
+
+  .gm-file-section-header h5 {
+    min-width: 0;
+    flex: 1 1 auto;
+  }
+
+  .gm-file-section-actions {
+    flex: 1 1 100%;
+    flex-wrap: wrap;
+    min-width: 0;
+    justify-content: flex-start;
+  }
+
+  .gm-file-section-actions .btn {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+
+  .gm-file-item {
+    min-width: 0;
+    flex-wrap: wrap;
+    row-gap: var(--space-xs);
+  }
+
+  .gm-file-checkbox,
+  .gm-file-icon,
+  .gm-file-badge,
+  .gm-file-item .gm-icon-btn {
+    flex: 0 0 auto;
+  }
+
+  .gm-file-name {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+
   .gm-remotes-layout {
     grid-template-columns: 1fr;
   }

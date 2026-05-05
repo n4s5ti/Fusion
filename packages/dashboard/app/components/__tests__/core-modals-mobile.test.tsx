@@ -159,6 +159,25 @@ describe("core modals mobile css coverage", () => {
     expect(mobileBlock).toContain("overflow-y: auto;");
   });
 
+  it("GitManagerModal: changes rows/actions wrap without widening viewport on mobile", () => {
+    const css = loadAllAppCss();
+    const mobileBlock = getMainMobileBlock(css);
+
+    const actionsRule = mobileBlock.match(/\.gm-file-section-actions\s*\{[^}]+\}/s);
+    expect(actionsRule).not.toBeNull();
+    expect(actionsRule![0]).toContain("flex-wrap: wrap");
+    expect(actionsRule![0]).toContain("flex: 1 1 100%");
+
+    const fileItemRule = mobileBlock.match(/\.gm-file-item\s*\{[^}]+\}/s);
+    expect(fileItemRule).not.toBeNull();
+    expect(fileItemRule![0]).toContain("flex-wrap: wrap");
+    expect(fileItemRule![0]).toContain("min-width: 0");
+
+    const fileSectionRule = mobileBlock.match(/\.gm-file-section\s*\{[^}]+\}/s);
+    expect(fileSectionRule).not.toBeNull();
+    expect(fileSectionRule![0]).toContain("max-width: 100%");
+  });
+
   it("GitManagerModal: modal uses full-screen viewport sizing on mobile (641-768px range)", () => {
     const css = loadAllAppCss();
     const mobileBlock = getMainMobileBlock(css);

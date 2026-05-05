@@ -2574,7 +2574,7 @@ describe("GitManagerModal", () => {
     });
   });
 
-  describe("remotes CSS regression coverage", () => {
+  describe("CSS regression coverage", () => {
     it("includes remotes layout selectors and mobile rules", () => {
       const css = loadAllAppCss();
       expect(css).toContain(".gm-remotes-layout");
@@ -2591,6 +2591,14 @@ describe("GitManagerModal", () => {
       expect(remoteSection).toContain("color-mix(");
       expect(remoteSection).not.toMatch(/rgba\(/i);
       expect(remoteSection).not.toMatch(/#[0-9a-f]{3,8}/i);
+    });
+
+    it("includes mobile wrapping rules for changes file rows and section actions", () => {
+      const css = loadAllAppCss();
+
+      expect(css).toMatch(/@media \(max-width: 768px\)\s*\{[\s\S]*?\.gm-file-section-actions\s*\{[\s\S]*?flex-wrap:\s*wrap;[\s\S]*?flex:\s*1 1 100%;/);
+      expect(css).toMatch(/@media \(max-width: 768px\)\s*\{[\s\S]*?\.gm-file-item\s*\{[\s\S]*?min-width:\s*0;[\s\S]*?flex-wrap:\s*wrap;/);
+      expect(css).toMatch(/@media \(max-width: 768px\)\s*\{[\s\S]*?\.gm-file-section\s*\{[\s\S]*?max-width:\s*100%;/);
     });
   });
 });
