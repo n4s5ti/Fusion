@@ -26,6 +26,7 @@ import {
 } from "../utils/heartbeatIntervals";
 import { isEphemeralAgent, getErrorMessage } from "@fusion/core";
 import { formatAgentSkillBadgeLabel } from "../utils/agentSkills";
+import { resolveOrgChartLayoutMode, type OrgChartLayoutMode } from "./agentsOrgChartLayout";
 
 export interface AgentsViewProps {
   addToast: (message: string, type?: "success" | "error") => void;
@@ -247,10 +248,12 @@ export function AgentsView({ addToast, projectId, onOpenTaskLogs, agentOnboardin
   });
   const [orgTree, setOrgTree] = useState<OrgTreeNode[]>([]);
   const [isOrgTreeLoading, setIsOrgTreeLoading] = useState(false);
+  const [orgChartViewportWidth, setOrgChartViewportWidth] = useState(0);
   const [isControlsPanelOpen, setIsControlsPanelOpen] = useState(false);
   const [isOverviewOpen, setIsOverviewOpen] = useState(false);
   const [orgChartZoomIndex, setOrgChartZoomIndex] = useState(1);
   const controlsPanelRef = useRef<HTMLDivElement>(null);
+  const orgChartViewportRef = useRef<HTMLDivElement>(null);
   const { confirm } = useConfirm();
   const controlsTriggerRef = useRef<HTMLButtonElement>(null);
   const controlsPanelId = useId();
@@ -371,6 +374,26 @@ export function AgentsView({ addToast, projectId, onOpenTaskLogs, agentOnboardin
       .filter((n): n is OrgTreeNode => n !== null);
   }, [orgTree, showSystemAgents]);
 
+  useEffect(() => {
+    if (agentView !== "org") return;
+
+    const viewport = orgChartViewportRef.current;
+    if (!viewport) return;
+
+    const updateWidth = () => {
+      setOrgChartViewportWidth(viewport.clientWidth);
+    };
+
+    updateWidth();
+    const resizeObserver = typeof ResizeObserver !== "undefined" ? new ResizeObserver(updateWidth) : null;
+    resizeObserver?.observe(viewport);
+    window.addEventListener("resize", updateWidth);
+
+    return () => {
+      resizeObserver?.disconnect();
+      window.removeEventListener("resize", updateWidth);
+    };
+  }, [agentView, displayOrgTree.length]);
 
   useEffect(() => {
     if (agentView !== "org") return;
@@ -712,6 +735,10 @@ export function AgentsView({ addToast, projectId, onOpenTaskLogs, agentOnboardin
   const getRoleLabel = (role: AgentCapability) => AGENT_ROLES.find(r => r.value === role)?.label ?? role;
   const getRoleIcon = (role: AgentCapability) => AGENT_ROLES.find(r => r.value === role)?.icon ?? "◆";
   const orgChartZoom = ORG_CHART_ZOOM_LEVELS[orgChartZoomIndex];
+  const orgChartLayoutMode: OrgChartLayoutMode = useMemo(() => resolveOrgChartLayoutMode({
+    tree: displayOrgTree,
+    availableWidth: orgChartViewportWidth,
+  }), [displayOrgTree, orgChartViewportWidth]);
 
   /** Get skill badges from agent metadata */
   const getSkillBadges = (agent: Agent): string[] => {
@@ -1027,9 +1054,17 @@ export function AgentsView({ addToast, projectId, onOpenTaskLogs, agentOnboardin
                     </button>
                   </div>
                 ) : null}
-                <div className="agent-org-chart-viewport" data-testid="agent-org-chart-viewport">
+                <div
+                  ref={orgChartViewportRef}
+                  className="agent-org-chart-viewport"
+                  data-testid="agent-org-chart-viewport"
+                >
                   <div className={`agent-org-chart-canvas agent-org-chart-canvas--zoom-${Math.round(orgChartZoom * 100)}`}>
-                    <div className="agent-org-chart" data-testid="agent-org-chart">
+                    <div
+                      className={`agent-org-chart${orgChartLayoutMode === "vertical" ? " agent-org-chart--vertical" : ""}`}
+                      data-testid="agent-org-chart"
+                      data-layout-mode={orgChartLayoutMode}
+                    >
                       {isOrgTreeLoading ? (
                         <div className="agent-org-chart__loading" role="status" aria-live="polite">
                           <RefreshCw size={18} className="spin" />

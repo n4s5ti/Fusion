@@ -104,6 +104,7 @@ describe("Agent CSS classes", () => {
     expect(hasClass(".agent-org-chart-canvas--zoom-100")).toBe(true);
     expect(hasClass(".agent-org-chart-canvas--zoom-125")).toBe(true);
     expect(hasClass(".agent-org-chart-canvas--zoom-150")).toBe(true);
+    expect(hasClass(".agent-org-chart--vertical")).toBe(true);
     expect(hasClass(".agent-board")).toBe(true);
     expect(hasClass(".agent-board-card")).toBe(true);
     expect(hasClass(".agent-board-card--idle")).toBe(true);
@@ -191,10 +192,14 @@ describe("Agent CSS classes", () => {
     expect(orgChartSection).toContain("gap: var(--space-xl)");
     expect(orgChartSection).toContain("padding: var(--space-lg)");
     expect(orgChartSection).toContain("--org-chart-node-width: calc(var(--space-xl) * 9 + var(--space-xs))");
+    expect(orgChartSection).toContain("--org-chart-root-gap: var(--space-xl)");
+    expect(orgChartSection).toContain("--org-chart-connector-gap: var(--space-sm)");
     expect(orgChartSection).toContain("--org-chart-sibling-gap: var(--space-xl)");
     expect(orgChartSection).toContain("--org-chart-children-offset: calc(var(--space-lg) + var(--space-sm))");
     expect(orgChartSection).toContain("min-height: var(--org-chart-node-width)");
     expect(orgChartSection).toContain("touch-action: pan-x pan-y");
+    expect(orgChartSection).toContain("overflow: auto");
+    expect(orgChartSection).toContain("overscroll-behavior: contain");
     expect(orgChartSection).toContain("transform-origin: top left");
     expect(orgChartSection).toContain("border: 1px solid var(--border)");
     expect(orgChartSection).toContain("color: var(--text)");
@@ -206,7 +211,14 @@ describe("Agent CSS classes", () => {
     expect(orgChartSection).not.toContain("var(--border-color)");
     expect(orgChartSection).not.toContain("var(--text-primary)");
     expect(orgChartSection).not.toContain("var(--text-secondary)");
-    expect(orgChartSection).not.toMatch(/1\.5rem|0\.75rem|0\.72rem|0\.78rem|0\.65rem|120ms\s+ease|220px|10px/);
+    expect(orgChartSection).toContain(".agent-org-chart--vertical .org-chart-children");
+    expect(orgChartSection).toContain("gap: var(--space-sm)");
+    expect(orgChartSection).toContain("padding-top: var(--space-sm)");
+    expect(orgChartSection).toContain("padding-left: calc(var(--space-lg) + var(--space-sm))");
+    expect(orgChartSection).toContain("--org-chart-node-width: calc(var(--space-2xl) * 5)");
+    expect(orgChartSection).toContain("--org-chart-sibling-gap: var(--space-sm)");
+    expect(orgChartSection).toContain("--org-chart-children-offset: var(--space-lg)");
+    expect(orgChartSection).not.toMatch(/1\.5rem|0\.75rem|0\.72rem|0\.78rem|0\.65rem|120ms\s+ease|10px/);
   });
 
   // Verify AgentDetailView classes

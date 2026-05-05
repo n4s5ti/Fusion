@@ -66,6 +66,8 @@ const mockFetchAgentStats = vi.mocked((apiModule as any).fetchAgentStats);
 const mockFetchSettings = vi.mocked((apiModule as any).fetchSettings);
 const mockUpdateSettings = vi.mocked((apiModule as any).updateSettings);
 const mockClipboardWriteText = vi.fn();
+const mockResizeObserverObserve = vi.fn();
+const mockResizeObserverDisconnect = vi.fn();
 
 describe("AgentsView", () => {
   const mockAddToast = vi.fn();
@@ -121,6 +123,10 @@ describe("AgentsView", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.stubGlobal("ResizeObserver", class {
+      observe = mockResizeObserverObserve;
+      disconnect = mockResizeObserverDisconnect;
+    });
     mockViewportMode.mockReturnValue("desktop");
     mockClipboardWriteText.mockResolvedValue(undefined);
     Object.defineProperty(navigator, "clipboard", {
@@ -1306,6 +1312,41 @@ describe("AgentsView", () => {
       expect(rootChildren).toBeTruthy();
       expect(rootChildren.className).toContain("org-chart-children");
       expect(container.querySelectorAll(".org-chart-node--has-children").length).toBeGreaterThan(0);
+    });
+
+    it("switches org chart to vertical layout mode when estimated width exceeds viewport", async () => {
+      const clientWidthSpy = vi.spyOn(window.HTMLElement.prototype, "clientWidth", "get").mockReturnValue(320);
+      mockFetchOrgTree.mockResolvedValue(orgTree);
+      render(<AgentsView addToast={mockAddToast} />);
+
+      fireEvent.click(screen.getByRole("button", { name: "Org Chart view" }));
+
+      await waitFor(() => {
+        const chart = screen.getByTestId("agent-org-chart");
+        expect(chart.getAttribute("data-layout-mode")).toBe("vertical");
+        expect(chart.className).toContain("agent-org-chart--vertical");
+      });
+
+      fireEvent.click(screen.getByText("Director One"));
+      await waitFor(() => {
+        expect(screen.getByTestId("agent-detail-view")).toHaveTextContent("agent-child-1");
+      });
+      clientWidthSpy.mockRestore();
+    });
+
+    it("keeps org chart horizontal layout mode when viewport is wide enough", async () => {
+      const clientWidthSpy = vi.spyOn(window.HTMLElement.prototype, "clientWidth", "get").mockReturnValue(1920);
+      mockFetchOrgTree.mockResolvedValue(orgTree);
+      render(<AgentsView addToast={mockAddToast} />);
+
+      fireEvent.click(screen.getByRole("button", { name: "Org Chart view" }));
+
+      await waitFor(() => {
+        const chart = screen.getByTestId("agent-org-chart");
+        expect(chart.getAttribute("data-layout-mode")).toBe("horizontal");
+        expect(chart.className).not.toContain("agent-org-chart--vertical");
+      });
+      clientWidthSpy.mockRestore();
     });
 
     it("shows mobile zoom controls for org chart and keeps node selection working", async () => {

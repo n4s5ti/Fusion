@@ -783,8 +783,11 @@
 /* === FN-1167: Agent Org Chart + Chain of Command === */
 .agent-org-chart-shell {
   display: flex;
+  flex: 1;
+  min-height: 0;
   flex-direction: column;
   gap: var(--space-sm);
+  overflow: hidden;
 }
 
 .agent-org-chart-controls {
@@ -803,6 +806,8 @@
 }
 
 .agent-org-chart-viewport {
+  flex: 1;
+  min-height: 0;
   overflow: auto;
   max-width: 100%;
   overscroll-behavior: contain;
@@ -837,10 +842,11 @@
   --org-chart-sibling-gap: var(--space-xl);
   --org-chart-connector-gap: var(--space-sm);
   --org-chart-children-offset: calc(var(--space-lg) + var(--space-sm));
+  --org-chart-root-gap: var(--space-xl);
   display: flex;
   align-items: flex-start;
   justify-content: flex-start;
-  gap: var(--space-xl);
+  gap: var(--org-chart-root-gap);
   padding: var(--space-lg);
   min-height: var(--org-chart-node-width);
 }
@@ -865,6 +871,10 @@
     (var(--org-chart-subtree-leaves-number) - 1) * var(--org-chart-sibling-gap)
   );
   flex: 0 0 auto;
+}
+
+.org-chart-node--has-children {
+  padding-bottom: var(--space-xs);
 }
 
 .org-chart-node-card {
@@ -952,7 +962,7 @@
   position: relative;
   display: flex;
   align-items: flex-start;
-  justify-content: space-between;
+  justify-content: center;
   width: 100%;
   gap: var(--org-chart-sibling-gap);
   padding-top: var(--org-chart-children-offset);
@@ -967,6 +977,59 @@
   right: calc(var(--org-chart-node-width) / 2);
   height: 1px;
   background: var(--border);
+}
+
+.agent-org-chart--vertical {
+  flex-direction: column;
+  gap: var(--space-md);
+  min-height: auto;
+}
+
+.agent-org-chart--vertical .org-chart-node {
+  width: 100%;
+  min-width: var(--org-chart-node-width);
+  align-items: flex-start;
+}
+
+.agent-org-chart--vertical .org-chart-node--has-children {
+  padding-bottom: 0;
+}
+
+.agent-org-chart--vertical .org-chart-node-card {
+  margin-left: 0;
+}
+
+.agent-org-chart--vertical .org-chart-node--has-children > .org-chart-node-card::after {
+  left: calc(var(--space-lg) + var(--space-xs));
+  transform: none;
+}
+
+.agent-org-chart--vertical .org-chart-children {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  width: 100%;
+  gap: var(--space-sm);
+  padding-top: var(--space-sm);
+  padding-left: calc(var(--space-lg) + var(--space-sm));
+  margin-top: 0;
+}
+
+.agent-org-chart--vertical .org-chart-children::before {
+  top: 0;
+  bottom: var(--space-sm);
+  left: var(--space-sm);
+  right: auto;
+  width: 1px;
+  height: auto;
+}
+
+.agent-org-chart--vertical .org-chart-children > .org-chart-node::before {
+  top: calc(var(--space-md) * -1);
+  left: calc(var(--space-sm) * -1);
+  transform: none;
+  width: var(--space-sm);
+  height: 1px;
 }
 
 .org-chart-children > .org-chart-node::before {
@@ -1058,6 +1121,8 @@
 
   .agent-org-chart-shell {
     min-height: 0;
+    flex: 1;
+    overflow: hidden;
   }
 
   .agent-org-chart-controls {
@@ -1073,6 +1138,15 @@
 
   .agent-org-chart-viewport {
     min-height: calc(var(--space-2xl) * 4);
+    flex: 1;
+    min-width: 0;
+    overflow: auto;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .agent-org-chart-canvas {
+    min-width: max-content;
   }
 
   .agent-org-chart {
@@ -1082,6 +1156,10 @@
     padding: var(--space-sm);
     padding-bottom: calc(var(--space-lg) + var(--space-sm));
     gap: var(--space-sm);
+  }
+
+  .agent-org-chart--vertical {
+    min-width: 100%;
   }
 
   .agents-view-loading {
