@@ -82,6 +82,21 @@ These fields can only be set during update (not on create):
 - `totalInputTokens` — Accumulated input token count
 - `totalOutputTokens` — Accumulated output token count
 
+## Execution Ownership for Assigned Agents
+
+When a task sets `assignedAgentId` to a **durable (non-ephemeral)** agent, that same agent is used as the active execution owner during runtime execution.
+
+Behavior:
+- Fusion links the durable agent's `taskId` to the running task for execution visibility
+- No synthetic `executor-FN-*` task-worker agent is created for that run
+- On completion/error, the durable agent's execution task link is cleared (the durable record is preserved)
+
+Fallback behavior remains unchanged:
+- Unassigned tasks still use runtime-managed `executor-FN-*` task-worker agents
+- Missing assigned agents, or assigned agents that are ephemeral/runtime-managed, fall back to task-worker execution ownership
+
+Execution-ownership sync intentionally avoids assignment-trigger side effects (`agent:assigned` wakeups) that are intended for control-plane delegation.
+
 ## Agents View (Dashboard)
 
 The agents surface provides:

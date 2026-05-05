@@ -1185,6 +1185,29 @@ export class AgentStore extends EventEmitter {
    * @returns The updated agent
    */
   async assignTask(agentId: string, taskId: string | undefined, runContext?: RunMutationContext): Promise<Agent> {
+    const updated = await this.syncExecutionTaskLink(agentId, taskId);
+
+    // Emit agent:assigned only when assigning a task (not when clearing)
+    if (taskId !== undefined) {
+      this.emit("agent:assigned", updated, taskId);
+    }
+
+    // Log the assignment to the task when a non-empty taskId is provided
+    if (taskId && this.taskStore) {
+      await this.taskStore.logEntry(taskId, `Task assigned to agent ${agentId}`, undefined, runContext);
+    }
+
+    return updated;
+  }
+
+  /**
+   * Synchronize execution task ownership on an agent without firing
+   * assignment-side effects (`agent:assigned`, task assignment logs).
+   *
+   * Used by runtime execution bookkeeping so durable assigned agents can
+   * reflect active task ownership without triggering heartbeat assignment wakeups.
+   */
+  async syncExecutionTaskLink(agentId: string, taskId: string | undefined): Promise<Agent> {
     return this.withLock(agentId, async () => {
       const agent = await this.getAgent(agentId);
       if (!agent) {
@@ -1199,17 +1222,6 @@ export class AgentStore extends EventEmitter {
 
       await this.writeAgent(updated);
       this.emit("agent:updated", updated);
-
-      // Emit agent:assigned only when assigning a task (not when clearing)
-      if (taskId !== undefined) {
-        this.emit("agent:assigned", updated, taskId);
-      }
-
-      // Log the assignment to the task when a non-empty taskId is provided
-      if (taskId && this.taskStore) {
-        await this.taskStore.logEntry(taskId, `Task assigned to agent ${agentId}`, undefined, runContext);
-      }
-
       return updated;
     });
   }

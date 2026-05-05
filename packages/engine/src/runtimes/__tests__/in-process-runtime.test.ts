@@ -596,7 +596,35 @@ describe("InProcessRuntime", () => {
       });
     }, 30000);
 
-    it("creates runtime task-worker agents with disabled heartbeat metadata and running state", async () => {
+    it("reuses assigned durable agent as execution owner without creating a task-worker", async () => {
+      await runtime.start();
+
+      const store = getAgentStore(runtime);
+      const durable = await store.createAgent({ name: "Durable Exec", role: "executor" });
+      const createAgentSpy = vi.spyOn(store, "createAgent");
+      const assignTaskSpy = vi.spyOn(store, "assignTask");
+      const syncLinkSpy = vi.spyOn(store, "syncExecutionTaskLink");
+
+      const executorOptions = mockExecutorCtor.mock.calls.at(-1)?.[0] as {
+        onStart?: (task: Task, worktreePath: string) => void;
+      };
+      executorOptions.onStart?.({ id: "FN-1661", assignedAgentId: durable.id } as Task, join(testDir, "worktree-FN-1661"));
+
+      await vi.waitFor(async () => {
+        const updated = await store.getAgent(durable.id);
+        expect(updated?.taskId).toBe("FN-1661");
+        expect(updated?.state).toBe("running");
+      });
+
+      expect(syncLinkSpy).toHaveBeenCalledWith(durable.id, "FN-1661");
+      expect(assignTaskSpy).not.toHaveBeenCalledWith(durable.id, "FN-1661");
+      expect(createAgentSpy).not.toHaveBeenCalledWith(expect.objectContaining({ name: "executor-FN-1661" }));
+
+      const agents = await store.listAgents({ includeEphemeral: true });
+      expect(agents.some((agent: Agent) => agent.name === "executor-FN-1661")).toBe(false);
+    }, 30000);
+
+    it("falls back to runtime task-worker agents for unassigned tasks", async () => {
       await runtime.start();
 
       const store = getAgentStore(runtime);
@@ -635,25 +663,29 @@ describe("InProcessRuntime", () => {
       expect(assignTaskSpy.mock.invocationCallOrder[0]).toBeLessThan(updateStateSpy.mock.invocationCallOrder[0]);
     }, 30000);
 
-    it("does not create duplicate task-worker agents when onStart fires twice for one task", async () => {
+    it("falls back to runtime task-worker when assignedAgentId points to ephemeral agent", async () => {
       await runtime.start();
 
       const store = getAgentStore(runtime);
+      const ephemeral = await store.createAgent({
+        name: "Spawned Child",
+        role: "executor",
+        metadata: { agentKind: "task-worker", managedBy: "task-executor" },
+        runtimeConfig: { enabled: false },
+      });
+
       const executorOptions = mockExecutorCtor.mock.calls.at(-1)?.[0] as {
         onStart?: (task: Task, worktreePath: string) => void;
       };
-
-      executorOptions.onStart?.({ id: "FN-DUP-ONSTART" } as Task, join(testDir, "worktree-FN-DUP-ONSTART"));
-      executorOptions.onStart?.({ id: "FN-DUP-ONSTART" } as Task, join(testDir, "worktree-FN-DUP-ONSTART"));
+      executorOptions.onStart?.({ id: "FN-1662", assignedAgentId: ephemeral.id } as Task, join(testDir, "worktree-FN-1662"));
 
       await vi.waitFor(async () => {
         const agents = await store.listAgents({ includeEphemeral: true });
-        const matching = agents.filter((agent: Agent) => agent.name === "executor-FN-DUP-ONSTART");
-        expect(matching).toHaveLength(1);
+        expect(agents.some((agent: Agent) => agent.name === "executor-FN-1662")).toBe(true);
       });
     }, 30000);
 
-    it("does not wake executeHeartbeat for runtime task-worker assignment events", async () => {
+    it("does not wake executeHeartbeat for runtime ownership sync of durable assigned agents", async () => {
       await runtime.start();
 
       const monitor = runtime.getHeartbeatMonitor();
@@ -664,20 +696,54 @@ describe("InProcessRuntime", () => {
         .spyOn(heartbeatMonitor, "executeHeartbeat")
         .mockResolvedValue(executeResult);
 
+      const store = getAgentStore(runtime);
+      const durable = await store.createAgent({ name: "Owned Exec", role: "executor" });
+
       const executorOptions = mockExecutorCtor.mock.calls.at(-1)?.[0] as {
         onStart?: (task: Task, worktreePath: string) => void;
       };
-      executorOptions.onStart?.({ id: "FN-2001" } as Task, join(testDir, "worktree-FN-2001"));
-
-      const store = getAgentStore(runtime);
+      executorOptions.onStart?.({ id: "FN-2001", assignedAgentId: durable.id } as Task, join(testDir, "worktree-FN-2001"));
 
       await vi.waitFor(async () => {
-        const agents = await store.listAgents({ includeEphemeral: true });
-        expect(agents.some((agent: Agent) => agent.name === "executor-FN-2001")).toBe(true);
+        const updated = await store.getAgent(durable.id);
+        expect(updated?.taskId).toBe("FN-2001");
       });
 
       await new Promise((resolve) => setTimeout(resolve, 25));
       expect(executeSpy).not.toHaveBeenCalled();
+    }, 30000);
+
+    it("cleans up durable execution owner on completion without deleting agent", async () => {
+      vi.useFakeTimers();
+
+      try {
+        await runtime.start();
+
+        const store = getAgentStore(runtime);
+        const durable = await store.createAgent({ name: "Durable Cleanup", role: "executor" });
+        const deleteAgentSpy = vi.spyOn(store, "deleteAgent").mockResolvedValue(undefined);
+
+        const executorOptions = mockExecutorCtor.mock.calls.at(-1)?.[0] as {
+          onStart?: (task: Task, worktreePath: string) => void;
+          onComplete?: (task: Task) => void;
+        };
+
+        executorOptions.onStart?.({ id: "FN-DURABLE-1", assignedAgentId: durable.id } as Task, join(testDir, "worktree-FN-DURABLE-1"));
+        await vi.waitFor(async () => {
+          const updated = await store.getAgent(durable.id);
+          expect(updated?.taskId).toBe("FN-DURABLE-1");
+        });
+
+        executorOptions.onComplete?.({ id: "FN-DURABLE-1" } as Task);
+        await vi.advanceTimersByTimeAsync(5000);
+
+        const updated = await store.getAgent(durable.id);
+        expect(updated?.state).toBe("terminated");
+        expect(updated?.taskId).toBeUndefined();
+        expect(deleteAgentSpy).not.toHaveBeenCalledWith(durable.id);
+      } finally {
+        vi.useRealTimers();
+      }
     }, 30000);
 
     it("auto-deletes task-worker agent on task completion after 5 second delay", async () => {
@@ -715,6 +781,39 @@ describe("InProcessRuntime", () => {
 
         // Now deleteAgent should have been called
         expect(deleteAgentSpy).toHaveBeenCalledTimes(1);
+      } finally {
+        vi.useRealTimers();
+      }
+    }, 30000);
+
+    it("cleans up durable execution owner on error without deleting agent", async () => {
+      vi.useFakeTimers();
+
+      try {
+        await runtime.start();
+
+        const store = getAgentStore(runtime);
+        const durable = await store.createAgent({ name: "Durable Error", role: "executor" });
+        const deleteAgentSpy = vi.spyOn(store, "deleteAgent").mockResolvedValue(undefined);
+
+        const executorOptions = mockExecutorCtor.mock.calls.at(-1)?.[0] as {
+          onStart?: (task: Task, worktreePath: string) => void;
+          onError?: (task: Task, error: Error) => void;
+        };
+
+        executorOptions.onStart?.({ id: "FN-DURABLE-2", assignedAgentId: durable.id } as Task, join(testDir, "worktree-FN-DURABLE-2"));
+        await vi.waitFor(async () => {
+          const updated = await store.getAgent(durable.id);
+          expect(updated?.taskId).toBe("FN-DURABLE-2");
+        });
+
+        executorOptions.onError?.({ id: "FN-DURABLE-2" } as Task, new Error("boom"));
+        await vi.advanceTimersByTimeAsync(5000);
+
+        const updated = await store.getAgent(durable.id);
+        expect(updated?.state).toBe("terminated");
+        expect(updated?.taskId).toBeUndefined();
+        expect(deleteAgentSpy).not.toHaveBeenCalledWith(durable.id);
       } finally {
         vi.useRealTimers();
       }

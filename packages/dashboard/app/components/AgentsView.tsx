@@ -787,6 +787,8 @@ export function AgentsView({ addToast, projectId, onOpenTaskLogs, agentOnboardin
                 handleOpenNewAgent();
                 setIsControlsPanelOpen(false);
               }}
+              aria-label="New Agent"
+              title="New Agent"
             >
               <Plus size={16} />
               New Agent

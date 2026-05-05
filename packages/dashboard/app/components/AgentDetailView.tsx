@@ -1393,7 +1393,7 @@ function RunsTab({
                 </button>
               )}
               <span className={cn("run-status", run.status)}>
-                <StatusIcon size={14} className={statusInfo.color} />
+                <StatusIcon size={14} style={{ color: statusInfo.color }} />
                 {run.status}
               </span>
               {run.heartbeatProcedureSource === "custom" && (

@@ -258,6 +258,11 @@
   padding-bottom: var(--space-md);
 }
 
+.dashboard-summary-health-reason {
+  margin-left: var(--space-xs);
+  font-size: calc(var(--space-sm) + var(--space-xs));
+}
+
 .dashboard-summary-card {
   background: var(--card);
   border: 1px solid var(--border);

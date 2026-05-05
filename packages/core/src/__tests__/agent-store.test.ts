@@ -1639,6 +1639,34 @@ describe("AgentStore", () => {
     });
   });
 
+  describe("syncExecutionTaskLink", () => {
+    it("updates taskId without emitting assignment events", async () => {
+      const agent = await store.createAgent({ name: "Runtime Owner", role: "executor" });
+      const assignedHandler = vi.fn();
+      store.on("agent:assigned", assignedHandler);
+
+      const updated = await store.syncExecutionTaskLink(agent.id, "FN-3249");
+
+      expect(updated.taskId).toBe("FN-3249");
+      expect(assignedHandler).not.toHaveBeenCalled();
+
+      const fetched = await store.getAgent(agent.id);
+      expect(fetched?.taskId).toBe("FN-3249");
+    });
+
+    it("clears taskId without emitting assignment events", async () => {
+      const agent = await store.createAgent({ name: "Runtime Owner 2", role: "executor" });
+      await store.syncExecutionTaskLink(agent.id, "FN-1111");
+
+      const assignedHandler = vi.fn();
+      store.on("agent:assigned", assignedHandler);
+
+      const updated = await store.syncExecutionTaskLink(agent.id, undefined);
+      expect(updated.taskId).toBeUndefined();
+      expect(assignedHandler).not.toHaveBeenCalled();
+    });
+  });
+
   describe("checkout leasing", () => {
     let taskStore: TaskStore;
     let holderId: string;

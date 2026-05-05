@@ -92,8 +92,8 @@ export class InProcessRuntime
   private agentStore?: AgentStore;
   private heartbeatMonitor?: HeartbeatMonitor;
   private triggerScheduler?: HeartbeatTriggerScheduler;
-  /** Maps task IDs to agent IDs for lifecycle tracking */
-  private taskAgentMap = new Map<string, string>();
+  /** Maps task IDs to execution owner metadata for lifecycle tracking */
+  private taskAgentMap = new Map<string, { agentId: string; ephemeral: boolean }>();
   private lastActivityAt: string = new Date().toISOString();
   private pluginRunner?: PluginRunner;
   private pluginStore?: PluginStore;
@@ -373,53 +373,77 @@ export class InProcessRuntime
         onStart: (task, worktreePath) => {
           this.recordActivity();
           runtimeLog.log(`Started executing task ${task.id} in ${worktreePath}`);
-          // Create a runtime-managed task worker agent for lifecycle tracking.
-          // These workers are not heartbeat-managed dashboard agents, so mark them
-          // explicitly and disable heartbeat triggers/timers.
-          if (this.agentStore) {
-            if (this.taskAgentMap.has(task.id)) {
-              runtimeLog.warn(`Skipping task-worker creation for ${task.id}: agent already exists (${this.taskAgentMap.get(task.id)})`);
-              return;
-            }
+          if (!this.agentStore) return;
 
-            this.taskAgentMap.set(task.id, "creating");
-            this.agentStore.createAgent({
-              name: `executor-${task.id}`,
-              role: "executor",
-              metadata: {
-                agentKind: "task-worker",
-                taskWorker: true,
-                managedBy: "task-executor",
-              },
-              runtimeConfig: {
-                enabled: false,
-              },
-            }).then(async (agent: { id: string }) => {
-              this.taskAgentMap.set(task.id, agent.id);
+          void (async () => {
+            try {
+              const assignedAgentId = task.assignedAgentId;
+              if (assignedAgentId) {
+                const assignedAgent = await this.agentStore!.getAgent(assignedAgentId);
+                if (assignedAgent && !isEphemeralAgent(assignedAgent)) {
+                  this.taskAgentMap.set(task.id, { agentId: assignedAgent.id, ephemeral: false });
+                  await this.agentStore!.syncExecutionTaskLink(assignedAgent.id, task.id);
+                  const currentState = assignedAgent.state;
+                  if (currentState !== "running") {
+                    if (currentState !== "active") {
+                      await this.agentStore!.updateAgentState(assignedAgent.id, "active");
+                    }
+                    await this.agentStore!.updateAgentState(assignedAgent.id, "running");
+                  }
+                  return;
+                }
+              }
+
+              if (this.taskAgentMap.has(task.id)) {
+                runtimeLog.warn(`Skipping task-worker creation for ${task.id}: task already has execution owner`);
+                return;
+              }
+
+              // Create a runtime-managed task worker agent for lifecycle tracking.
+              // These workers are not heartbeat-managed dashboard agents, so mark them
+              // explicitly and disable heartbeat triggers/timers.
+              const agent = await this.agentStore!.createAgent({
+                name: `executor-${task.id}`,
+                role: "executor",
+                metadata: {
+                  agentKind: "task-worker",
+                  taskWorker: true,
+                  managedBy: "task-executor",
+                },
+                runtimeConfig: {
+                  enabled: false,
+                },
+              });
+              this.taskAgentMap.set(task.id, { agentId: agent.id, ephemeral: true });
               await this.agentStore!.assignTask(agent.id, task.id);
               await this.agentStore!.updateAgentState(agent.id, "active");
               await this.agentStore!.updateAgentState(agent.id, "running");
-            }).catch((err: unknown) => {
-              this.taskAgentMap.delete(task.id);
-              runtimeLog.warn(`Failed to create agent for task ${task.id}:`, err);
-            });
-          }
+            } catch (err: unknown) {
+              runtimeLog.warn(`Failed to initialize execution owner for task ${task.id}:`, err);
+            }
+          })();
         },
         onComplete: (task) => {
           this.recordActivity();
           runtimeLog.log(`Completed task ${task.id}`);
           this.recordTaskCompletion(task.id, true);
           // Update agent state to terminated (completed)
-          const agentId = this.taskAgentMap.get(task.id);
-          if (agentId && this.agentStore) {
-            // Register pending deletion before flipping to terminated so
-            // agent:stateChanged listener doesn't schedule duplicate cleanup.
-            this.pendingEphemeralDeletions.add(agentId);
+          const owner = this.taskAgentMap.get(task.id);
+          if (owner && this.agentStore) {
+            const { agentId, ephemeral } = owner;
+            if (ephemeral) {
+              this.pendingEphemeralDeletions.add(agentId);
+            }
             void this.agentStore.updateAgentState(agentId, "terminated").catch((err: unknown) => {
               const msg = err instanceof Error ? err.message : String(err);
               runtimeLog.warn(`Failed to update agent ${agentId} state to terminated (completion): ${msg}`);
             });
+            void this.agentStore.syncExecutionTaskLink(agentId, undefined).catch((err: unknown) => {
+              const msg = err instanceof Error ? err.message : String(err);
+              runtimeLog.warn(`Failed to clear execution task link for agent ${agentId} on completion: ${msg}`);
+            });
             this.taskAgentMap.delete(task.id);
+            if (!ephemeral) return;
             // Auto-delete the task-worker agent after a short delay so the UI
             // can observe the terminal state before the agent is removed.
             const timerId = setTimeout(async () => {
@@ -459,16 +483,22 @@ export class InProcessRuntime
           }
 
           // Update agent state to terminated (failed)
-          const agentId = this.taskAgentMap.get(task.id);
-          if (agentId && this.agentStore) {
-            // Register pending deletion before flipping to terminated so
-            // agent:stateChanged listener doesn't schedule duplicate cleanup.
-            this.pendingEphemeralDeletions.add(agentId);
+          const owner = this.taskAgentMap.get(task.id);
+          if (owner && this.agentStore) {
+            const { agentId, ephemeral } = owner;
+            if (ephemeral) {
+              this.pendingEphemeralDeletions.add(agentId);
+            }
             void this.agentStore.updateAgentState(agentId, "terminated").catch((err: unknown) => {
               const msg = err instanceof Error ? err.message : String(err);
               runtimeLog.warn(`Failed to update agent ${agentId} state to terminated (error): ${msg}`);
             });
+            void this.agentStore.syncExecutionTaskLink(agentId, undefined).catch((err: unknown) => {
+              const msg = err instanceof Error ? err.message : String(err);
+              runtimeLog.warn(`Failed to clear execution task link for agent ${agentId} on error: ${msg}`);
+            });
             this.taskAgentMap.delete(task.id);
+            if (!ephemeral) return;
             // Auto-delete the task-worker agent after a short delay so the UI
             // can observe the terminal state before the agent is removed.
             const timerId = setTimeout(async () => {
