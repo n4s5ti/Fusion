@@ -1720,7 +1720,7 @@ export function QuickEntryBox({ onCreate, addToast, tasks = [], availableModels,
               >
                 <div className="dep-dropdown-search-header">Select agent</div>
                 {agentsLoading && <div className="dep-dropdown-empty">Loading agents...</div>}
-                {!agentsLoading && agents.filter((a) => a.state !== "terminated").map((a) => (
+                {!agentsLoading && agents.filter((a) => true).map((a) => (
                   <div
                     key={a.id}
                     className={`dep-dropdown-item${selectedAgentId === a.id ? " selected" : ""}`}
@@ -1736,7 +1736,7 @@ export function QuickEntryBox({ onCreate, addToast, tasks = [], availableModels,
                     <span className="dep-dropdown-title">{a.name}</span>
                   </div>
                 ))}
-                {!agentsLoading && agents.filter((a) => a.state !== "terminated").length === 0 && (
+                {!agentsLoading && agents.filter((a) => true).length === 0 && (
                   <div className="dep-dropdown-empty">No agents available</div>
                 )}
                 {selectedAgentId && (

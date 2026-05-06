@@ -673,9 +673,9 @@ export function TodoView({ projectId, addToast, onPlanningMode, onTaskCreated }:
                                   >
                                     {agentsLoading ? (
                                       <div className="todo-agent-picker-loading">Loading agents...</div>
-                                    ) : agents.filter((agent) => agent.state !== "terminated").length > 0 ? (
+                                    ) : agents.filter((agent) => true).length > 0 ? (
                                       agents
-                                        .filter((agent) => agent.state !== "terminated")
+                                        .filter((agent) => true)
                                         .map((agent) => (
                                           <button
                                             type="button"

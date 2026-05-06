@@ -1,5 +1,5 @@
 import type { JSX } from "react";
-import { Bot, Heart, Activity, Pause, Square } from "lucide-react";
+import { Bot, Heart, Activity, Pause } from "lucide-react";
 import type { Agent } from "../api";
 import { resolveHeartbeatIntervalMs } from "./heartbeatIntervals";
 
@@ -94,7 +94,7 @@ function isTaskWorkerAgent(agent: AgentHealthInput): boolean {
  * state, runtimeConfig, and last heartbeat timestamp.
  *
  * Health labels (in priority order):
- * - "Terminated" — agent.state === "terminated"
+ * (agent.state === "terminated" was removed in the lifecycle refactor)
  * - "Error" — agent.state === "error" (uses lastError if available)
  * - "Paused" — agent.state === "paused" (uses pauseReason if available)
  * - "Running" — agent.state === "running", or a detected task worker in "active"
@@ -113,15 +113,6 @@ export function getAgentHealthStatus(agent: AgentHealthInput): AgentHealthStatus
   const isHeartbeatEnabled = isTaskWorker || runtimeConfig?.enabled !== false;
 
   // Terminal states - these always take precedence
-  if (state === "terminated") {
-    return {
-      label: "Terminated",
-      icon: <Square size={14} />,
-      color: "var(--state-error-text)",
-      stateDerived: true,
-    };
-  }
-
   if (state === "error") {
     return {
       label: lastError ?? "Error",

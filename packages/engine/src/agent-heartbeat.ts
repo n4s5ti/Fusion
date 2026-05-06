@@ -839,7 +839,7 @@ export class HeartbeatMonitor {
           await this.store.updateAgentState(agentId, "error");
           await this.store.updateAgent(agentId, { lastError: completionResult.stderrExcerpt ?? "Run failed" });
         } else if (completionResult.status === "terminated") {
-          await this.store.updateAgentState(agentId, "terminated");
+          await this.store.updateAgentState(agentId, "paused");
         } else {
           // Completed successfully - back to active
           await this.store.updateAgentState(agentId, "active");
@@ -2136,8 +2136,6 @@ export class HeartbeatMonitor {
       let health = "healthy";
       if (report.state === "paused") {
         health = report.pauseReason ? `paused (${report.pauseReason})` : "paused";
-      } else if (report.state === "terminated") {
-        health = "terminated";
       } else if (report.state === "error") {
         health = "**stuck**";
       } else if (report.state === "running") {
@@ -2154,7 +2152,6 @@ export class HeartbeatMonitor {
 
     const hasStuck = rows.some((row) => row.includes("**stuck**"));
     const hasStale = rows.some((row) => row.includes("**stale**"));
-    const hasTerminated = rows.some((row) => row.includes("terminated"));
 
     const actionLines = ["### Actions for Unresponsive Reports"];
     if (hasStuck) {
@@ -2162,9 +2159,6 @@ export class HeartbeatMonitor {
     }
     if (hasStale) {
       actionLines.push("- For **stale** reports: the agent may have lost its heartbeat trigger — create a follow-up task to investigate.");
-    }
-    if (hasTerminated) {
-      actionLines.push("- For **terminated** reports: if they had active work, reassign their tasks or spawn replacement agents.");
     }
 
     return [
@@ -2482,7 +2476,7 @@ const OVERDUE_FIRE_JITTER_MS = 5_000;
  * - "idle" — Agent is between tasks, waiting for work (FN-2289 fix)
  * 
  * States where timers should be cleared:
- * - "terminated" — Agent has completed/failed
+ * - "paused" — Agent halted (manual stop, run terminated, child cleanup)
  * - "error" — Agent encountered an error
  * - "paused" — Agent is paused by budget exhaustion or manual action
  */

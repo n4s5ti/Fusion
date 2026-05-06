@@ -6640,7 +6640,7 @@ and show an appropriate message to the user.\`
     }
 
     try {
-      await this.options.agentStore?.updateAgentState(childId, "terminated");
+      await this.options.agentStore?.updateAgentState(childId, "paused");
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
       executorLog.warn(`Failed to update spawned child ${childId} state to 'terminated' during cleanup: ${msg}`);

@@ -76,13 +76,17 @@ export function AgentListModal({ isOpen, onClose, addToast, projectId }: AgentLi
     });
   }, [agents, optimisticStateOverrides]);
 
-  // Filter agents for display: hide terminated agents in default "All States" view
-  // but show them when the user explicitly filters to "terminated"
+  // Display ordering: paused agents accumulate over time and would crowd
+  // active agents at the top; sort them to the bottom in the default
+  // "All States" view, breaking ties by `updatedAt` desc.
   const displayAgents = useMemo(() => {
-    if (filterState === "all") {
-      return optimisticAgents.filter((a) => a.state !== "terminated");
-    }
-    return optimisticAgents;
+    if (filterState !== "all") return optimisticAgents;
+    return [...optimisticAgents].sort((a, b) => {
+      const aPaused = a.state === "paused" ? 1 : 0;
+      const bPaused = b.state === "paused" ? 1 : 0;
+      if (aPaused !== bPaused) return aPaused - bPaused;
+      return (b.updatedAt ?? "").localeCompare(a.updatedAt ?? "");
+    });
   }, [optimisticAgents, filterState]);
 
   const loadAgents = useCallback(async () => {
@@ -296,7 +300,6 @@ export function AgentListModal({ isOpen, onClose, addToast, projectId }: AgentLi
                 <option value="running">Running</option>
                 <option value="paused">Paused</option>
                 <option value="error">Error</option>
-                <option value="terminated">Terminated</option>
               </select>
             </div>
 
@@ -402,7 +405,7 @@ export function AgentListModal({ isOpen, onClose, addToast, projectId }: AgentLi
                           </button>
                           <button
                             className="btn btn--sm btn--danger"
-                            onClick={() => void handleStateChange(agent.id, "terminated")}
+                            onClick={() => void handleStateChange(agent.id, "paused")}
                             disabled={transitioningAgentIds.has(agent.id)}
                             title="Stop"
                           >
@@ -422,7 +425,7 @@ export function AgentListModal({ isOpen, onClose, addToast, projectId }: AgentLi
                           </button>
                           <button
                             className="btn btn--sm btn--danger"
-                            onClick={() => void handleStateChange(agent.id, "terminated")}
+                            onClick={() => void handleStateChange(agent.id, "paused")}
                             disabled={transitioningAgentIds.has(agent.id)}
                             title="Stop"
                           >
@@ -449,7 +452,7 @@ export function AgentListModal({ isOpen, onClose, addToast, projectId }: AgentLi
                           </button>
                           <button
                             className="btn btn--sm btn--danger"
-                            onClick={() => void handleStateChange(agent.id, "terminated")}
+                            onClick={() => void handleStateChange(agent.id, "paused")}
                             disabled={transitioningAgentIds.has(agent.id)}
                             title="Stop"
                           >
@@ -469,7 +472,7 @@ export function AgentListModal({ isOpen, onClose, addToast, projectId }: AgentLi
                           </button>
                           <button
                             className="btn btn--sm btn--danger"
-                            onClick={() => void handleStateChange(agent.id, "terminated")}
+                            onClick={() => void handleStateChange(agent.id, "paused")}
                             disabled={transitioningAgentIds.has(agent.id)}
                             title="Stop"
                           >
@@ -477,15 +480,7 @@ export function AgentListModal({ isOpen, onClose, addToast, projectId }: AgentLi
                           </button>
                         </>
                       )}
-                      {agent.state === "terminated" && (
-                        <button
-                          className="btn btn--sm btn--danger"
-                          onClick={() => void handleDelete(agent.id, agent.name)}
-                          title="Delete"
-                        >
-                          <Trash2 size={14} />
-                        </button>
-                      )}
+                      {/* terminated state removed; delete is shown alongside idle/paused via existing handlers */}
                     </div>
                   </div>
                 );
@@ -612,7 +607,7 @@ export function AgentListModal({ isOpen, onClose, addToast, projectId }: AgentLi
                           </button>
                           <button
                             className="btn btn--sm btn--danger"
-                            onClick={() => void handleStateChange(agent.id, "terminated")}
+                            onClick={() => void handleStateChange(agent.id, "paused")}
                             disabled={transitioningAgentIds.has(agent.id)}
                             title="Stop"
                           >
@@ -632,7 +627,7 @@ export function AgentListModal({ isOpen, onClose, addToast, projectId }: AgentLi
                           </button>
                           <button
                             className="btn btn--sm btn--danger"
-                            onClick={() => void handleStateChange(agent.id, "terminated")}
+                            onClick={() => void handleStateChange(agent.id, "paused")}
                             disabled={transitioningAgentIds.has(agent.id)}
                             title="Stop"
                           >
@@ -659,7 +654,7 @@ export function AgentListModal({ isOpen, onClose, addToast, projectId }: AgentLi
                           </button>
                           <button
                             className="btn btn--sm btn--danger"
-                            onClick={() => void handleStateChange(agent.id, "terminated")}
+                            onClick={() => void handleStateChange(agent.id, "paused")}
                             disabled={transitioningAgentIds.has(agent.id)}
                             title="Stop"
                           >
@@ -679,7 +674,7 @@ export function AgentListModal({ isOpen, onClose, addToast, projectId }: AgentLi
                           </button>
                           <button
                             className="btn btn--sm btn--danger"
-                            onClick={() => void handleStateChange(agent.id, "terminated")}
+                            onClick={() => void handleStateChange(agent.id, "paused")}
                             disabled={transitioningAgentIds.has(agent.id)}
                             title="Stop"
                           >
@@ -687,15 +682,15 @@ export function AgentListModal({ isOpen, onClose, addToast, projectId }: AgentLi
                           </button>
                         </>
                       )}
-                      {agent.state === "terminated" && (
+                      {agent.state === "paused" && (
                         <>
                           <button
                             className="btn btn--sm btn-task-create"
                             onClick={() => void handleStateChange(agent.id, "active")}
                             disabled={transitioningAgentIds.has(agent.id)}
-                            title="Start"
+                            title="Resume"
                           >
-                            <Play size={14} /> Start
+                            <Play size={14} /> Resume
                           </button>
                           <button
                             className="btn btn--sm btn--danger"

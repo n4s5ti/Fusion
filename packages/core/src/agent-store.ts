@@ -1173,7 +1173,9 @@ export class AgentStore extends EventEmitter {
         state: newState,
         updatedAt: new Date().toISOString(),
         // Clear lastError when transitioning away from terminated
-        ...(currentState === "terminated" && newState !== "terminated" && { lastError: undefined }),
+        // Clear lastError when an agent re-enters an actionable state so
+        // a resumed agent does not carry stale "Error" badges.
+        ...((newState === "active" || newState === "running") && { lastError: undefined }),
       };
 
       await this.writeAgent(updated);
@@ -1432,11 +1434,9 @@ export class AgentStore extends EventEmitter {
       await this.endHeartbeatRun(activeRun.id, "terminated");
     }
 
-    // Normalize to terminated first when idle is not directly reachable.
-    if (agent.state !== "idle" && agent.state !== "terminated") {
-      agent = await this.updateAgentState(agentId, "terminated");
-    }
-
+    // Any non-idle state can transition directly to idle in the new
+    // lifecycle (see AGENT_VALID_TRANSITIONS in types.ts), so no
+    // intermediate hop is required.
     if (agent.state !== "idle") {
       agent = await this.updateAgentState(agentId, "idle");
     }

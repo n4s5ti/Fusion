@@ -481,7 +481,7 @@ export function registerAgentRuntimeRoutes(ctx: ApiRoutesContext, deps: AgentRun
             });
           }
 
-          if (nextState === "active" || nextState === "terminated") {
+          if (nextState === "active") {
             const pausedTasks = await scopedStore.getTasksByAssignedAgent(agentId, {
               pausedOnly: true,
               excludeArchived: true,

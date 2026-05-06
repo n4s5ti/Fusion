@@ -10750,7 +10750,7 @@ describe("Agent Spawning - Child Termination", () => {
     expect(internals.childSessions.has(childId)).toBe(false);
     // Note: spawnedAgents cleanup is done by terminateAllChildren, not terminateChildAgent
     expect(internals.totalSpawnedCount).toBe(0);
-    expect(agentStore.updateAgentState).toHaveBeenCalledWith(childId, "terminated");
+    expect(agentStore.updateAgentState).toHaveBeenCalledWith(childId, "paused");
   });
 
   it("terminateChildAgent handles missing session gracefully", async () => {
@@ -10767,7 +10767,7 @@ describe("Agent Spawning - Child Termination", () => {
 
     // Should still decrement counter and attempt state update
     expect(internals.totalSpawnedCount).toBe(0);
-    expect(agentStore.updateAgentState).toHaveBeenCalledWith("nonexistent-agent", "terminated");
+    expect(agentStore.updateAgentState).toHaveBeenCalledWith("nonexistent-agent", "paused");
   });
 
   it("terminateAllChildren handles no children gracefully", async () => {
@@ -10802,8 +10802,8 @@ describe("Agent Spawning - Child Termination", () => {
     expect(child2.dispose).toHaveBeenCalled();
     expect(internals.spawnedAgents.has("FN-PARENT")).toBe(false);
     expect(internals.totalSpawnedCount).toBe(0);
-    expect(agentStore.updateAgentState).toHaveBeenCalledWith("c1", "terminated");
-    expect(agentStore.updateAgentState).toHaveBeenCalledWith("c2", "terminated");
+    expect(agentStore.updateAgentState).toHaveBeenCalledWith("c1", "paused");
+    expect(agentStore.updateAgentState).toHaveBeenCalledWith("c2", "paused");
   });
 
   it("terminateChildAgent handles AgentStore errors gracefully", async () => {

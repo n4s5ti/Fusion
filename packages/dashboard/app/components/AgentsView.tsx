@@ -61,8 +61,6 @@ function getStateBadgeClass(state: AgentState): string {
       return "agent-badge--paused";
     case "error":
       return "agent-badge--error";
-    case "terminated":
-      return "agent-badge--terminated";
     case "idle":
     default:
       return "agent-badge--idle";
@@ -82,8 +80,6 @@ function getStateCardClass(
       return `${prefix}--paused`;
     case "error":
       return `${prefix}--error`;
-    case "terminated":
-      return `${prefix}--terminated`;
     case "idle":
     default:
       return `${prefix}--idle`;
@@ -844,7 +840,6 @@ export function AgentsView({ addToast, projectId, onOpenTaskLogs, agentOnboardin
                   <option value="running">Running</option>
                   <option value="paused">Paused</option>
                   <option value="error">Error</option>
-                  <option value="terminated">Terminated</option>
                 </select>
               </div>
 
@@ -1441,16 +1436,6 @@ export function AgentsView({ addToast, projectId, onOpenTaskLogs, agentOnboardin
                         <Play size={14} /> Retry
                       </button>
                     )}
-                    {agent.state === "terminated" && (
-                      <button
-                        className="btn btn-sm"
-                        onClick={() => void handleStateChange(agent.id, "active")}
-                        disabled={transitioningAgentIds.has(agent.id)}
-                        title="Start"
-                      >
-                        <Play size={14} /> Start
-                      </button>
-                    )}
                     <button
                       className="btn btn-sm agent-card-details-btn"
                       onClick={() => openAgentDetail(agent.id)}
@@ -1459,7 +1444,7 @@ export function AgentsView({ addToast, projectId, onOpenTaskLogs, agentOnboardin
                     >
                       Details
                     </button>
-                    {(agent.state === "idle" || agent.state === "terminated" || agent.state === "paused") && (
+                    {(agent.state === "idle" || agent.state === "paused") && (
                       <button
                         className="btn btn-sm btn-danger"
                         onClick={() => void handleDelete(agent.id, agent.name)}

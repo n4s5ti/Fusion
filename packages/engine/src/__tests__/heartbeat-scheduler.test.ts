@@ -747,12 +747,12 @@ describe("HeartbeatTriggerScheduler", () => {
         id: agentId,
         name: `Agent ${agentId}`,
         role: "executor" as const,
-        state: "terminated" as const,
+        state: "paused" as const,
         createdAt: "2026-01-01T00:00:00.000Z",
         updatedAt: "2026-01-01T00:00:00.000Z",
         metadata: {},
       }));
-      eventStore.emit("agent:updated", { id: "agent-001", state: "terminated", metadata: {} } as import("@fusion/core").Agent);
+      eventStore.emit("agent:updated", { id: "agent-001", state: "paused", metadata: {} } as import("@fusion/core").Agent);
 
       // Timer should be cleared for terminated agents
       expect(scheduler.getRegisteredAgents()).not.toContain("agent-001");

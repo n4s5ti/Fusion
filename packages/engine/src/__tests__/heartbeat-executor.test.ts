@@ -291,15 +291,15 @@ describe("executeHeartbeat", () => {
       expect(mockedCreateFnAgent).not.toHaveBeenCalled();
     });
 
-    it("completes with invalid_state when agent state is terminated", async () => {
-      const store = createStoreWithAgentForExec({ state: "terminated" });
+    it("completes with invalid_state when agent state is paused", async () => {
+      const store = createStoreWithAgentForExec({ state: "paused" });
       const monitor = new HeartbeatMonitor({ store, taskStore: mockTaskStore, rootDir: "/tmp" });
 
       const result = await monitor.executeHeartbeat({ agentId: "agent-001", source: "on_demand" });
 
       expect(result).toBeDefined();
       expect(result.status).toBe("completed");
-      expect(result.resultJson).toEqual({ reason: "invalid_state", state: "terminated" });
+      expect(result.resultJson).toEqual({ reason: "invalid_state", state: "paused" });
       expect(mockedCreateFnAgent).not.toHaveBeenCalled();
       expect(store.updateAgentState).not.toHaveBeenCalledWith("agent-001", "active");
     });

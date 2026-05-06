@@ -3201,17 +3201,16 @@ export interface PlanningSession {
 // ── Agent Types ────────────────────────────────────────────────────────────
 
 /** Agent lifecycle states */
-export const AGENT_STATES = ["idle", "active", "running", "paused", "error", "terminated"] as const;
+export const AGENT_STATES = ["idle", "active", "running", "paused", "error"] as const;
 export type AgentState = (typeof AGENT_STATES)[number];
 
 /** Valid state transitions for agents */
 export const AGENT_VALID_TRANSITIONS: Record<AgentState, AgentState[]> = {
   idle: ["active"],
-  active: ["running", "paused", "terminated"],
-  running: ["active", "paused", "error", "terminated"],
-  paused: ["active", "terminated"],
-  error: ["active", "terminated"],
-  terminated: ["idle", "active", "running"], // Can be restarted or reset
+  active: ["idle", "running", "paused", "error"],
+  running: ["idle", "active", "paused", "error"],
+  paused: ["idle", "active"],
+  error: ["idle", "active"],
 };
 
 /**

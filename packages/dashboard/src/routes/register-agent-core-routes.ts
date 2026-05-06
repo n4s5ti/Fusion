@@ -63,7 +63,7 @@ export function registerAgentCoreListCreateRoutes(ctx: ApiRoutesContext, deps: A
       const agentStore = new AgentStore({ rootDir: scopedStore.getFusionDir() });
       await agentStore.init();
 
-      const agents = await agentStore.listAgents(filter as { state?: "idle" | "active" | "paused" | "terminated"; role?: AgentCapability; includeEphemeral?: boolean });
+      const agents = await agentStore.listAgents(filter as { state?: "idle" | "active" | "running" | "paused" | "error"; role?: AgentCapability; includeEphemeral?: boolean });
       const sanitizedAgents = await sanitizeAgentTaskLinks(agents, scopedStore);
       res.json(sanitizedAgents);
     } catch (err: unknown) {
