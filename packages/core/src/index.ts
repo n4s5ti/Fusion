@@ -708,6 +708,8 @@ export type { ResolvedResearchSettings } from "./research-settings.js";
 export { TodoStore } from "./todo-store.js";
 export type { TodoStoreEvents } from "./todo-store.js";
 export { EvalLifecycleError, EvalStore } from "./eval-store.js";
+export { collectDeterministicSignals } from "./eval-signal-collector.js";
+export type { EvalRunContext } from "./eval-signal-collector.js";
 export type {
   EvalRun,
   EvalRunStatus,
@@ -729,8 +731,30 @@ export type {
   EvalFollowUpSuggestion,
   EvalProvenance,
   EvalStoreEvents,
+  DeterministicSignals,
+  EvaluationEvidenceRef,
+  FollowUpDraft,
+  TaskEvaluation,
 } from "./eval-types.js";
 export { EVAL_RUN_STATUSES, EVAL_RUN_TRIGGERS, EVAL_SCORE_CATEGORIES } from "./eval-types.js";
+export {
+  TASK_EVALUATION_SCHEDULE_NAME,
+  DEFAULT_TASK_EVALUATION_SCHEDULE,
+  TASK_EVALUATION_SCHEDULE_COMMAND,
+  resolveTaskEvaluationSettings,
+  createScheduledEvalBatchAutomation,
+  syncScheduledEvalBatchAutomation,
+  runScheduledEvalBatch,
+} from "./eval-automation.js";
+export type {
+  ResolvedTaskEvaluationSettings,
+  EvalBatchWindow,
+  CompletedTaskEvaluationContext,
+  CompletedTaskEvaluator,
+  EvalBatchTaskStore,
+  RunScheduledEvalBatchParams,
+  ScheduledEvalBatchResult,
+} from "./eval-automation.js";
 
 // ── Agent Companies Types ──────────────────────────────────
 

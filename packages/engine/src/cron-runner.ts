@@ -2,6 +2,8 @@ import { exec } from "node:child_process";
 
 import {
   resolveProjectDefaultModel,
+  runScheduledEvalBatch,
+  resolveTaskEvaluationSettings,
   type TaskStore,
   type AutomationStore,
   type ScheduledTask,
@@ -10,10 +12,12 @@ import {
   type AutomationStepResult,
   type Column,
   type TaskCreateInput,
+  type TaskDetail,
 } from "@fusion/core";
 import { createLogger } from "./logger.js";
 import { defaultShell } from "./shell-utils.js";
 import { createFnAgent, promptWithFallback } from "./pi.js";
+import { HybridEvaluatorService } from "./evaluator.js";
 
 const log = createLogger("cron-runner");
 
@@ -128,6 +132,18 @@ export function isInProcessBackupCommand(command: string | undefined): boolean {
   return true;
 }
 
+export function isInProcessScheduledEvalCommand(command: string | undefined): boolean {
+  if (!command) return false;
+  const trimmed = command.trim();
+  if (!trimmed || SHELL_METACHARACTERS_REGEX.test(trimmed)) return false;
+  const tokens = trimmed.split(/\s+/).map((tok) => tok.toLowerCase());
+  return tokens.length >= 3
+    && FUSION_BINARY_TOKENS.has(tokens[0] ?? "")
+    && tokens[1] === "eval"
+    && tokens[2] === "--scheduled-batch"
+    && tokens.slice(3).every((tok) => tok.startsWith("-"));
+}
+
 /** Default execution timeout: 5 minutes. */
 const DEFAULT_TIMEOUT_MS = 5 * 60 * 1000;
 /** Maximum output buffer: 1 MB. */
@@ -150,6 +166,10 @@ export type AiPromptExecutor = (
 ) => Promise<string>;
 
 export interface CronRunnerOptions {
+  /** Project working directory used for in-process evaluator sessions */
+  workingDirectory?: string;
+  /** Project id for scheduled eval batch persistence */
+  projectId?: string;
   /** Polling interval in milliseconds. Default: 60000 (60s). Minimum: 10000 (10s). */
   pollIntervalMs?: number;
   /** Optional AI prompt executor. When not provided, ai-prompt steps return a configuration error. */
@@ -391,6 +411,10 @@ export class CronRunner {
       return this.executeBackupInProcess(schedule, startedAt);
     }
 
+    if (isInProcessScheduledEvalCommand(schedule.command)) {
+      return this.executeScheduledEvalInProcess(schedule, startedAt);
+    }
+
     try {
       const timeoutMs = schedule.timeoutMs ?? DEFAULT_TIMEOUT_MS;
       const { stdout, stderr } = await execCommand(schedule.command, {
@@ -458,6 +482,39 @@ export class CronRunner {
    * and the command-step path. Returns the success/output/error tuple in
    * a shape that callers can wrap into either a run or a step result.
    */
+  private async executeScheduledEvalInProcess(
+    schedule: ScheduledTask,
+    startedAt: string,
+  ): Promise<AutomationRunResult> {
+    const settings = await this.store.getSettings();
+    const evalSettings = resolveTaskEvaluationSettings(settings);
+    const evaluator = new HybridEvaluatorService({ cwd: this.options.workingDirectory ?? process.cwd() });
+
+    const result = await runScheduledEvalBatch({
+      store: this.store,
+      projectId: this.options.projectId ?? "default-project",
+      startedAt,
+      evaluator: async ({ task, run }) => {
+        const taskDetail = await this.store.getTask(task.id);
+        if (!taskDetail) {
+          throw new Error(`Task not found for evaluation: ${task.id}`);
+        }
+        return evaluator.evaluateTask(taskDetail as TaskDetail, { runId: run.id, startedAt: run.startedAt ?? startedAt }, settings, {
+          provider: evalSettings.taskEvaluationProvider,
+          modelId: evalSettings.taskEvaluationModelId,
+        });
+      },
+    });
+
+    return {
+      success: result.status === "completed",
+      output: JSON.stringify(result),
+      error: result.status === "failed" ? "Scheduled eval batch failed" : undefined,
+      startedAt,
+      completedAt: new Date().toISOString(),
+    };
+  }
+
   private async runBackupActionInProcess(): Promise<{
     success: boolean;
     output: string;

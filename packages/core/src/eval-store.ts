@@ -215,6 +215,21 @@ export class EvalStore extends EventEmitter<EvalStoreEvents> {
         categoryScores, rationale, summary, evidence, deterministicSignals, aiSignals,
         followUps, provenance, metadata, createdAt, updatedAt
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(runId, taskId) DO UPDATE SET
+        taskSnapshot = excluded.taskSnapshot,
+        status = excluded.status,
+        overallScore = excluded.overallScore,
+        maxScore = excluded.maxScore,
+        categoryScores = excluded.categoryScores,
+        rationale = excluded.rationale,
+        summary = excluded.summary,
+        evidence = excluded.evidence,
+        deterministicSignals = excluded.deterministicSignals,
+        aiSignals = excluded.aiSignals,
+        followUps = excluded.followUps,
+        provenance = excluded.provenance,
+        metadata = excluded.metadata,
+        updatedAt = excluded.updatedAt
     `).run(
       result.id,
       result.runId,
@@ -236,13 +251,19 @@ export class EvalStore extends EventEmitter<EvalStoreEvents> {
       result.updatedAt,
     );
 
+    const persisted = this.getTaskResultByRunTask(runId, input.taskId) ?? result;
     this.db.bumpLastModified();
-    this.emit("result:created", result);
-    return result;
+    this.emit("result:created", persisted);
+    return persisted;
   }
 
   getTaskResult(id: string): EvalTaskResult | undefined {
     const row = this.db.prepare("SELECT * FROM eval_task_results WHERE id = ?").get(id) as Record<string, unknown> | undefined;
+    return row ? this.rowToResult(row) : undefined;
+  }
+
+  private getTaskResultByRunTask(runId: string, taskId: string): EvalTaskResult | undefined {
+    const row = this.db.prepare("SELECT * FROM eval_task_results WHERE runId = ? AND taskId = ?").get(runId, taskId) as Record<string, unknown> | undefined;
     return row ? this.rowToResult(row) : undefined;
   }
 

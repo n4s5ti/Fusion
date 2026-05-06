@@ -320,6 +320,8 @@ export class ProjectEngine {
       this.cronRunner = new CronRunner(store, this.automationStore, {
         aiPromptExecutor,
         onScheduleRunProcessed: this.buildInsightRunHandler(cwd),
+        workingDirectory: cwd,
+        projectId: this.config.projectId,
         scope: "project", // Project-scoped execution — global schedules run separately
       });
 
@@ -363,6 +365,19 @@ export class ProjectEngine {
         }
       } else {
         runtimeLog.warn("syncMemoryDreamsAutomation is unavailable; skipping startup sync");
+      }
+
+      // Sync scheduled eval batch automation on startup
+      if (typeof coreAutomationModule.syncScheduledEvalBatchAutomation === "function") {
+        try {
+          await coreAutomationModule.syncScheduledEvalBatchAutomation(this.automationStore, settings);
+        } catch (err) {
+          const { message, detail } = formatErrorDetails(err);
+          startupSyncFailures.push(`scheduled eval: ${message}`);
+          runtimeLog.warn(`Scheduled eval automation startup sync failed:\n${detail}`);
+        }
+      } else {
+        runtimeLog.warn("syncScheduledEvalBatchAutomation is unavailable; skipping startup sync");
       }
 
       this.cronRunner.start();
@@ -2101,6 +2116,40 @@ export class ProjectEngine {
     };
     store.on("settings:updated", onAutoSummarizeSettingsChange);
     this.settingsHandlers.push(onAutoSummarizeSettingsChange);
+
+    // 7. Scheduled eval settings change — sync automation
+    const onScheduledEvalSettingsChange = async ({
+      settings: s,
+      previous: prev,
+    }: {
+      settings: Settings;
+      previous: Settings;
+    }) => {
+      const evalKeys = [
+        "taskEvaluationEnabled",
+        "taskEvaluationSchedule",
+      ] as const;
+
+      const changed = evalKeys.some((key) => (s as any)[key] !== (prev as any)[key]);
+      if (!changed || !this.automationStore) return;
+
+      try {
+        const { syncScheduledEvalBatchAutomation } = await import("@fusion/core");
+        if (typeof syncScheduledEvalBatchAutomation === "function") {
+          await syncScheduledEvalBatchAutomation(this.automationStore, s);
+          runtimeLog.log("Scheduled eval automation synced with settings");
+        }
+      } catch (err) {
+        const { message, detail } = formatErrorDetails(err);
+        this.setAutomationSubsystemHealth(
+          "degraded",
+          `Failed to sync scheduled eval automation: ${message}`,
+        );
+        runtimeLog.warn(`Failed to sync scheduled eval automation:\n${detail}`);
+      }
+    };
+    store.on("settings:updated", onScheduledEvalSettingsChange);
+    this.settingsHandlers.push(onScheduledEvalSettingsChange);
   }
 
   /**

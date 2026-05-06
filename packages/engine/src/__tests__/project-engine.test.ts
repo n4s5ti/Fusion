@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => ({
   syncInsightExtractionAutomation: vi.fn(),
   syncAutoSummarizeAutomation: vi.fn(),
   syncMemoryDreamsAutomation: vi.fn(),
+  syncScheduledEvalBatchAutomation: vi.fn(),
   automationStoreInit: vi.fn(async () => undefined),
   createAiPromptExecutor: vi.fn(async () => vi.fn()),
   cronRunnerStart: vi.fn(),
@@ -39,6 +40,7 @@ vi.mock("@fusion/core", async (importOriginal) => {
     syncInsightExtractionAutomation: mocks.syncInsightExtractionAutomation,
     syncAutoSummarizeAutomation: mocks.syncAutoSummarizeAutomation,
     syncMemoryDreamsAutomation: mocks.syncMemoryDreamsAutomation,
+    syncScheduledEvalBatchAutomation: mocks.syncScheduledEvalBatchAutomation,
   });
 });
 
@@ -340,12 +342,15 @@ describe("ProjectEngine auto-summarize wiring", () => {
     expect(mocks.syncInsightExtractionAutomation).toHaveBeenCalledTimes(1);
     expect(mocks.syncAutoSummarizeAutomation).toHaveBeenCalledTimes(1);
     expect(mocks.syncMemoryDreamsAutomation).toHaveBeenCalledTimes(1);
+    expect(mocks.syncScheduledEvalBatchAutomation).toHaveBeenCalledTimes(1);
 
     const insightSettings = mocks.syncInsightExtractionAutomation.mock.calls[0][1];
     const autoSummarizeSettings = mocks.syncAutoSummarizeAutomation.mock.calls[0][1];
     const memoryDreamsSettings = mocks.syncMemoryDreamsAutomation.mock.calls[0][1];
+    const scheduledEvalSettings = mocks.syncScheduledEvalBatchAutomation.mock.calls[0][1];
     expect(autoSummarizeSettings).toBe(insightSettings);
     expect(memoryDreamsSettings).toBe(insightSettings);
+    expect(scheduledEvalSettings).toBe(insightSettings);
 
     const cronRunnerStartOrder = mocks.cronRunnerStart.mock.invocationCallOrder[0];
     expect(mocks.syncInsightExtractionAutomation.mock.invocationCallOrder[0]).toBeLessThan(
@@ -355,6 +360,9 @@ describe("ProjectEngine auto-summarize wiring", () => {
       cronRunnerStartOrder,
     );
     expect(mocks.syncMemoryDreamsAutomation.mock.invocationCallOrder[0]).toBeLessThan(
+      cronRunnerStartOrder,
+    );
+    expect(mocks.syncScheduledEvalBatchAutomation.mock.invocationCallOrder[0]).toBeLessThan(
       cronRunnerStartOrder,
     );
 

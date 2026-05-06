@@ -194,6 +194,14 @@ Concrete references:
 - Backed by `eval_runs`, `eval_task_results`, and `eval_run_events`.
 - Data model stores structured scoring/evidence/signal payloads plus durable `taskSnapshot` metadata so historical eval results remain readable even if the live task row later changes or is removed.
 - Lifecycle safeguards mirror other core stores: deterministic list ordering, transition guards, terminal immutability for run rows, and active-run conflict protection for scheduled/task-completion triggers.
+- `eval_task_results` enforces one row per `(runId, taskId)` via a unique index; store writes use upsert semantics to keep reruns idempotent.
+
+Hybrid evaluator pipeline (FN-3389):
+- **Batch selection:** `runScheduledEvalBatch` in core computes a deterministic completed-task window (`windowStartExclusive` → `windowEndInclusive`) from the last completed scheduled run.
+- **Deterministic evidence:** `collectDeterministicSignals` (`eval-signal-collector.ts`) normalizes timing/workflow/review/log/commit summaries with stable fallbacks for missing metadata.
+- **AI review:** `HybridEvaluatorService` (`packages/engine/src/evaluator.ts`) builds a strict JSON prompt from task snapshot + deterministic signals, runs a read-only AI session, validates the JSON payload, and merges AI verdict fields into persisted eval output.
+- **Model resolution (temporary):** evaluator model selection first uses an explicit run override pair (`provider` + `modelId` together only), then falls back to the existing validator lane (`resolveValidatorSettingsModel`) until FN-3393 introduces dedicated evaluator settings.
+- **Scheduled execution wiring:** CronRunner intercepts the sentinel command `fn eval --scheduled-batch` and executes in-process, invoking `runScheduledEvalBatch` with `HybridEvaluatorService`; `ProjectEngine` syncs scheduled eval automation on startup and on relevant settings changes.
 
 ### Plugin System
 

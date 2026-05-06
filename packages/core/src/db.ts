@@ -88,7 +88,7 @@ export function probeFts5(db: DatabaseSync): boolean {
 
 // ── Schema Definition ────────────────────────────────────────────────
 
-const SCHEMA_VERSION = 63;
+const SCHEMA_VERSION = 64;
 
 function normalizeTaskComments(
   steeringComments: SteeringComment[] | undefined,
@@ -517,6 +517,7 @@ CREATE TABLE IF NOT EXISTS eval_task_results (
 CREATE INDEX IF NOT EXISTS idxEvalTaskResultsRunIdCreatedAt ON eval_task_results(runId, createdAt);
 CREATE INDEX IF NOT EXISTS idxEvalTaskResultsTaskIdCreatedAt ON eval_task_results(taskId, createdAt);
 CREATE INDEX IF NOT EXISTS idxEvalTaskResultsStatusRunId ON eval_task_results(status, runId);
+CREATE UNIQUE INDEX IF NOT EXISTS idxEvalTaskResultsRunTaskUnique ON eval_task_results(runId, taskId);
 
 CREATE TABLE IF NOT EXISTS eval_run_events (
   id TEXT PRIMARY KEY,
@@ -1123,6 +1124,7 @@ export class Database {
     // Compatibility backfills that must run even when schemaVersion is current.
     this.ensureRoutinesSchemaCompatibility();
     this.ensureInsightRunsSchemaCompatibility();
+    this.ensureEvalTaskResultsSchemaCompatibility();
 
     // Seed config row idempotently with default settings
     const configNow = new Date().toISOString();
@@ -1194,6 +1196,13 @@ export class Database {
     this.addColumnIfMissing("project_insight_runs", "lifecycle", "TEXT");
     this.addColumnIfMissing("project_insight_runs", "cancelledAt", "TEXT");
     this.db.exec(`CREATE INDEX IF NOT EXISTS idxInsightRunsProjectTriggerStatus ON project_insight_runs(projectId, trigger, status)`);
+  }
+
+  private ensureEvalTaskResultsSchemaCompatibility(): void {
+    if (!this.hasTable("eval_task_results")) {
+      return;
+    }
+    this.db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idxEvalTaskResultsRunTaskUnique ON eval_task_results(runId, taskId)");
   }
 
   private migrate(): void {
@@ -2611,6 +2620,7 @@ export class Database {
         this.db.exec(`CREATE INDEX IF NOT EXISTS idxEvalTaskResultsRunIdCreatedAt ON eval_task_results(runId, createdAt)`);
         this.db.exec(`CREATE INDEX IF NOT EXISTS idxEvalTaskResultsTaskIdCreatedAt ON eval_task_results(taskId, createdAt)`);
         this.db.exec(`CREATE INDEX IF NOT EXISTS idxEvalTaskResultsStatusRunId ON eval_task_results(status, runId)`);
+        this.db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idxEvalTaskResultsRunTaskUnique ON eval_task_results(runId, taskId)`);
 
         this.db.exec(`
           CREATE TABLE IF NOT EXISTS eval_run_events (
@@ -2687,6 +2697,12 @@ export class Database {
         this.db.exec(`CREATE INDEX IF NOT EXISTS idxProjectAuthSessionsUserId ON project_auth_sessions(userId)`);
         this.db.exec(`CREATE INDEX IF NOT EXISTS idxProjectAuthSessionsMembershipId ON project_auth_sessions(membershipId)`);
         this.db.exec(`CREATE INDEX IF NOT EXISTS idxProjectAuthSessionsExpiry ON project_auth_sessions(expiresAt)`);
+      });
+    }
+
+    if (version < 64) {
+      this.applyMigration(64, () => {
+        this.db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idxEvalTaskResultsRunTaskUnique ON eval_task_results(runId, taskId)`);
       });
     }
 

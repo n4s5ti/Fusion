@@ -73,6 +73,28 @@ describe("EvalStore", () => {
     expect(updated?.counts.scoredTasks).toBe(1);
   });
 
+  it("deduplicates per runId/taskId via upsert semantics", () => {
+    const run = store.createRun({ projectId: "p1", scope: "window" });
+    const first = store.createTaskResult(run.id, {
+      taskId: "FN-dup",
+      taskSnapshot: { taskId: "FN-dup", title: "A" },
+      status: "scored",
+      overallScore: 0.2,
+    });
+    const second = store.createTaskResult(run.id, {
+      taskId: "FN-dup",
+      taskSnapshot: { taskId: "FN-dup", title: "B" },
+      status: "scored",
+      overallScore: 0.9,
+    });
+
+    const rows = store.listTaskResults({ runId: run.id, taskId: "FN-dup" });
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.overallScore).toBe(0.9);
+    expect(rows[0]?.taskSnapshot.title).toBe("B");
+    expect(second.id).toBe(first.id);
+  });
+
   it("appends run events with sequential ordering", () => {
     const run = store.createRun({ projectId: "p1", scope: "window" });
     const evt1 = store.appendRunEvent(run.id, { type: "info", message: "started" });

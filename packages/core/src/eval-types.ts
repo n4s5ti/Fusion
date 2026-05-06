@@ -231,6 +231,47 @@ export interface EvalTaskResultListOptions {
   offset?: number;
 }
 
+export interface EvaluationEvidenceRef {
+  kind: "task" | "log" | "workflow" | "commit" | "review" | "timing";
+  label: string;
+  value?: string;
+  source?: string;
+}
+
+export interface DeterministicSignals {
+  taskId: string;
+  column: "done" | "archived";
+  executionStartedAt?: string;
+  executionCompletedAt?: string;
+  timedExecutionMs?: number;
+  reviewStatus?: string;
+  workflowSummary: { total: number; passed: number; failed: number; pending: number };
+  commitSummary: { commitCount: number; branch?: string; mergedAt?: string };
+  logSummary: { errorCount: number; warningCount: number; timingEntries: number };
+  evidence: EvaluationEvidenceRef[];
+}
+
+export interface FollowUpDraft {
+  title: string;
+  description: string;
+  reason: string;
+  evidenceRefs: string[];
+}
+
+export interface TaskEvaluation {
+  id: string;
+  runId: string;
+  taskId: string;
+  deterministicSignals: DeterministicSignals;
+  overallScore: number;
+  categoryScores: Record<string, number>;
+  rationale: string;
+  evidence: EvaluationEvidenceRef[];
+  followUpDrafts: FollowUpDraft[];
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface EvalStoreEvents {
   "run:created": [EvalRun];
   "run:updated": [EvalRun];

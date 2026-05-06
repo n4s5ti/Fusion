@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { CronRunner, createAiPromptExecutor, isInProcessBackupCommand } from "../cron-runner.js";
+import { CronRunner, createAiPromptExecutor, isInProcessBackupCommand, isInProcessScheduledEvalCommand } from "../cron-runner.js";
 import type { AiPromptExecutor } from "../cron-runner.js";
 import type { TaskStore, AutomationStore, ScheduledTask, AutomationRunResult, AutomationStep, Settings } from "@fusion/core";
 import { randomUUID } from "node:crypto";
@@ -1841,5 +1841,18 @@ describe("CronRunner", () => {
         expect(isInProcessBackupCommand(cmd)).toBe(false);
       });
     }
+  });
+
+  describe("isInProcessScheduledEvalCommand", () => {
+    it("matches canonical scheduled eval command", () => {
+      expect(isInProcessScheduledEvalCommand("fn eval --scheduled-batch")).toBe(true);
+      expect(isInProcessScheduledEvalCommand("fusion eval --scheduled-batch --flag")).toBe(true);
+    });
+
+    it("rejects non-canonical and shell-metachar commands", () => {
+      expect(isInProcessScheduledEvalCommand("fn eval")).toBe(false);
+      expect(isInProcessScheduledEvalCommand("fn eval --scheduled-batch && echo x")).toBe(false);
+      expect(isInProcessScheduledEvalCommand("echo fn eval --scheduled-batch")).toBe(false);
+    });
   });
 });
