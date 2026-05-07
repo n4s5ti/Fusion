@@ -52,6 +52,7 @@ vi.mock("lucide-react", () => ({
   ChevronDown: () => null,
   ChevronRight: (props: any) => React.createElement("svg", { "data-testid": "chevron-right-icon", ...props }),
   ArrowLeft: () => null,
+  Zap: () => null,
   X: () => null,
   Maximize2: () => null,
   Minimize2: () => null,

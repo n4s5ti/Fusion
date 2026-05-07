@@ -306,6 +306,44 @@ describe("TaskDetailModal", () => {
     expect(screen.getByText("Comments")).toBeTruthy();
   });
 
+  describe("inline execution mode toggle", () => {
+    it("renders standard mode as an unpressed toggle", () => {
+      render(
+        <TaskDetailModal
+          task={makeTask({ column: "triage", executionMode: "standard" })}
+          onClose={noop}
+          onMoveTask={noopMove}
+          onDeleteTask={noopDelete}
+          onMergeTask={noopMerge}
+          onOpenDetail={noopOpenDetail}
+          addToast={noop}
+        />,
+      );
+
+      const toggle = screen.getByRole("button", { name: "Execution mode: standard" });
+      expect(toggle).toHaveAttribute("aria-pressed", "false");
+      expect(toggle).toHaveTextContent("Standard");
+    });
+
+    it("renders fast mode as a pressed toggle", () => {
+      render(
+        <TaskDetailModal
+          task={makeTask({ column: "todo", executionMode: "fast" })}
+          onClose={noop}
+          onMoveTask={noopMove}
+          onDeleteTask={noopDelete}
+          onMergeTask={noopMerge}
+          onOpenDetail={noopOpenDetail}
+          addToast={noop}
+        />,
+      );
+
+      const toggle = screen.getByRole("button", { name: "Execution mode: fast" });
+      expect(toggle).toHaveAttribute("aria-pressed", "true");
+      expect(toggle).toHaveTextContent("Fast");
+    });
+  });
+
   it("appends daemon token query to attachment href/src URLs for direct browser loads", () => {
     localStorage.setItem("fn.authToken", "daemon-token");
 
@@ -1207,7 +1245,7 @@ describe("TaskDetailModal", () => {
       expect(screen.getByText("Execution Timing")).toBeInTheDocument();
       expect(screen.getByText("Execution Details")).toBeInTheDocument();
       expect(screen.getByText("Loading token statistics…")).toBeDefined();
-      expect(screen.getByText("Fast")).toBeInTheDocument();
+      expect(screen.getAllByText("Fast").length).toBeGreaterThan(0);
       expect(screen.getByText("executing")).toBeInTheDocument();
     });
 
@@ -1295,7 +1333,7 @@ describe("TaskDetailModal", () => {
       expect(screen.getByText("Workflow runtime")).toBeInTheDocument();
       expect(screen.getByText("Execution mode")).toBeInTheDocument();
       expect(screen.getByText("Runtime status")).toBeInTheDocument();
-      expect(screen.getByText("Fast")).toBeInTheDocument();
+      expect(screen.getAllByText("Fast").length).toBeGreaterThan(0);
       expect(screen.getByText("executing")).toBeInTheDocument();
       expect(screen.getByText((1200).toLocaleString())).toBeInTheDocument();
       expect(screen.getByText((450).toLocaleString())).toBeInTheDocument();

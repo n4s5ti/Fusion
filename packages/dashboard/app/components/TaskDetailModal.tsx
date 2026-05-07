@@ -1,6 +1,6 @@
 import "./TaskDetailModal.css";
 import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Pencil, Bot, X, ChevronDown, ChevronRight, GitBranch, ArrowLeft } from "lucide-react";
+import { Pencil, Bot, X, ChevronDown, ChevronRight, GitBranch, ArrowLeft, Zap } from "lucide-react";
 import { useModalResizePersist } from "../hooks/useModalResizePersist";
 import { useMobileScrollLock } from "../hooks/useMobileScrollLock";
 import { useOverlayDismiss } from "../hooks/useOverlayDismiss";
@@ -538,6 +538,8 @@ export function TaskDetailContent({
   const [isSaving, setIsSaving] = useState(false);
   const [inlinePriority, setInlinePriority] = useState<TaskPriority>(normalizeTaskPriorityValue(task.priority));
   const [isSavingInlinePriority, setIsSavingInlinePriority] = useState(false);
+  const [inlineExecutionMode, setInlineExecutionMode] = useState<"standard" | "fast">(normalizeExecutionModeValue(task.executionMode));
+  const [isSavingInlineExecutionMode, setIsSavingInlineExecutionMode] = useState(false);
   const mountedRef = useRef(false);
 
   // Split-menu dropdown state for footer actions
@@ -599,6 +601,10 @@ export function TaskDetailContent({
   useEffect(() => {
     setInlinePriority(normalizeTaskPriorityValue(task.priority));
   }, [task.id, task.priority]);
+
+  useEffect(() => {
+    setInlineExecutionMode(normalizeExecutionModeValue(task.executionMode));
+  }, [task.id, task.executionMode]);
 
   // Load merged settings for effective model resolution
   useEffect(() => {
@@ -1018,6 +1024,30 @@ export function TaskDetailContent({
       }
     }
   }, [task.id, task.priority, projectId, inlinePriority, onTaskUpdated, addToast]);
+
+  const handleInlineExecutionModeToggle = useCallback(async () => {
+    const currentMode = normalizeExecutionModeValue(task.executionMode);
+    const nextMode = currentMode === "fast" ? "standard" : "fast";
+    const previousMode = inlineExecutionMode;
+
+    setInlineExecutionMode(nextMode);
+    setIsSavingInlineExecutionMode(true);
+
+    try {
+      const updatedTask = await updateTask(task.id, { executionMode: nextMode === "fast" ? "fast" : null }, projectId);
+      const normalizedUpdatedMode = normalizeExecutionModeValue(updatedTask.executionMode);
+      setInlineExecutionMode(normalizedUpdatedMode);
+      onTaskUpdated?.(updatedTask);
+      addToast(`Execution mode updated to ${normalizedUpdatedMode}`, "success");
+    } catch (err) {
+      setInlineExecutionMode(previousMode);
+      addToast(`Failed to update ${task.id}: ${getErrorMessage(err)}`, "error");
+    } finally {
+      if (mountedRef.current) {
+        setIsSavingInlineExecutionMode(false);
+      }
+    }
+  }, [task.id, task.executionMode, projectId, inlineExecutionMode, onTaskUpdated, addToast]);
 
   // Handle keyboard shortcuts for edit mode
   const handleEditKeyDown = useCallback((e: KeyboardEvent) => {
@@ -1851,6 +1881,19 @@ export function TaskDetailContent({
                     ))}
                   </select>
                 </label>
+                <button
+                  type="button"
+                  className={`btn btn-sm detail-execution-mode-toggle ${inlineExecutionMode === "fast" ? "detail-execution-mode-toggle--fast" : ""} ${isSavingInlineExecutionMode ? "detail-execution-mode-toggle--saving" : ""}`}
+                  onClick={() => {
+                    void handleInlineExecutionModeToggle();
+                  }}
+                  disabled={isSavingInlineExecutionMode}
+                  aria-label={`Execution mode: ${inlineExecutionMode}`}
+                  aria-pressed={inlineExecutionMode === "fast"}
+                >
+                  <Zap aria-hidden="true" />
+                  <span>{inlineExecutionMode === "fast" ? "Fast" : "Standard"}</span>
+                </button>
                 {provenanceDisplay && (
                   <div className="detail-provenance">
                     <GitBranch aria-hidden="true" />

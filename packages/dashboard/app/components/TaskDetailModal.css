@@ -202,6 +202,31 @@
   text-transform: uppercase;
 }
 
+.detail-execution-mode-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-xs);
+  margin-left: var(--space-xs);
+  min-height: calc(var(--space-2xl) + var(--space-xs));
+}
+
+.detail-execution-mode-toggle svg {
+  width: 1em;
+  height: 1em;
+}
+
+.detail-execution-mode-toggle--fast {
+  color: var(--color-warning);
+}
+
+.detail-execution-mode-toggle--saving {
+  opacity: 0.75;
+}
+
+.detail-execution-mode-toggle:disabled {
+  cursor: wait;
+}
+
 
 /* Error alert in task detail modal */
 .detail-error-alert {
@@ -1440,6 +1465,11 @@
 
   .detail-priority-select {
     min-height: var(--detail-priority-control-min-height);
+  }
+
+  .detail-execution-mode-toggle {
+    margin-left: 0;
+    margin-top: var(--space-xs);
   }
 
   .detail-source-header {

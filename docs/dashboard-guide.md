@@ -308,6 +308,7 @@ For related global/project configuration behavior, see [Settings reference](./se
 Inspect task definition, logs, comments, documents, workflow outcomes, model overrides, and task routing from a single modal.
 
 - The priority chip in task metadata is now an inline picker: you can change priority directly from the chip without entering full edit mode.
+- Execution mode now also has a read-mode inline control: a lightning-bolt toggle lets you switch Fast mode on/off from task metadata without opening the full edit form.
 
 ### Logs → Agent Log view
 
