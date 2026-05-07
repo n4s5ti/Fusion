@@ -17,6 +17,7 @@ import type {
   PluginUiSlotDefinition,
   PluginUiContributionDefinition,
   PluginRuntimeRegistration,
+  CliProviderContribution,
   PluginContext,
   PluginSkillContribution,
   PluginWorkflowStepContribution,
@@ -83,6 +84,11 @@ interface CachedRuntimes {
   version: number;
 }
 
+interface CachedCliProviderContributions {
+  contributions: Array<{ pluginId: string; contribution: CliProviderContribution }>;
+  version: number;
+}
+
 interface CachedSkills {
   skills: Array<{ pluginId: string; skill: PluginSkillContribution }>;
   version: number;
@@ -121,6 +127,7 @@ export class PluginRunner {
   private cachedUiSlots: CachedUiSlots | null = null;
   private cachedUiContributions: CachedUiContributions | null = null;
   private cachedRuntimes: CachedRuntimes | null = null;
+  private cachedCliProviderContributions: CachedCliProviderContributions | null = null;
   private cachedSkills: CachedSkills | null = null;
   private cachedWorkflowSteps: CachedWorkflowSteps | null = null;
   private cachedWorkflowStepTemplates: CachedWorkflowStepTemplates | null = null;
@@ -131,6 +138,7 @@ export class PluginRunner {
   private uiSlotsCacheVersion = 0;
   private uiContributionsCacheVersion = 0;
   private runtimesCacheVersion = 0;
+  private cliProviderContributionsCacheVersion = 0;
   private skillsCacheVersion = 0;
   private workflowStepsCacheVersion = 0;
   private workflowStepTemplatesCacheVersion = 0;
@@ -207,6 +215,7 @@ export class PluginRunner {
     this.invalidateUiSlotsCache();
     this.invalidateUiContributionsCache();
     this.invalidateRuntimesCache();
+    this.invalidateCliProviderContributionsCache();
     this.invalidateSkillsCache();
     this.invalidateWorkflowStepsCache();
     this.invalidateWorkflowStepTemplatesCache();
@@ -316,6 +325,16 @@ export class PluginRunner {
       };
     }
     return this.cachedRuntimes.runtimes;
+  }
+
+  getCliProviderContributions(): Array<{ pluginId: string; contribution: CliProviderContribution }> {
+    if (!this.cachedCliProviderContributions || this.cachedCliProviderContributions.version !== this.cliProviderContributionsCacheVersion) {
+      this.cachedCliProviderContributions = {
+        contributions: this.options.pluginLoader.getCliProviderContributions(),
+        version: this.cliProviderContributionsCacheVersion,
+      };
+    }
+    return this.cachedCliProviderContributions.contributions;
   }
 
   getPluginSkills(): Array<{ pluginId: string; skill: PluginSkillContribution }> {
@@ -475,6 +494,7 @@ export class PluginRunner {
     this.invalidateUiSlotsCache();
     this.invalidateUiContributionsCache();
     this.invalidateRuntimesCache();
+    this.invalidateCliProviderContributionsCache();
     this.invalidateSkillsCache();
     this.invalidateWorkflowStepsCache();
     this.invalidateWorkflowStepTemplatesCache();
@@ -495,6 +515,7 @@ export class PluginRunner {
     this.invalidateUiSlotsCache();
     this.invalidateUiContributionsCache();
     this.invalidateRuntimesCache();
+    this.invalidateCliProviderContributionsCache();
     this.invalidateSkillsCache();
     this.invalidateWorkflowStepsCache();
     this.invalidateWorkflowStepTemplatesCache();
@@ -520,6 +541,7 @@ export class PluginRunner {
     this.invalidateUiSlotsCache();
     this.invalidateUiContributionsCache();
     this.invalidateRuntimesCache();
+    this.invalidateCliProviderContributionsCache();
     this.invalidateSkillsCache();
     this.invalidateWorkflowStepsCache();
     this.invalidateWorkflowStepTemplatesCache();
@@ -545,6 +567,7 @@ export class PluginRunner {
     this.invalidateUiSlotsCache();
     this.invalidateUiContributionsCache();
     this.invalidateRuntimesCache();
+    this.invalidateCliProviderContributionsCache();
     this.invalidateSkillsCache();
     this.invalidateWorkflowStepsCache();
     this.invalidateWorkflowStepTemplatesCache();
@@ -569,6 +592,7 @@ export class PluginRunner {
     this.invalidateUiSlotsCache();
     this.invalidateUiContributionsCache();
     this.invalidateRuntimesCache();
+    this.invalidateCliProviderContributionsCache();
     this.invalidateSkillsCache();
     this.invalidateWorkflowStepsCache();
     this.invalidateWorkflowStepTemplatesCache();
@@ -585,6 +609,7 @@ export class PluginRunner {
     this.invalidateUiSlotsCache();
     this.invalidateUiContributionsCache();
     this.invalidateRuntimesCache();
+    this.invalidateCliProviderContributionsCache();
     this.invalidateSkillsCache();
     this.invalidateWorkflowStepsCache();
     this.invalidateWorkflowStepTemplatesCache();
@@ -601,6 +626,7 @@ export class PluginRunner {
     this.invalidateUiSlotsCache();
     this.invalidateUiContributionsCache();
     this.invalidateRuntimesCache();
+    this.invalidateCliProviderContributionsCache();
     this.invalidateSkillsCache();
     this.invalidateWorkflowStepsCache();
     this.invalidateWorkflowStepTemplatesCache();
@@ -617,6 +643,7 @@ export class PluginRunner {
     this.invalidateUiSlotsCache();
     this.invalidateUiContributionsCache();
     this.invalidateRuntimesCache();
+    this.invalidateCliProviderContributionsCache();
     this.invalidateSkillsCache();
     this.invalidateWorkflowStepsCache();
     this.invalidateWorkflowStepTemplatesCache();
@@ -633,6 +660,7 @@ export class PluginRunner {
     this.invalidateUiSlotsCache();
     this.invalidateUiContributionsCache();
     this.invalidateRuntimesCache();
+    this.invalidateCliProviderContributionsCache();
     this.invalidateSkillsCache();
     this.invalidateWorkflowStepsCache();
     this.invalidateWorkflowStepTemplatesCache();
@@ -846,6 +874,11 @@ export class PluginRunner {
   private invalidateRuntimesCache(): void {
     this.runtimesCacheVersion++;
     this.log.log(`Runtimes cache invalidated (version: ${this.runtimesCacheVersion})`);
+  }
+
+  private invalidateCliProviderContributionsCache(): void {
+    this.cliProviderContributionsCacheVersion++;
+    this.log.log(`CLI provider contributions cache invalidated (version: ${this.cliProviderContributionsCacheVersion})`);
   }
 
   private invalidateSkillsCache(): void {

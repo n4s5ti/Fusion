@@ -24,6 +24,7 @@ vi.mock("@fusion/core", () => ({
 // Import SUT after mocks are in place
 import {
   ensureBundledDependencyGraphPluginInstalled,
+  ensureBundledCursorRuntimePluginInstalled,
   ensureBundledPluginInstalled,
   resolvePluginEntryPath,
 } from "../bundled-plugin-install.js";
@@ -32,6 +33,7 @@ import {
 
 const BUNDLED_PLUGIN_ID = "fusion-plugin-dependency-graph";
 const HERMES_PLUGIN_ID = "fusion-plugin-hermes-runtime";
+const CURSOR_PLUGIN_ID = "fusion-plugin-cursor-runtime";
 
 function makeManifest(overrides?: Partial<{ id: string; version: string; name: string }>) {
   return {
@@ -354,6 +356,30 @@ describe("ensureBundledDependencyGraphPluginInstalled", () => {
         loader as unknown as import("@fusion/core").PluginLoader,
       ),
     ).rejects.toThrow("Invalid plugin manifest");
+  });
+
+  it("registers Cursor runtime through the dedicated helper", async () => {
+    const manifest = makeManifest({ id: CURSOR_PLUGIN_ID, name: "Cursor Runtime" });
+    mockExistsSync.mockImplementation((p: string) => {
+      if (p.endsWith("manifest.json") && p.includes(CURSOR_PLUGIN_ID)) return true;
+      if (p.endsWith("/src/index.ts") && p.includes(CURSOR_PLUGIN_ID)) return true;
+      return false;
+    });
+    mockReadFile.mockResolvedValue(JSON.stringify(manifest));
+    mockValidatePluginManifest.mockReturnValue({ valid: true, errors: [] });
+
+    const store = makePluginStore();
+    const loader = makePluginLoader();
+
+    const result = await ensureBundledCursorRuntimePluginInstalled(
+      store as unknown as import("@fusion/core").PluginStore,
+      loader as unknown as import("@fusion/core").PluginLoader,
+    );
+
+    expect(result).toBe("installed");
+    expect(store.registerPlugin).toHaveBeenCalledWith(
+      expect.objectContaining({ manifest: expect.objectContaining({ id: CURSOR_PLUGIN_ID }) }),
+    );
   });
 
   it("registers Hermes from source entry when both src and dist entries exist", async () => {

@@ -36,6 +36,7 @@ describe("PluginRunner", () => {
     getPluginUiSlots: ReturnType<typeof vi.fn>;
     getPluginUiContributions: ReturnType<typeof vi.fn>;
     getPluginRuntimes: ReturnType<typeof vi.fn>;
+    getCliProviderContributions: ReturnType<typeof vi.fn>;
     getPluginSkills: ReturnType<typeof vi.fn>;
     getPluginWorkflowSteps: ReturnType<typeof vi.fn>;
     getPluginWorkflowStepTemplates: ReturnType<typeof vi.fn>;
@@ -100,6 +101,7 @@ describe("PluginRunner", () => {
       getPluginUiSlots: vi.fn().mockReturnValue([]),
       getPluginUiContributions: vi.fn().mockReturnValue([]),
       getPluginRuntimes: vi.fn().mockReturnValue([]),
+      getCliProviderContributions: vi.fn().mockReturnValue([]),
       getPluginSkills: vi.fn().mockReturnValue([]),
       getPluginWorkflowSteps: vi.fn().mockReturnValue([]),
       getPluginWorkflowStepTemplates: vi.fn().mockReturnValue([]),
@@ -832,6 +834,28 @@ describe("PluginRunner", () => {
   });
 
   describe("new plugin contribution accessors", () => {
+    it("getCliProviderContributions returns cached CLI-provider contributions", async () => {
+      const contributions = [
+        {
+          pluginId: "cursor-plugin",
+          contribution: {
+            providerId: "cursor-cli",
+            displayName: "Cursor CLI",
+            binaryName: "cursor-agent",
+            providerType: "cli",
+            statusRoute: "/providers/cursor-cli/status",
+            authRoute: "/auth/cursor-cli",
+          },
+        },
+      ];
+      mockPluginLoader.getCliProviderContributions.mockReturnValue(contributions);
+      await pluginRunner.init();
+      const first = pluginRunner.getCliProviderContributions();
+      const second = pluginRunner.getCliProviderContributions();
+      expect(first).toEqual(contributions);
+      expect(second).toBe(first);
+    });
+
     it("getPluginSkills returns empty array initially", async () => {
       await pluginRunner.init();
       expect(pluginRunner.getPluginSkills()).toEqual([]);
@@ -887,6 +911,7 @@ describe("PluginRunner", () => {
 
     it("invalidates new contribution caches on state change and loader events", async () => {
       await pluginRunner.init();
+      pluginRunner.getCliProviderContributions();
       pluginRunner.getPluginSkills();
       pluginRunner.getPluginWorkflowSteps();
       pluginRunner.getPluginWorkflowStepTemplates();
@@ -895,6 +920,7 @@ describe("PluginRunner", () => {
 
       const stateChanged = mockPluginStore.on.mock.calls.find((call) => call[0] === "plugin:stateChanged")?.[1];
       stateChanged?.();
+      pluginRunner.getCliProviderContributions();
       pluginRunner.getPluginSkills();
       pluginRunner.getPluginWorkflowSteps();
       pluginRunner.getPluginWorkflowStepTemplates();
@@ -903,12 +929,14 @@ describe("PluginRunner", () => {
 
       const loaded = mockPluginLoader.on.mock.calls.find((call) => call[0] === "plugin:loaded")?.[1];
       loaded?.({ pluginId: "test-plugin" });
+      pluginRunner.getCliProviderContributions();
       pluginRunner.getPluginSkills();
       pluginRunner.getPluginWorkflowSteps();
       pluginRunner.getPluginWorkflowStepTemplates();
       pluginRunner.getPluginPromptContributions();
       pluginRunner.getPluginSetupInfo();
 
+      expect(mockPluginLoader.getCliProviderContributions).toHaveBeenCalledTimes(3);
       expect(mockPluginLoader.getPluginSkills).toHaveBeenCalledTimes(3);
       expect(mockPluginLoader.getPluginWorkflowSteps).toHaveBeenCalledTimes(3);
       expect(mockPluginLoader.getPluginWorkflowStepTemplates).toHaveBeenCalledTimes(3);

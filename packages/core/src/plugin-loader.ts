@@ -27,6 +27,7 @@ import type {
   PluginDashboardViewDefinition,
   PluginOnSchemaInit,
   PluginRuntimeRegistration,
+  CliProviderContribution,
   PluginInstallation,
   PluginSkillContribution,
   PluginWorkflowStepContribution,
@@ -966,6 +967,20 @@ export class PluginLoader extends EventEmitter<{
       }
     }
     return runtimes;
+  }
+
+  /**
+   * Get all CLI-backed provider contributions from loaded plugins.
+   */
+  getCliProviderContributions(): Array<{ pluginId: string; contribution: CliProviderContribution }> {
+    const contributions: Array<{ pluginId: string; contribution: CliProviderContribution }> = [];
+    for (const [pluginId, plugin] of this.plugins) {
+      if (!plugin.cliProviders) continue;
+      for (const contribution of plugin.cliProviders) {
+        contributions.push({ pluginId, contribution });
+      }
+    }
+    return contributions;
   }
 
   /**

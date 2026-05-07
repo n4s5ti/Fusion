@@ -32,6 +32,7 @@ import * as usageModule from "../usage.js";
 import * as claudeCliProbeModule from "../claude-cli-probe.js";
 import * as droidCliProbeModule from "../droid-cli-probe.js";
 import * as llamaCppProbeModule from "../llama-cpp-probe.js";
+import * as runtimeProviderProbesModule from "../runtime-provider-probes.js";
 import * as projectStoreResolver from "../project-store-resolver.js";
 import * as terminalServiceModule from "../terminal-service.js";
 import { get as performGet, request as performRequest } from "../test-request.js";
@@ -563,7 +564,7 @@ describe("GET /auth/status", () => {
     expect(res.status).toBe(200);
     // Filter out synthetic CLI providers — they have dedicated route tests.
     // Structural assertions here are about OAuth + API-key paths only.
-    const providers = res.body.providers.filter((p: any) => p.id !== "claude-cli" && p.id !== "droid-cli" && p.id !== "llama-cpp");
+    const providers = res.body.providers.filter((p: any) => p.id !== "claude-cli" && p.id !== "droid-cli" && p.id !== "cursor-cli" && p.id !== "llama-cpp");
     expect(providers).toEqual([
       { id: "github-copilot", name: "GitHub Copilot", authenticated: true, type: "oauth", loginInProgress: false },
       { id: "openrouter", name: "OpenRouter", authenticated: false, type: "api_key" },
@@ -607,7 +608,7 @@ describe("GET /auth/status", () => {
     const res = await GET(buildApp(), "/api/auth/status");
 
     expect(res.status).toBe(200);
-    const providers = res.body.providers.filter((p: any) => p.id !== "claude-cli" && p.id !== "droid-cli" && p.id !== "llama-cpp");
+    const providers = res.body.providers.filter((p: any) => p.id !== "claude-cli" && p.id !== "droid-cli" && p.id !== "cursor-cli" && p.id !== "llama-cpp");
     expect(providers).toEqual([
       { id: "github-copilot", name: "GitHub Copilot", authenticated: true, type: "oauth", loginInProgress: false },
       { id: "openai-codex", name: "OpenAI Codex", authenticated: false, type: "oauth", loginInProgress: false },
@@ -1023,6 +1024,85 @@ describe("Droid CLI auth routes", () => {
         }),
       ]),
     );
+  });
+
+  it("POST /auth/cursor-cli enables when cursor binary is available", async () => {
+    vi.spyOn(runtimeProviderProbesModule, "probeCursorCliProvider").mockResolvedValue({
+      available: true,
+      version: "cursor-agent 1.0.0",
+      probeDurationMs: 8,
+    });
+    store.updateGlobalSettings = vi.fn().mockResolvedValue({ useCursorCli: true });
+
+    const res = await REQUEST(buildApp(), "POST", "/api/auth/cursor-cli", JSON.stringify({ enabled: true }), {
+      "Content-Type": "application/json",
+    });
+
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ enabled: true, restartRequired: false });
+    expect(store.updateGlobalSettings).toHaveBeenCalledWith({ useCursorCli: true });
+  });
+
+  it("POST /auth/cursor-cli returns 400 when enabling without binary", async () => {
+    vi.spyOn(runtimeProviderProbesModule, "probeCursorCliProvider").mockResolvedValue({
+      available: false,
+      reason: "cursor-agent not found",
+      probeDurationMs: 8,
+    });
+
+    const res = await REQUEST(buildApp(), "POST", "/api/auth/cursor-cli", JSON.stringify({ enabled: true }), {
+      "Content-Type": "application/json",
+    });
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toContain("Cannot enable Cursor CLI routing");
+  });
+
+  it("POST /auth/cursor-cli disables without probing binary", async () => {
+    const probeSpy = vi.spyOn(runtimeProviderProbesModule, "probeCursorCliProvider");
+    store.updateGlobalSettings = vi.fn().mockResolvedValue({ useCursorCli: false });
+
+    const res = await REQUEST(buildApp(), "POST", "/api/auth/cursor-cli", JSON.stringify({ enabled: false }), {
+      "Content-Type": "application/json",
+    });
+
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ enabled: false, restartRequired: false });
+    expect(probeSpy).not.toHaveBeenCalled();
+  });
+
+  it("GET /providers/cursor-cli/status returns readiness from toggle and binary", async () => {
+    vi.spyOn(runtimeProviderProbesModule, "probeCursorCliProvider").mockResolvedValue({
+      available: true,
+      version: "cursor-agent 1.0.0",
+      probeDurationMs: 8,
+    });
+    store.getGlobalSettingsStore = vi.fn().mockReturnValue({
+      ...createMockGlobalSettingsStore(),
+      getSettings: vi.fn().mockResolvedValue({ useCursorCli: true }),
+    });
+
+    const res = await GET(buildApp(), "/api/providers/cursor-cli/status");
+    expect(res.status).toBe(200);
+    expect(res.body.ready).toBe(true);
+    expect(res.body.enabled).toBe(true);
+    expect(res.body.binary.available).toBe(true);
+  });
+
+  it("GET /providers/cursor-cli/status returns ready false when binary unavailable", async () => {
+    vi.spyOn(runtimeProviderProbesModule, "probeCursorCliProvider").mockResolvedValue({
+      available: false,
+      reason: "missing",
+      probeDurationMs: 8,
+    });
+    store.getGlobalSettingsStore = vi.fn().mockReturnValue({
+      ...createMockGlobalSettingsStore(),
+      getSettings: vi.fn().mockResolvedValue({ useCursorCli: true }),
+    });
+
+    const res = await GET(buildApp(), "/api/providers/cursor-cli/status");
+    expect(res.status).toBe(200);
+    expect(res.body.ready).toBe(false);
   });
 
   it("PUT /settings/global with useDroidCli fires onUseDroidCliToggled", async () => {

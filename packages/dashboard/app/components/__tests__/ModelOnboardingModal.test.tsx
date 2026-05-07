@@ -19,6 +19,8 @@ const mockUpdateGlobalSettings = vi.fn();
 const mockCreateTask = vi.fn();
 const mockFetchCustomProviders = vi.fn();
 const mockCreateCustomProvider = vi.fn();
+const mockFetchCursorCliStatus = vi.fn();
+const mockSetCursorCliEnabled = vi.fn();
 
 vi.mock("../../api", () => ({
   fetchAuthStatus: (...args: unknown[]) => mockFetchAuthStatus(...args),
@@ -34,6 +36,8 @@ vi.mock("../../api", () => ({
   createTask: (...args: unknown[]) => mockCreateTask(...args),
   fetchCustomProviders: (...args: unknown[]) => mockFetchCustomProviders(...args),
   createCustomProvider: (...args: unknown[]) => mockCreateCustomProvider(...args),
+  fetchCursorCliStatus: (...args: unknown[]) => mockFetchCursorCliStatus(...args),
+  setCursorCliEnabled: (...args: unknown[]) => mockSetCursorCliEnabled(...args),
 }));
 
 // Mock CustomModelDropdown since it has complex portal behavior
@@ -188,6 +192,13 @@ beforeEach(() => {
   mockSubmitProviderManualCode.mockResolvedValue({ success: true, submitted: true });
   mockSaveApiKey.mockResolvedValue({ success: true });
   mockClearApiKey.mockResolvedValue({ success: true });
+  mockFetchCursorCliStatus.mockResolvedValue({
+    binary: { available: true, version: "0.1.0", binaryPath: "/usr/local/bin/cursor-agent", probeDurationMs: 8 },
+    enabled: false,
+    extension: null,
+    ready: false,
+  });
+  mockSetCursorCliEnabled.mockResolvedValue({ enabled: true, restartRequired: false });
   // Default to no persisted state (start at ai-setup)
   mockGetOnboardingState.mockReturnValue(null);
   mockSaveOnboardingState.mockImplementation(() => {});
@@ -904,6 +915,19 @@ describe("ModelOnboardingModal", () => {
       // Verify the description is inside a provider card
       const description = screen.getByText("GPT models — versatile for a wide range of tasks");
       expect(description.closest(".onboarding-provider-card")).toBeTruthy();
+    });
+
+    it("renders cursor cli provider card when cursor provider is present", async () => {
+      mockFetchAuthStatus.mockResolvedValue({
+        providers: [
+          { id: "cursor-cli", name: "Cursor — via Cursor CLI", authenticated: true, type: "cli" },
+        ],
+      });
+
+      render(<ModelOnboardingModal onComplete={vi.fn()} addToast={vi.fn()} projectId="proj_123" />);
+
+      expect(await screen.findByTestId("cursor-cli-provider-card")).toBeInTheDocument();
+      expect(screen.getByText("Cursor — via Cursor CLI")).toBeInTheDocument();
     });
 
     it("renders stable onboarding-provider-icon wrappers for provider cards", async () => {

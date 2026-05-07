@@ -2,6 +2,7 @@ import type { Request } from "express";
 import { isGhAvailable, isGhAuthenticated } from "@fusion/core";
 import { probeClaudeCli } from "../claude-cli-probe.js";
 import { probeDroidCli } from "../droid-cli-probe.js";
+import { probeCursorCliProvider } from "../runtime-provider-probes.js";
 import { probeLlamaCpp } from "../llama-cpp-probe.js";
 import { ApiError, badRequest, conflict } from "../api-error.js";
 import { clearUsageCache } from "../usage.js";
@@ -310,6 +311,23 @@ export const registerAuthRoutes: ApiRouteRegistrar = (ctx) => {
         });
       }
 
+      if (store) {
+        let cursorEnabled = false;
+        try {
+          const globalSettings = await store.getGlobalSettingsStore().getSettings();
+          cursorEnabled = (globalSettings as Record<string, unknown>).useCursorCli === true;
+        } catch {
+          // best effort
+        }
+        const cursorBinary = await probeCursorCliProvider();
+        providers.push({
+          id: "cursor-cli",
+          name: "Cursor — via Cursor CLI",
+          authenticated: cursorEnabled && cursorBinary.available,
+          type: "cli" as const,
+        });
+      }
+
       // Inject synthetic llama.cpp provider.
       if (store) {
         let llamaEnabled = false;
@@ -560,6 +578,51 @@ export const registerAuthRoutes: ApiRouteRegistrar = (ctx) => {
       if (err instanceof ApiError) {
         throw err;
       }
+      rethrowAsApiError(err);
+    }
+  });
+
+  router.post("/auth/cursor-cli", async (req, res) => {
+    try {
+      if (!store) {
+        throw new ApiError(500, "Settings store unavailable");
+      }
+      const enabled = req.body?.enabled;
+      if (typeof enabled !== "boolean") {
+        throw badRequest("enabled must be a boolean");
+      }
+
+      if (enabled) {
+        const binary = await probeCursorCliProvider();
+        if (!binary.available) {
+          throw new ApiError(400, `Cannot enable Cursor CLI routing: ${binary.reason ?? "cursor binary not available"}`);
+        }
+      }
+
+      const settings = await store.updateGlobalSettings({ useCursorCli: enabled } as Record<string, unknown>);
+      invalidateAllGlobalSettingsCaches();
+      res.json({ enabled: (settings as Record<string, unknown>).useCursorCli === true, restartRequired: false });
+    } catch (err: unknown) {
+      if (err instanceof ApiError) throw err;
+      rethrowAsApiError(err);
+    }
+  });
+
+  router.get("/providers/cursor-cli/status", async (_req, res) => {
+    try {
+      const binary = await probeCursorCliProvider();
+      let enabled = false;
+      if (store) {
+        try {
+          const globalSettings = await store.getGlobalSettingsStore().getSettings();
+          enabled = (globalSettings as Record<string, unknown>).useCursorCli === true;
+        } catch {
+          // best effort
+        }
+      }
+      res.json({ binary, enabled, extension: null, ready: enabled && binary.available });
+    } catch (err: unknown) {
+      if (err instanceof ApiError) throw err;
       rethrowAsApiError(err);
     }
   });

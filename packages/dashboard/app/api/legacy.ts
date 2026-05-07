@@ -1339,6 +1339,19 @@ export interface DroidCliStatus {
   ready: boolean;
 }
 
+export interface CursorCliStatus {
+  binary: {
+    available: boolean;
+    version?: string;
+    binaryPath?: string;
+    reason?: string;
+    probeDurationMs: number;
+  };
+  enabled: boolean;
+  extension: null;
+  ready: boolean;
+}
+
 export interface LlamaCppStatus {
   enabled: boolean;
   extension: {
@@ -1405,6 +1418,10 @@ export function installFnBinary(): Promise<FnBinaryInstallResponse> {
 /** Probe the local Droid CLI binary + setting + extension state. */
 export function fetchDroidCliStatus(): Promise<DroidCliStatus> {
   return api<DroidCliStatus>("/providers/droid-cli/status");
+}
+
+export function fetchCursorCliStatus(): Promise<CursorCliStatus> {
+  return api<CursorCliStatus>("/providers/cursor-cli/status");
 }
 
 /** Probe llama.cpp server + setting + extension state. */
@@ -1666,6 +1683,15 @@ export function setDroidCliEnabled(
   enabled: boolean,
 ): Promise<{ enabled: boolean; restartRequired: boolean }> {
   return api<{ enabled: boolean; restartRequired: boolean }>("/auth/droid-cli", {
+    method: "POST",
+    body: JSON.stringify({ enabled }),
+  });
+}
+
+export function setCursorCliEnabled(
+  enabled: boolean,
+): Promise<{ enabled: boolean; restartRequired: boolean }> {
+  return api<{ enabled: boolean; restartRequired: boolean }>("/auth/cursor-cli", {
     method: "POST",
     body: JSON.stringify({ enabled }),
   });

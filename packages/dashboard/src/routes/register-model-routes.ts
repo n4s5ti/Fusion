@@ -14,6 +14,7 @@ export const registerModelRoutes: ApiRouteRegistrar = (ctx) => {
     let useClaudeCli = false;
     let useDroidCli = false;
     let useLlamaCpp = false;
+    let useCursorCli = false;
     let resolvedPlanningProvider: string | undefined;
     let resolvedPlanningModelId: string | undefined;
     if (store) {
@@ -27,6 +28,7 @@ export const registerModelRoutes: ApiRouteRegistrar = (ctx) => {
         useClaudeCli = globalSettings.useClaudeCli === true;
         useDroidCli = globalSettings.useDroidCli === true;
         useLlamaCpp = globalSettings.useLlamaCpp === true;
+        useCursorCli = (globalSettings as Record<string, unknown>).useCursorCli === true;
 
         const mergedSettings = await store.getSettingsFast();
         const resolvedPlanningModel = resolvePlanningSettingsModel(mergedSettings);
@@ -86,6 +88,9 @@ export const registerModelRoutes: ApiRouteRegistrar = (ctx) => {
       }
       if (!useLlamaCpp) {
         models = models.filter((m) => m.provider !== "llama-server");
+      }
+      if (!useCursorCli) {
+        models = models.filter((m) => m.provider !== "cursor-cli");
       }
 
       res.json({

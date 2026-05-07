@@ -1189,6 +1189,39 @@ describe("plugin ui contribution normalization", () => {
   });
 });
 
+describe("CLI provider contribution types", () => {
+  it("accepts a reusable CLI provider contribution contract", async () => {
+    const plugin: FusionPlugin = {
+      manifest: { id: "cli-provider-plugin", name: "CLI Provider Plugin", version: "1.0.0" },
+      state: "installed",
+      hooks: {},
+      cliProviders: [
+        {
+          providerId: "cursor-cli",
+          displayName: "Cursor CLI",
+          binaryName: "cursor-agent",
+          providerType: "cli",
+          statusRoute: "/providers/cursor-cli/status",
+          authRoute: "/auth/cursor-cli",
+          actions: [
+            { actionId: "enable", label: "Enable", actionType: "enable", route: "/auth/cursor-cli", method: "POST" },
+          ],
+          probe: async () => ({ available: true, authenticated: true, binaryName: "cursor-agent", binaryPath: "/usr/local/bin/cursor-agent" }),
+          discoverModels: async () => ({ models: [{ id: "cursor/default" }], source: "cli", fallbackUsed: false }),
+        },
+      ],
+    };
+
+    const contribution = plugin.cliProviders?.[0];
+    const probe = await contribution?.probe?.({} as any);
+    const discovery = await contribution?.discoverModels?.({} as any);
+
+    expect(contribution?.providerId).toBe("cursor-cli");
+    expect(probe?.available).toBe(true);
+    expect(discovery?.models[0]?.id).toBe("cursor/default");
+  });
+});
+
 describe("plugin contribution types", () => {
   it("accepts a minimal PluginSkillContribution shape", () => {
     const skill: PluginSkillContribution = {

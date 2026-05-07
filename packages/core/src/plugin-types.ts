@@ -436,6 +436,60 @@ export interface PluginRuntimeRegistration {
   factory: PluginRuntimeFactory;
 }
 
+export type CliProviderType = "cli" | "oauth" | "api_key" | "custom";
+
+export interface CliProviderActionMetadata {
+  actionId: string;
+  label: string;
+  actionType: "enable" | "disable" | "test" | "open-url" | "custom";
+  route?: string;
+  method?: "GET" | "POST";
+}
+
+export interface CliProviderProbeResult {
+  available: boolean;
+  authenticated?: boolean;
+  binaryPath?: string;
+  binaryName?: string;
+  version?: string;
+  reason?: string;
+  hostReady?: boolean;
+  pluginReady?: boolean;
+}
+
+export interface CliProviderModelDiscoveryResult {
+  models: Array<{ id: string; label?: string; metadata?: Record<string, unknown> }>;
+  source: string;
+  fallbackUsed: boolean;
+  reason?: string;
+}
+
+export interface CliProviderRuntimeRegistration {
+  runtimeId?: string;
+  createAdapter?: PluginRuntimeFactory;
+}
+
+export interface CliProviderContribution {
+  providerId: string;
+  displayName: string;
+  binaryName: string;
+  providerType: CliProviderType;
+  statusRoute: string;
+  authRoute: string;
+  onboarding?: {
+    title?: string;
+    description?: string;
+  };
+  settings?: {
+    sectionId?: string;
+    pluginSettingKeys?: string[];
+  };
+  actions?: CliProviderActionMetadata[];
+  probe?: (ctx: PluginContext) => Promise<CliProviderProbeResult>;
+  discoverModels?: (ctx: PluginContext) => Promise<CliProviderModelDiscoveryResult>;
+  runtime?: CliProviderRuntimeRegistration;
+}
+
 // ── Plugin Contribution Types ───────────────────────────────────────
 
 /**
@@ -598,6 +652,8 @@ export interface FusionPlugin {
   dashboardViews?: PluginDashboardViewDefinition[];
   /** Agent runtime registration for providing custom runtime implementations */
   runtime?: PluginRuntimeRegistration;
+  /** CLI-backed provider metadata and integration hooks. */
+  cliProviders?: CliProviderContribution[];
   /** Plugin-contributed skills surfaced by the skill resolver. */
   skills?: PluginSkillContribution[];
   /** Plugin-contributed workflow step templates. */

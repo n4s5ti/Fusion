@@ -2004,11 +2004,45 @@ export default plugin;
     it("returns empty arrays when no contribution types are present", async () => {
       await pluginStore.init();
       loader = new PluginLoader({ pluginStore, taskStore: mockTaskStore });
+      expect(loader.getCliProviderContributions()).toEqual([]);
       expect(loader.getPluginSkills()).toEqual([]);
       expect(loader.getPluginWorkflowSteps()).toEqual([]);
       expect(loader.getPluginWorkflowStepTemplates()).toEqual([]);
       expect(loader.getPluginPromptContributions()).toEqual([]);
       expect(loader.getPluginSetupInfo()).toEqual([]);
+    });
+
+    it("getCliProviderContributions returns contributed CLI providers with pluginId", async () => {
+      await pluginStore.init();
+      loader = new PluginLoader({ pluginStore, taskStore: mockTaskStore });
+      (loader as any).plugins.set("cli-provider-plugin", {
+        manifest: makeManifest({ id: "cli-provider-plugin" }),
+        state: "started",
+        hooks: {},
+        cliProviders: [
+          {
+            providerId: "cursor-cli",
+            displayName: "Cursor CLI",
+            binaryName: "cursor-agent",
+            providerType: "cli",
+            statusRoute: "/providers/cursor-cli/status",
+            authRoute: "/auth/cursor-cli",
+          },
+        ],
+      } as FusionPlugin);
+      expect(loader.getCliProviderContributions()).toEqual([
+        {
+          pluginId: "cli-provider-plugin",
+          contribution: {
+            providerId: "cursor-cli",
+            displayName: "Cursor CLI",
+            binaryName: "cursor-agent",
+            providerType: "cli",
+            statusRoute: "/providers/cursor-cli/status",
+            authRoute: "/auth/cursor-cli",
+          },
+        },
+      ]);
     });
 
     it("getPluginSkills returns skills with pluginId", async () => {

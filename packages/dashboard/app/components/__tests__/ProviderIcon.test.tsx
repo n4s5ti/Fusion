@@ -58,6 +58,16 @@ describe("ProviderIcon", () => {
     expect(svg.parentElement).toHaveStyle({ color: "var(--provider-openai)" });
   });
 
+  it("renders cursor-cli icon with provider token color", () => {
+    render(<ProviderIcon provider="cursor-cli" />);
+    const svg = screen.getByTestId("cursor-cli-icon");
+    expect(svg).toBeInTheDocument();
+    expect(screen.getByLabelText("Cursor — via Cursor CLI")).toBeInTheDocument();
+    const badgeGlyph = svg.querySelector('path[stroke="var(--provider-icon-contrast)"]');
+    expect(badgeGlyph).toBeInTheDocument();
+    expect(svg.parentElement).toHaveStyle({ color: "var(--provider-cursor-cli)" });
+  });
+
   it("normalizes PI-Claude-CLI provider name to lowercase alias", () => {
     render(<ProviderIcon provider="PI-Claude-CLI" />);
     const svg = screen.getByTestId("claude-cli-icon");

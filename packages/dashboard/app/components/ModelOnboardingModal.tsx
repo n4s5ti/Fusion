@@ -23,6 +23,7 @@ import { useModalResizePersist } from "../hooks/useModalResizePersist";
 import { CustomModelDropdown } from "./CustomModelDropdown";
 import { ProviderIcon } from "./ProviderIcon";
 import { ClaudeCliProviderCard } from "./ClaudeCliProviderCard";
+import { CursorCliProviderCard } from "./CursorCliProviderCard";
 import { LlamaCppProviderCard } from "./LlamaCppProviderCard";
 import { LoginInstructions } from "./LoginInstructions";
 import { OAuthManualCodeForm } from "./OAuthManualCodeForm";
@@ -199,6 +200,7 @@ const ONBOARDING_CURATED_PROVIDER_FAMILY_ORDER = [
   "anthropic",
   "claude-cli",
   "droid-cli",
+  "cursor-cli",
   "llama-cpp",
   "openai-codex",
   "gemini",
@@ -1774,6 +1776,18 @@ export function ModelOnboardingModal({
     if (provider.id === "claude-cli" && provider.type === "cli") {
       return (
         <ClaudeCliProviderCard
+          key={provider.id}
+          authenticated={provider.authenticated}
+          onToggled={() => {
+            void loadAuthStatus();
+          }}
+        />
+      );
+    }
+
+    if (provider.id === "cursor-cli" && provider.type === "cli") {
+      return (
+        <CursorCliProviderCard
           key={provider.id}
           authenticated={provider.authenticated}
           onToggled={() => {

@@ -54,6 +54,8 @@ const mockTriggerMemoryDreams = vi.fn();
 const mockFetchPluginUiSlots = vi.fn();
 const mockFetchDroidCliStatus = vi.fn();
 const mockSetDroidCliEnabled = vi.fn();
+const mockFetchCursorCliStatus = vi.fn();
+const mockSetCursorCliEnabled = vi.fn();
 const mockUseWorkspaceFileBrowser = vi.fn();
 
 vi.mock("../../api", async (importOriginal) => {
@@ -107,6 +109,8 @@ vi.mock("../../api", async (importOriginal) => {
     fetchPluginUiSlots: (...args: unknown[]) => mockFetchPluginUiSlots(...args),
     fetchDroidCliStatus: (...args: unknown[]) => mockFetchDroidCliStatus(...args),
     setDroidCliEnabled: (...args: unknown[]) => mockSetDroidCliEnabled(...args),
+    fetchCursorCliStatus: (...args: unknown[]) => mockFetchCursorCliStatus(...args),
+    setCursorCliEnabled: (...args: unknown[]) => mockSetCursorCliEnabled(...args),
   });
 });
 
@@ -377,6 +381,13 @@ describe("SettingsModal", () => {
       ready: false,
     });
     mockSetDroidCliEnabled.mockResolvedValue({ enabled: true, restartRequired: true });
+    mockFetchCursorCliStatus.mockResolvedValue({
+      binary: { available: true, version: "0.1.0", binaryPath: "/usr/local/bin/cursor-agent", probeDurationMs: 8 },
+      enabled: false,
+      extension: null,
+      ready: false,
+    });
+    mockSetCursorCliEnabled.mockResolvedValue({ enabled: true, restartRequired: false });
     mockUseWorkspaceFileBrowser.mockReturnValue({
       entries: [],
       currentPath: ".",
@@ -1186,6 +1197,37 @@ describe("SettingsModal", () => {
       expect(screen.getByRole("button", { name: "Save" })).toBeInTheDocument();
       expect(await screen.findByTestId("droid-cli-provider-card")).toBeInTheDocument();
       expect(screen.getAllByTestId("droid-cli-provider-card")).toHaveLength(1);
+    });
+
+    it("renders cursor cli auth card in authentication group", async () => {
+      mockFetchAuthStatus.mockResolvedValueOnce({
+        providers: [{ id: "cursor-cli", name: "Cursor — via Cursor CLI", authenticated: false, type: "cli" }],
+      });
+      mockFetchPluginUiSlots.mockResolvedValueOnce([]);
+
+      renderModal();
+      await waitForSettingsModalReady();
+
+      expect(await screen.findByTestId("cursor-cli-provider-card")).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Enable" })).toBeInTheDocument();
+    });
+
+    it("disables cursor enable action when binary is unavailable", async () => {
+      mockFetchAuthStatus.mockResolvedValueOnce({
+        providers: [{ id: "cursor-cli", name: "Cursor — via Cursor CLI", authenticated: false, type: "cli" }],
+      });
+      mockFetchCursorCliStatus.mockResolvedValueOnce({
+        binary: { available: false, reason: "cursor-agent not found", probeDurationMs: 8 },
+        enabled: false,
+        extension: null,
+        ready: false,
+      });
+
+      renderModal();
+      await waitForSettingsModalReady();
+
+      expect(await screen.findByText("cursor-agent not found")).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Enable" })).toBeDisabled();
     });
 
     it("does not render droid auth card when plugin slot is not present", async () => {

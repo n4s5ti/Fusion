@@ -12,6 +12,7 @@ const RUNTIME_PLUGIN_IDS = [
   "fusion-plugin-hermes-runtime",
   "fusion-plugin-openclaw-runtime",
   "fusion-plugin-paperclip-runtime",
+  "fusion-plugin-cursor-runtime",
 ] as const;
 
 const __dirname = dirname(fileURLToPath(import.meta.url));

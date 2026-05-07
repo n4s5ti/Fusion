@@ -180,6 +180,18 @@ describe("Plugin SDK", () => {
       expect(plugin.manifest.id).toBe("test");
     });
 
+    it("exports CLI provider contract types", () => {
+      const cliProvider: import("../../../core/src/plugin-types.js").CliProviderContribution = {
+        providerId: "cursor-cli",
+        displayName: "Cursor CLI",
+        binaryName: "cursor-agent",
+        providerType: "cli",
+        statusRoute: "/providers/cursor-cli/status",
+        authRoute: "/auth/cursor-cli",
+      };
+      expect(cliProvider.providerId).toBe("cursor-cli");
+    });
+
     it("exports PluginContext type", () => {
       const ctx: import("../../../core/src/plugin-types.js").PluginContext = {
         pluginId: "test",

@@ -26,6 +26,7 @@ import { useModalResizePersist } from "../hooks/useModalResizePersist";
 const PluginManager = lazy(() => import("./PluginManager").then((m) => ({ default: m.PluginManager })));
 const PiExtensionsManager = lazy(() => import("./PiExtensionsManager").then((m) => ({ default: m.PiExtensionsManager })));
 import { ClaudeCliProviderCard } from "./ClaudeCliProviderCard";
+import { CursorCliProviderCard } from "./CursorCliProviderCard";
 import { CliBinaryPanel } from "./CliBinaryPanel";
 import { LlamaCppProviderCard } from "./LlamaCppProviderCard";
 import { HermesRuntimeCard } from "./HermesRuntimeCard";
@@ -5074,11 +5075,21 @@ export function SettingsModal({
         // CLI-backed providers live in whichever bucket matches their current
         // auth state (Authenticated when signed in, Available otherwise).
         const claudeCliProvider = cliAuthProviders.find((p) => p.id === "claude-cli");
+        const cursorCliProvider = cliAuthProviders.find((p) => p.id === "cursor-cli");
         const llamaCppProvider = cliAuthProviders.find((p) => p.id === "llama-cpp");
         const claudeCliCard = claudeCliProvider ? (
           <ClaudeCliProviderCard
             compact
             authenticated={claudeCliProvider.authenticated}
+            onToggled={() => {
+              void loadAuthStatus();
+            }}
+          />
+        ) : null;
+        const cursorCliCard = cursorCliProvider ? (
+          <CursorCliProviderCard
+            compact
+            authenticated={cursorCliProvider.authenticated}
             onToggled={() => {
               void loadAuthStatus();
             }}
@@ -5096,10 +5107,12 @@ export function SettingsModal({
         const showAuthenticatedGroup =
           authenticatedProviders.length > 0
           || (claudeCliProvider?.authenticated ?? false)
+          || (cursorCliProvider?.authenticated ?? false)
           || (llamaCppProvider?.authenticated ?? false);
         const showAvailableGroup =
           unauthenticatedProviders.length > 0
           || (claudeCliProvider && !claudeCliProvider.authenticated)
+          || (cursorCliProvider && !cursorCliProvider.authenticated)
           || (llamaCppProvider && !llamaCppProvider.authenticated);
         return (
           <>
@@ -5133,6 +5146,7 @@ export function SettingsModal({
                 <div className="auth-provider-group">
                   <div className="auth-group-label">Authenticated</div>
                   {claudeCliProvider?.authenticated && claudeCliCard}
+                  {cursorCliProvider?.authenticated && cursorCliCard}
                   {llamaCppProvider?.authenticated && llamaCppCard}
                   {authenticatedProviders.map((provider) => (
                     <div key={provider.id} className="auth-provider-card auth-provider-card--authenticated">
@@ -5227,6 +5241,7 @@ export function SettingsModal({
                 <div className="auth-provider-group">
                   <div className="auth-group-label">Available</div>
                   {claudeCliProvider && !claudeCliProvider.authenticated && claudeCliCard}
+                  {cursorCliProvider && !cursorCliProvider.authenticated && cursorCliCard}
                   {llamaCppProvider && !llamaCppProvider.authenticated && llamaCppCard}
                   {unauthenticatedProviders.map((provider) => (
                     <div key={provider.id} className="auth-provider-card">

@@ -5,12 +5,14 @@ import { fileURLToPath } from "node:url";
 import { validatePluginManifest, type PluginInstallation, type PluginLoader, type PluginManifest, type PluginStore } from "@fusion/core";
 
 const DEPENDENCY_GRAPH_PLUGIN_ID = "fusion-plugin-dependency-graph";
+const CURSOR_RUNTIME_PLUGIN_ID = "fusion-plugin-cursor-runtime";
 
 export const BUNDLED_PLUGIN_IDS = [
   "fusion-plugin-dependency-graph",
   "fusion-plugin-hermes-runtime",
   "fusion-plugin-openclaw-runtime",
   "fusion-plugin-paperclip-runtime",
+  "fusion-plugin-cursor-runtime",
 ] as const;
 
 export type BundledPluginId = (typeof BUNDLED_PLUGIN_IDS)[number];
@@ -155,4 +157,11 @@ export async function ensureBundledDependencyGraphPluginInstalled(
   pluginLoader: PluginLoader,
 ): Promise<EnsureBundledResult> {
   return ensureBundledPluginInstalled(pluginStore, pluginLoader, DEPENDENCY_GRAPH_PLUGIN_ID);
+}
+
+export async function ensureBundledCursorRuntimePluginInstalled(
+  pluginStore: PluginStore,
+  pluginLoader: PluginLoader,
+): Promise<EnsureBundledResult> {
+  return ensureBundledPluginInstalled(pluginStore, pluginLoader, CURSOR_RUNTIME_PLUGIN_ID);
 }

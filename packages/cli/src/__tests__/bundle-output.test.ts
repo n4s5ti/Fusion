@@ -169,6 +169,17 @@ describe("CLI bundle output", () => {
     expect(manifest.name?.length).toBeGreaterThan(0);
   });
 
+  it("dist/plugins/fusion-plugin-cursor-runtime/ is staged with a valid manifest", () => {
+    const stagedRoot = join(cliRoot, "dist", "plugins", "fusion-plugin-cursor-runtime");
+    const manifestPath = join(stagedRoot, "manifest.json");
+
+    expect(existsSync(manifestPath)).toBe(true);
+    const manifest = JSON.parse(readFileSync(manifestPath, "utf-8")) as { id?: string; name?: string };
+    expect(manifest.id).toBe("fusion-plugin-cursor-runtime");
+    expect(typeof manifest.name).toBe("string");
+    expect(manifest.name?.length).toBeGreaterThan(0);
+  });
+
   it("pi-claude-cli source imports child process helpers from node:child_process", () => {
     const processManagerSource = readFileSync(join(cliRoot, "dist", "pi-claude-cli", "src", "process-manager.ts"), "utf-8");
 

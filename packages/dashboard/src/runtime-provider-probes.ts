@@ -25,6 +25,11 @@ import {
 } from "@fusion-plugin-examples/openclaw-runtime";
 
 import {
+  probeCursorBinary,
+  type CursorBinaryStatus,
+} from "@fusion-plugin-examples/cursor-runtime";
+
+import {
   agentsMe,
   discoverPaperclipCliConfig,
   listCompanies,
@@ -48,12 +53,17 @@ export type {
   MintCliKeyOptions,
   MintedApiKey,
   OpenClawBinaryStatus,
+  CursorBinaryStatus,
   PaperclipAgentSummary,
   PaperclipCliDiscoveryResult,
   PaperclipCompanySummary,
   PaperclipConnectionStatus,
 };
 export { mintAgentApiKeyViaCli };
+
+export async function probeCursorCliProvider(opts?: { binaryPath?: string }): Promise<CursorBinaryStatus> {
+  return probeCursorBinary(opts);
+}
 
 /**
  * Probe the local Hermes binary.
