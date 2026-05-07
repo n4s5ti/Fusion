@@ -719,13 +719,9 @@ export function main(argv = process.argv.slice(2)) {
   const baseBranch = getBaseBranch();
   const comparisonBase = detectComparisonBase(baseBranch);
   const changedFiles = comparisonBase ? changedFilesSince(comparisonBase) : null;
-  const packageNameByDir = listWorkspacePackages();
-
-  // Build reverse map: pkg-name → relative dir (e.g. "packages/engine")
-  const packageDirByName = new Map();
-  for (const [dir, name] of packageNameByDir) {
-    packageDirByName.set(name, dir);
-  }
+  const workspacePackages = listWorkspacePackageInfos();
+  const packageNameByDir = listWorkspacePackages(workspacePackages);
+  const packageDirByName = buildPackageDirByName(workspacePackages);
 
   const plan = decideExecutionPlan({
     forceFullSuite,

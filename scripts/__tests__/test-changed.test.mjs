@@ -8,6 +8,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import {
+  buildPackageDirByName,
   buildReverseDependencyMap,
   shouldForceFullSuite,
   resolveAffectedPackages,
@@ -142,6 +143,19 @@ test("resolveAffectedPackages: maps plugin workspace changes", () => {
   ], map);
 
   assert.deepEqual(result, ["@fusion-plugin-examples/hermes-runtime"]);
+});
+
+test("buildPackageDirByName: uses canonical workspace dirs instead of package aliases", () => {
+  const result = buildPackageDirByName([
+    { name: "@fusion/engine", dir: "packages/engine" },
+    { name: "@fusion/core", dir: "packages/core" },
+    { name: "@fusion-plugin-examples/cursor-runtime", dir: "plugins/fusion-plugin-cursor-runtime" },
+  ]);
+
+  assert.equal(result.get("@fusion/engine"), "packages/engine");
+  assert.equal(result.get("@fusion/core"), "packages/core");
+  assert.equal(result.get("@fusion-plugin-examples/cursor-runtime"), "plugins/fusion-plugin-cursor-runtime");
+  assert.notEqual(result.get("@fusion/engine"), "engine");
 });
 
 // ---------------------------------------------------------------------------
