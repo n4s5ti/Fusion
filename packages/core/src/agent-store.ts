@@ -2192,8 +2192,8 @@ export class AgentStore extends EventEmitter {
   getAgentRunSnapshot(limit?: number): AgentRunSnapshot {
     const normalizedLimit = typeof limit === "number" && Number.isFinite(limit) && limit > 0 ? Math.floor(limit) : undefined;
     const query = normalizedLimit
-      ? "SELECT data FROM agentRuns ORDER BY startedAt DESC LIMIT ?"
-      : "SELECT data FROM agentRuns ORDER BY startedAt ASC";
+      ? "SELECT data FROM agentRuns ORDER BY startedAt DESC, rowid DESC LIMIT ?"
+      : "SELECT data FROM agentRuns ORDER BY startedAt ASC, rowid ASC";
     const rows = normalizedLimit
       ? (this.db.prepare(query).all(normalizedLimit) as Array<{ data: string }>)
       : (this.db.prepare(query).all() as Array<{ data: string }>);
