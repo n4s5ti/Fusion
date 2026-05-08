@@ -19,6 +19,7 @@ import { reconcileMissionFeatureState } from "./mission-feature-sync.js";
 import { evaluateSpecStaleness, getPromptPath } from "./spec-staleness.js";
 import { resolveEffectiveNode } from "./effective-node.js";
 import { applyUnavailableNodePolicy } from "./node-routing-policy.js";
+import type { NodeDispatchValidationResult } from "./node-dispatch-validation.js";
 
 /**
  * Check whether two sets of file scope paths overlap.
@@ -135,6 +136,8 @@ export interface SchedulerOptions {
    *  Reserved for FN-2722-C (unavailable node policy enforcement).
    *  Accepted here so the option can be wired at construction time. */
   nodeHealthMonitor?: import("./node-health-monitor.js").NodeHealthMonitor;
+  /** Optional dispatch validator used to block dispatch on configuration issues before health policy checks. */
+  validateNodeDispatch?: (nodeId: string) => Promise<NodeDispatchValidationResult>;
 }
 
 /**
@@ -168,6 +171,8 @@ export class Scheduler {
   private failedTaskIds = new Set<string>();
   /** Tracks tasks blocked by unavailable-node policy to deduplicate block log entries. */
   private wasNodeBlocked = new Set<string>();
+  /** Tracks tasks blocked by missing project-node mapping to deduplicate block log entries. */
+  private wasNodeDispatchValidationBlocked = new Set<string>();
 
   /**
    * Async listener guard convention:
@@ -401,6 +406,7 @@ export class Scheduler {
     }
     this.failedTaskIds.clear();
     this.wasNodeBlocked.clear();
+    this.wasNodeDispatchValidationBlocked.clear();
     schedulerLog.log("Stopped");
   }
 
@@ -769,6 +775,21 @@ export class Scheduler {
         let effectiveNode = resolveEffectiveNode(freshTask, settings);
         schedulerLog.log(`Task ${task.id} routed to node=${effectiveNode.nodeId ?? "local"} (source=${effectiveNode.source})`);
 
+        // Enforce dispatch configuration validation before node-health fallback logic.
+        if (effectiveNode.nodeId !== undefined && this.options.validateNodeDispatch) {
+          const validation = await this.options.validateNodeDispatch(effectiveNode.nodeId);
+          if (!validation.allowed) {
+            if (!this.wasNodeDispatchValidationBlocked.has(task.id)) {
+              this.wasNodeDispatchValidationBlocked.add(task.id);
+              schedulerLog.log(`Task ${task.id} dispatch blocked — ${validation.reason}`);
+              await this.store.logEntry(task.id, validation.reason);
+            }
+            continue;
+          }
+
+          this.wasNodeDispatchValidationBlocked.delete(task.id);
+        }
+
         // Enforce unavailable-node policy
         if (effectiveNode.nodeId !== undefined && this.options.nodeHealthMonitor) {
           const nodeHealth = this.options.nodeHealthMonitor.getNodeHealth(effectiveNode.nodeId);
@@ -817,6 +838,7 @@ export class Scheduler {
             this.planWorktreePath(task, settings.worktreeNaming, reservedNames),
         });
         this.wasNodeBlocked.delete(task.id);
+        this.wasNodeDispatchValidationBlocked.delete(task.id);
         await this.store.logEntry(task.id, `Node routing resolved: ${effectiveNode.nodeId ?? "local"} (source: ${effectiveNode.source})`);
         this.options.onSchedule?.(task);
         started++;

@@ -804,6 +804,29 @@ describe("CentralCore", () => {
       await expect(central.getProjectNodePathMapping(project.id, nodeA.id)).resolves.toBeUndefined();
     });
 
+    it("should return exact mapped path via getProjectNodePath and undefined for unmapped pairs", async () => {
+      const projectPath = join(tempDir, "mapping-read-project");
+      mkdirSync(projectPath);
+      projectPaths.push(projectPath);
+
+      const project = await central.registerProject({
+        name: "Mapping Read Project",
+        path: projectPath,
+      });
+      const mappedNode = await central.registerNode({ name: "mapping-read-node", type: "local" });
+      const otherNode = await central.registerNode({ name: "mapping-read-node-other", type: "local" });
+
+      await central.upsertProjectNodePathMapping({
+        projectId: project.id,
+        nodeId: mappedNode.id,
+        path: "/mapped/node/path",
+      });
+
+      await expect(central.getProjectNodePath(project.id, mappedNode.id)).resolves.toBe("/mapped/node/path");
+      await expect(central.getProjectNodePath(project.id, otherNode.id)).resolves.toBeUndefined();
+      await expect(central.getProjectNodePath("proj_missing", mappedNode.id)).resolves.toBeUndefined();
+    });
+
     it("should validate project and node existence for mapping APIs", async () => {
       const node = await central.registerNode({ name: "mapping-validation-node", type: "local" });
 

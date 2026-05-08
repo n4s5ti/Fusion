@@ -1769,6 +1769,16 @@ export class CentralCore extends EventEmitter<CentralCoreEvents> {
     return row ? this.rowToProjectNodePathMapping(row) : undefined;
   }
 
+  async getProjectNodePath(projectId: string, nodeId: string): Promise<string | undefined> {
+    this.ensureInitialized();
+
+    const row = this.db!
+      .prepare("SELECT path FROM projectNodePathMappings WHERE projectId = ? AND nodeId = ?")
+      .get(projectId, nodeId) as { path: string } | undefined;
+
+    return row?.path;
+  }
+
   async listProjectNodePathMappings(filters?: {
     projectId?: string;
     nodeId?: string;

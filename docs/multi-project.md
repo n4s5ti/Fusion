@@ -154,7 +154,14 @@ This allows each project to maintain independent routing behavior even when mana
 
 `unavailableNodePolicy` is project-scoped and can be set differently per project (`block` or `fallback-local`).
 
-Current behavior: scheduler dispatch records effective node/source for each task, but health-based block/fallback enforcement is not yet applied in the scheduler dispatch path.
+Dispatch ordering now enforces project/node path mapping validation before health policy evaluation:
+
+1. Resolve effective node (`Task.nodeId` → `defaultNodeId` → local).
+2. If routed to a node, require a persisted `projectNodePathMappings` entry for `(projectId, nodeId)`.
+3. If mapping is missing/blank, dispatch is blocked in `todo` with a clear log message (`Execution blocked: project has no path mapping for node <id>`).
+4. Only mapped nodes continue to unavailable-node policy (`block` vs `fallback-local`).
+
+This keeps configuration errors (missing mapping) distinct from health/failover behavior.
 
 ### Example: different node defaults per project
 

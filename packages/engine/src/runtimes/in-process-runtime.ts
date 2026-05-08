@@ -38,6 +38,7 @@ import { MissionAutopilot } from "../mission-autopilot.js";
 import { MissionExecutionLoop } from "../mission-execution-loop.js";
 import { TriageProcessor } from "../triage.js";
 import { EphemeralWorkerManager } from "../ephemeral-worker-manager.js";
+import { validateProjectNodeMapping } from "../node-dispatch-validation.js";
 
 /**
  * InProcessRuntime runs a project within the main process.
@@ -300,6 +301,10 @@ export class InProcessRuntime
           runtimeLog.log(`Scheduled task ${task.id}`);
         },
         onBlocked: () => {},
+        validateNodeDispatch: async (nodeId) => {
+          const mappedPath = await this.centralCore.getProjectNodePath(this.config.projectId, nodeId);
+          return validateProjectNodeMapping({ nodeId, mappedPath });
+        },
 
       });
 

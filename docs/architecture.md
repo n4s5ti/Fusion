@@ -1039,6 +1039,15 @@ Task dispatch routing is resolved in two layers:
 
 ### Dispatch flow in scheduler
 
+Within `Scheduler.schedule()` dispatch for `todo` tasks now runs node gates in this order:
+
+1. `resolveEffectiveNode()` chooses routing source (`task-override`, `project-default`, `local`).
+2. If a node is selected, `validateNodeDispatch` checks for a persisted `(projectId, nodeId)` working-directory mapping (`CentralCore.getProjectNodePath`).
+3. Missing/blank mappings block dispatch (task stays in `todo`) and log `Execution blocked: project has no path mapping for node <id>`.
+4. Only after mapping validation passes does `applyUnavailableNodePolicy()` evaluate node health and optional `fallback-local` behavior.
+
+This preserves a clear separation between configuration correctness (mapping exists) and runtime health/failover policy.
+
 ### Unavailable-node policy
 
 `unavailableNodePolicy` is a validated/stored project setting (`block` default, `fallback-local` allowed) and is enforced during scheduler dispatch when both conditions are true:

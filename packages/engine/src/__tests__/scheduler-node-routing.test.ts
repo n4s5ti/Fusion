@@ -67,6 +67,10 @@ function createMockHealthMonitor(statusMap: Record<string, NodeStatus | undefine
   } as unknown as import("../node-health-monitor.js").NodeHealthMonitor;
 }
 
+function allowDispatchValidator() {
+  return vi.fn().mockResolvedValue({ allowed: true } as const);
+}
+
 describe("Scheduler node routing", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -132,6 +136,139 @@ describe("Scheduler node routing", () => {
     });
 
     expect(scheduler).toBeDefined();
+  });
+
+  it("dispatches when node mapping validator allows execution", async () => {
+    const task = createMockTask({ id: "FN-112", nodeId: "node-mapped" });
+    const store = createMockStore(task, { maxConcurrent: 1, maxWorktrees: 1 });
+    const validateNodeDispatch = allowDispatchValidator();
+    const scheduler = new Scheduler(store, { validateNodeDispatch });
+    (scheduler as unknown as { running: boolean }).running = true;
+
+    await scheduler.schedule();
+
+    expect(validateNodeDispatch).toHaveBeenCalledWith("node-mapped");
+    expect(store.updateTask).toHaveBeenCalledWith(task.id, expect.objectContaining({
+      effectiveNodeId: "node-mapped",
+      effectiveNodeSource: "task-override",
+    }));
+  });
+
+  it("blocks dispatch when node mapping validator fails", async () => {
+    const task = createMockTask({ id: "FN-113", nodeId: "node-unmapped" });
+    const store = createMockStore(task, { maxConcurrent: 1, maxWorktrees: 1 });
+    const validateNodeDispatch = vi.fn().mockResolvedValue({
+      allowed: false,
+      code: "missing-project-mapping",
+      reason: "Execution blocked: project has no path mapping for node node-unmapped",
+    } as const);
+    const scheduler = new Scheduler(store, { validateNodeDispatch });
+    (scheduler as unknown as { running: boolean }).running = true;
+
+    await scheduler.schedule();
+
+    expect(store.updateTask).not.toHaveBeenCalled();
+    expect(store.moveTask).not.toHaveBeenCalled();
+    expect(store.logEntry).toHaveBeenCalledWith(
+      task.id,
+      "Execution blocked: project has no path mapping for node node-unmapped",
+    );
+  });
+
+  it("deduplicates missing-mapping block logs across schedule cycles", async () => {
+    const task = createMockTask({ id: "FN-114", nodeId: "node-unmapped" });
+    const store = createMockStore(task, { maxConcurrent: 1, maxWorktrees: 1 });
+    const validateNodeDispatch = vi.fn().mockResolvedValue({
+      allowed: false,
+      code: "missing-project-mapping",
+      reason: "Execution blocked: project has no path mapping for node node-unmapped",
+    } as const);
+    const scheduler = new Scheduler(store, { validateNodeDispatch });
+    (scheduler as unknown as { running: boolean }).running = true;
+
+    await scheduler.schedule();
+    await scheduler.schedule();
+
+    const missingMappingLogs = vi.mocked(store.logEntry).mock.calls.filter(([, message]) =>
+      String(message).includes("project has no path mapping for node node-unmapped"),
+    );
+    expect(missingMappingLogs).toHaveLength(1);
+  });
+
+  it("clears missing-mapping dedup state after successful dispatch", async () => {
+    const task = createMockTask({ id: "FN-115", nodeId: "node-flappy" });
+    const store = createMockStore(task, { maxConcurrent: 1, maxWorktrees: 1 });
+    const validateNodeDispatch = vi
+      .fn()
+      .mockResolvedValueOnce({
+        allowed: false,
+        code: "missing-project-mapping",
+        reason: "Execution blocked: project has no path mapping for node node-flappy",
+      } as const)
+      .mockResolvedValueOnce({ allowed: true } as const)
+      .mockResolvedValueOnce({
+        allowed: false,
+        code: "missing-project-mapping",
+        reason: "Execution blocked: project has no path mapping for node node-flappy",
+      } as const);
+    const scheduler = new Scheduler(store, { validateNodeDispatch });
+    (scheduler as unknown as { running: boolean }).running = true;
+
+    await scheduler.schedule();
+    await scheduler.schedule();
+    await scheduler.schedule();
+
+    const missingMappingLogs = vi.mocked(store.logEntry).mock.calls.filter(([, message]) =>
+      String(message).includes("project has no path mapping for node node-flappy"),
+    );
+    expect(missingMappingLogs).toHaveLength(2);
+  });
+
+  it("does not run unavailable-node fallback policy when mapping validation fails", async () => {
+    const task = createMockTask({ id: "FN-116", nodeId: "node-error" });
+    const store = createMockStore(task, {
+      maxConcurrent: 1,
+      maxWorktrees: 1,
+      unavailableNodePolicy: "fallback-local",
+    });
+    const healthMonitor = createMockHealthMonitor({ "node-error": "error" });
+    const validateNodeDispatch = vi.fn().mockResolvedValue({
+      allowed: false,
+      code: "missing-project-mapping",
+      reason: "Execution blocked: project has no path mapping for node node-error",
+    } as const);
+    const scheduler = new Scheduler(store, { nodeHealthMonitor: healthMonitor, validateNodeDispatch });
+    (scheduler as unknown as { running: boolean }).running = true;
+
+    await scheduler.schedule();
+
+    expect((healthMonitor.getNodeHealth as ReturnType<typeof vi.fn>)).not.toHaveBeenCalled();
+    expect(store.updateTask).not.toHaveBeenCalled();
+    expect(store.logEntry).not.toHaveBeenCalledWith(
+      task.id,
+      "Node node-error is error; falling back to local per policy",
+    );
+  });
+
+  it("preserves health-based fallback behavior for mapped nodes", async () => {
+    const task = createMockTask({ id: "FN-117", nodeId: "node-error" });
+    const store = createMockStore(task, {
+      maxConcurrent: 1,
+      maxWorktrees: 1,
+      unavailableNodePolicy: "fallback-local",
+    });
+    const healthMonitor = createMockHealthMonitor({ "node-error": "error" });
+    const validateNodeDispatch = allowDispatchValidator();
+    const scheduler = new Scheduler(store, { nodeHealthMonitor: healthMonitor, validateNodeDispatch });
+    (scheduler as unknown as { running: boolean }).running = true;
+
+    await scheduler.schedule();
+
+    expect(store.updateTask).toHaveBeenCalledWith(task.id, expect.objectContaining({
+      effectiveNodeId: null,
+      effectiveNodeSource: "local",
+    }));
+    expect(store.logEntry).toHaveBeenCalledWith(task.id, "Node node-error is error; falling back to local per policy");
   });
 
   it("blocks dispatch when node is unhealthy and policy is block", async () => {
