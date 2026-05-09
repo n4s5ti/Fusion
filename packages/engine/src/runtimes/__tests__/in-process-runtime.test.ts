@@ -104,10 +104,19 @@ vi.mock("@fusion/core", async () => {
 // Mock the worktree pool
 vi.mock("../../worktree-pool.js", async () => {
   const actual = await vi.importActual<typeof import("../../worktree-pool.js")>("../../worktree-pool.js");
-  
+
+  // The runtime calls these on startup. They normally shell out to `git`,
+  // which (a) does real I/O against a non-git temp dir and (b) interacts
+  // badly with `vi.useFakeTimers()` in this suite — the test-harness
+  // subprocess guard arms a 30s kill timer that can fire under fake-timer
+  // advancement, surfacing as "Timed out: git rev-parse --git-dir" failures.
+  // Stub them out so runtime.start() never spawns git.
   return {
     ...actual,
+    isGitRepository: vi.fn().mockResolvedValue(true),
+    reapOrphanWorktrees: vi.fn().mockResolvedValue(0),
     scanIdleWorktrees: vi.fn().mockResolvedValue([]),
+    getRegisteredWorktreePaths: vi.fn().mockResolvedValue(new Set<string>()),
   };
 });
 
