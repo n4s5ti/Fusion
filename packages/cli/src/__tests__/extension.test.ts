@@ -358,6 +358,22 @@ describe.skipIf(!SHOULD_RUN_LEGACY_EXTENSION_INTEGRATION)("fn pi extension (lega
       expect(result.details.assignedAgentId).toBeUndefined();
       expect(result.content[0].text).not.toContain("Assigned to:");
     });
+
+    it("FN-3799: treats empty-string agentId as unassigned on create", async () => {
+      const tool = api.tools.get("fn_task_create")!;
+      const result = await tool.execute(
+        "call-1",
+        { description: "Task without assignee", agentId: "" },
+        undefined,
+        undefined,
+        makeCtx(tmpDir),
+      );
+
+      expect(result.isError).not.toBe(true);
+      expect(result.details.assignedAgentId).toBeUndefined();
+      expect(result.content[0].text).not.toContain("Agent  not found");
+      expect(result.content[0].text).not.toContain("Assigned to:");
+    });
   });
 
   describe("fn_task_update", () => {
@@ -458,6 +474,120 @@ describe.skipIf(!SHOULD_RUN_LEGACY_EXTENSION_INTEGRATION)("fn pi extension (lega
       expect(show.details.task.assignedAgentId).toBe(agentId);
     });
 
+    it("FN-3799: clears task assigned agent ID with empty string", async () => {
+      const agentId = await seedAgent(tmpDir);
+      const createTool = api.tools.get("fn_task_create")!;
+      await createTool.execute(
+        "c1",
+        { description: "Original", agentId },
+        undefined,
+        undefined,
+        makeCtx(tmpDir),
+      );
+
+      const updateTool = api.tools.get("fn_task_update")!;
+      const result = await updateTool.execute(
+        "u1",
+        { id: "FN-001", agentId: "" },
+        undefined,
+        undefined,
+        makeCtx(tmpDir),
+      );
+
+      expect(result.content[0].text).toContain("Updated FN-001");
+      expect(result.details.updatedFields).toEqual(["agentId"]);
+
+      const showTool = api.tools.get("fn_task_show")!;
+      const show = await showTool.execute("s1", { id: "FN-001" }, undefined, undefined, makeCtx(tmpDir));
+      expect(show.details.task.assignedAgentId).toBeUndefined();
+    });
+
+    it("clears task assigned agent ID with whitespace", async () => {
+      const agentId = await seedAgent(tmpDir);
+      const createTool = api.tools.get("fn_task_create")!;
+      await createTool.execute(
+        "c1",
+        { description: "Original", agentId },
+        undefined,
+        undefined,
+        makeCtx(tmpDir),
+      );
+
+      const updateTool = api.tools.get("fn_task_update")!;
+      const result = await updateTool.execute(
+        "u1",
+        { id: "FN-001", agentId: "   " },
+        undefined,
+        undefined,
+        makeCtx(tmpDir),
+      );
+
+      expect(result.content[0].text).toContain("Updated FN-001");
+      expect(result.details.updatedFields).toEqual(["agentId"]);
+
+      const showTool = api.tools.get("fn_task_show")!;
+      const show = await showTool.execute("s1", { id: "FN-001" }, undefined, undefined, makeCtx(tmpDir));
+      expect(show.details.task.assignedAgentId).toBeUndefined();
+    });
+
+    it("clears task assigned agent ID with literal null string", async () => {
+      const agentId = await seedAgent(tmpDir);
+      const createTool = api.tools.get("fn_task_create")!;
+      await createTool.execute(
+        "c1",
+        { description: "Original", agentId },
+        undefined,
+        undefined,
+        makeCtx(tmpDir),
+      );
+
+      const updateTool = api.tools.get("fn_task_update")!;
+      const result = await updateTool.execute(
+        "u1",
+        { id: "FN-001", agentId: "null" },
+        undefined,
+        undefined,
+        makeCtx(tmpDir),
+      );
+
+      expect(result.content[0].text).toContain("Updated FN-001");
+      expect(result.details.updatedFields).toEqual(["agentId"]);
+
+      const showTool = api.tools.get("fn_task_show")!;
+      const show = await showTool.execute("s1", { id: "FN-001" }, undefined, undefined, makeCtx(tmpDir));
+      expect(show.details.task.assignedAgentId).toBeUndefined();
+    });
+
+    it("clears node override with empty string", async () => {
+      const createTool = api.tools.get("fn_task_create")!;
+      await createTool.execute("c1", { description: "Original" }, undefined, undefined, makeCtx(tmpDir));
+
+      const updateTool = api.tools.get("fn_task_update")!;
+      const setNode = await updateTool.execute(
+        "u1",
+        { id: "FN-001", nodeId: "node-123" },
+        undefined,
+        undefined,
+        makeCtx(tmpDir),
+      );
+      expect(setNode.isError).not.toBe(true);
+
+      const clearNode = await updateTool.execute(
+        "u2",
+        { id: "FN-001", nodeId: "" },
+        undefined,
+        undefined,
+        makeCtx(tmpDir),
+      );
+
+      expect(clearNode.content[0].text).toContain("Updated FN-001");
+      expect(clearNode.details.updatedFields).toEqual(["nodeId"]);
+
+      const showTool = api.tools.get("fn_task_show")!;
+      const show = await showTool.execute("s1", { id: "FN-001" }, undefined, undefined, makeCtx(tmpDir));
+      expect(show.details.task.nodeId).toBeNull();
+    });
+
     it("rejects unknown agent IDs on update", async () => {
       const createTool = api.tools.get("fn_task_create")!;
       await createTool.execute("c1", { description: "Original" }, undefined, undefined, makeCtx(tmpDir));
@@ -472,7 +602,7 @@ describe.skipIf(!SHOULD_RUN_LEGACY_EXTENSION_INTEGRATION)("fn pi extension (lega
       );
 
       expect(result.isError).toBe(true);
-      expect(result.content[0].text).toContain("Agent agent-does-not-exist not found");
+      expect(result.content[0].text).toBe("Agent agent-does-not-exist not found");
     });
 
     it("clears task assigned agent ID with null", async () => {
@@ -1382,6 +1512,185 @@ describe("fn pi extension (runnable structured-output regression slice)", () => 
 
     expect(result.isError).toBe(true);
     expect(result.content[0].text).toContain("requires an \"executor\"-role agent");
+  });
+
+  describe("FN-3799 assignment normalization", () => {
+    it("FN-3799: treats empty-string agentId as unassigned on create", async () => {
+      const createTool = api.tools.get("fn_task_create")!;
+      const result = await createTool.execute(
+        "create-empty-agent",
+        { description: "Task without assignee", agentId: "" },
+        undefined,
+        undefined,
+        makeCtx(tmpDir),
+      );
+
+      expect(result.isError).not.toBe(true);
+      expect(result.details.assignedAgentId).toBeUndefined();
+      expect(result.content[0].text).not.toContain("Assigned to:");
+      expect(result.content[0].text).not.toContain("Agent  not found");
+    });
+
+    it("clears task assigned agent ID with empty string", async () => {
+      const agentId = await seedAgent(tmpDir);
+      const createTool = api.tools.get("fn_task_create")!;
+      const created = await createTool.execute(
+        "create-assigned",
+        { description: "Original", agentId },
+        undefined,
+        undefined,
+        makeCtx(tmpDir),
+      );
+
+      const updateTool = api.tools.get("fn_task_update")!;
+      const result = await updateTool.execute(
+        "update-clear-empty",
+        { id: created.details.taskId, agentId: "" },
+        undefined,
+        undefined,
+        makeCtx(tmpDir),
+      );
+
+      expect(result.content[0].text).toContain(`Updated ${created.details.taskId}`);
+      expect(result.details.updatedFields).toEqual(["agentId"]);
+
+      const showTool = api.tools.get("fn_task_show")!;
+      const show = await showTool.execute(
+        "show-cleared-empty",
+        { id: created.details.taskId },
+        undefined,
+        undefined,
+        makeCtx(tmpDir),
+      );
+      expect(show.details.task.assignedAgentId).toBeUndefined();
+    });
+
+    it("clears task assigned agent ID with whitespace", async () => {
+      const agentId = await seedAgent(tmpDir);
+      const createTool = api.tools.get("fn_task_create")!;
+      const created = await createTool.execute(
+        "create-assigned-whitespace",
+        { description: "Original", agentId },
+        undefined,
+        undefined,
+        makeCtx(tmpDir),
+      );
+
+      const updateTool = api.tools.get("fn_task_update")!;
+      await updateTool.execute(
+        "update-clear-whitespace",
+        { id: created.details.taskId, agentId: "   " },
+        undefined,
+        undefined,
+        makeCtx(tmpDir),
+      );
+
+      const showTool = api.tools.get("fn_task_show")!;
+      const show = await showTool.execute(
+        "show-cleared-whitespace",
+        { id: created.details.taskId },
+        undefined,
+        undefined,
+        makeCtx(tmpDir),
+      );
+      expect(show.details.task.assignedAgentId).toBeUndefined();
+    });
+
+    it("clears task assigned agent ID with literal null string", async () => {
+      const agentId = await seedAgent(tmpDir);
+      const createTool = api.tools.get("fn_task_create")!;
+      const created = await createTool.execute(
+        "create-assigned-null-string",
+        { description: "Original", agentId },
+        undefined,
+        undefined,
+        makeCtx(tmpDir),
+      );
+
+      const updateTool = api.tools.get("fn_task_update")!;
+      await updateTool.execute(
+        "update-clear-null-string",
+        { id: created.details.taskId, agentId: "null" },
+        undefined,
+        undefined,
+        makeCtx(tmpDir),
+      );
+
+      const showTool = api.tools.get("fn_task_show")!;
+      const show = await showTool.execute(
+        "show-cleared-null-string",
+        { id: created.details.taskId },
+        undefined,
+        undefined,
+        makeCtx(tmpDir),
+      );
+      expect(show.details.task.assignedAgentId).toBeUndefined();
+    });
+
+    it("returns readable unknown-agent errors with the invalid id", async () => {
+      const createTool = api.tools.get("fn_task_create")!;
+      const created = await createTool.execute(
+        "create-for-error",
+        { description: "Original" },
+        undefined,
+        undefined,
+        makeCtx(tmpDir),
+      );
+
+      const updateTool = api.tools.get("fn_task_update")!;
+      const result = await updateTool.execute(
+        "update-unknown-agent",
+        { id: created.details.taskId, agentId: "agent-does-not-exist" },
+        undefined,
+        undefined,
+        makeCtx(tmpDir),
+      );
+
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toBe("Agent agent-does-not-exist not found");
+    });
+
+    it("clears node override with empty string", async () => {
+      const createTool = api.tools.get("fn_task_create")!;
+      const created = await createTool.execute(
+        "create-node-task",
+        { description: "Original" },
+        undefined,
+        undefined,
+        makeCtx(tmpDir),
+      );
+
+      const updateTool = api.tools.get("fn_task_update")!;
+      const setNode = await updateTool.execute(
+        "set-node",
+        { id: created.details.taskId, nodeId: "node-123" },
+        undefined,
+        undefined,
+        makeCtx(tmpDir),
+      );
+      expect(setNode.isError).not.toBe(true);
+
+      const clearNode = await updateTool.execute(
+        "clear-node",
+        { id: created.details.taskId, nodeId: "" },
+        undefined,
+        undefined,
+        makeCtx(tmpDir),
+      );
+
+      expect(clearNode.content[0].text).toContain(`Updated ${created.details.taskId}`);
+      expect(clearNode.details.updatedFields).toEqual(["nodeId"]);
+
+      const showTool = api.tools.get("fn_task_show")!;
+      const show = await showTool.execute(
+        "show-cleared-node",
+        { id: created.details.taskId },
+        undefined,
+        undefined,
+        makeCtx(tmpDir),
+      );
+      expect(show.details.task.nodeId).toBeUndefined();
+    });
   });
 
   describe("fn_list_agents", () => {

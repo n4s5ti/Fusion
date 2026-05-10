@@ -111,6 +111,22 @@ async function validateAssignableAgentId(
   return null;
 }
 
+function normalizeNullableStringInput(value: string | null | undefined): string | null | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+  if (value === null) {
+    return null;
+  }
+
+  const trimmed = value.trim();
+  if (trimmed.length === 0 || trimmed.toLowerCase() === "null") {
+    return null;
+  }
+
+  return trimmed;
+}
+
 const INSIGHT_CATEGORIES: InsightCategory[] = [
   "quality",
   "performance",
@@ -394,9 +410,11 @@ export default function kbExtension(pi: ExtensionAPI) {
     async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
       const store = await getStore(ctx.cwd);
 
-      if (params.agentId !== undefined) {
+      const normalizedAgentId = normalizeNullableStringInput(params.agentId);
+
+      if (normalizedAgentId !== undefined && normalizedAgentId !== null) {
         const candidateTask: Pick<Task, "id" | "column"> = { id: "<new>", column: "triage" };
-        const error = await validateAssignableAgentId(ctx.cwd, params.agentId, candidateTask);
+        const error = await validateAssignableAgentId(ctx.cwd, normalizedAgentId, candidateTask);
         if (error) {
           return {
             content: [{ type: "text", text: error }],
@@ -409,7 +427,7 @@ export default function kbExtension(pi: ExtensionAPI) {
       const task = await store.createTask({
         description: params.description.trim(),
         dependencies: params.depends,
-        assignedAgentId: params.agentId,
+        assignedAgentId: normalizedAgentId === null ? undefined : normalizedAgentId,
         source: { sourceType: "api" },
       });
 
@@ -513,8 +531,9 @@ export default function kbExtension(pi: ExtensionAPI) {
         updatedFields.push("dependencies");
       }
       if (params.agentId !== undefined) {
-        if (params.agentId !== null) {
-          const error = await validateAssignableAgentId(ctx.cwd, params.agentId, task);
+        const normalizedAgentId = normalizeNullableStringInput(params.agentId);
+        if (normalizedAgentId !== null) {
+          const error = await validateAssignableAgentId(ctx.cwd, normalizedAgentId, task);
           if (error) {
             return {
               content: [{ type: "text", text: error }],
@@ -523,11 +542,12 @@ export default function kbExtension(pi: ExtensionAPI) {
             };
           }
         }
-        updates.assignedAgentId = params.agentId;
+        updates.assignedAgentId = normalizedAgentId;
         updatedFields.push("agentId");
       }
       if (params.nodeId !== undefined) {
-        const validation = validateNodeOverrideChange(task, params.nodeId ?? null);
+        const normalizedNodeId = normalizeNullableStringInput(params.nodeId);
+        const validation = validateNodeOverrideChange(task, normalizedNodeId ?? null);
         if (!validation.allowed) {
           return {
             content: [{ type: "text", text: validation.message ?? "Node override change blocked" }],
@@ -535,7 +555,7 @@ export default function kbExtension(pi: ExtensionAPI) {
             details: { error: validation.reason },
           };
         }
-        updates.nodeId = params.nodeId;
+        updates.nodeId = normalizedNodeId;
         updatedFields.push("nodeId");
       }
 
