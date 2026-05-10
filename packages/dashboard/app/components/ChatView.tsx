@@ -856,8 +856,9 @@ export function ChatView({ projectId, addToast, experimentalFeatures }: ChatView
     }
   }, [chatRoomsEnabled, chatScope]);
 
+  const roomThreadActive = chatRoomsEnabled && chatScope === "rooms" && !!rooms.activeRoom;
   const { keyboardOverlap, viewportHeight, viewportOffsetTop, keyboardOpen } = useMobileKeyboard({
-    enabled: isMobile && !!activeSession,
+    enabled: isMobile && (!!activeSession || roomThreadActive),
   });
 
   // Only opt into visual-viewport sizing when we have concrete keyboard
@@ -873,6 +874,7 @@ export function ChatView({ projectId, addToast, experimentalFeatures }: ChatView
           ...(viewportHeight !== null ? { "--vv-height": `${viewportHeight}px` } : {}),
         } as CSSProperties)
       : {};
+  const threadClassName = `chat-thread${keyboardOpen && hasKeyboardViewportDisplacement ? " chat-thread--keyboard-active" : ""}`;
 
   const filteredSkills = useMemo(() => {
     const normalizedFilter = skillFilter.trim().toLowerCase();
@@ -2081,7 +2083,7 @@ export function ChatView({ projectId, addToast, experimentalFeatures }: ChatView
       )}
       {/* Thread */}
       {chatRoomsEnabled && chatScope === "rooms" ? (
-        <div className="chat-thread">
+        <div className={threadClassName} style={threadKeyboardStyle}>
           {rooms.activeRoom ? (
             <>
               <div className="chat-room-thread-header">
@@ -2193,10 +2195,7 @@ export function ChatView({ projectId, addToast, experimentalFeatures }: ChatView
           )}
         </div>
       ) : (
-      <div
-        className={`chat-thread${keyboardOpen && hasKeyboardViewportDisplacement ? " chat-thread--keyboard-active" : ""}`}
-        style={threadKeyboardStyle}
-      >
+      <div className={threadClassName} style={threadKeyboardStyle}>
         {/* Header - always rendered in desktop/tablet, only rendered in mobile when viewing a thread */}
         {(hasThreadInView || !isMobile) && (
           <div className="chat-thread-header">

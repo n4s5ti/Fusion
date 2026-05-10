@@ -1,11 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { act, render, screen, waitFor, within } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
 import { ChatView } from "../ChatView";
 import * as useChatModule from "../../hooks/useChat";
 import * as useChatRoomsModule from "../../hooks/useChatRooms";
 import type { UseChatReturn, ChatSessionInfo } from "../../hooks/useChat";
 import type { UseChatRoomsResult } from "../../hooks/useChatRooms";
+import { _resetInitialViewportHeight } from "../../hooks/useMobileKeyboard";
 
 vi.mock("../../hooks/useChat");
 vi.mock("../../hooks/useChatRooms");
@@ -107,8 +108,32 @@ function mockMobileViewport() {
   }));
 }
 
+function mockMobileVisualViewport({ innerHeight, vvHeight }: { innerHeight: number; vvHeight: number }) {
+  const resizeListeners = new Set<() => void>();
+  const scrollListeners = new Set<() => void>();
+
+  const mockVV = {
+    height: vvHeight,
+    offsetTop: 0,
+    addEventListener: vi.fn((event: string, cb: () => void) => {
+      if (event === "resize") resizeListeners.add(cb);
+      if (event === "scroll") scrollListeners.add(cb);
+    }),
+    removeEventListener: vi.fn((event: string, cb: () => void) => {
+      if (event === "resize") resizeListeners.delete(cb);
+      if (event === "scroll") scrollListeners.delete(cb);
+    }),
+  };
+
+  Object.defineProperty(window, "innerHeight", { value: innerHeight, configurable: true, writable: true });
+  Object.defineProperty(window, "visualViewport", { value: mockVV, configurable: true, writable: true });
+
+  return { mockVV, listeners: { resize: resizeListeners, scroll: scrollListeners } };
+}
+
 describe("ChatView — rooms (FN-3805..FN-3811 contract)", () => {
   beforeEach(() => {
+    _resetInitialViewportHeight();
     vi.clearAllMocks();
     if (!window.matchMedia) {
       Object.defineProperty(window, "matchMedia", { value: vi.fn(), configurable: true, writable: true });
@@ -204,6 +229,67 @@ describe("ChatView — rooms (FN-3805..FN-3811 contract)", () => {
 
     expect(screen.getByTestId("chat-back-btn")).toBeInTheDocument();
     mediaSpy.mockRestore();
+  });
+
+  it("applies keyboard-active thread layout in room mode on mobile and preserves direct-chat parity", async () => {
+    const mediaSpy = mockMobileViewport();
+    const { listeners, mockVV } = mockMobileVisualViewport({ innerHeight: 800, vvHeight: 800 });
+    const originalVisualViewport = window.visualViewport;
+    const originalInnerHeight = window.innerHeight;
+
+    try {
+      setup(
+        {
+          activeSession: activeSession,
+          messages: [{ id: "msg-1", sessionId: activeSession.id, role: "assistant", content: "Direct hello", createdAt: "2026-04-08T00:00:00.000Z" }],
+        },
+        {
+          activeRoom: roomA,
+          messages: [{ id: "rmsg-1", roomId: roomA.id, role: "assistant", content: "Room hello", createdAt: "2026-04-08T00:00:00.000Z", senderAgentId: "agent-1", mentions: [] }],
+        },
+      );
+
+      render(<ChatView projectId="proj-123" addToast={vi.fn()} experimentalFeatures={{ chatRooms: true }} />);
+
+      const input = screen.getByTestId("chat-input") as HTMLTextAreaElement;
+      await act(async () => {
+        input.focus();
+      });
+      act(() => {
+        document.dispatchEvent(new Event("focusin"));
+      });
+
+      Object.defineProperty(window, "innerHeight", { value: 560, configurable: true, writable: true });
+      Object.defineProperty(mockVV, "height", { value: 560, configurable: true, writable: true });
+      act(() => {
+        for (const cb of listeners.resize) cb();
+      });
+
+      const roomThread = document.querySelector(".chat-thread") as HTMLDivElement;
+      await waitFor(() => {
+        expect(roomThread.classList.contains("chat-thread--keyboard-active")).toBe(true);
+        expect(roomThread.style.getPropertyValue("--keyboard-overlap")).toBe("240px");
+      });
+
+      await userEvent.click(screen.getByTestId("chat-sidebar-scope-direct"));
+      const directInput = screen.getByTestId("chat-input") as HTMLTextAreaElement;
+      await act(async () => {
+        directInput.focus();
+      });
+      act(() => {
+        document.dispatchEvent(new Event("focusin"));
+      });
+
+      const directThread = document.querySelector(".chat-thread") as HTMLDivElement;
+      await waitFor(() => {
+        expect(directThread.classList.contains("chat-thread--keyboard-active")).toBe(true);
+        expect(directThread.style.getPropertyValue("--keyboard-overlap")).toBe("240px");
+      });
+    } finally {
+      Object.defineProperty(window, "visualViewport", { value: originalVisualViewport, configurable: true, writable: true });
+      Object.defineProperty(window, "innerHeight", { value: originalInnerHeight, configurable: true, writable: true });
+      mediaSpy.mockRestore();
+    }
   });
 
   it("keeps direct mode behavior unchanged when rooms are enabled", async () => {
