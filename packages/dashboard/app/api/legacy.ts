@@ -8580,6 +8580,8 @@ export function streamChatResponse(
             currentEvent = line.slice(6).trim();
           } else if (line.startsWith("data:")) {
             const value = line.slice(5);
+            // Strip only the optional SSE protocol delimiter-space after `data:`.
+            // Payload whitespace (including JSON-string leading spaces) must stay verbatim.
             currentDataLines.push(value.startsWith(" ") ? value.slice(1) : value);
           } else if (line === "") {
             const currentData = currentDataLines.join("\n");
@@ -8780,6 +8782,8 @@ export function attachChatStream(
             currentEvent = line.slice(6).trim();
           } else if (line.startsWith("data:")) {
             const value = line.slice(5);
+            // Strip only the optional SSE protocol delimiter-space after `data:`.
+            // Payload whitespace (including JSON-string leading spaces) must stay verbatim.
             currentDataLines.push(value.startsWith(" ") ? value.slice(1) : value);
           } else if (line === "") {
             const currentData = currentDataLines.join("\n");

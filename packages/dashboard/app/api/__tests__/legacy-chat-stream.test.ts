@@ -139,6 +139,65 @@ describe("streamChatResponse SSE parser", () => {
     expect(onError).toHaveBeenCalledWith("Timed out waiting for first response event");
     vi.useRealTimers();
   });
+
+  it.each([
+    {
+      name: "leading-space second delta",
+      chunks: [
+        "event: text\n",
+        "data: \"Hello.\"\n\n",
+        "event: text\n",
+        "data: \" World.\"\n\n",
+      ],
+    },
+    {
+      name: "space-trailing first delta",
+      chunks: [
+        "event: text\n",
+        "data: \"Hello. \"\n\n",
+        "event: text\n",
+        "data: \"World.\"\n\n",
+      ],
+    },
+    {
+      name: "empty delta between spaced chunks",
+      chunks: [
+        "event: text\n",
+        "data: \"Hello.\"\n\n",
+        "event: text\n",
+        "data: \"\"\n\n",
+        "event: text\n",
+        "data: \" World.\"\n\n",
+      ],
+    },
+    {
+      name: "chunk boundary mid-json of second delta",
+      chunks: [
+        "event: text\ndata: \"Hello.\"\n\nevent: text\ndata: \"",
+        " World.\"\n\n",
+      ],
+    },
+    {
+      name: "chunk boundary inside leading space on data line",
+      chunks: [
+        "event: text\ndata: \"Hello.\"\n\nevent: text\ndata: \" ",
+        "World.\"\n\n",
+      ],
+    },
+  ])("preserves whitespace at SSE delta boundaries: $name", async ({ chunks }) => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(createChunkedStream(chunks), { status: 200 }));
+
+    const textChunks: string[] = [];
+
+    streamChatResponse("s-1", "hi", {
+      onText: (data) => textChunks.push(data),
+      onError: vi.fn(),
+    });
+
+    await vi.waitFor(() => {
+      expect(textChunks.join("")).toBe("Hello. World.");
+    });
+  });
 });
 
 describe("attachChatStream", () => {
