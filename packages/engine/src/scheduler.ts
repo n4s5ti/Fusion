@@ -313,10 +313,10 @@ export class Scheduler {
                   );
                 } else {
                   await this.store.updateTask(dependent.id, { blockedBy: null, status: null });
-                  await this.store.logEntry(
-                    dependent.id,
-                    `Auto-unblocked: blocker ${task.id} reached ${to}`,
-                  );
+                  const unblockMessage = currentlyBlockedByCompletedTask
+                    ? `Auto-unblocked: blocker ${task.id} reached ${to}`
+                    : `Auto-unblocked: blocker ${task.id} reached ${to} — all dependencies satisfied`;
+                  await this.store.logEntry(dependent.id, unblockMessage);
                 }
               } catch (error) {
                 schedulerLog.error(

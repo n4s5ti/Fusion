@@ -447,7 +447,7 @@ describe("Scheduler", () => {
       expect(store.updateTask).toHaveBeenCalledWith("FN-3170", { blockedBy: null, status: null });
       expect(store.logEntry).toHaveBeenCalledWith(
         "FN-3170",
-        "Auto-unblocked: blocker FN-3168 reached archived",
+        "Auto-unblocked: blocker FN-3168 reached archived — all dependencies satisfied",
       );
     });
 
