@@ -7,7 +7,13 @@ export const FILE_WRITE_BUILTIN_TOOLS: ReadonlySet<string> = new Set(["write", "
 const SHARED_TASK_AGENT_TOOLS = ["fn_task_add_dep", "fn_spawn_agent", "fn_update_agent_config", "fn_agent_create", "fn_agent_delete"] as const;
 const PROVISIONING_TOOLS = ["fn_agent_create", "fn_agent_delete"] as const;
 
-const ACTION_GATE_TASK_AGENT_ONLY_TOOLS = ["fn_task_create", "fn_delegate_task", "fn_update_identity"] as const;
+const ACTION_GATE_TASK_AGENT_ONLY_TOOLS = [
+  "fn_task_create",
+  "fn_delegate_task",
+  "fn_task_import_github",
+  "fn_task_import_github_issue",
+  "fn_update_identity",
+] as const;
 const ACTION_GATE_SHARED_TASK_AGENT_TOOLS = SHARED_TASK_AGENT_TOOLS.filter(
   (tool) => !(PROVISIONING_TOOLS as readonly string[]).includes(tool),
 );
@@ -20,8 +26,6 @@ const PERMANENT_TASK_AGENT_ONLY_TOOLS = [
   "fn_task_archive",
   "fn_task_unarchive",
   "fn_task_delete",
-  "fn_task_import_github",
-  "fn_task_import_github_issue",
   "fn_task_plan",
   "fn_mission_create",
   "fn_mission_delete",
@@ -69,6 +73,8 @@ export const READONLY_FN_TOOLS: ReadonlySet<string> = new Set([
   "fn_task_document_write",
   "fn_task_document_read",
   "fn_delegate_task",
+  "fn_task_import_github",
+  "fn_task_import_github_issue",
   "fn_research_list",
   "fn_research_get",
   "fn_insight_list",

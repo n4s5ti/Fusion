@@ -38,6 +38,8 @@ describe("permanent-agent-gating", () => {
     expect(classifyPermanentAgentToolCall("fn_task_create").category).toBe("none");
     expect(classifyPermanentAgentToolCall("fn_delegate_task").category).toBe("none");
     expect(classifyPermanentAgentToolCall("fn_update_agent_config").category).toBe("task_agent_mutation");
+    expect(classifyPermanentAgentToolCall("fn_task_import_github").category).toBe("none");
+    expect(classifyPermanentAgentToolCall("fn_task_import_github_issue").category).toBe("none");
     expect(classifyPermanentAgentToolCall("fn_update_identity").category).toBe("none");
     expect(classifyPermanentAgentToolCall("fn_task_document_write").category).toBe("none");
     expect(classifyPermanentAgentToolCall("fn_memory_append").category).toBe("none");

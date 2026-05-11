@@ -56,6 +56,11 @@ const gitCases = [
   ["echo hi\ngit checkout -b t", true, "git checkout -b"],
 ] as const;
 
+const ACTION_MUTATION_PERMANENT_READONLY_TOOLS = new Set([
+  "fn_task_import_github",
+  "fn_task_import_github_issue",
+]);
+
 describe("gating-classifications parity", () => {
   it("locks coordination exempt membership", () => {
     expect([...COORDINATION_EXEMPT_TOOLS].sort()).toMatchInlineSnapshot(`
@@ -149,6 +154,10 @@ describe("gating-classifications parity", () => {
       }
       if (TASK_AGENT_MUTATION_TOOLS.has(toolName) && !ACTION_GATE_TASK_AGENT_MANAGEMENT_TOOLS.has(toolName)) {
         expect({ toolName, actionKind, permanentKind }).toEqual({ toolName, actionKind: "readonly", permanentKind: "mutating" });
+        continue;
+      }
+      if (ACTION_MUTATION_PERMANENT_READONLY_TOOLS.has(toolName)) {
+        expect({ toolName, actionKind, permanentKind }).toEqual({ toolName, actionKind: "mutating", permanentKind: "readonly" });
         continue;
       }
 

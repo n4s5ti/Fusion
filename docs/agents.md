@@ -74,8 +74,8 @@ The engine classifies tool calls by behavior (not namespace alone):
 - `command_execution`: built-in `bash` when not classified as mutating git
 - `git_write`: mutating git shell commands run via `bash`
 - `network_api`: external/network-facing tools (for example `fn_research_run`, `fn_research_cancel`, `fn_research_retry`)
-- `task_agent_mutation`: task/agent mutation tools (for example `fn_task_create`, `fn_delegate_task`, `fn_update_agent_config`, `fn_update_identity`)
-- `none`: positively recognized read-only tools (`read`, `grep`, `find`, `ls`, list/show/get-style `fn_*` tools)
+- `task_agent_mutation`: task/agent mutation tools (for example `fn_update_agent_config`, `fn_task_pause`, `fn_spawn_agent`; action-gate task-import/create tools like `fn_task_create`, `fn_delegate_task`, `fn_task_import_github`, and `fn_task_import_github_issue` use this category in action-gate evaluation)
+- `none`: positively recognized read-only tools (`read`, `grep`, `find`, `ls`, list/show/get-style `fn_*` tools, plus permanent-agent coordination/task-creation helpers like `fn_task_create`, `fn_delegate_task`, `fn_task_import_github`, and `fn_task_import_github_issue`)
 
 `bash` git-write heuristic in v1:
 

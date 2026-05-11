@@ -17,4 +17,13 @@ describe("gating classifications provisioning split", () => {
     expect(TASK_AGENT_MUTATION_TOOLS.has("fn_agent_create")).toBe(true);
     expect(TASK_AGENT_MUTATION_TOOLS.has("fn_agent_delete")).toBe(true);
   });
+
+  it("classifies github task imports as action-gated task mutations only", () => {
+    expect(ACTION_GATE_TASK_AGENT_MANAGEMENT_TOOLS.has("fn_task_import_github")).toBe(true);
+    expect(ACTION_GATE_TASK_AGENT_MANAGEMENT_TOOLS.has("fn_task_import_github_issue")).toBe(true);
+    expect(PERMANENT_AGENT_TASK_MUTATION_TOOLS.has("fn_task_import_github")).toBe(false);
+    expect(PERMANENT_AGENT_TASK_MUTATION_TOOLS.has("fn_task_import_github_issue")).toBe(false);
+    expect(TASK_AGENT_MUTATION_TOOLS.has("fn_task_import_github")).toBe(true);
+    expect(TASK_AGENT_MUTATION_TOOLS.has("fn_task_import_github_issue")).toBe(true);
+  });
 });
