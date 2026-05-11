@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { buildDevNodeArgs } from "../../../../scripts/dev-with-memory-lib.mjs";
+import {
+  buildDevNodeArgs,
+  getPrebuildCommand,
+  parseDevWrapperArgs,
+  resolvePrebuildMode,
+} from "../../../../scripts/dev-with-memory-lib.mjs";
 
 describe("buildDevNodeArgs", () => {
   it("enables source-condition resolution before loading the tsx runtime", () => {
@@ -23,5 +28,43 @@ describe("buildDevNodeArgs", () => {
       "--host",
       "0.0.0.0",
     ]);
+  });
+});
+
+describe("dev-with-memory prebuild options", () => {
+  it("strips wrapper-only prebuild and inspector flags before forwarding CLI args", () => {
+    const parsed = parseDevWrapperArgs(
+      ["--inspect=9230", "--prebuild=none", "dashboard", "--port", "4050"],
+      {},
+    );
+
+    expect(parsed).toEqual({
+      inspectFlags: ["--inspect=9230"],
+      args: ["dashboard", "--port", "4050"],
+      requestedPrebuild: "none",
+    });
+  });
+
+  it("defaults dashboard startup to client-only prebuild instead of full workspace build", () => {
+    expect(resolvePrebuildMode("auto", ["dashboard", "--port", "4050"])).toBe("client");
+    expect(getPrebuildCommand("client")).toEqual({
+      command: "pnpm",
+      args: ["--filter", "@fusion/dashboard", "build:client"],
+      label: "dashboard client build",
+    });
+  });
+
+  it("skips prebuild by default for non-dashboard CLI commands", () => {
+    expect(resolvePrebuildMode("auto", ["task", "list"])).toBe("none");
+    expect(getPrebuildCommand("none")).toBeNull();
+  });
+
+  it("keeps full workspace prebuild available when requested", () => {
+    expect(resolvePrebuildMode("full", ["dashboard"])).toBe("full");
+    expect(getPrebuildCommand("full")).toEqual({
+      command: "pnpm",
+      args: ["build"],
+      label: "workspace build",
+    });
   });
 });

@@ -3,12 +3,17 @@
  * Memory-aware development entrypoint for Fusion.
  * 
  * This script increases the Node.js heap size to prevent memory pressure
- * during the initial build/start sequence, while preserving argument
+ * during the optional prebuild/start sequence, while preserving argument
  * pass-through for documented invocations like `pnpm dev dashboard`.
  * 
  * Cross-platform: Works on Windows, macOS, and Linux.
  */
-import { buildDevNodeArgs } from "./dev-with-memory-lib.mjs";
+import {
+  buildDevNodeArgs,
+  getPrebuildCommand,
+  parseDevWrapperArgs,
+  resolvePrebuildMode,
+} from "./dev-with-memory-lib.mjs";
 
 // Set increased heap size (8GB) to prevent OOM during initial build/start
 const MEMORY_MB = process.env.FUSION_DEV_MEMORY_MB || "8192";
@@ -16,21 +21,14 @@ const MEMORY_MB = process.env.FUSION_DEV_MEMORY_MB || "8192";
 // Spawn the actual dev command with all arguments passed through
 const { spawn } = await import("child_process");
 const rawArgs = process.argv.slice(2);
-
-// --inspect / --inspect-brk / --inspect=PORT enables the Node inspector.
-// Strip these from forwarded args so they don't reach the dashboard CLI
-// parser. We pass them as CLI flags directly to node (NOT via NODE_OPTIONS),
-// because NODE_OPTIONS is inherited by every grandchild process — every
-// vitest / agent / claude subprocess would then try to bind 9229 and fail.
-const inspectFlags = [];
-const args = [];
-for (const a of rawArgs) {
-  if (a === "--inspect" || a === "--inspect-brk" || a.startsWith("--inspect=") || a.startsWith("--inspect-brk=")) {
-    inspectFlags.push(a);
-  } else {
-    args.push(a);
-  }
+let parsedArgs;
+try {
+  parsedArgs = parseDevWrapperArgs(rawArgs);
+} catch (error) {
+  console.error(error instanceof Error ? error.message : String(error));
+  process.exit(1);
 }
+const { inspectFlags, args, requestedPrebuild } = parsedArgs;
 
 // NODE_OPTIONS is shared with every spawned node process (build + run +
 // agents). Heap size belongs here. Inspector flags do NOT — see comment above.
@@ -46,6 +44,8 @@ const needsDevHostInjection =
 const forwardedArgs = needsDevHostInjection
   ? [...args, "--host", "0.0.0.0"]
   : args;
+const prebuildMode = resolvePrebuildMode(requestedPrebuild, forwardedArgs);
+const prebuildCommand = getPrebuildCommand(prebuildMode);
 
 // Resolve absolute paths to tsx loader so they survive shell quoting.
 // Use Node's resolver instead of hardcoding the pnpm version-specific path.
@@ -73,15 +73,70 @@ function runApp(extraArgs) {
   tsx.on("close", (c) => process.exit(c ?? 1));
 }
 
-// If no args, run default: build + CLI
-if (forwardedArgs.length === 0) {
-  const pnpm = spawn("pnpm", ["build"], { stdio: "inherit", shell: true });
-  pnpm.on("close", (code) => {
-    if (code !== 0) process.exit(code ?? 1);
-    runApp([]);
-  });
+async function warnIfSourceVersionBehind() {
+  if (process.env.FUSION_SKIP_STARTUP_UPDATE_PREFLIGHT === "1") {
+    return;
+  }
+
+  let currentVersion;
+  try {
+    const { readFile } = await import("node:fs/promises");
+    const pkg = JSON.parse(await readFile(path.resolve(process.cwd(), "packages/cli/package.json"), "utf8"));
+    currentVersion = typeof pkg.version === "string" ? pkg.version : undefined;
+  } catch {
+    return;
+  }
+
+  if (!currentVersion) return;
+
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 1_500);
+    let payload;
+    try {
+      const response = await fetch("https://registry.npmjs.org/@runfusion%2Ffusion", {
+        signal: controller.signal,
+      });
+      payload = await response.json();
+    } finally {
+      clearTimeout(timeout);
+    }
+    const latestVersion = payload?.["dist-tags"]?.latest;
+    if (typeof latestVersion !== "string") return;
+
+    const currentParts = currentVersion.split(".").map((part) => Number.parseInt(part, 10) || 0);
+    const latestParts = latestVersion.split(".").map((part) => Number.parseInt(part, 10) || 0);
+    let latestIsNewer = false;
+    for (let i = 0; i < Math.max(currentParts.length, latestParts.length, 3); i += 1) {
+      const latest = latestParts[i] ?? 0;
+      const current = currentParts[i] ?? 0;
+      if (latest > current) {
+        latestIsNewer = true;
+        break;
+      }
+      if (latest < current) {
+        break;
+      }
+    }
+
+    if (latestIsNewer) {
+      console.warn(
+        `\n[fusion] This source checkout is v${currentVersion}, but npm latest is v${latestVersion}. ` +
+        "If you meant to run the latest Fusion, pull/switch branches before startup.\n",
+      );
+    }
+  } catch {
+    // Best-effort only. Startup must not depend on the registry.
+  }
+}
+
+await warnIfSourceVersionBehind();
+
+if (!prebuildCommand) {
+  runApp(forwardedArgs);
 } else {
-  const build = spawn("pnpm", ["build"], { stdio: "inherit", shell: true });
+  console.log(`[fusion] Running ${prebuildCommand.label} (${prebuildMode}) before source startup...`);
+  const build = spawn(prebuildCommand.command, prebuildCommand.args, { stdio: "inherit", shell: true });
   build.on("close", (code) => {
     if (code !== 0) process.exit(code ?? 1);
     runApp(forwardedArgs);

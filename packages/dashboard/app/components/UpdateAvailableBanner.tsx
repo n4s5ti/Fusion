@@ -11,8 +11,8 @@ export function UpdateAvailableBanner({ latestVersion, currentVersion, onDismiss
   return (
     <div className="update-available-banner" role="status" aria-live="polite">
       <p className="update-available-banner__text">
-        Update available: v{latestVersion} (current: v{currentVersion}). Run <code>npm i -g @runfusion/fusion</code> to
-        update. {" "}
+        Update available: v{latestVersion} (current: v{currentVersion}). Run <code>fn update</code> for an installed CLI,
+        or pull this source checkout.{" "}
         <a
           className="update-available-banner__link"
           href="https://github.com/Runfusion/Fusion/blob/main/CHANGELOG.md"

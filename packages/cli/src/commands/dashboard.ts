@@ -147,7 +147,7 @@ function formatUpdateMessage(updateStatus: StartupUpdateStatus | null): string |
     return null;
   }
 
-  return `⬆ Update available: v${updateStatus.latestVersion} (current: v${updateStatus.currentVersion})`;
+  return `⬆ Update available: v${updateStatus.latestVersion} (current: v${updateStatus.currentVersion}). Run \`fn update\` for an installed CLI, or pull the source checkout.`;
 }
 
 export class StreamedLogBuffer {

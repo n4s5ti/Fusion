@@ -5,8 +5,8 @@
  * live API/WebSocket backend.
  *
  * Two processes:
- *   1. API:  `pnpm dev dashboard --no-auth --port <API_PORT>`
- *            (handles the full build, typecheck, engine, etc.)
+ *   1. API:  `pnpm dev --prebuild=none dashboard --no-auth --port <API_PORT>`
+ *            (source-mode API/engine; Vite serves the browser UI)
  *   2. Vite: `vite dev` in packages/dashboard
  *            (serves app/ with HMR; proxies /api and WS to the API)
  *
@@ -15,7 +15,7 @@
  * code) still require restarting this script.
  *
  * Env:
- *   FUSION_API_PORT   API port (default 4040). Vite's proxy reads the same
+ *   FUSION_API_PORT   API port (default 4050). Vite's proxy reads the same
  *                     var so both sides stay in sync.
  *   FUSION_VITE_PORT  Vite dev port (default 5173).
  */
@@ -28,7 +28,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const repoRoot = resolve(__dirname, "..");
 const dashboardDir = resolve(repoRoot, "packages/dashboard");
 
-const API_PORT = globalThis.process.env.FUSION_API_PORT ?? "4040";
+const API_PORT = globalThis.process.env.FUSION_API_PORT ?? "4050";
 const VITE_PORT = globalThis.process.env.FUSION_VITE_PORT ?? "5173";
 
 const children = [];
@@ -88,13 +88,13 @@ globalThis.process.on("SIGTERM", () => shutdown(0));
 console.log(`[dev-hmr] starting API on :${API_PORT} + vite on :${VITE_PORT}`);
 console.log(`[dev-hmr] open http://localhost:${VITE_PORT} for HMR (not the API URL)`);
 
-// API: green. Runs the existing memory-aware dev entry so the engine, build,
-// and typecheck all happen exactly as they do for `pnpm dev dashboard`.
+// API: green. Vite owns the browser UI in this mode, so skip the dashboard
+// client prebuild and run the API/engine directly from source.
 launch(
   "api",
   "32",
   "pnpm",
-  ["dev", "dashboard", "--no-auth", "--port", API_PORT, "--host", "127.0.0.1"],
+  ["dev", "--prebuild=none", "dashboard", "--no-auth", "--port", API_PORT, "--host", "127.0.0.1"],
   { cwd: repoRoot, env: { ...globalThis.process.env, FUSION_API_PORT: API_PORT } },
 );
 

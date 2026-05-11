@@ -236,7 +236,7 @@ function SplashScreen({ loadingStatus, updateStatus }: { loadingStatus: string; 
       <Text color="cyanBright" dimColor>{FUSION_URL}</Text>
       <Text color="cyanBright" dimColor>{`v${FUSION_VERSION}`}</Text>
       {updateStatus?.updateAvailable && (
-        <Text color="yellow" dimColor>{`Update available: v${updateStatus.currentVersion} → v${updateStatus.latestVersion}. Run \`npm install -g @runfusion/fusion\`.`}</Text>
+        <Text color="yellow" dimColor>{`Update available: v${updateStatus.currentVersion} → v${updateStatus.latestVersion}. Run \`fn update\` for an installed CLI, or pull this source checkout.`}</Text>
       )}
       <Box height={1} />
       <Box flexDirection="row" gap={1}>

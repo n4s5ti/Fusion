@@ -41,8 +41,12 @@ pnpm build:all  # full recursive build including desktop/mobile
 ## Development Workflow
 
 ```bash
-pnpm dev               # build + run CLI entrypoint in dev mode
+pnpm local             # fast local dashboard/API startup on a safe localhost port
+pnpm local --engine    # fast local startup with the AI engine enabled
+pnpm dev               # source-mode CLI entrypoint; dashboard starts with a client-only prebuild
+FUSION_DEV_PREBUILD=full pnpm dev dashboard  # production-like full workspace prebuild
 pnpm dev:ui            # dashboard dev server only
+pnpm dev:hmr           # dashboard API + Vite HMR UI, with no startup prebuild
 pnpm lint              # lint all packages
 pnpm test              # changed-only workspace tests (falls back to full suite in safety contexts)
 pnpm test:full         # full workspace quality gate (clean-worktree compatible)

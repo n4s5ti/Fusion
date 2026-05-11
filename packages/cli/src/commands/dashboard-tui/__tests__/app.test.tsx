@@ -168,6 +168,8 @@ async function flushFrames() {
 
 async function focusSettingsDetailPane(stdin: { write: (chunk: string) => void }, lastFrame: () => string | undefined) {
   stdin.write("\u001b[C");
+  await new Promise((resolve) => setTimeout(resolve, 25));
+  await flushFrames();
   await waitForFrameContains(lastFrame, "[C/V/X/P/L/U/K/R] remote actions");
 }
 

@@ -31,6 +31,7 @@ Options:
   --host <host>       Host to bind. Default: 127.0.0.1.
   --auth              Keep bearer-token auth enabled on localhost.
   --no-auth           Disable auth even for a non-localhost host.
+  --prebuild <mode>   Startup prebuild: client, none, or full. Default: client.
   --skip-install      Do not auto-run pnpm install when node_modules is missing.
   --skip-register     Do not auto-register this repo in Fusion's project registry.
   --allow-4040        Allow using reserved dashboard port 4040.
@@ -63,6 +64,7 @@ function parseArgs(argv) {
     host: "127.0.0.1",
     auth: false,
     noAuth: false,
+    prebuild: "client",
     skipInstall: false,
     skipRegister: false,
     allow4040: false,
@@ -107,6 +109,14 @@ function parseArgs(argv) {
       case "--no-auth":
         opts.noAuth = true;
         break;
+      case "--prebuild": {
+        const value = argv[++i];
+        if (!["none", "client", "full"].includes(value)) {
+          fail("Invalid --prebuild value. Expected one of: none, client, full.");
+        }
+        opts.prebuild = value;
+        break;
+      }
       case "--skip-install":
         opts.skipInstall = true;
         break;
@@ -301,12 +311,18 @@ function shouldDisableAuth(opts) {
 function printSummary(opts, port, dashboardArgs) {
   const mode = opts.engine ? "dashboard + AI engine" : "dashboard/API only";
   const auth = dashboardArgs.includes("--no-auth") ? "disabled" : "enabled";
+  const prebuild = opts.prebuild === "client"
+    ? "dashboard client only"
+    : opts.prebuild === "full"
+      ? "full workspace"
+      : "skipped";
   console.log();
   ok(`Starting ${mode}`);
   console.log(`  URL:  http://${opts.host === "127.0.0.1" ? "localhost" : opts.host}:${port}`);
   console.log(`  Host: ${opts.host}`);
   console.log(`  Auth: ${auth}`);
-  console.log(`  Cmd:  node scripts/dev-with-memory.mjs ${dashboardArgs.join(" ")}`);
+  console.log(`  Prebuild: ${prebuild}`);
+  console.log(`  Cmd:  node scripts/dev-with-memory.mjs --prebuild=${opts.prebuild} ${dashboardArgs.join(" ")}`);
   console.log();
 }
 
@@ -346,7 +362,7 @@ async function main() {
   const child = spawn(process.execPath, ["scripts/dev-with-memory.mjs", ...dashboardArgs], {
     cwd: repoRoot,
     stdio: "inherit",
-    env: process.env,
+    env: { ...process.env, FUSION_DEV_PREBUILD: opts.prebuild },
   });
 
   child.on("exit", (code, signal) => {

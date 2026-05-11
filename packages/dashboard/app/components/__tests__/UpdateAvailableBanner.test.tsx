@@ -10,7 +10,8 @@ describe("UpdateAvailableBanner", () => {
     );
 
     expect(screen.getByText(/Update available: v0.7.0 \(current: v0.6.0\)/)).toBeInTheDocument();
-    expect(screen.getByText("npm i -g @runfusion/fusion")).toBeInTheDocument();
+    expect(screen.getByText("fn update")).toBeInTheDocument();
+    expect(screen.getByText(/or pull this source checkout/)).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Release notes" })).toHaveAttribute(
       "href",
       "https://github.com/Runfusion/Fusion/blob/main/CHANGELOG.md",
