@@ -183,9 +183,7 @@ describe("PR checks workflow (.github/workflows/pr-checks.yml)", () => {
     expect(
       lintSteps.some(
         (step: any) =>
-          step.name === "Install dependencies" &&
-          typeof step.run === "string" &&
-          step.run.includes("pnpm install --frozen-lockfile"),
+          typeof step.uses === "string" && step.uses.includes("./.github/actions/setup-node-pnpm"),
       ),
     ).toBe(true);
     expect(

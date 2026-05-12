@@ -1,0 +1,29 @@
+name: setup-node-pnpm
+description: "Checkout, install pnpm, setup Node.js, install dependencies"
+inputs:
+  node-version:
+    description: Node.js version
+    required: false
+    default: "24"
+  install-args:
+    description: Arguments passed to pnpm install
+    required: false
+    default: "--frozen-lockfile"
+runs:
+  using: composite
+  steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+
+    - name: Install pnpm
+      uses: pnpm/action-setup@v4
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v5
+      with:
+        node-version: ${{ inputs.node-version }}
+        cache: pnpm
+
+    - name: Install dependencies
+      shell: bash
+      run: pnpm install ${{ inputs.install-args }}
