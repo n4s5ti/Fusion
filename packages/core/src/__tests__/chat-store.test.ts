@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
+import { describe, it, expect, beforeAll, beforeEach, afterAll, afterEach, vi } from "vitest";
 import { ChatStore } from "../chat-store.js";
 import { Database } from "../db.js";
 import { mkdtempSync } from "node:fs";
@@ -16,25 +16,42 @@ describe("ChatStore", () => {
   let db: Database;
   let store: ChatStore;
 
-  beforeEach(() => {
+  beforeAll(() => {
     tmpDir = makeTmpDir();
     fusionDir = join(tmpDir, ".fusion");
+  });
+
+  beforeEach(() => {
     // In-memory SQLite for test speed; see store.test.ts beforeEach.
     db = new Database(fusionDir, { inMemory: true });
     db.init();
     store = new ChatStore(fusionDir, db);
   });
 
-  afterEach(async () => {
+  afterEach(() => {
+    vi.useRealTimers();
+
     try {
       db.close();
     } catch {
       // already closed
     }
+  });
+
+  afterAll(async () => {
     await rm(tmpDir, { recursive: true, force: true });
   });
 
   // ── Helper Functions ─────────────────────────────────────────────
+
+  function startFakeClock() {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-01-01T00:00:00.000Z"));
+  }
+
+  function advanceClock(ms = 1) {
+    vi.setSystemTime(new Date(Date.now() + ms));
+  }
 
   function createTestSession(
     store: ChatStore,
@@ -115,11 +132,12 @@ describe("ChatStore", () => {
     });
 
     describe("listSessions", () => {
-      it("returns all sessions ordered by updatedAt desc", async () => {
+      it("returns all sessions ordered by updatedAt desc", () => {
+        startFakeClock();
         const s1 = createTestSession(store);
-        await new Promise((r) => setTimeout(r, 10));
+        advanceClock(10);
         const s2 = createTestSession(store);
-        await new Promise((r) => setTimeout(r, 10));
+        advanceClock(10);
         const s3 = createTestSession(store);
 
         const list = store.listSessions();
@@ -184,14 +202,15 @@ describe("ChatStore", () => {
     });
 
     describe("findLatestActiveSessionForTarget", () => {
-      it("returns newest exact model match for model-specific targets", async () => {
+      it("returns newest exact model match for model-specific targets", () => {
+        startFakeClock();
         const olderModelMatch = createTestSession(store, {
           agentId: "agent-lookup",
           projectId: "proj-1",
           modelProvider: "openai",
           modelId: "gpt-4o",
         });
-        await new Promise((r) => setTimeout(r, 5));
+        advanceClock(5);
         const newestModelMatch = createTestSession(store, {
           agentId: "agent-lookup",
           projectId: "proj-1",
@@ -217,14 +236,15 @@ describe("ChatStore", () => {
         expect(found?.id).not.toBe(olderModelMatch.id);
       });
 
-      it("prefers model-less session for agent-only targets", async () => {
+      it("prefers model-less session for agent-only targets", () => {
+        startFakeClock();
         const modelSpecific = createTestSession(store, {
           agentId: "agent-lookup",
           projectId: "proj-1",
           modelProvider: "openai",
           modelId: "gpt-4o",
         });
-        await new Promise((r) => setTimeout(r, 5));
+        advanceClock(5);
         const modelLess = createTestSession(store, {
           agentId: "agent-lookup",
           projectId: "proj-1",
@@ -239,14 +259,15 @@ describe("ChatStore", () => {
         expect(found?.id).not.toBe(modelSpecific.id);
       });
 
-      it("falls back to newest agent session when no model-less session exists", async () => {
+      it("falls back to newest agent session when no model-less session exists", () => {
+        startFakeClock();
         createTestSession(store, {
           agentId: "agent-lookup",
           projectId: "proj-1",
           modelProvider: "openai",
           modelId: "gpt-4o-mini",
         });
-        await new Promise((r) => setTimeout(r, 5));
+        advanceClock(5);
         const newestModelSpecific = createTestSession(store, {
           agentId: "agent-lookup",
           projectId: "proj-1",
@@ -288,11 +309,12 @@ describe("ChatStore", () => {
     });
 
     describe("updateSession", () => {
-      it("updates title and bumps updatedAt", async () => {
+      it("updates title and bumps updatedAt", () => {
+        startFakeClock();
         const session = createTestSession(store);
         const originalUpdatedAt = session.updatedAt;
 
-        await new Promise((r) => setTimeout(r, 5));
+        advanceClock(5);
 
         const updated = store.updateSession(session.id, { title: "Updated Title" });
 
@@ -493,11 +515,12 @@ describe("ChatStore", () => {
         }).toThrow("Chat session chat-nonexistent not found");
       });
 
-      it("updates session's updatedAt timestamp", async () => {
+      it("updates session's updatedAt timestamp", () => {
+        startFakeClock();
         const session = createTestSession(store);
         const originalUpdatedAt = session.updatedAt;
 
-        await new Promise((r) => setTimeout(r, 5));
+        advanceClock(5);
 
         store.addMessage(session.id, { role: "user", content: "New message" });
 
@@ -556,12 +579,13 @@ describe("ChatStore", () => {
     });
 
     describe("getMessages", () => {
-      it("returns messages for a session ordered by createdAt ASC", async () => {
+      it("returns messages for a session ordered by createdAt ASC", () => {
+        startFakeClock();
         const session = createTestSession(store);
         const m1 = store.addMessage(session.id, { role: "user", content: "First" });
-        await new Promise((r) => setTimeout(r, 5));
+        advanceClock(5);
         const m2 = store.addMessage(session.id, { role: "assistant", content: "Second" });
-        await new Promise((r) => setTimeout(r, 5));
+        advanceClock(5);
         const m3 = store.addMessage(session.id, { role: "user", content: "Third" });
 
         const messages = store.getMessages(session.id);
@@ -595,12 +619,13 @@ describe("ChatStore", () => {
         expect(messages[0].content).toBe("2");
       });
 
-      it("respects before cursor (timestamp)", async () => {
+      it("respects before cursor (timestamp)", () => {
+        startFakeClock();
         const session = createTestSession(store);
         const m1 = store.addMessage(session.id, { role: "user", content: "1" });
-        await new Promise((r) => setTimeout(r, 5));
+        advanceClock(5);
         store.addMessage(session.id, { role: "user", content: "2" });
-        await new Promise((r) => setTimeout(r, 5));
+        advanceClock(5);
         store.addMessage(session.id, { role: "user", content: "3" });
 
         const messages = store.getMessages(session.id, { before: m1.createdAt });
@@ -657,13 +682,14 @@ describe("ChatStore", () => {
     });
 
     describe("getLastMessageForSessions", () => {
-      it("returns the most recent message for each session", async () => {
+      it("returns the most recent message for each session", () => {
+        startFakeClock();
         const session1 = createTestSession(store);
         const session2 = createTestSession(store);
 
         // Add messages to session1
         store.addMessage(session1.id, { role: "user", content: "Hello" });
-        await new Promise((r) => setTimeout(r, 5));
+        advanceClock(5);
         const latestMsg1 = store.addMessage(session1.id, {
           role: "assistant",
           content: "Latest for session 1",
@@ -762,17 +788,18 @@ describe("ChatStore", () => {
         expect(store.getMessages(session2.id)[0].content).toBe("Session 2");
       });
 
-      it("updates the parent session's updatedAt timestamp", async () => {
+      it("updates the parent session's updatedAt timestamp", () => {
+        startFakeClock();
         const session = createTestSession(store);
         store.addMessage(session.id, { role: "user", content: "Hello" });
         const originalUpdatedAt = store.getSession(session.id)!.updatedAt;
 
-        await new Promise((r) => setTimeout(r, 5));
+        advanceClock(5);
 
         const msg = store.addMessage(session.id, { role: "assistant", content: "Reply" });
         const afterAddUpdatedAt = store.getSession(session.id)!.updatedAt;
 
-        await new Promise((r) => setTimeout(r, 5));
+        advanceClock(5);
 
         store.deleteMessage(msg.id);
 
@@ -854,10 +881,11 @@ describe("ChatStore", () => {
   });
 
   describe("Room messages", () => {
-    it("adds and lists room messages with before cursor, mentions, and attachment append", async () => {
+    it("adds and lists room messages with before cursor, mentions, and attachment append", () => {
+      startFakeClock();
       const room = store.createRoom({ name: "support", projectId: "proj-1" });
       const first = store.addRoomMessage(room.id, { role: "user", content: "first", mentions: ["agent-1"] });
-      await new Promise((r) => setTimeout(r, 5));
+      advanceClock(5);
       const second = store.addRoomMessage(room.id, { role: "assistant", content: "second", senderAgentId: "agent-1" });
 
       const loadedFirst = store.getRoomMessage(first.id);
@@ -877,14 +905,15 @@ describe("ChatStore", () => {
       expect(updated.attachments).toHaveLength(1);
     });
 
-    it("deleteRoomMessage emits event and bumps room updatedAt", async () => {
+    it("deleteRoomMessage emits event and bumps room updatedAt", () => {
+      startFakeClock();
       const deletedHandler = vi.fn();
       store.on("chat:room:message:deleted", deletedHandler);
 
       const room = store.createRoom({ name: "alerts", projectId: "proj-1" });
       const msg = store.addRoomMessage(room.id, { role: "user", content: "hello" });
       const afterAdd = store.getRoom(room.id)!;
-      await new Promise((r) => setTimeout(r, 5));
+      advanceClock(5);
 
       expect(store.deleteRoomMessage(msg.id)).toBe(true);
       const afterDelete = store.getRoom(room.id)!;

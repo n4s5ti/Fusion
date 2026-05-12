@@ -9,8 +9,14 @@
  * - Triage re-picks unspecified tasks
  * - Crash scenarios are handled gracefully (semaphore release, status cleanup)
  */
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { AgentSemaphore } from "../concurrency.js";
+
+const WAIT_FOR_ASYNC_OPTIONS = { timeout: 2000, interval: 5 };
+
+async function waitForAsyncExpectation(assertion: () => void | Promise<void>) {
+  await vi.waitFor(assertion, WAIT_FOR_ASYNC_OPTIONS);
+}
 
 /* eslint-disable @typescript-eslint/no-unsafe-function-type, @typescript-eslint/no-explicit-any -- Test mocks use Function/any type for simplicity */
 
@@ -404,6 +410,10 @@ beforeEach(() => {
   }) as any);
 });
 
+afterEach(() => {
+  vi.useRealTimers();
+});
+
 // ── Step 2: In-progress task resume tests ─────────────────────────────────
 
 describe("In-progress task resume after restart", () => {
@@ -420,8 +430,9 @@ describe("In-progress task resume after restart", () => {
     const executor = new TaskExecutor(store, "/tmp/test");
     await executor.resumeOrphaned();
 
-    // Wait for async execute calls to complete
-    await new Promise((r) => setTimeout(r, 50));
+    await waitForAsyncExpectation(() => {
+      expect(mockedCreateFnAgent).toHaveBeenCalledTimes(2);
+    });
 
     // Exactly one agent session per in-progress task (no retry inflation)
     expect(mockedCreateFnAgent).toHaveBeenCalledTimes(2);
@@ -447,7 +458,9 @@ describe("In-progress task resume after restart", () => {
 
     const executor = new TaskExecutor(store, "/tmp/test");
     await executor.resumeOrphaned();
-    await new Promise((r) => setTimeout(r, 50));
+    await waitForAsyncExpectation(() => {
+      expect(store.logEntry).toHaveBeenCalledWith("FN-010", "Resumed after engine restart");
+    });
 
     // No git worktree add commands should have been called
     const gitWorktreeAddCalls = mockedExecSync.mock.calls.filter(
@@ -478,7 +491,9 @@ describe("In-progress task resume after restart", () => {
 
     const executor = new TaskExecutor(store, "/tmp/test");
     await executor.resumeOrphaned();
-    await new Promise((r) => setTimeout(r, 50));
+    await waitForAsyncExpectation(() => {
+      expect(capturedPrompt).toContain("⚠️ RESUMING");
+    });
 
     expect(capturedPrompt).toContain("⚠️ RESUMING");
     expect(capturedPrompt).toContain("Step 0 (Step 0): **done**");
@@ -501,7 +516,9 @@ describe("In-progress task resume after restart", () => {
 
     const executor = new TaskExecutor(store, "/tmp/test");
     await executor.resumeOrphaned();
-    await new Promise((r) => setTimeout(r, 50));
+    await waitForAsyncExpectation(() => {
+      expect(store.getSettings).toHaveBeenCalled();
+    });
 
     // getSettings is called (for project commands in execution prompt) but init command should not run
     expect(store.getSettings).toHaveBeenCalled();
@@ -540,7 +557,9 @@ describe("In-progress task resume after restart", () => {
 
     const executor = new TaskExecutor(store, "/tmp/test");
     await executor.resumeOrphaned();
-    await new Promise((r) => setTimeout(r, 50));
+    await waitForAsyncExpectation(() => {
+      expect(store.updateStep).toHaveBeenCalledWith("FN-1701", 1, "done");
+    });
 
     // The step should have been flipped to done *before* execute ran.
     expect(store.updateStep).toHaveBeenCalledWith("FN-1701", 1, "done");
@@ -572,7 +591,9 @@ describe("In-progress task resume after restart", () => {
 
     const executor = new TaskExecutor(store, "/tmp/test");
     await executor.resumeOrphaned();
-    await new Promise((r) => setTimeout(r, 50));
+    await waitForAsyncExpectation(() => {
+      expect(mockedCreateFnAgent).toHaveBeenCalledTimes(1);
+    });
 
     // Must NOT mark the step done — the reset invalidated the prior approval.
     const updateStepDoneCalls = store.updateStep.mock.calls.filter(
@@ -599,7 +620,9 @@ describe("In-progress task resume after restart", () => {
 
     const executor = new TaskExecutor(store, "/tmp/test");
     await executor.resumeOrphaned();
-    await new Promise((r) => setTimeout(r, 50));
+    await waitForAsyncExpectation(() => {
+      expect(mockedCreateFnAgent).toHaveBeenCalledTimes(1);
+    });
 
     const updateStepDoneCalls = store.updateStep.mock.calls.filter(
       (c: any[]) => c[0] === "FN-1703" && c[2] === "done",
@@ -630,7 +653,9 @@ describe("In-progress task resume after restart", () => {
 
     const executor = new TaskExecutor(store, "/tmp/test");
     await executor.resumeOrphaned();
-    await new Promise((r) => setTimeout(r, 50));
+    await waitForAsyncExpectation(() => {
+      expect(store.updateStep).toHaveBeenCalledWith("FN-1704", 0, "done");
+    });
 
     expect(store.updateStep).toHaveBeenCalledWith("FN-1704", 0, "done");
     expect(store.updateStep).toHaveBeenCalledWith("FN-1704", 1, "done");
@@ -649,7 +674,9 @@ describe("In-progress task resume after restart", () => {
 
     const executor = new TaskExecutor(store, "/tmp/test");
     await executor.resumeOrphaned();
-    await new Promise((r) => setTimeout(r, 50));
+    await waitForAsyncExpectation(() => {
+      expect(store.logEntry).toHaveBeenCalledWith("FN-040", "Resumed after engine restart");
+    });
 
     expect(store.logEntry).toHaveBeenCalledWith("FN-040", "Resumed after engine restart");
     expect(store.logEntry).toHaveBeenCalledWith("FN-041", "Resumed after engine restart");
@@ -784,9 +811,7 @@ describe("In-progress task resume after restart", () => {
     expect(store.updateStep).toHaveBeenCalledWith("FN-963", 0, "pending");
 
     // Advance timers to trigger the setTimeout that moves task to todo then in-progress
-    vi.advanceTimersByTime(0);
-    // Run any pending microtasks (the async code in setTimeout)
-    await vi.runAllTimersAsync();
+    await vi.advanceTimersByTimeAsync(0);
 
     // Task should move to todo then in-progress (not in-review). The
     // workflow-rerun bounce passes `preserveWorktree: true` so the
@@ -955,8 +980,9 @@ describe("Triage re-pick after restart", () => {
     });
     triage.start();
 
-    // Wait for the immediate poll() to fire
-    await new Promise((r) => setTimeout(r, 100));
+    await waitForAsyncExpectation(() => {
+      expect(store.updateTask).toHaveBeenCalledWith("FN-060", { status: "planning" });
+    });
     triage.stop();
 
     // Both triage tasks should have been picked up for specification
@@ -993,8 +1019,9 @@ describe("Triage re-pick after restart", () => {
     // Start first specification (will block on prompt)
     const first = triage.specifyTask(task);
 
-    // Give it time to enter processing set
-    await new Promise((r) => setTimeout(r, 20));
+    await waitForAsyncExpectation(() => {
+      expect(mockedCreateFnAgent).toHaveBeenCalledTimes(1);
+    });
 
     // Second call should be a no-op (already processing)
     await triage.specifyTask(task);
@@ -1029,7 +1056,9 @@ describe("Scheduler after restart", () => {
 
     // Use start/stop to trigger schedule() then clean up
     scheduler.start();
-    await new Promise((r) => setTimeout(r, 50));
+    await waitForAsyncExpectation(() => {
+      expect(store.moveTask).toHaveBeenCalledWith("FN-070", "in-progress", expect.objectContaining({ allocateWorktree: expect.any(Function) }));
+    });
     scheduler.stop();
 
     expect(store.moveTask).toHaveBeenCalledWith("FN-070", "in-progress", expect.objectContaining({ allocateWorktree: expect.any(Function) }));
@@ -1054,7 +1083,9 @@ describe("Scheduler after restart", () => {
     });
 
     scheduler.start();
-    await new Promise((r) => setTimeout(r, 50));
+    await waitForAsyncExpectation(() => {
+      expect(onBlocked).toHaveBeenCalledWith(blockedTask, ["FN-071"]);
+    });
     scheduler.stop();
 
     // Task should NOT have been moved
@@ -1087,7 +1118,9 @@ describe("Scheduler after restart", () => {
       pollIntervalMs: 100000,
     });
     triage.start();
-    await new Promise((r) => setTimeout(r, 100));
+    await waitForAsyncExpectation(() => {
+      expect(store.updateTask).toHaveBeenCalledWith("FN-080", { status: "planning" });
+    });
     triage.stop();
 
     expect(store.updateTask).toHaveBeenCalledWith("FN-080", { status: "planning" });
@@ -1099,7 +1132,9 @@ describe("Scheduler after restart", () => {
 
     const scheduler = new Scheduler(store, { maxConcurrent: 2, maxWorktrees: 4 });
     scheduler.start();
-    await new Promise((r) => setTimeout(r, 50));
+    await waitForAsyncExpectation(() => {
+      expect(store.moveTask).toHaveBeenCalledWith("FN-081", "in-progress", expect.objectContaining({ allocateWorktree: expect.any(Function) }));
+    });
     scheduler.stop();
 
     expect(store.moveTask).toHaveBeenCalledWith("FN-081", "in-progress", expect.objectContaining({ allocateWorktree: expect.any(Function) }));
@@ -1115,7 +1150,9 @@ describe("Scheduler after restart", () => {
 
     const executor = new TaskExecutor(store, "/tmp/root");
     await executor.resumeOrphaned();
-    await new Promise((r) => setTimeout(r, 50));
+    await waitForAsyncExpectation(() => {
+      expect(store.logEntry).toHaveBeenCalledWith("FN-082", "Resumed after engine restart");
+    });
 
     expect(store.logEntry).toHaveBeenCalledWith("FN-082", "Resumed after engine restart");
 
@@ -1153,7 +1190,9 @@ describe("Crash scenario edge cases", () => {
     });
 
     await executor.resumeOrphaned();
-    await new Promise((r) => setTimeout(r, 50));
+    await waitForAsyncExpectation(() => {
+      expect(onError).toHaveBeenCalledWith(task, expect.any(Error));
+    });
 
     // onError should have been called
     expect(onError).toHaveBeenCalledWith(task, expect.any(Error));
@@ -1170,7 +1209,9 @@ describe("Crash scenario edge cases", () => {
     createAgentWithTaskDone();
 
     await executor.resumeOrphaned();
-    await new Promise((r) => setTimeout(r, 50));
+    await waitForAsyncExpectation(() => {
+      expect(mockedCreateFnAgent).toHaveBeenCalledTimes(1);
+    });
 
     // Exactly one agent created for the re-resume, proving the task was eligible
     // and completed without retry inflation.
@@ -1245,11 +1286,13 @@ describe("Crash scenario edge cases", () => {
 
     // First call starts execution
     const first = executor.resumeOrphaned();
-    await new Promise((r) => setTimeout(r, 20));
+    await waitForAsyncExpectation(() => {
+      expect(mockedCreateFnAgent).toHaveBeenCalledTimes(1);
+    });
 
     // Second call while first is still executing
     const second = executor.resumeOrphaned();
-    await new Promise((r) => setTimeout(r, 20));
+    await Promise.resolve();
 
     // Only one agent should have been created (the executing set guards against double-exec)
     expect(mockedCreateFnAgent).toHaveBeenCalledTimes(1);
@@ -1282,7 +1325,9 @@ describe("Crash scenario edge cases", () => {
     });
 
     await executor.resumeOrphaned();
-    await new Promise((r) => setTimeout(r, 50));
+    await waitForAsyncExpectation(() => {
+      expect(onError).toHaveBeenCalled();
+    });
 
     // Semaphore should return to pre-execution count (1 from our manual acquire)
     expect(sem.activeCount).toBe(1);
@@ -1380,7 +1425,6 @@ describe("Worktree pool restart with recycleWorktrees=true", () => {
 
     const executor = new TaskExecutor(store, "/root", { pool });
     await executor.execute(makeTask("FN-110", "in-progress"));
-    await new Promise((r) => setTimeout(r, 50));
 
     // Pool should be empty (worktree acquired)
     expect(pool.size).toBe(0);
@@ -1615,7 +1659,9 @@ describe("Engine pause/unpause cycle", () => {
     });
 
     scheduler.start();
-    await new Promise((r) => setTimeout(r, 50));
+    await waitForAsyncExpectation(() => {
+      expect(store.moveTask).toHaveBeenCalledWith("FN-EP3", "in-progress", expect.objectContaining({ allocateWorktree: expect.any(Function) }));
+    });
 
     // Scheduler should have moved todo task to in-progress
     expect(store.moveTask).toHaveBeenCalledWith("FN-EP3", "in-progress", expect.objectContaining({ allocateWorktree: expect.any(Function) }));
@@ -1638,7 +1684,9 @@ describe("Engine pause/unpause cycle", () => {
       previous: { ...DEFAULT_SETTINGS, enginePaused: true },
     });
 
-    await new Promise((r) => setTimeout(r, 100));
+    await waitForAsyncExpectation(() => {
+      expect(store.moveTask).toHaveBeenCalledWith("FN-EP4", "in-progress", expect.objectContaining({ allocateWorktree: expect.any(Function) }));
+    });
     scheduler.stop();
 
     // The new task should have been scheduled after unpause

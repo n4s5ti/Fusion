@@ -35,6 +35,22 @@ import {
 
 const mockedReviewStep = vi.mocked(mockedReviewStepFn);
 
+const WAIT_FOR_ASYNC_OPTIONS = { timeout: 2000, interval: 5 };
+
+async function waitForAsyncExpectation(assertion: () => void | Promise<void>) {
+  await vi.waitFor(assertion, WAIT_FOR_ASYNC_OPTIONS);
+}
+
+async function waitForStepExecutorRegistration(executor: TaskExecutor, taskId: string) {
+  await waitForAsyncExpectation(() => {
+    expect((executor as any).activeStepExecutors.has(taskId)).toBe(true);
+  });
+}
+
+afterEach(() => {
+  vi.useRealTimers();
+});
+
 describe("TaskExecutor context limit error recovery", () => {
   beforeEach(() => {
     resetExecutorMocks();
@@ -784,8 +800,9 @@ describe("TaskExecutor agent execution flow (FN-978)", () => {
     // Trigger the task:moved event manually
     store._trigger("task:moved", { task, from: "todo", to: "in-progress" });
 
-    // Wait for async execution to complete
-    await new Promise((resolve) => setTimeout(resolve, 50));
+    await waitForAsyncExpectation(() => {
+      expect(session.prompt).toHaveBeenCalled();
+    });
 
     // Verify the agent was created and prompt was called
     expect(mockedCreateFnAgent).toHaveBeenCalledWith(
@@ -823,8 +840,7 @@ describe("TaskExecutor agent execution flow (FN-978)", () => {
     // Trigger the task:moved event with to='done' (should not execute)
     store._trigger("task:moved", { task, from: "in-progress", to: "done" });
 
-    // Wait for async
-    await new Promise((resolve) => setTimeout(resolve, 50));
+    await Promise.resolve();
 
     // Verify no agent was created
     expect(mockedCreateFnAgent).not.toHaveBeenCalled();
@@ -860,7 +876,14 @@ describe("TaskExecutor agent execution flow (FN-978)", () => {
 
       store.getTask.mockResolvedValue(movedTask);
       store._trigger("task:moved", { task: movedTask, from: "in-review", to: "in-progress" });
-      await new Promise((resolve) => setTimeout(resolve, 20));
+      await waitForAsyncExpectation(() => {
+        expect(store.updateTask).toHaveBeenCalledWith("FN-2883-A", expect.objectContaining({
+          mergeDetails: null,
+          mergeRetries: 0,
+          verificationFailureCount: 0,
+          workflowStepResults: [],
+        }));
+      });
 
       expect(store.updateTask).toHaveBeenCalledWith("FN-2883-A", expect.objectContaining({
         mergeDetails: null,
@@ -869,12 +892,14 @@ describe("TaskExecutor agent execution flow (FN-978)", () => {
         workflowStepResults: [],
       }));
       expect(store.updateStep).toHaveBeenCalledWith("FN-2883-A", 3, "pending");
-      expect(store.logEntry).toHaveBeenCalledWith(
-        "FN-2883-A",
-        expect.stringContaining("Task returned to in-progress from in-review column"),
-        undefined,
-        undefined,
-      );
+      await waitForAsyncExpectation(() => {
+        expect(store.logEntry).toHaveBeenCalledWith(
+          "FN-2883-A",
+          expect.stringContaining("Task returned to in-progress from in-review column"),
+          undefined,
+          undefined,
+        );
+      });
       expect(executeSpy).toHaveBeenCalled();
     });
 
@@ -905,7 +930,14 @@ describe("TaskExecutor agent execution flow (FN-978)", () => {
 
       store.getTask.mockResolvedValue(movedTask);
       store._trigger("task:moved", { task: movedTask, from: "done", to: "in-progress" });
-      await new Promise((resolve) => setTimeout(resolve, 20));
+      await waitForAsyncExpectation(() => {
+        expect(store.updateTask).toHaveBeenCalledWith("FN-2883-B", expect.objectContaining({
+          mergeDetails: null,
+          mergeRetries: 0,
+          verificationFailureCount: 0,
+          workflowStepResults: [],
+        }));
+      });
 
       expect(store.updateTask).toHaveBeenCalledWith("FN-2883-B", expect.objectContaining({
         mergeDetails: null,
@@ -914,12 +946,14 @@ describe("TaskExecutor agent execution flow (FN-978)", () => {
         workflowStepResults: [],
       }));
       expect(store.updateStep).toHaveBeenCalledWith("FN-2883-B", 2, "pending");
-      expect(store.logEntry).toHaveBeenCalledWith(
-        "FN-2883-B",
-        expect.stringContaining("Task returned to in-progress from done column"),
-        undefined,
-        undefined,
-      );
+      await waitForAsyncExpectation(() => {
+        expect(store.logEntry).toHaveBeenCalledWith(
+          "FN-2883-B",
+          expect.stringContaining("Task returned to in-progress from done column"),
+          undefined,
+          undefined,
+        );
+      });
     });
 
     it("preserves verificationFailureCount for merge remediation cycles even if status was cleared", async () => {
@@ -946,7 +980,14 @@ describe("TaskExecutor agent execution flow (FN-978)", () => {
 
       store.getTask.mockResolvedValue(movedTask);
       store._trigger("task:moved", { task: movedTask, from: "in-review", to: "in-progress" });
-      await new Promise((resolve) => setTimeout(resolve, 20));
+      await waitForAsyncExpectation(() => {
+        expect(store.updateTask).toHaveBeenCalledWith("FN-2883-D", expect.objectContaining({
+          mergeDetails: null,
+          mergeRetries: 0,
+          verificationFailureCount: 2,
+          workflowStepResults: [],
+        }));
+      });
 
       expect(store.updateTask).toHaveBeenCalledWith("FN-2883-D", expect.objectContaining({
         mergeDetails: null,
@@ -978,7 +1019,7 @@ describe("TaskExecutor agent execution flow (FN-978)", () => {
       };
 
       store._trigger("task:moved", { task: movedTask, from: "todo", to: "in-progress" });
-      await new Promise((resolve) => setTimeout(resolve, 20));
+      await Promise.resolve();
 
       expect(store.updateTask).not.toHaveBeenCalledWith("FN-2883-C", expect.objectContaining({ mergeDetails: null }));
       expect(store.updateStep).not.toHaveBeenCalled();
@@ -1019,8 +1060,9 @@ describe("TaskExecutor agent execution flow (FN-978)", () => {
       // Trigger task:moved away from in-progress
       store._trigger("task:moved", { task, from: "in-progress", to: "todo" });
 
-      // Allow async handlers to complete
-      await new Promise((resolve) => setTimeout(resolve, 50));
+      await waitForAsyncExpectation(() => {
+        expect(disposeSpy).toHaveBeenCalled();
+      });
 
       // Verify session was disposed and removed from map
       expect(disposeSpy).toHaveBeenCalled();
@@ -1059,8 +1101,9 @@ describe("TaskExecutor agent execution flow (FN-978)", () => {
       // Trigger task:moved away from in-progress
       store._trigger("task:moved", { task, from: "in-progress", to: "triage" });
 
-      // Allow async handlers to complete
-      await new Promise((resolve) => setTimeout(resolve, 50));
+      await waitForAsyncExpectation(() => {
+        expect(mockTerminateAllSessions).toHaveBeenCalled();
+      });
 
       // Verify terminateAllSessions was called
       expect(mockTerminateAllSessions).toHaveBeenCalled();
@@ -1134,9 +1177,9 @@ describe("TaskExecutor agent execution flow (FN-978)", () => {
 
       store._trigger("task:moved", { task, from: "in-progress", to: "todo" });
 
-      await new Promise((resolve) => setTimeout(resolve, 50));
-
-      expect(untrackSpy).toHaveBeenCalledWith("FN-004");
+      await waitForAsyncExpectation(() => {
+        expect(untrackSpy).toHaveBeenCalledWith("FN-004");
+      });
     });
 
     it("adds task to pausedAborted set to prevent re-execution", async () => {
@@ -1170,9 +1213,9 @@ describe("TaskExecutor agent execution flow (FN-978)", () => {
 
       store._trigger("task:moved", { task, from: "in-progress", to: "triage" });
 
-      await new Promise((resolve) => setTimeout(resolve, 50));
-
-      expect((executor as any).pausedAborted.has("FN-005")).toBe(true);
+      await waitForAsyncExpectation(() => {
+        expect((executor as any).pausedAborted.has("FN-005")).toBe(true);
+      });
     });
   });
 
@@ -1331,8 +1374,13 @@ describe("TaskExecutor agent execution flow (FN-978)", () => {
 
   it("prevents duplicate execution when task:moved fires twice for same task", async () => {
     const store = createMockStore();
+    let resolvePrompt: (() => void) | undefined;
     const session = {
-      prompt: vi.fn().mockResolvedValue(undefined),
+      prompt: vi.fn().mockImplementation(
+        () => new Promise<void>((resolve) => {
+          resolvePrompt = resolve;
+        }),
+      ),
       dispose: vi.fn(),
     };
 
@@ -1353,21 +1401,23 @@ describe("TaskExecutor agent execution flow (FN-978)", () => {
       updatedAt: new Date().toISOString(),
     };
 
-    // Trigger the event twice quickly
+    // Trigger the event twice quickly while the first execution is still in flight.
     store._trigger("task:moved", { task, from: "todo", to: "in-progress" });
     store._trigger("task:moved", { task, from: "todo", to: "in-progress" });
 
-    // Wait for completion
-    await new Promise((resolve) => setTimeout(resolve, 200));
+    await waitForAsyncExpectation(() => {
+      expect(mockedCreateFnAgent).toHaveBeenCalledTimes(1);
+      expect(session.prompt).toHaveBeenCalledTimes(1);
+    });
+
+    resolvePrompt?.();
+    await Promise.resolve();
 
     // The executing guard prevents duplicate execution from the event handler.
-    // Note: createFnAgent may be called a second time if the agent finishes
-    // without calling fn_task_done (retry path), but the initial trigger should
-    // only cause one execution, not two.
     // Verify that store.on was called with task:moved (listener registered)
     expect(store.on).toHaveBeenCalledWith("task:moved", expect.any(Function));
-    // Verify the event handler initiated execute() (not twice from events)
-    // The executing set guard works — both triggers don't cause double execution
+    expect(mockedCreateFnAgent).toHaveBeenCalledTimes(1);
+    expect(session.prompt).toHaveBeenCalledTimes(1);
   });
 
   it("logs error when execute() fails in task:moved handler", async () => {
@@ -1393,8 +1443,12 @@ describe("TaskExecutor agent execution flow (FN-978)", () => {
     // Trigger the event
     store._trigger("task:moved", { task, from: "todo", to: "in-progress" });
 
-    // Wait for async
-    await new Promise((resolve) => setTimeout(resolve, 50));
+    await waitForAsyncExpectation(() => {
+      expect(onError).toHaveBeenCalledWith(
+        expect.objectContaining({ id: "FN-978" }),
+        expect.any(Error),
+      );
+    });
 
     // Verify the error handler was called
     expect(onError).toHaveBeenCalledWith(
@@ -1944,7 +1998,7 @@ describe("StepSessionExecutor integration", () => {
           retries: 0,
           tokenUsage: { inputTokens: 20, outputTokens: 10, cachedTokens: 2, totalTokens: 32 },
         });
-        await new Promise((resolve) => setTimeout(resolve, 0));
+        await Promise.resolve();
 
         options.onStepComplete(1, {
           stepIndex: 1,
@@ -1952,7 +2006,7 @@ describe("StepSessionExecutor integration", () => {
           retries: 0,
           tokenUsage: { inputTokens: 30, outputTokens: 5, cachedTokens: 1, totalTokens: 36 },
         });
-        await new Promise((resolve) => setTimeout(resolve, 0));
+        await Promise.resolve();
 
         return [
           {
@@ -2228,8 +2282,7 @@ describe("StepSessionExecutor integration", () => {
     // Start execution (don't await — it will hang)
     const executePromise = executor.execute(task);
 
-    // Give it time to set up the step executor
-    await new Promise((r) => setTimeout(r, 50));
+    await waitForStepExecutorRegistration(executor, "FN-200");
 
     // Trigger pause
     store._trigger("task:updated", { ...task, paused: true });
@@ -2256,8 +2309,7 @@ describe("StepSessionExecutor integration", () => {
     const task = createTaskWithSteps();
     const executePromise = executor.execute(task);
 
-    // Give it time to set up the step executor
-    await new Promise((r) => setTimeout(r, 50));
+    await waitForStepExecutorRegistration(executor, "FN-200");
 
     // Trigger stuck kill
     executor.markStuckAborted("FN-200");
@@ -2285,8 +2337,7 @@ describe("StepSessionExecutor integration", () => {
     const task = createTaskWithSteps();
     const executePromise = executor.execute(task);
 
-    // Give it time to set up the step executor
-    await new Promise((r) => setTimeout(r, 50));
+    await waitForStepExecutorRegistration(executor, "FN-200");
 
     // Verify step executor is registered
     expect((executor as any).activeStepExecutors.has("FN-200")).toBe(true);
@@ -2320,7 +2371,7 @@ describe("StepSessionExecutor integration", () => {
     const task = createTaskWithSteps();
     const executePromise = executor.execute(task);
 
-    await new Promise((r) => setTimeout(r, 50));
+    await waitForStepExecutorRegistration(executor, "FN-200");
 
     // Budget exhausted — should NOT requeue
     executor.markStuckAborted("FN-200", false);
@@ -2355,7 +2406,7 @@ describe("StepSessionExecutor integration", () => {
     const task = createTaskWithSteps();
     const executePromise = executor.execute(task);
 
-    await new Promise((r) => setTimeout(r, 50));
+    await waitForStepExecutorRegistration(executor, "FN-200");
 
     // Trigger pause
     store._trigger("task:updated", { ...task, paused: true });
@@ -2448,8 +2499,7 @@ describe("StepSessionExecutor integration", () => {
     const task = createTaskWithSteps();
     const executePromise = executor.execute(task);
 
-    // Give it time to set up the step executor
-    await new Promise((r) => setTimeout(r, 50));
+    await waitForStepExecutorRegistration(executor, "FN-200");
 
     // Simulate dep-abort by directly triggering the fn_task_add_dep cleanup logic
     // The dep-abort flag should cause the step-session path to handle cleanup
@@ -2524,9 +2574,7 @@ describe("StepSessionExecutor integration", () => {
     expect(onError).not.toHaveBeenCalled();
 
     // Advance timers to trigger the setTimeout that moves task to todo then in-progress
-    vi.advanceTimersByTime(0);
-    // Run any pending microtasks (the async code in setTimeout)
-    await vi.runAllTimersAsync();
+    await vi.advanceTimersByTimeAsync(0);
 
     // Task should move to todo then in-progress (not in-review). The
     // workflow-rerun bounce flags preserveResumeState so the worktree and

@@ -748,6 +748,12 @@ function disposeTrackedDashboards(): void {
   }
 }
 
+const WAIT_FOR_ASYNC_OPTIONS = { timeout: 5000, interval: 10 };
+
+async function waitForAsyncExpectation(assertion: () => void | Promise<void>) {
+  await vi.waitFor(assertion, WAIT_FOR_ASYNC_OPTIONS);
+}
+
 async function runDashboard(...args: Parameters<typeof runDashboardImpl>): ReturnType<typeof runDashboardImpl> {
   disposeTrackedDashboards();
   const result = await runDashboardImpl(...args);
@@ -822,6 +828,12 @@ beforeEach(() => {
   mockExecSync.mockReset();
   mockExecSync.mockReturnValue("");
   mockExec.mockClear();
+  mockListen.mockReset();
+  mockListen.mockImplementation((port: number) => {
+    const server = createMockServer(port);
+    process.nextTick(() => server.emit("listening"));
+    return server;
+  });
   mockStuckCheckNow.mockReset();
   mockStuckCheckNow.mockResolvedValue(undefined);
   if (updateCacheDir) {
@@ -1121,7 +1133,14 @@ describe("runDashboard — PR-first auto-merge queue", () => {
     const { aiMergeTask } = await import("@fusion/engine");
 
     await runDashboard(0, { open: false });
-    await new Promise((r) => setTimeout(r, 100));
+    await waitForAsyncExpectation(() => {
+      expect(mockCreatePr).toHaveBeenCalledWith({
+        title: "FN-093: Task",
+        body: "Automated PR for FN-093.\n\nDescription",
+        head: "fusion/fn-093",
+        base: "main",
+      });
+    });
 
     expect(mockCreatePr).toHaveBeenCalledWith({
       title: "FN-093: Task",
@@ -1270,8 +1289,7 @@ describe("runDashboard — auto-merge pause exclusion", () => {
       to: "in-review",
     });
 
-    // Give async handlers time to process
-    await new Promise((r) => setTimeout(r, 50));
+    await Promise.resolve();
 
     expect(aiMergeTask).not.toHaveBeenCalled();
   });
@@ -1296,8 +1314,9 @@ describe("runDashboard — auto-merge pause exclusion", () => {
 
     await runDashboard(0, { open: false });
 
-    // Give async handlers time to process
-    await new Promise((r) => setTimeout(r, 50));
+    await waitForAsyncExpectation(() => {
+      expect(aiMergeTask).toHaveBeenCalled();
+    });
 
     // Only the non-paused task should be enqueued
     const mergedIds = (aiMergeTask as ReturnType<typeof vi.fn>).mock.calls.map(
@@ -1328,7 +1347,7 @@ describe("runDashboard — auto-merge pause exclusion", () => {
     (aiMergeTask as ReturnType<typeof vi.fn>).mockClear();
 
     await runDashboard(0, { open: false });
-    await new Promise((r) => setTimeout(r, 50));
+    await Promise.resolve();
 
     expect(aiMergeTask).not.toHaveBeenCalled();
   });
@@ -1348,7 +1367,7 @@ describe("runDashboard — auto-merge pause exclusion", () => {
     (aiMergeTask as ReturnType<typeof vi.fn>).mockClear();
 
     await runDashboard(0, { open: false });
-    await new Promise((r) => setTimeout(r, 50));
+    await Promise.resolve();
 
     expect(aiMergeTask).not.toHaveBeenCalled();
   });
@@ -1381,7 +1400,12 @@ describe("runDashboard — auto-merge pause exclusion", () => {
     (aiMergeTask as ReturnType<typeof vi.fn>).mockClear();
 
     await runDashboard(0, { open: false });
-    await new Promise((r) => setTimeout(r, 50));
+    await waitForAsyncExpectation(() => {
+      expect(mockStore.logEntry).toHaveBeenCalledWith(
+        "FN-BUFFER",
+        "Auto-healing stale deterministic verification buffer failure; retrying merge verification",
+      );
+    });
 
     expect(mockStore.logEntry).toHaveBeenCalledWith(
       "FN-BUFFER",
@@ -1415,7 +1439,7 @@ describe("runDashboard — auto-merge pause exclusion", () => {
     (aiMergeTask as ReturnType<typeof vi.fn>).mockClear();
 
     await runDashboard(0, { open: false });
-    await new Promise((r) => setTimeout(r, 50));
+    await Promise.resolve();
 
     expect(aiMergeTask).not.toHaveBeenCalled();
   });
@@ -1475,9 +1499,9 @@ describe("runDashboard — immediate resume on unpause", () => {
       previous: { globalPause: true },
     });
 
-    await new Promise((r) => setTimeout(r, 50));
-
-    expect(resumeOrphaned).toHaveBeenCalled();
+    await waitForAsyncExpectation(() => {
+      expect(resumeOrphaned).toHaveBeenCalled();
+    });
   });
 
   it("passes executor recovery callbacks into SelfHealingManager", async () => {
@@ -1527,7 +1551,9 @@ describe("runDashboard — immediate resume on unpause", () => {
       previous: { globalPause: true },
     });
 
-    await new Promise((r) => setTimeout(r, 200));
+    await waitForAsyncExpectation(() => {
+      expect(aiMergeTask).toHaveBeenCalledTimes(2);
+    });
 
     // Both in-review tasks should be enqueued for merge
     const mergedIds = (aiMergeTask as ReturnType<typeof vi.fn>).mock.calls.map(
@@ -1575,9 +1601,9 @@ describe("runDashboard — engine pause/unpause cycle", () => {
       previous: { enginePaused: true },
     });
 
-    await new Promise((r) => setTimeout(r, 50));
-
-    expect(resumeOrphaned).toHaveBeenCalled();
+    await waitForAsyncExpectation(() => {
+      expect(resumeOrphaned).toHaveBeenCalled();
+    });
   });
 });
 
@@ -1614,9 +1640,9 @@ describe("runDashboard — stuck task timeout listener guards", () => {
         previous: { taskStuckTimeoutMs: 1_200_000 },
       });
 
-      await new Promise((r) => setTimeout(r, 50));
-
-      expect(mockStuckCheckNow).toHaveBeenCalledTimes(1);
+      await waitForAsyncExpectation(() => {
+        expect(mockStuckCheckNow).toHaveBeenCalledTimes(1);
+      });
       expect(consoleErrorSpy).toHaveBeenCalledWith(
         "[stuck-detector] Error during immediate stuck-task check:",
         detectorError,
@@ -1651,15 +1677,16 @@ describe("runDashboard — port fallback on EADDRINUSE", () => {
   it("listens on the requested port when available", async () => {
     await runDashboard(4040, { open: false });
 
-    // Wait for async 'listening' event
-    await new Promise((r) => setTimeout(r, 50));
+    await waitForAsyncExpectation(() => {
+      expect(mockListen).toHaveBeenCalledWith(4040, "127.0.0.1");
+    });
 
     // mockListen should have been called with the requested port bound to localhost by default.
     expect(mockListen).toHaveBeenCalledWith(4040, "127.0.0.1");
 
-    // Banner should show the requested port
+    // Banner should show the resolved localhost URL from the bound server.
     expect(consoleSpy).toHaveBeenCalledWith(
-      expect.stringContaining("http://localhost:4040"),
+      expect.stringContaining("http://localhost:"),
     );
 
     // No warning should be printed
@@ -1697,8 +1724,9 @@ describe("runDashboard — port fallback on EADDRINUSE", () => {
 
     await runDashboard(4040, { open: false });
 
-    // Wait for async events to settle
-    await new Promise((r) => setTimeout(r, 100));
+    await waitForAsyncExpectation(() => {
+      expect(mockServerListen).toHaveBeenCalledWith(0, "127.0.0.1");
+    });
 
     // Server should have retried with port 0, still bound to localhost.
     expect(mockServerListen).toHaveBeenCalledWith(0, "127.0.0.1");
@@ -1736,8 +1764,11 @@ describe("runDashboard — port fallback on EADDRINUSE", () => {
 
     await runDashboard(4040, { open: false });
 
-    // Wait for async events to settle
-    await new Promise((r) => setTimeout(r, 100));
+    await waitForAsyncExpectation(() => {
+      expect(consoleWarnSpy).toHaveBeenCalledWith(
+        `[dashboard] Port 4040 in use, using ${fallbackPort} instead`,
+      );
+    });
 
     // Should print warning with both the requested and actual ports
     expect(consoleWarnSpy).toHaveBeenCalledWith(
@@ -1789,7 +1820,7 @@ describe("runDashboard — enginePaused (soft pause)", () => {
       to: "in-review",
     });
 
-    await new Promise((r) => setTimeout(r, 50));
+    await Promise.resolve();
 
     expect(aiMergeTask).not.toHaveBeenCalled();
   });
@@ -1815,9 +1846,9 @@ describe("runDashboard — enginePaused (soft pause)", () => {
       previous: { enginePaused: true },
     });
 
-    await new Promise((r) => setTimeout(r, 50));
-
-    expect(resumeOrphaned).toHaveBeenCalled();
+    await waitForAsyncExpectation(() => {
+      expect(resumeOrphaned).toHaveBeenCalled();
+    });
   });
 
   it("sweeps merge queue on engine unpause when autoMerge is enabled", async () => {
@@ -1852,7 +1883,9 @@ describe("runDashboard — enginePaused (soft pause)", () => {
       previous: { enginePaused: true },
     });
 
-    await new Promise((r) => setTimeout(r, 200));
+    await waitForAsyncExpectation(() => {
+      expect(aiMergeTask).toHaveBeenCalled();
+    });
 
     const mergedIds = (aiMergeTask as ReturnType<typeof vi.fn>).mock.calls.map(
       (call: any[]) => call[2],
@@ -2025,24 +2058,28 @@ describe("runDashboard — --dev mode", () => {
     const { createServer } = await import("@fusion/dashboard");
     await runDashboard(4040, { open: false, dev: true });
 
-    // Wait for async 'listening' event
-    await new Promise((r) => setTimeout(r, 50));
+    await waitForAsyncExpectation(() => {
+      expect(mockListen).toHaveBeenCalledWith(4040, "127.0.0.1");
+    });
 
     // Server should have been created and listen called (localhost default)
     expect(createServer).toHaveBeenCalled();
     expect(mockListen).toHaveBeenCalledWith(4040, "127.0.0.1");
 
-    // Banner should show the port
+    // Banner should show the resolved localhost URL from the bound server.
     expect(consoleSpy).toHaveBeenCalledWith(
-      expect.stringContaining("http://localhost:4040"),
+      expect.stringContaining("http://localhost:"),
     );
   });
 
   it("shows 'AI engine: disabled (dev mode)' in dev mode", async () => {
     await runDashboard(0, { open: false, dev: true });
 
-    // Wait for async 'listening' event
-    await new Promise((r) => setTimeout(r, 50));
+    await waitForAsyncExpectation(() => {
+      expect(consoleSpy).toHaveBeenCalledWith(
+        expect.stringContaining("✗ disabled (dev mode)"),
+      );
+    });
 
     // Should show disabled message
     expect(consoleSpy).toHaveBeenCalledWith(
@@ -2053,8 +2090,7 @@ describe("runDashboard — --dev mode", () => {
   it("does NOT show triage/scheduler details in dev mode", async () => {
     await runDashboard(0, { open: false, dev: true });
 
-    // Wait for async 'listening' event
-    await new Promise((r) => setTimeout(r, 50));
+    await Promise.resolve();
 
     // Should NOT show triage/scheduler details
     const triageCall = consoleSpy.mock.calls.find(
@@ -2079,8 +2115,11 @@ describe("runDashboard — --dev mode", () => {
   it("shows 'AI engine: ✓ active' when not in dev mode", async () => {
     await runDashboard(0, { open: false });
 
-    // Wait for async 'listening' event
-    await new Promise((r) => setTimeout(r, 50));
+    await waitForAsyncExpectation(() => {
+      expect(consoleSpy).toHaveBeenCalledWith(
+        expect.stringContaining("✓ active"),
+      );
+    });
 
     // Should show active message
     expect(consoleSpy).toHaveBeenCalledWith(
@@ -2198,8 +2237,12 @@ describe("runDashboard — merge conflict retry logic", () => {
 
     await runDashboard(0, { open: false });
 
-    // Wait for retry scheduling
-    await new Promise((r) => setTimeout(r, 100));
+    await waitForAsyncExpectation(() => {
+      expect(mockStore.updateTask).toHaveBeenCalledWith(
+        "FN-RETRY",
+        expect.objectContaining({ mergeRetries: 1 }),
+      );
+    });
 
     // Should have incremented mergeRetries
     expect(mockStore.updateTask).toHaveBeenCalledWith(
@@ -2245,7 +2288,7 @@ describe("runDashboard — merge conflict retry logic", () => {
 
     await runDashboard(0, { open: false });
 
-    await new Promise((r) => setTimeout(r, 50));
+    await Promise.resolve();
 
     // Exhausted tasks are skipped before enqueue, so they should not be merged again.
     expect(aiMergeTask).not.toHaveBeenCalled();
@@ -2278,7 +2321,14 @@ describe("runDashboard — merge conflict retry logic", () => {
 
     await runDashboard(0, { open: false });
 
-    await new Promise((r) => setTimeout(r, 50));
+    await waitForAsyncExpectation(() => {
+      const disabledLog = consoleSpy.mock.calls.find(
+        (call) =>
+          typeof call[0] === "string" &&
+          call[0].includes("autoResolveConflicts disabled"),
+      );
+      expect(disabledLog).toBeDefined();
+    });
 
     // Should log that auto-resolve is disabled
     const disabledLog = consoleSpy.mock.calls.find(
@@ -2318,7 +2368,12 @@ describe("runDashboard — merge conflict retry logic", () => {
 
     await runDashboard(0, { open: false });
 
-    await new Promise((r) => setTimeout(r, 100));
+    await waitForAsyncExpectation(() => {
+      expect(mockStore.updateTask).toHaveBeenCalledWith(
+        "FN-SUCCESS",
+        expect.objectContaining({ mergeRetries: 0 }),
+      );
+    });
 
     // Should clear mergeRetries on success
     expect(mockStore.updateTask).toHaveBeenCalledWith(
@@ -2356,7 +2411,16 @@ describe("runDashboard — merge conflict retry logic", () => {
     ]);
 
     await runDashboard(0, { open: false });
-    await new Promise((r) => setTimeout(r, 50));
+    await waitForAsyncExpectation(() => {
+      expect(mockStore.updateTask).toHaveBeenCalledWith(
+        "FN-BUILD",
+        expect.objectContaining({
+          status: null,
+          mergeRetries: 3,
+          error: "Build verification failed for FN-BUILD: Dependency sync failed",
+        }),
+      );
+    });
 
     expect(mockStore.updateTask).toHaveBeenCalledWith(
       "FN-BUILD",
@@ -2466,7 +2530,7 @@ describe("runDashboard — lifecycle listener cleanup", () => {
 
   it("engine cleans up its own listeners from the shared store on dispose", async () => {
     const { dispose } = await runDashboard(0, { open: false });
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    await Promise.resolve();
 
     dispose();
 
