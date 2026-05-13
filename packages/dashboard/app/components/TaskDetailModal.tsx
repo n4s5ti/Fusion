@@ -1,6 +1,6 @@
 import "./TaskDetailModal.css";
 import React, { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Pencil, Bot, X, ChevronDown, ChevronRight, GitBranch, ArrowLeft, Zap } from "lucide-react";
+import { Pencil, Bot, X, ChevronDown, ChevronRight, GitBranch, ArrowLeft, Zap, Loader2 } from "lucide-react";
 import { useModalResizePersist } from "../hooks/useModalResizePersist";
 import { useMobileScrollLock } from "../hooks/useMobileScrollLock";
 import { useOverlayDismiss } from "../hooks/useOverlayDismiss";
@@ -2415,16 +2415,26 @@ export function TaskDetailContent({
                     </span>
                   )}
                 </div>
-                {showInlineGithubTrackingEnableButton && (
+                {showInlineGithubTrackingEnableButton && !isSavingGithubTracking && (
                   <button
                     type="button"
                     className="btn btn-sm btn-primary detail-github-tracking-enable"
                     aria-label="Enable GitHub tracking"
                     onClick={() => void handleToggleGithubTracking()}
-                    disabled={isSavingGithubTracking}
                   >
-                    {isSavingGithubTracking ? "Saving…" : "Enable"}
+                    Enable
                   </button>
+                )}
+                {isSavingGithubTracking && !githubTrackedIssue && (
+                  <span
+                    className="detail-github-tracking-spinner"
+                    role="status"
+                    aria-live="polite"
+                    aria-label="Enabling GitHub tracking"
+                  >
+                    <Loader2 size={16} className="spin" aria-hidden="true" />
+                    <span className="visually-hidden">Enabling GitHub tracking…</span>
+                  </span>
                 )}
                 <button
                   type="button"
