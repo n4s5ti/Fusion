@@ -1224,16 +1224,21 @@ export function SettingsModal({
         projectId,
       );
       if (result.success) {
-        const providerName = providerId === "ntfy"
-          ? "ntfy app"
-          : providerId === "ntfy-message" || providerId === "ntfy-room"
-            ? "ntfy app inbox"
-            : "webhook endpoint";
-        const successMessage = `Test notification sent — check your ${providerName}!`;
+        const successMessage = providerId === "ntfy"
+          ? "Test notification sent — check your ntfy app!"
+          : providerId === "ntfy-message"
+            ? "Direct-message test sent — check your ntfy inbox for the agent-to-user message."
+            : providerId === "ntfy-room"
+              ? "Room reply test sent — check your ntfy inbox for the room reply."
+              : "Test notification sent — check your webhook endpoint!";
         setTestNotificationResult((prev) => ({ ...prev, [providerId]: { status: "success", message: successMessage } }));
         addToast(successMessage, "success");
       } else {
-        const failureMessage = "Failed to send test notification";
+        const failureMessage = providerId === "ntfy-message"
+          ? "Failed to send direct-message test"
+          : providerId === "ntfy-room"
+            ? "Failed to send room reply test"
+            : "Failed to send test notification";
         setTestNotificationResult((prev) => ({ ...prev, [providerId]: { status: "error", message: failureMessage } }));
         addToast(failureMessage, "error");
       }
