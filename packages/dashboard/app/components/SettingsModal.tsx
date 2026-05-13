@@ -2006,6 +2006,41 @@ export function SettingsModal({
               </label>
               <small>Show the floating chat button in the dashboard. Chat is still accessible from the Chat tab in the mobile navigation.</small>
             </div>
+            <h4 className="settings-section-heading settings-section-heading--spaced">GitHub Tracking</h4>
+            <div className="form-group">
+              <label htmlFor="githubTrackingMode">Default tracking mode for new tasks</label>
+              <select
+                id="githubTrackingMode"
+                className="select"
+                value={form.githubTrackingEnabledByDefault ? "new-tasks" : "off"}
+                onChange={(e) =>
+                  setForm((f) => ({
+                    ...f,
+                    githubTrackingEnabledByDefault: e.target.value === "new-tasks",
+                  }))
+                }
+              >
+                <option value="off">Off (default)</option>
+                <option value="new-tasks">On for new tasks</option>
+              </select>
+              <small>
+                Controls whether newly created tasks have GitHub issue tracking enabled by default. Individual tasks can still override this from the task detail modal.
+              </small>
+            </div>
+            <div className="form-group">
+              <label htmlFor="projectGithubTrackingDefaultRepoGeneral">Project default tracking repo</label>
+              <input
+                id="projectGithubTrackingDefaultRepoGeneral"
+                type="text"
+                className="input"
+                placeholder="owner/repo"
+                value={form.githubTrackingDefaultRepo ?? ""}
+                onChange={(e) =>
+                  setForm((f) => ({ ...f, githubTrackingDefaultRepo: e.target.value || undefined }))
+                }
+              />
+              <small>Default repo used when creating GitHub issues for tracked tasks. Falls back to the global default if blank.</small>
+            </div>
           </>
         );
       case "global-general":
@@ -3750,33 +3785,7 @@ export function SettingsModal({
                 </details>
               </div>
             )}
-            <h4 className="settings-section-heading settings-section-heading--spaced">GitHub Issue Tracking</h4>
-            <div className="form-group">
-              <label htmlFor="githubTrackingEnabledByDefault" className="checkbox-label">
-                <input
-                  id="githubTrackingEnabledByDefault"
-                  type="checkbox"
-                  checked={form.githubTrackingEnabledByDefault ?? false}
-                  onChange={(e) =>
-                    setForm((f) => ({ ...f, githubTrackingEnabledByDefault: e.target.checked }))
-                  }
-                />
-                Default GitHub tracking ON for new tasks
-              </label>
-            </div>
-            <div className="form-group">
-              <label htmlFor="projectGithubTrackingDefaultRepo">Project default tracking repo</label>
-              <input
-                id="projectGithubTrackingDefaultRepo"
-                type="text"
-                className="input"
-                placeholder="owner/repo"
-                value={form.githubTrackingDefaultRepo ?? ""}
-                onChange={(e) =>
-                  setForm((f) => ({ ...f, githubTrackingDefaultRepo: e.target.value || undefined }))
-                }
-              />
-            </div>
+            <h4 className="settings-section-heading settings-section-heading--spaced">GitHub Authentication</h4>
             <div className="form-group">
               <label htmlFor="githubAuthMode">GitHub auth mode</label>
               <select

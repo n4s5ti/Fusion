@@ -680,6 +680,64 @@ describe("SettingsModal", () => {
         expect(globalPayload.completionDocumentationMode).toBeUndefined();
       }
     });
+
+    it("renders and saves GitHub tracking controls in the General section", async () => {
+      renderModal({ initialSection: "general" });
+      await waitForSettingsModalReady();
+
+      expect(screen.getByRole("heading", { name: "GitHub Tracking" })).toBeInTheDocument();
+
+      const modeSelect = screen.getByLabelText("Default tracking mode for new tasks") as HTMLSelectElement;
+      const repoInput = screen.getByLabelText("Project default tracking repo") as HTMLInputElement;
+      expect(modeSelect.value).toBe("off");
+      expect(repoInput.value).toBe("");
+
+      await userEvent.selectOptions(modeSelect, "new-tasks");
+      await userEvent.type(repoInput, "octo/repo");
+      await userEvent.click(screen.getByRole("button", { name: "Save" }));
+
+      await waitFor(() => {
+        expect(mockUpdateSettings).toHaveBeenCalled();
+      });
+
+      const payload = mockUpdateSettings.mock.calls[0][0] as Record<string, unknown>;
+      expect(payload.githubTrackingEnabledByDefault).toBe(true);
+      expect(payload.githubTrackingDefaultRepo).toBe("octo/repo");
+
+      if (mockUpdateGlobalSettings.mock.calls.length > 0) {
+        const globalPayload = mockUpdateGlobalSettings.mock.calls[0]?.[0] as Record<string, unknown>;
+        expect(globalPayload.githubTrackingDefaultRepo).toBeUndefined();
+      }
+    });
+
+    it("saves GitHub tracking defaults as disabled and clears the repo when emptied", async () => {
+      mockFetchSettings.mockResolvedValueOnce({
+        ...defaultSettings,
+        githubTrackingEnabledByDefault: true,
+        githubTrackingDefaultRepo: "octo/existing",
+      });
+
+      renderModal({ initialSection: "general" });
+      await waitForSettingsModalReady();
+
+      const modeSelect = screen.getByLabelText("Default tracking mode for new tasks") as HTMLSelectElement;
+      const repoInput = screen.getByLabelText("Project default tracking repo") as HTMLInputElement;
+
+      expect(modeSelect.value).toBe("new-tasks");
+      expect(repoInput.value).toBe("octo/existing");
+
+      await userEvent.selectOptions(modeSelect, "off");
+      await userEvent.clear(repoInput);
+      await userEvent.click(screen.getByRole("button", { name: "Save" }));
+
+      await waitFor(() => {
+        expect(mockUpdateSettings).toHaveBeenCalled();
+      });
+
+      const payload = mockUpdateSettings.mock.calls[0][0] as Record<string, unknown>;
+      expect(payload.githubTrackingEnabledByDefault).toBe(false);
+      expect(payload.githubTrackingDefaultRepo).toBeUndefined();
+    });
   });
 
   describe("Appearance", () => {
@@ -2206,20 +2264,18 @@ describe("SettingsModal", () => {
       });
     });
 
-    it("renders and saves github issue tracking controls", async () => {
+    it("keeps GitHub tracking controls out of Merge and preserves GitHub authentication controls", async () => {
       renderModal({ initialSection: "merge" });
       await waitForSettingsModalReady();
 
-      expect(screen.getByRole("heading", { name: "GitHub Issue Tracking" })).toBeInTheDocument();
-      expect(screen.getByRole("checkbox", { name: "Default GitHub tracking ON for new tasks" })).not.toBeChecked();
-      expect(screen.getByLabelText("Project default tracking repo")).toBeInTheDocument();
+      expect(screen.queryByLabelText("Default tracking mode for new tasks")).not.toBeInTheDocument();
+      expect(screen.queryByLabelText("Project default tracking repo")).not.toBeInTheDocument();
+      expect(screen.getByRole("heading", { name: "GitHub Authentication" })).toBeInTheDocument();
 
       const authModeSelect = screen.getByLabelText("GitHub auth mode") as HTMLSelectElement;
       expect(authModeSelect.value).toBe("gh-cli");
       expect(screen.queryByLabelText("GitHub personal access token")).not.toBeInTheDocument();
 
-      await userEvent.click(screen.getByRole("checkbox", { name: "Default GitHub tracking ON for new tasks" }));
-      await userEvent.type(screen.getByLabelText("Project default tracking repo"), "octo/repo");
       await userEvent.selectOptions(authModeSelect, "token");
       await userEvent.type(screen.getByLabelText("GitHub personal access token"), "ghp_test_token");
       await userEvent.click(screen.getByRole("button", { name: "Save" }));
@@ -2229,15 +2285,8 @@ describe("SettingsModal", () => {
       });
 
       const payload = mockUpdateSettings.mock.calls[0][0] as Record<string, unknown>;
-      expect(payload.githubTrackingEnabledByDefault).toBe(true);
-      expect(payload.githubTrackingDefaultRepo).toBe("octo/repo");
       expect(payload.githubAuthMode).toBe("token");
       expect(payload.githubAuthToken).toBe("ghp_test_token");
-
-      if (mockUpdateGlobalSettings.mock.calls.length > 0) {
-        const globalPayload = mockUpdateGlobalSettings.mock.calls[0]?.[0] as Record<string, unknown>;
-        expect(globalPayload.githubTrackingDefaultRepo).toBeUndefined();
-      }
     });
   });
 
