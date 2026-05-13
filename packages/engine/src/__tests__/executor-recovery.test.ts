@@ -1536,7 +1536,7 @@ describe("TaskExecutor fn_task_done blockers", () => {
       }
       return {
         id: taskId,
-        column: "done",
+        column: taskId === "FN-DEP-1" ? "in-progress" : "done",
       };
     });
 

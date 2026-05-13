@@ -5,6 +5,8 @@ export async function getTaskCompletionBlockerForStore(
   task: Task,
 ): Promise<string | undefined> {
   return getTaskCompletionBlocker(task, {
+    // FN-4091: return full task state from the store so completion gating can
+    // ignore stale blockedBy markers when the blocker is missing or terminal.
     resolveTask: async (dependencyId) => {
       try {
         return await store.getTask(dependencyId);

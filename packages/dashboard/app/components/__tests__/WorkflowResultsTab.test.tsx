@@ -2,14 +2,20 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 import { render, screen, fireEvent, waitFor, within } from "@testing-library/react";
 import { WorkflowResultsTab } from "../WorkflowResultsTab";
 import { fetchWorkflowSteps } from "../../api";
+import { useAgentLogs } from "../../hooks/useAgentLogs";
 import { loadAllAppCss, loadAllAppCssBaseOnly } from "../../test/cssFixture";
-import type { WorkflowStep, WorkflowStepResult } from "@fusion/core";
+import type { AgentLogEntry, WorkflowStep, WorkflowStepResult } from "@fusion/core";
 
 vi.mock("../../api", () => ({
   fetchWorkflowSteps: vi.fn(),
 }));
 
+vi.mock("../../hooks/useAgentLogs", () => ({
+  useAgentLogs: vi.fn(),
+}));
+
 const mockedFetchWorkflowSteps = vi.mocked(fetchWorkflowSteps);
+const mockedUseAgentLogs = vi.mocked(useAgentLogs);
 
 describe("WorkflowResultsTab", () => {
   const mockWorkflowSteps: WorkflowStep[] = [
@@ -52,6 +58,16 @@ describe("WorkflowResultsTab", () => {
   beforeEach(() => {
     mockedFetchWorkflowSteps.mockReset();
     mockedFetchWorkflowSteps.mockResolvedValue(mockWorkflowSteps);
+    mockedUseAgentLogs.mockReset();
+    mockedUseAgentLogs.mockReturnValue({
+      entries: [],
+      loading: false,
+      clear: vi.fn(),
+      loadMore: vi.fn(),
+      hasMore: false,
+      total: 0,
+      loadingMore: false,
+    });
   });
 
   const mockResults: WorkflowStepResult[] = [
@@ -129,6 +145,33 @@ describe("WorkflowResultsTab", () => {
     expect(pendingBadge).toHaveTextContent("Running…");
     expect(pendingBadge).toHaveClass("workflow-result-badge");
     expect(pendingBadge).toHaveClass("workflow-result-badge--pending");
+  });
+
+  it("shows the waiting placeholder when pending-step logs have not started yet", () => {
+    const historicalEntries: AgentLogEntry[] = [
+      {
+        timestamp: "2026-03-31T10:03:00Z",
+        taskId: "FN-001",
+        text: "Earlier workflow output",
+        type: "text",
+      },
+    ];
+    mockedUseAgentLogs.mockReturnValue({
+      entries: historicalEntries,
+      loading: false,
+      clear: vi.fn(),
+      loadMore: vi.fn(),
+      hasMore: false,
+      total: historicalEntries.length,
+      loadingMore: false,
+    });
+
+    render(
+      <WorkflowResultsTab taskId="FN-001" results={mockResults} isTaskInProgress />,
+    );
+
+    expect(screen.getByText("Waiting for agent output…")).toBeInTheDocument();
+    expect(screen.queryByText("Earlier workflow output")).not.toBeInTheDocument();
   });
 
   it("shows output content when toggle is clicked to expand", () => {

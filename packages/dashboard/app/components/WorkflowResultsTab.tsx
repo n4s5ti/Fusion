@@ -128,7 +128,7 @@ function LiveAgentLogOutput({
     container.scrollTop = container.scrollHeight;
   }, [stepEntries.length]);
 
-  if (entries.length === 0) {
+  if (stepEntries.length === 0) {
     return (
       <div className="workflow-live-log" data-testid={`workflow-live-log-${stepId}`}>
         <div className="workflow-live-log-empty">Waiting for agent output…</div>

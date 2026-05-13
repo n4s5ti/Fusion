@@ -123,6 +123,11 @@ export function isTaskReadyForMerge(
 }
 
 export interface TaskCompletionBlockerOptions {
+  /**
+   * Resolves a task reference so completion gating can distinguish live blockers
+   * from stale `blockedBy` markers. Missing tasks and blockers already in
+   * `done`/`archived` are treated as non-blocking.
+   */
   resolveTask?: (taskId: string) => Promise<Pick<Task, "id" | "column"> | null | undefined>;
 }
 
@@ -138,8 +143,16 @@ export async function getTaskCompletionBlocker(
   task: Pick<Task, "blockedBy" | "dependencies">,
   options: TaskCompletionBlockerOptions = {},
 ): Promise<string | undefined> {
-  if (task.blockedBy?.trim()) {
-    return `task is blocked by ${task.blockedBy.trim()}`;
+  const blockedBy = task.blockedBy?.trim();
+  if (blockedBy) {
+    if (!options.resolveTask) {
+      return `task is blocked by ${blockedBy}`;
+    }
+
+    const blocker = await options.resolveTask(blockedBy);
+    if (blocker && blocker.column !== "done" && blocker.column !== "archived") {
+      return `task is blocked by ${blockedBy}`;
+    }
   }
 
   const dependencies = task.dependencies ?? [];

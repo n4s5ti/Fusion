@@ -2851,11 +2851,16 @@ describe("Scheduler", () => {
 
     it("does not mark a feature done when the completed task is blocked", async () => {
       const store = createMockStore({
-        getTask: vi.fn().mockResolvedValue(createMockTask({
-          id: "FN-001",
-          blockedBy: "FN-000",
-          column: "done",
-        })),
+        getTask: vi.fn(async (taskId: string) => {
+          if (taskId === "FN-001") {
+            return createMockTask({
+              id: "FN-001",
+              blockedBy: "FN-000",
+              column: "done",
+            }) as TaskDetail;
+          }
+          return createMockTask({ id: taskId, column: "in-progress" }) as TaskDetail;
+        }) as TaskStore["getTask"],
       });
       const mockAutopilot = {
         setScheduler: vi.fn(),

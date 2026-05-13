@@ -305,9 +305,36 @@ describe("getTaskCompletionBlocker", () => {
     await expect(getTaskCompletionBlocker(baseCompletionTask)).resolves.toBeUndefined();
   });
 
-  it("returns a reason when task has blockedBy", async () => {
+  it("returns a reason when task has blockedBy without resolveTask", async () => {
     await expect(getTaskCompletionBlocker({ ...baseCompletionTask, blockedBy: "FN-123" }))
       .resolves.toBe("task is blocked by FN-123");
+  });
+
+  it("ignores blockedBy when resolveTask reports the blocker missing", async () => {
+    const resolveTask = async () => null;
+
+    await expect(getTaskCompletionBlocker({
+      ...baseCompletionTask,
+      blockedBy: "FN-4054",
+    }, { resolveTask })).resolves.toBeUndefined();
+  });
+
+  it.each(["done", "archived"] as const)("ignores blockedBy when resolveTask reports the blocker is %s", async (column) => {
+    const resolveTask = async () => ({ id: "FN-4054", column });
+
+    await expect(getTaskCompletionBlocker({
+      ...baseCompletionTask,
+      blockedBy: "FN-4054",
+    }, { resolveTask })).resolves.toBeUndefined();
+  });
+
+  it.each(["todo", "in-progress", "in-review"] as const)("returns a reason when resolveTask reports an active blocker in %s", async (column) => {
+    const resolveTask = async () => ({ id: "FN-123", column });
+
+    await expect(getTaskCompletionBlocker({
+      ...baseCompletionTask,
+      blockedBy: "FN-123",
+    }, { resolveTask })).resolves.toBe("task is blocked by FN-123");
   });
 
   it("returns a reason when a dependency is unresolved", async () => {

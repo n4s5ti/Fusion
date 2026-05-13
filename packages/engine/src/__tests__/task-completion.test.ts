@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import type { TaskDetail } from "@fusion/core";
+import type { TaskDetail, TaskStore } from "@fusion/core";
 import { getTaskCompletionBlockerForStore } from "../task-completion.js";
 
 function createTask(overrides: Partial<TaskDetail> = {}): TaskDetail {
@@ -20,6 +20,33 @@ function createTask(overrides: Partial<TaskDetail> = {}): TaskDetail {
 }
 
 describe("getTaskCompletionBlockerForStore", () => {
+  it("ignores blockedBy when the blocker task is missing", async () => {
+    const getTask = vi.fn(async (taskId: string) => {
+      if (taskId === "FN-MISSING") {
+        return null;
+      }
+      return createTask({ id: taskId, column: "done" });
+    });
+
+    await expect(getTaskCompletionBlockerForStore(
+      { getTask } as Pick<TaskStore, "getTask">,
+      createTask({ blockedBy: "FN-MISSING" }),
+    )).resolves.toBeUndefined();
+
+    expect(getTask).toHaveBeenCalledWith("FN-MISSING");
+  });
+
+  it("ignores blockedBy when the blocker task is done", async () => {
+    const getTask = vi.fn(async (taskId: string) => createTask({ id: taskId, column: "done" }));
+
+    await expect(getTaskCompletionBlockerForStore(
+      { getTask } as Pick<TaskStore, "getTask">,
+      createTask({ blockedBy: "FN-DONE" }),
+    )).resolves.toBeUndefined();
+
+    expect(getTask).toHaveBeenCalledWith("FN-DONE");
+  });
+
   it("treats dependency lookup failures as unresolved dependencies", async () => {
     const getTask = vi.fn(async (taskId: string) => {
       if (taskId === "FN-DONE") {
@@ -29,7 +56,7 @@ describe("getTaskCompletionBlockerForStore", () => {
     });
 
     await expect(getTaskCompletionBlockerForStore(
-      { getTask },
+      { getTask } as Pick<TaskStore, "getTask">,
       createTask({ dependencies: ["FN-DONE", "FN-MISSING"] }),
     )).resolves.toBe("task has unresolved dependencies: FN-MISSING");
 

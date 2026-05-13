@@ -1200,9 +1200,13 @@ export class SelfHealingManager {
       if (settings.globalPause || settings.enginePaused) return 0;
 
       const todoTasks = await this.store.listTasks({ column: "todo", slim: true });
-      const blockedTasks = todoTasks.filter(
-        (task) => typeof task.blockedBy === "string" && task.blockedBy.trim().length > 0,
-      );
+      const inProgressTasks = await this.store.listTasks({ column: "in-progress", slim: true });
+      const inReviewTasks = await this.store.listTasks({ column: "in-review", slim: true });
+      const blockedTasks = [
+        ...todoTasks,
+        ...inProgressTasks,
+        ...inReviewTasks.filter((task) => !task.paused),
+      ].filter((task) => typeof task.blockedBy === "string" && task.blockedBy.trim().length > 0);
       const queuedDependencyTasks = todoTasks.filter(
         (task) => task.status === "queued" && task.dependencies.length > 0,
       );
@@ -1213,6 +1217,7 @@ export class SelfHealingManager {
       const taskById = new Map(allTasks.map((task) => [task.id, task]));
 
       let recovered = 0;
+      const todoTaskIds = new Set(todoTasks.map((task) => task.id));
       const blockedTaskIds = new Set(blockedTasks.map((task) => task.id));
       const queuedDependencyTaskIds = new Set(queuedDependencyTasks.map((task) => task.id));
       const candidates = new Map<string, typeof todoTasks[number]>();
@@ -1259,19 +1264,28 @@ export class SelfHealingManager {
 
           if (reason) {
             try {
-              if (unresolvedDeps.length > 0) {
-                const nextBlocker = unresolvedDeps[0]!;
-                await this.store.updateTask(task.id, { blockedBy: nextBlocker, status: "queued" });
-                await this.store.logEntry(task.id, `Auto-recovered: refreshed stale blockedBy — ${reason}; now blocked by ${nextBlocker}`);
+              if (todoTaskIds.has(task.id)) {
+                if (unresolvedDeps.length > 0) {
+                  const nextBlocker = unresolvedDeps[0]!;
+                  await this.store.updateTask(task.id, { blockedBy: nextBlocker, status: "queued" });
+                  await this.store.logEntry(task.id, `Auto-recovered: refreshed stale blockedBy — ${reason}; now blocked by ${nextBlocker}`);
+                } else {
+                  await this.store.updateTask(task.id, { blockedBy: null, status: null });
+                  await this.store.logEntry(task.id, `Auto-recovered: cleared stale blockedBy — ${reason}`);
+                }
               } else {
-                await this.store.updateTask(task.id, { blockedBy: null, status: null });
-                await this.store.logEntry(task.id, `Auto-recovered: cleared stale blockedBy — ${reason}`);
+                await this.store.updateTask(task.id, { blockedBy: null });
+                await this.store.logEntry(task.id, `Auto-recovered (FN-4091): cleared stale blockedBy — ${reason}`);
               }
               recovered++;
             } catch (err: unknown) {
               const errorMessage = err instanceof Error ? err.message : String(err);
               log.error(`Failed to clear stale blockedBy for ${task.id}: ${errorMessage}`);
             }
+            continue;
+          }
+
+          if (!todoTaskIds.has(task.id)) {
             continue;
           }
         }
