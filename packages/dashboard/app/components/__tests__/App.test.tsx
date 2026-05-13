@@ -23,10 +23,19 @@ const defaultSettings: Settings = {
   worktreeInitCommand: "",
   testCommand: "",
   buildCommand: "",
+  capacityRiskBannerEnabled: false,
+  capacityRiskTodoThreshold: 20,
   experimentalFeatures: { insights: true, skillsView: true, agentsView: true, memoryView: true, evalsView: true },
 };
 
- 
+const mockAgentStats = {
+  activeCount: 0,
+  busyCount: 0,
+  pausedCount: 0,
+  todoTaskCount: 0,
+  idleNonEphemeralCount: 1,
+};
+
 const mockSubscribeSse = vi.fn((..._args: any[]) => vi.fn());
 
 vi.mock("../../sse-bus", () => ({
@@ -55,6 +64,7 @@ vi.mock("../../api", async (importOriginal) => {
     fetchModels: vi.fn(() => Promise.resolve({ models: [], favoriteProviders: [], favoriteModels: [] })),
     fetchGitRemotes: vi.fn(() => Promise.resolve([])),
     fetchAgents: vi.fn(() => Promise.resolve([])),
+    fetchAgentStats: vi.fn(() => Promise.resolve({ ...mockAgentStats })),
     fetchTaskDetail: vi.fn((id: string) => Promise.resolve({ id, title: `Task ${id}` })),
     fetchUnreadCount: vi.fn(() => Promise.resolve({ unreadCount: 0 })),
     fetchDashboardHealth: vi.fn(() => Promise.resolve({
@@ -660,6 +670,8 @@ beforeEach(() => {
   });
   mockUseViewportMode.mockReset();
   mockUseViewportMode.mockReturnValue("desktop");
+  mockAgentStats.todoTaskCount = 0;
+  mockAgentStats.idleNonEphemeralCount = 1;
 });
 
 describe("FN-4250 FileBrowserProvider coverage", () => {
@@ -681,6 +693,45 @@ describe("FN-4250 FileBrowserProvider coverage", () => {
 
     await waitFor(() => {
       expect(screen.getByTestId("fb-probe-loader")).toHaveTextContent("ok");
+    });
+  });
+});
+
+describe("Capacity risk banner gating", () => {
+  it("does not render banner when capacityRiskBannerEnabled is false", async () => {
+    mockAgentStats.todoTaskCount = 21;
+    mockAgentStats.idleNonEphemeralCount = 0;
+    vi.mocked(fetchSettings).mockResolvedValueOnce({
+      ...defaultSettings,
+      capacityRiskBannerEnabled: false,
+      capacityRiskTodoThreshold: 20,
+    });
+
+    render(<App />);
+    await waitForAppShell();
+
+    expect(screen.queryByText(/Capacity risk:/i)).not.toBeInTheDocument();
+  });
+
+  it("renders and dismisses banner when enabled", async () => {
+    mockAgentStats.todoTaskCount = 21;
+    mockAgentStats.idleNonEphemeralCount = 0;
+    vi.mocked(fetchSettings).mockResolvedValueOnce({
+      ...defaultSettings,
+      capacityRiskBannerEnabled: true,
+      capacityRiskTodoThreshold: 20,
+    });
+
+    render(<App />);
+    await waitFor(() => {
+      expect(screen.getByText(/Capacity risk:/i)).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: /dismiss capacity warning/i }));
+
+    expect(localStorage.getItem(scopedKey("kb-capacity-risk-banner-dismissed", DEFAULT_PROJECT_ID))).toBe("true");
+    await waitFor(() => {
+      expect(screen.queryByText(/Capacity risk:/i)).not.toBeInTheDocument();
     });
   });
 });

@@ -30,6 +30,7 @@ describe("useAppSettings", () => {
       taskStuckTimeoutMs: 600000,
       staleHighFanoutBlockerAgeThresholdMs: 7200000,
       showQuickChatFAB: false,
+      capacityRiskBannerEnabled: false,
     } as never);
 
     mockUpdateSettings.mockResolvedValue({} as never);
@@ -49,6 +50,8 @@ describe("useAppSettings", () => {
       expect(result.current.taskStuckTimeoutMs).toBe(600000);
       expect(result.current.staleHighFanoutBlockerAgeThresholdMs).toBe(7200000);
       expect(result.current.showQuickChatFAB).toBe(false);
+      expect(result.current.capacityRiskBannerEnabled).toBe(false);
+      expect(result.current.capacityRiskTodoThreshold).toBe(20);
     });
 
     expect(mockFetchConfig).toHaveBeenCalledWith("proj_123");
@@ -115,6 +118,26 @@ describe("useAppSettings", () => {
       { globalPause: true, globalPauseReason: "manual" },
       "proj_123",
     );
+  });
+
+  it("propagates capacity risk settings from fetchSettings", async () => {
+    mockFetchSettings.mockResolvedValueOnce({
+      autoMerge: false,
+      globalPause: true,
+      enginePaused: false,
+      prAuthAvailable: true,
+      taskStuckTimeoutMs: 600000,
+      showQuickChatFAB: false,
+      capacityRiskBannerEnabled: true,
+      capacityRiskTodoThreshold: 30,
+    } as never);
+
+    const { result } = renderHook(() => useAppSettings("proj_123"));
+
+    await waitFor(() => {
+      expect(result.current.capacityRiskBannerEnabled).toBe(true);
+      expect(result.current.capacityRiskTodoThreshold).toBe(30);
+    });
   });
 
   it("refresh() re-fetches and updates state", async () => {
