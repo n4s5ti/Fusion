@@ -825,11 +825,14 @@ This normalization applies on send and mailbox reads, so replies from agents sti
 
 ### How It Works
 
+Heartbeat runs now surface both direct-message inbox traffic and recent room activity for rooms the agent belongs to. Room traffic is lookback-based (bounded to the prior completed heartbeat / `lastHeartbeatAt`, capped at 24 hours) and is only shown when there are unread/recent messages worth surfacing.
+
 1. **Message Prefetch**: When `messageStore` is available, heartbeat runs fetch up to 10 unread inbox messages for the agent.
-2. **Prompt Injection**: Pending messages are injected into the execution prompt with message ID, sender, and timestamp information.
-3. **Reply Guidance**: System instructions remind agents to reply with `reply_to_message_id` for linked threads.
-4. **Mark as Read**: After successful heartbeat completion, messages are marked as read.
-5. **Failed Runs**: If the heartbeat execution fails, messages remain unread for retry on the next run.
+2. **Room Prefetch**: When `chatStore` is available, heartbeat runs fetch up to 10 recent room messages per active room (30 total max, self-authored room messages excluded).
+3. **Prompt Injection**: Pending messages are injected into the execution prompt with message ID, sender, and timestamp information, followed by a **Pending Room Messages** section grouped by room.
+4. **Reply Guidance**: System instructions remind agents to reply with `reply_to_message_id` for direct messages and use `fn_post_room_message` only when room content is relevant to the agent’s role/identity.
+5. **Mark as Read**: After successful heartbeat completion, direct inbox messages are marked as read.
+6. **Failed Runs**: If the heartbeat execution fails, inbox messages remain unread for retry on the next run.
 
 ### Message Response Modes
 

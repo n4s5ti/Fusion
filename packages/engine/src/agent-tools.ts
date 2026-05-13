@@ -11,7 +11,7 @@ import { appendFile, mkdir, readFile, readdir, stat, writeFile } from "node:fs/p
 import { existsSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { join, relative, resolve } from "node:path";
-import type { AgentStore, AgentState, AgentCapability, AgentUpdateInput, TaskDocument, TaskDocumentCreateInput, TaskStore, RunMutationContext, MessageStore, Message, SourceType, Settings, ResearchRun, ResearchRunStatus, TaskCreateInput, ReflectionStore, ApprovalRequestStore, ProjectSettings } from "@fusion/core";
+import type { AgentStore, AgentState, AgentCapability, AgentUpdateInput, TaskDocument, TaskDocumentCreateInput, TaskStore, RunMutationContext, MessageStore, Message, SourceType, Settings, ResearchRun, ResearchRunStatus, TaskCreateInput, ReflectionStore, ApprovalRequestStore, ProjectSettings, ChatStore } from "@fusion/core";
 import { DASHBOARD_USER_ID, canAgentTakeImplementationTaskForExplicitRouting, dailyMemoryPath, ensureOpenClawMemoryFiles, extractAgentProvisioningRequest, formatRoleMismatchReason, getMemoryBackendCapabilities, getProjectMemory, isEphemeralAgent, memoryLongTermPath, normalizeMessageParticipant, resolveAgentProvisioningPolicy, resolveMemoryBackend, resolveResearchSettings, resolveTitleSummarizerSettingsModel, scheduleQmdProjectMemoryRefresh, searchProjectMemory, shouldSkipBackgroundQmdRefresh, summarizeTitle } from "@fusion/core";
 import { ResearchOrchestrator } from "./research-orchestrator.js";
 import { ResearchProviderRegistry } from "./research/provider-registry.js";
@@ -157,6 +157,13 @@ export const sendMessageParams = Type.Object({
 export const readMessagesParams = Type.Object({
   unread_only: Type.Optional(Type.Boolean({ description: "Only return unread messages (default: true)" })),
   limit: Type.Optional(Type.Number({ description: "Max messages to return (default: 20)" })),
+});
+
+export const postRoomMessageParams = Type.Object({
+  roomId: Type.String({ description: "Room ID to post into" }),
+  content: Type.String({ description: "Room message body (1-2000 characters)" }),
+  replyToMessageId: Type.Optional(Type.String({ description: "Optional ID of the room message you are replying to" })),
+  mentions: Type.Optional(Type.Array(Type.String(), { description: "Optional agent IDs to mention in the room message" })),
 });
 
 export const memorySearchParams = Type.Object({
@@ -2123,6 +2130,71 @@ export function createResearchTools(options: ResearchToolsOptions): ToolDefiniti
   };
 
   return [runTool, listTool, getTool, cancelTool];
+}
+
+export function createPostRoomMessageTool(chatStore: ChatStore, fromAgentId: string): ToolDefinition {
+  return {
+    name: "fn_post_room_message",
+    label: "Post Room Message",
+    description:
+      "Post a message to a room you are a member of. Room membership is enforced before posting, " +
+      "so only reply when the room content is relevant to your role or identity.",
+    parameters: postRoomMessageParams,
+    execute: async (_id: string, params: Static<typeof postRoomMessageParams>) => {
+      const content = params.content.trim();
+      if (content.length === 0) {
+        return {
+          content: [{ type: "text" as const, text: "ERROR: Message content cannot be empty" }],
+          details: {},
+        };
+      }
+      if (content.length > 2000) {
+        return {
+          content: [{ type: "text" as const, text: "ERROR: Message content exceeds 2000 character limit" }],
+          details: {},
+        };
+      }
+
+      const replyToMessageId = params.replyToMessageId?.trim();
+      if (params.replyToMessageId !== undefined && !replyToMessageId) {
+        return {
+          content: [{ type: "text" as const, text: "ERROR: replyToMessageId must be a non-empty string" }],
+          details: {},
+        };
+      }
+
+      try {
+        const isMember = chatStore.listRoomMembers(params.roomId).some((member) => member.agentId === fromAgentId);
+        if (!isMember) {
+          return {
+            content: [{ type: "text" as const, text: `ERROR: Agent ${fromAgentId} is not a member of room ${params.roomId}` }],
+            details: {},
+            isError: true,
+          };
+        }
+
+        const message = chatStore.addRoomMessage(params.roomId, {
+          role: "assistant",
+          senderAgentId: fromAgentId,
+          content,
+          mentions: params.mentions ?? [],
+          ...(replyToMessageId ? { metadata: { replyToMessageId } } : {}),
+        });
+
+        return {
+          content: [{ type: "text" as const, text: `Room message posted to ${params.roomId} (ID: ${message.id})` }],
+          details: { messageId: message.id },
+        };
+      } catch (err) {
+        const errorMessage = err instanceof Error ? err.message : String(err);
+        return {
+          content: [{ type: "text" as const, text: `ERROR: Failed to post room message: ${errorMessage}` }],
+          details: {},
+          isError: true,
+        };
+      }
+    },
+  };
 }
 
 export function createReadMessagesTool(messageStore: MessageStore, agentId: string): ToolDefinition {

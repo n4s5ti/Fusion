@@ -16,6 +16,8 @@ import {
 } from "../agent-heartbeat.js";
 import { AgentLogger } from "../agent-logger.js";
 import * as agentTools from "../agent-tools.js";
+import * as sessionHelpers from "../agent-session-helpers.js";
+import { AgentStore as RealAgentStore, TaskStore as RealTaskStore, ChatStore } from "@fusion/core";
 import type { AgentStore, AgentHeartbeatRun, TaskStore, TaskDetail, Agent, MessageStore, Message, AgentBudgetStatus } from "@fusion/core";
 import { createMockStore, createMockSession, createMockMessageStore, createMessage, createBudgetStatus } from "./heartbeat-test-helpers.js";
 vi.mock("../logger.js", async () => {
@@ -663,6 +665,59 @@ describe("clearRunState", () => {
     await monitor.completeRun("agent-001", "run-clear-002", { status: "completed" });
     savedRun = savedRuns.get("run-clear-002");
     expect((savedRun!.resultJson as any)?.tasksCreated).toBeUndefined();
+  });
+});
+
+describe("room-message prompt injection", () => {
+  it("includes pending room messages and excludes self-authored room traffic", async () => {
+    const rootDir = mkdtempSync(join(tmpdir(), "hb-room-prompt-"));
+    const globalDir = mkdtempSync(join(tmpdir(), "hb-room-global-"));
+    const taskStore = new RealTaskStore(rootDir, globalDir, { inMemoryDb: true });
+    await taskStore.init();
+    const agentStore = new RealAgentStore({ rootDir: taskStore.getFusionDir(), taskStore, inMemoryDb: true });
+    const chatStore = new ChatStore(taskStore.getFusionDir(), taskStore.getDatabase());
+
+    const agent = await agentStore.createAgent({
+      name: "Room Prompt Agent",
+      role: "engineer",
+      soul: "Responds to relevant room updates.",
+      runtimeConfig: { enabled: true },
+    });
+    const room = chatStore.createRoom({ name: "engineering", memberAgentIds: [agent.id] });
+    chatStore.addRoomMessage(room.id, { role: "assistant", senderAgentId: agent.id, content: "self message" });
+    const otherMessage = chatStore.addRoomMessage(room.id, { role: "user", content: "please investigate the queue" });
+
+    let capturedPrompt = "";
+    const createSessionSpy = vi.spyOn(sessionHelpers, "createResolvedAgentSession").mockImplementation(async (options: any) => ({
+      session: {
+        prompt: async (prompt: string) => {
+          capturedPrompt = prompt;
+        },
+        dispose: vi.fn(),
+        getSessionStats: () => ({ tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } }),
+      },
+      options,
+    }) as any);
+
+    try {
+      const monitor = new HeartbeatMonitor({
+        store: agentStore as unknown as AgentStore,
+        taskStore: taskStore as unknown as TaskStore,
+        rootDir,
+        chatStore,
+      });
+
+      await monitor.executeHeartbeat({ agentId: agent.id, source: "timer" as any });
+
+      expect(capturedPrompt).toContain("Pending Room Messages:");
+      expect(capturedPrompt).toContain(room.name);
+      expect(capturedPrompt).toContain(otherMessage.id);
+      expect(capturedPrompt).not.toContain("self message");
+    } finally {
+      createSessionSpy.mockRestore();
+      rmSync(rootDir, { recursive: true, force: true });
+      rmSync(globalDir, { recursive: true, force: true });
+    }
   });
 });
 

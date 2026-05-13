@@ -936,6 +936,29 @@ export class ChatStore extends EventEmitter<ChatStoreEvents> {
     return rows.map((row) => this.rowToRoomMessage(row));
   }
 
+  listRoomMessagesSince(
+    roomId: string,
+    sinceIso: string,
+    options?: { excludeSenderAgentId?: string; limit?: number },
+  ): ChatRoomMessage[] {
+    const whereClauses: string[] = ["roomId = ?", "createdAt > ?"];
+    const params: Array<string | number | null> = [roomId, sinceIso];
+
+    if (options?.excludeSenderAgentId) {
+      whereClauses.push("(senderAgentId IS NULL OR senderAgentId != ?)");
+      params.push(options.excludeSenderAgentId);
+    }
+
+    const rows = this.db.prepare(`
+      SELECT * FROM chat_room_messages
+      WHERE ${whereClauses.join(" AND ")}
+      ORDER BY createdAt ASC
+      LIMIT ?
+    `).all(...params, options?.limit ?? 50) as ChatRoomMessageRow[];
+
+    return rows.map((row) => this.rowToRoomMessage(row));
+  }
+
   getRoomMessage(id: string): ChatRoomMessage | undefined {
     const row = this.db.prepare("SELECT * FROM chat_room_messages WHERE id = ?").get(id) as ChatRoomMessageRow | undefined;
     return row ? this.rowToRoomMessage(row) : undefined;

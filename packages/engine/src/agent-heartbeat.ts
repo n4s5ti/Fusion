@@ -17,12 +17,12 @@
  * - onTerminated: Called when a heartbeat run is terminated
  */
 
-import type { AgentStore, AgentHeartbeatRun, HeartbeatInvocationSource, AgentHeartbeatConfig, AgentBudgetStatus, Message, MessageStore, TaskStore, TaskDetail, AgentRole, Agent, InboxTask, RunMutationContext, Settings, AgentConfigRevision, ReflectionStore } from "@fusion/core";
+import type { AgentStore, AgentHeartbeatRun, HeartbeatInvocationSource, AgentHeartbeatConfig, AgentBudgetStatus, Message, MessageStore, TaskStore, TaskDetail, AgentRole, Agent, InboxTask, RunMutationContext, Settings, AgentConfigRevision, ReflectionStore, ChatStore, ChatRoom, ChatRoomMessage } from "@fusion/core";
 import { ApprovalRequestStore, buildExecutionMemoryInstructions, isEphemeralAgent, hasAgentIdentity, resolveEffectiveAgentPermissionPolicy, canAgentTakeImplementationTask, canAgentTakeImplementationTaskForExplicitRouting } from "@fusion/core";
 import type { ToolDefinition } from "@mariozechner/pi-coding-agent";
 import { Type, type Static } from "@mariozechner/pi-ai";
 import { createHash } from "node:crypto";
-import { createTaskCreateTool, createTaskLogToolWithContext, createTaskDocumentWriteTool, createTaskDocumentReadTool, createListAgentsTool, createDelegateTaskTool, createGetAgentConfigTool, createUpdateAgentConfigTool, createAgentCreateTool, createAgentDeleteTool, createSendMessageTool, createReadMessagesTool, createMemoryTools, createReadEvaluationsTool, createUpdateIdentityTool, createReflectOnPerformanceTool, createWebFetchTool, readAgentMemoryWorkspaceLongTerm, taskCreateParams } from "./agent-tools.js";
+import { createTaskCreateTool, createTaskLogToolWithContext, createTaskDocumentWriteTool, createTaskDocumentReadTool, createListAgentsTool, createDelegateTaskTool, createGetAgentConfigTool, createUpdateAgentConfigTool, createAgentCreateTool, createAgentDeleteTool, createSendMessageTool, createReadMessagesTool, createPostRoomMessageTool, createMemoryTools, createReadEvaluationsTool, createUpdateIdentityTool, createReflectOnPerformanceTool, createWebFetchTool, readAgentMemoryWorkspaceLongTerm, taskCreateParams } from "./agent-tools.js";
 import { AgentLogger } from "./agent-logger.js";
 import {
   resolveAgentInstructionsWithRatings,
@@ -60,6 +60,8 @@ export interface HeartbeatMonitorOptions {
   agentStore?: AgentStore;
   /** Optional MessageStore for wake-on-message behavior */
   messageStore?: MessageStore;
+  /** Optional ChatStore for room-message visibility during heartbeats */
+  chatStore?: ChatStore;
   /** Polling interval in milliseconds (default: 3600000) */
   pollIntervalMs?: number;
   /** Heartbeat timeout in milliseconds (default: 60000) */
@@ -274,7 +276,7 @@ Examples of ONE useful coordination action:
 
 Keep work lightweight — this is a single-pass coordination check, not an implementation run.
 You have workspace read tools (for context gathering) plus fn_task_create, fn_task_log, fn_task_document tools,
-fn_send_message, fn_read_messages, fn_list_agents, fn_delegate_task, and memory tools.
+fn_send_message, fn_read_messages, fn_post_room_message, fn_list_agents, fn_delegate_task, and memory tools.
 
 **Task Documents:** Save important findings with fn_task_document_write(key="...", content="...").
 Documents persist across sessions and are visible in the dashboard's Documents tab.
@@ -319,7 +321,10 @@ When you are woken by an incoming message (source includes "wake-on-message"), y
    - If the message is informational, acknowledge it by logging with fn_task_log.
    - If the message requests net-new work, create a follow-up task with fn_task_create.
    - If ownership is clear and an agent is available, delegate using fn_delegate_task.
-4. After processing messages, continue with your normal heartbeat duties.
+4. If a Pending Room Messages section is present, review it too:
+   - Use fn_post_room_message only when the room content is relevant to your role, soul, or identity.
+   - Reference room message IDs when replying so humans can trace context.
+5. After processing messages, continue with your normal heartbeat duties.
 
 Example flow:
 - Read unread messages → identify "needs action" item → reply with intent (reply_to_message_id) → create/delegate task if execution is needed → log key decision.
@@ -363,7 +368,7 @@ You have coding-capable workspace tools (read/write/edit/bash within worktree bo
 - fn_get_agent_config and fn_update_agent_config (for direct reports only)
 - fn_memory_search, fn_memory_get, and fn_memory_append
 - fn_heartbeat_done
-- fn_send_message and fn_read_messages when messaging is enabled for this run (they may not always be available)
+- fn_send_message, fn_read_messages, and fn_post_room_message when messaging/room tools are enabled for this run (they may not always be available)
 
 ## Triage and Routing Decisions
 
@@ -400,7 +405,8 @@ When you are woken by an incoming message (source includes "wake-on-message"), y
    - If the message is informational, acknowledge it and respond via fn_send_message when appropriate.
    - If the message requests work, create a follow-up task with fn_task_create.
    - If the request has a clear owner and fn_delegate_task is available, delegate it directly.
-3. After processing messages, continue with your ambient work.
+3. If a Pending Room Messages section is present, review it too and use fn_post_room_message only when the room content is relevant to your role or identity.
+4. After processing messages, continue with your ambient work.
 
 Example flow:
 - Read inbox → classify message → reply with reply_to_message_id → create/delegate follow-up if needed → finish with fn_heartbeat_done.
@@ -428,7 +434,8 @@ export const HEARTBEAT_PROCEDURE = `## Heartbeat Procedure (run every tick, in o
    section of your system prompt.
 2. **Inbox** — when fn_read_messages is available, call it immediately and
    process unread/pending messages before any other action; reply with
-   reply_to_message_id when answering.
+   reply_to_message_id when answering. If Pending Room Messages are present,
+   review them in the prompt and use fn_post_room_message only when relevant.
 3. **Wake delta** — read the Wake Delta block above. The wake reason is the
    highest-priority change for this heartbeat. If you were woken by a comment
    or a message, acknowledge it before doing anything else.
@@ -477,7 +484,8 @@ export const HEARTBEAT_NO_TASK_PROCEDURE = `## Heartbeat Procedure (run every ti
    section of your system prompt.
 2. **Inbox** — when fn_read_messages is available, call it immediately and
    process unread/pending messages before any other action; reply with
-   reply_to_message_id when answering.
+   reply_to_message_id when answering. If Pending Room Messages are present,
+   review them in the prompt and use fn_post_room_message only when relevant.
 3. **Wake delta** — read the Wake Delta block above. The wake reason is the
    highest-priority change for this heartbeat. If you were woken by a comment
    or a message, acknowledge it before doing anything else.
@@ -594,6 +602,7 @@ export class HeartbeatMonitor {
   private taskStore?: TaskStore;
   private rootDir?: string;
   private messageStore?: MessageStore;
+  private chatStore?: ChatStore;
   private pluginRunner?: import("./plugin-runner.js").PluginRunner;
   private reflectionStore?: ReflectionStore;
   private reflectionService?: AgentReflectionService;
@@ -622,10 +631,102 @@ export class HeartbeatMonitor {
     this.taskStore = options.taskStore;
     this.rootDir = options.rootDir;
     this.messageStore = options.messageStore;
+    this.chatStore = options.chatStore;
     this.pluginRunner = options.pluginRunner;
     this.reflectionStore = options.reflectionStore;
     this.reflectionService = options.reflectionService;
     this.selfImproveService = options.selfImproveService;
+  }
+
+  getChatStore(): ChatStore | undefined {
+    return this.chatStore;
+  }
+
+  private async resolveRoomMessageSinceIso(agent: Agent, activeRunId: string): Promise<string> {
+    const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+
+    try {
+      const recentRuns = await this.store.getRecentRuns(agent.id, 10);
+      const previousCompletedRun = recentRuns.find((candidate) => candidate.id !== activeRunId && candidate.endedAt);
+      const candidateIso = previousCompletedRun?.endedAt ?? agent.lastHeartbeatAt ?? twentyFourHoursAgo;
+      const candidateTime = Date.parse(candidateIso);
+      if (!Number.isFinite(candidateTime)) {
+        return twentyFourHoursAgo;
+      }
+      return new Date(Math.max(candidateTime, Date.now() - 24 * 60 * 60 * 1000)).toISOString();
+    } catch (error) {
+      heartbeatLog.warn(`Failed to resolve room-message lookback for ${agent.id}: ${error instanceof Error ? error.message : String(error)}`);
+      const fallbackTime = Date.parse(agent.lastHeartbeatAt ?? twentyFourHoursAgo);
+      if (!Number.isFinite(fallbackTime)) {
+        return twentyFourHoursAgo;
+      }
+      return new Date(Math.max(fallbackTime, Date.now() - 24 * 60 * 60 * 1000)).toISOString();
+    }
+  }
+
+  private getPendingRoomMessagesSection(entries: Array<{ room: ChatRoom; messages: ChatRoomMessage[] }>, truncatedCount: number): string[] {
+    if (entries.length === 0) {
+      return [];
+    }
+
+    const lines = ["", "Pending Room Messages:"];
+    for (const entry of entries) {
+      lines.push(`- [room: ${entry.room.name} (${entry.room.id})]`);
+      for (const message of entry.messages) {
+        const normalized = message.content.replace(/\s+/g, " ").trim();
+        const truncatedContent = normalized.length > 180 ? `${normalized.slice(0, 179)}…` : normalized;
+        lines.push(`  - [from: ${message.senderAgentId ?? "user"}] [${message.id}] ${truncatedContent}`);
+      }
+    }
+    if (truncatedCount > 0) {
+      lines.push(`  - (${truncatedCount} more truncated)`);
+    }
+    return lines;
+  }
+
+  private async getPendingRoomMessages(agent: Agent, sinceIso: string): Promise<{
+    entries: Array<{ room: ChatRoom; messages: ChatRoomMessage[] }>;
+    total: number;
+    truncatedCount: number;
+  }> {
+    if (!this.chatStore) {
+      return { entries: [], total: 0, truncatedCount: 0 };
+    }
+
+    try {
+      const rooms = this.chatStore.listRoomsForAgent(agent.id, { status: "active" });
+      const entries: Array<{ room: ChatRoom; messages: ChatRoomMessage[] }> = [];
+      let total = 0;
+      let surfaced = 0;
+      let truncatedCount = 0;
+
+      for (const room of rooms) {
+        const messages = this.chatStore.listRoomMessagesSince(room.id, sinceIso, {
+          excludeSenderAgentId: agent.id,
+          limit: 10,
+        });
+        if (messages.length === 0) {
+          continue;
+        }
+
+        total += messages.length;
+        const remaining = 30 - surfaced;
+        if (remaining <= 0) {
+          truncatedCount += messages.length;
+          continue;
+        }
+
+        const surfacedMessages = messages.slice(0, remaining);
+        truncatedCount += messages.length - surfacedMessages.length;
+        entries.push({ room, messages: surfacedMessages });
+        surfaced += surfacedMessages.length;
+      }
+
+      return { entries, total, truncatedCount };
+    } catch (error) {
+      heartbeatLog.warn(`Failed to fetch room messages for ${agent.id}: ${error instanceof Error ? error.message : String(error)}`);
+      return { entries: [], total: 0, truncatedCount: 0 };
+    }
   }
 
   private getApprovalRequestStore(): ApprovalRequestStore {
@@ -1808,6 +1909,9 @@ export class HeartbeatMonitor {
             heartbeatTools.push(createSendMessageTool(this.messageStore, agentId));
             heartbeatTools.push(createReadMessagesTool(this.messageStore, agentId));
           }
+          if (this.chatStore) {
+            heartbeatTools.push(createPostRoomMessageTool(this.chatStore, agentId));
+          }
 
           heartbeatTools.push(createReadEvaluationsTool(this.store, this.reflectionStore, agentId));
           heartbeatTools.push(createUpdateIdentityTool(this.store, agentId));
@@ -2029,6 +2133,13 @@ export class HeartbeatMonitor {
           let pendingMessages: Message[] = [];
           let executionPrompt: string;
 
+          const sinceIso = await this.resolveRoomMessageSinceIso(agent, run.id);
+          const pendingRoomMessages = await this.getPendingRoomMessages(agent, sinceIso);
+          const pendingRoomMessagesLines = this.getPendingRoomMessagesSection(
+            pendingRoomMessages.entries,
+            pendingRoomMessages.truncatedCount,
+          );
+
           // Derive a stable wake reason from source, triggerDetail, and trigger
           // type so the agent can change its strategy based on *why* it woke up.
           // Mirrors paperclip's PAPERCLIP_WAKE_REASON (see plan: wake delta).
@@ -2103,6 +2214,7 @@ export class HeartbeatMonitor {
               `- wake reason: ${wakeReason}`,
               `- assigned task: none`,
               `- pending messages: ${pendingMessages.length}`,
+              `- pending room messages: ${pendingRoomMessages.total}`,
               `- auto-claim relevant tasks: ${autoClaimEnabled ? "enabled" : "disabled"}`,
               "",
               "Treat this wake delta as the highest-priority change for this heartbeat.",
@@ -2137,6 +2249,7 @@ export class HeartbeatMonitor {
               "prioritize tasks that align with your role and soul before creating net-new tasks.",
               ...candidateLines,
               ...pendingMessagesLines,
+              ...pendingRoomMessagesLines,
               "",
               "Your soul, instructions, and memory are already loaded in the system prompt.",
               "Focus on work that benefits the project without requiring a specific task context.",
@@ -2215,6 +2328,7 @@ export class HeartbeatMonitor {
               `- wake reason: ${wakeReason}`,
               `- assigned task: ${taskId}`,
               `- pending messages: ${pendingMessages.length}`,
+              `- pending room messages: ${pendingRoomMessages.total}`,
               `- triggering comments: ${effectiveTriggeringCommentIds?.length ?? 0}`,
               "",
               "Treat this wake delta as the highest-priority change for this heartbeat.",
@@ -2232,6 +2346,7 @@ export class HeartbeatMonitor {
               taskDetail!.prompt ? `PROMPT.md:\n${taskDetail!.prompt}` : "No PROMPT.md available.",
               ...triggeringCommentLines,
               ...pendingMessagesLines,
+              ...pendingRoomMessagesLines,
               ...(reportsHealthSection ? ["", reportsHealthSection] : []),
               "",
               "Run the Heartbeat Procedure above. Call fn_heartbeat_done when finished.",
@@ -2594,6 +2709,9 @@ export class HeartbeatMonitor {
     if (messageStore) {
       tools.push(createSendMessageTool(messageStore, agentId));
       tools.push(createReadMessagesTool(messageStore, agentId));
+    }
+    if (this.chatStore) {
+      tools.push(createPostRoomMessageTool(this.chatStore, agentId));
     }
 
     tools.push(createReadEvaluationsTool(this.store, this.reflectionStore, agentId));

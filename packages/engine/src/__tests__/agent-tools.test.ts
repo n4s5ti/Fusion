@@ -12,6 +12,7 @@ import {
   createTaskLogToolWithContext,
   createSendMessageTool,
   createReadMessagesTool,
+  createPostRoomMessageTool,
   createResearchTools,
   qmdAgentMemoryCollectionName,
   readAgentMemoryWorkspaceLongTerm,
@@ -19,6 +20,7 @@ import {
   readMessagesParams,
 } from "../agent-tools.js";
 import * as core from "@fusion/core";
+import { ChatStore, Database } from "@fusion/core";
 import type { MessageStore, Message } from "@fusion/core";
 import { getEnabledPluginTools, getResearchToolSurfaceStatus } from "../tool-availability.js";
 
@@ -953,6 +955,75 @@ describe("createSendMessageTool", () => {
     expect(messageStore.sendMessage).toHaveBeenCalledWith(
       expect.objectContaining({ content: "test" })
     );
+  });
+});
+
+describe("createPostRoomMessageTool", () => {
+  let roomDir: string;
+  let fusionDir: string;
+  let db: Database;
+  let chatStore: ChatStore;
+
+  beforeEach(() => {
+    roomDir = join(tmpdir(), `fusion-room-tool-${Date.now()}-${Math.random().toString(16).slice(2)}`);
+    fusionDir = join(roomDir, ".fusion");
+    db = new Database(fusionDir, { inMemory: true });
+    db.init();
+    chatStore = new ChatStore(fusionDir, db);
+  });
+
+  afterEach(() => {
+    db.close();
+  });
+
+  it("posts to a room when the agent is a member", async () => {
+    const room = chatStore.createRoom({ name: "ops", memberAgentIds: ["agent-sender"] });
+    const tool = createPostRoomMessageTool(chatStore, "agent-sender");
+
+    const result = await tool.execute("call-1", {
+      roomId: room.id,
+      content: "  Ready to help  ",
+      mentions: ["agent-2"],
+    } as any, undefined, undefined, {} as any);
+
+    const messages = chatStore.getRoomMessages(room.id);
+    expect(messages).toHaveLength(1);
+    expect(messages[0]).toMatchObject({
+      role: "assistant",
+      senderAgentId: "agent-sender",
+      content: "Ready to help",
+      mentions: ["agent-2"],
+    });
+    expect(result.details).toEqual({ messageId: messages[0]!.id });
+  });
+
+  it("blocks non-members from posting", async () => {
+    const room = chatStore.createRoom({ name: "ops", memberAgentIds: ["agent-other"] });
+    const tool = createPostRoomMessageTool(chatStore, "agent-sender");
+
+    const result = await tool.execute("call-1", {
+      roomId: room.id,
+      content: "Hello",
+    } as any, undefined, undefined, {} as any);
+
+    expect(result.content[0]).toEqual({
+      type: "text",
+      text: `ERROR: Agent agent-sender is not a member of room ${room.id}`,
+    });
+    expect(chatStore.getRoomMessages(room.id)).toHaveLength(0);
+  });
+
+  it("stores reply metadata when replyToMessageId is provided", async () => {
+    const room = chatStore.createRoom({ name: "ops", memberAgentIds: ["agent-sender"] });
+    const tool = createPostRoomMessageTool(chatStore, "agent-sender");
+
+    await tool.execute("call-1", {
+      roomId: room.id,
+      content: "Replying",
+      replyToMessageId: "rmsg-parent",
+    } as any, undefined, undefined, {} as any);
+
+    expect(chatStore.getRoomMessages(room.id)[0]?.metadata).toEqual({ replyToMessageId: "rmsg-parent" });
   });
 });
 

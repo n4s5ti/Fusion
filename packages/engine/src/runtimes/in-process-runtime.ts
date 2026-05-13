@@ -11,7 +11,7 @@ import type {
   MessageStore,
   RoutineStore,
 } from "@fusion/core";
-import { isEphemeralAgent } from "@fusion/core";
+import { ChatStore, isEphemeralAgent } from "@fusion/core";
 import { Scheduler } from "../scheduler.js";
 import type { PrMonitor, PrComment } from "../pr-monitor.js";
 import type { PrInfo } from "@fusion/core";
@@ -114,6 +114,7 @@ export class InProcessRuntime
   private missionAutopilot?: MissionAutopilot;
   private triageProcessor?: TriageProcessor;
   private messageStore?: MessageStore;
+  private chatStore?: ChatStore;
   private concurrencyChangedListener?: (state: { globalMaxConcurrent: number }) => void;
   /**
    * Optional callback the runtime forwards to SelfHealingManager so that
@@ -450,12 +451,14 @@ export class InProcessRuntime
         // Already started — nothing to do
       }
       if (!this.heartbeatMonitor && this.agentStore) {
+        this.chatStore ??= new ChatStore(this.taskStore.getFusionDir(), this.taskStore.getDatabase());
         this.heartbeatMonitor = new HeartbeatMonitor({
           store: this.agentStore,
           agentStore: this.agentStore, // enables per-agent config resolution
           taskStore: this.taskStore,
           rootDir: this.config.workingDirectory,
           messageStore: this.messageStore,
+          chatStore: this.chatStore,
           pluginRunner: this.pluginRunner,
           reflectionStore: reflectionStoreForService,
           reflectionService,

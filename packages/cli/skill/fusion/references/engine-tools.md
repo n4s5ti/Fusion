@@ -34,6 +34,7 @@ These tools are **not** part of the user-invokable extension surface. They are i
 | `fn_agent_delete` | executor, heartbeat | Delete a non-ephemeral direct-report agent | `agent_id` (string), optional: `force` (boolean), `reassign_to` (string) |
 | `fn_send_message` | executor, step-session, heartbeat | Send inbox messages to agents/users | `to_id` (string), `content` (string), `type?` (`agent-to-agent` \| `agent-to-user`), `reply_to_message_id?` (string) |
 | `fn_read_messages` | executor, step-session, heartbeat | Read inbox messages | `unread_only?` (boolean), `limit?` (number) |
+| `fn_post_room_message` | heartbeat | Post a message to a chat room the agent is a member of | `roomId` (string), `content` (string), `replyToMessageId?` (string), `mentions?` (string[]) |
 
 ## Triage-only runtime tools (`triage.ts`)
 

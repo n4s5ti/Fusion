@@ -104,6 +104,48 @@ describe("ChatStore — rooms (FN-3805..FN-3811 contract)", () => {
       expect(updated.attachments?.[0]?.id).toBe("att-room");
     });
 
+    it("returns only messages after sinceIso", async () => {
+      const room = store.createRoom({ name: "since-test" });
+      store.addRoomMessage(room.id, { role: "user", content: "before" });
+      await new Promise((r) => setTimeout(r, 5));
+      const sinceIso = new Date().toISOString();
+      await new Promise((r) => setTimeout(r, 5));
+      const after = store.addRoomMessage(room.id, { role: "user", content: "after" });
+
+      expect(store.listRoomMessagesSince(room.id, sinceIso).map((message) => message.id)).toEqual([after.id]);
+    });
+
+    it("excludes authored agent messages when excludeSenderAgentId is set", async () => {
+      const room = store.createRoom({ name: "exclude-self" });
+      store.addRoomMessage(room.id, { role: "assistant", content: "own", senderAgentId: "agent-1" });
+      await new Promise((r) => setTimeout(r, 5));
+      const other = store.addRoomMessage(room.id, { role: "assistant", content: "other", senderAgentId: "agent-2" });
+      const user = store.addRoomMessage(room.id, { role: "user", content: "user" });
+
+      expect(
+        store.listRoomMessagesSince(room.id, "1970-01-01T00:00:00.000Z", { excludeSenderAgentId: "agent-1" }).map((message) => message.id),
+      ).toEqual([other.id, user.id]);
+    });
+
+    it("respects the limit cap", async () => {
+      const room = store.createRoom({ name: "limit-test" });
+      store.addRoomMessage(room.id, { role: "user", content: "one" });
+      store.addRoomMessage(room.id, { role: "user", content: "two" });
+      store.addRoomMessage(room.id, { role: "user", content: "three" });
+
+      expect(store.listRoomMessagesSince(room.id, "1970-01-01T00:00:00.000Z", { limit: 2 }).map((message) => message.content)).toEqual([
+        "one",
+        "two",
+      ]);
+    });
+
+    it("returns empty when there are no new room messages", () => {
+      const room = store.createRoom({ name: "empty-test" });
+      store.addRoomMessage(room.id, { role: "user", content: "old" });
+
+      expect(store.listRoomMessagesSince(room.id, new Date().toISOString())).toEqual([]);
+    });
+
     it("keeps cross-room and direct-vs-room histories isolated", () => {
       const session = store.createSession({ agentId: "agent-1" });
       store.addMessage(session.id, { role: "user", content: "direct" });

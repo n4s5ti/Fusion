@@ -542,6 +542,7 @@ describe("InProcessRuntime", () => {
       await runtime.start();
       const monitor = runtime.getHeartbeatMonitor();
       expect(monitor).toBeDefined();
+      expect(monitor?.getChatStore()).toBeDefined();
     }, 30000);
 
     // Regression: heartbeat auto-claim path was warning
