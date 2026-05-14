@@ -10,13 +10,8 @@ describe("workflow integration contracts", () => {
     expect(typeof plugin.manifest.id).toBe("string");
   });
 
-  it("does not currently contribute plugin workflow step templates", () => {
-    expect(plugin.workflowStepTemplates).toBeUndefined();
-  });
-
-  it("exposes no plugin workflow step IDs to runWorkflowSteps today", () => {
-    const workflowStepTemplates = plugin.workflowStepTemplates ?? [];
-    expect(workflowStepTemplates).toEqual([]);
-    expect(workflowStepTemplates.some((template) => template.id.startsWith("plugin:"))).toBe(false);
+  it("contributes plugin workflow step templates", () => {
+    expect(plugin.workflowSteps?.length).toBeGreaterThan(0);
+    expect(plugin.workflowSteps?.some((step) => step.mode === "script")).toBe(true);
   });
 });
