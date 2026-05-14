@@ -824,6 +824,35 @@ describe("SettingsModal", () => {
       expect(ephemeralToggle.checked).toBe(true);
     });
 
+    it("renders and saves chat room compaction controls", async () => {
+      renderModal({ initialSection: "general" });
+      await waitForSettingsModalReady();
+
+      expect(screen.getByRole("heading", { name: "Chat Rooms" })).toBeInTheDocument();
+
+      const recentInput = screen.getByLabelText("Recent verbatim room messages") as HTMLInputElement;
+      const fetchLimitInput = screen.getByLabelText("Room compaction fetch limit") as HTMLInputElement;
+      const summaryMaxInput = screen.getByLabelText("Room summary max characters") as HTMLInputElement;
+
+      expect(recentInput.placeholder).toBe("12");
+      expect(fetchLimitInput.placeholder).toBe("80");
+      expect(summaryMaxInput.placeholder).toBe("1500");
+
+      await userEvent.type(recentInput, "7");
+      await userEvent.type(fetchLimitInput, "60");
+      await userEvent.type(summaryMaxInput, "900");
+      await userEvent.click(screen.getByRole("button", { name: "Save" }));
+
+      await waitFor(() => {
+        expect(mockUpdateSettings).toHaveBeenCalled();
+      });
+
+      const payload = mockUpdateSettings.mock.calls[0][0] as Record<string, unknown>;
+      expect(payload.chatRoomRecentVerbatimMessages).toBe(7);
+      expect(payload.chatRoomCompactionFetchLimit).toBe(60);
+      expect(payload.chatRoomSummaryMaxChars).toBe(900);
+    });
+
     it("renders and saves GitHub tracking controls in the General section", async () => {
       renderModal({ initialSection: "general" });
       await waitForSettingsModalReady();
