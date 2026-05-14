@@ -61,8 +61,7 @@ Workflow steps also have a `gateMode`:
 - **`advisory`**: failures are recorded as `advisory_failure` and shown as polish feedback, but never block merge.
 
 Defaults:
-- prompt steps → `advisory`
-- script steps → `gate`
+- all steps → `advisory` (advisory-by-default per FN-4368; opt in to `gate` per step in **Settings → Workflow Steps**).
 
 ## Built-In Templates (7)
 
