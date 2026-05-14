@@ -398,6 +398,7 @@ export function registerTaskWorkflowRoutes(ctx: ApiRoutesContext, deps: TaskWork
       const task = await scopedStore.moveTask(req.params.id, column as Column, {
         preserveProgress,
         allocateWorktree,
+        moveSource: "user",
       });
       res.json(task);
     } catch (err: unknown) {

@@ -362,15 +362,19 @@ describe("TaskStore", () => {
       expect(events[0].description).toBe("event test");
     });
 
-    it("moveTask emits task:moved with from/to columns", async () => {
+    it("moveTask emits task:moved with from/to columns and source", async () => {
       const task = await createTestTask();
       const events: any[] = [];
       store.on("task:moved", (data: any) => events.push(data));
-      await store.moveTask(task.id, "todo");
+      await store.moveTask(task.id, "todo", { moveSource: "user" });
       expect(events).toHaveLength(1);
       expect(events[0].from).toBe("triage");
       expect(events[0].to).toBe("todo");
+      expect(events[0].source).toBe("user");
       expect(events[0].task.id).toBe(task.id);
+
+      await store.moveTask(task.id, "in-progress");
+      expect(events.at(-1)?.source).toBe("engine");
     });
 
     it("updateTask emits task:updated with the updated task", async () => {
@@ -420,6 +424,32 @@ describe("TaskStore", () => {
 
   });
 
+
+  describe("userPaused move semantics", () => {
+    it("sets userPaused for user move to todo and clears on in-progress", async () => {
+      const task = await createTestTask();
+      await store.moveTask(task.id, "todo");
+      await store.moveTask(task.id, "in-progress");
+
+      await store.moveTask(task.id, "todo", { moveSource: "user" });
+      const parked = await store.getTask(task.id);
+      expect(parked.userPaused).toBe(true);
+
+      await store.moveTask(task.id, "in-progress");
+      const resumed = await store.getTask(task.id);
+      expect(resumed.userPaused).toBeUndefined();
+    });
+
+    it("does not set userPaused for engine preserve-resume move", async () => {
+      const task = await createTestTask();
+      await store.moveTask(task.id, "todo");
+      await store.moveTask(task.id, "in-progress");
+
+      await store.moveTask(task.id, "todo", { preserveResumeState: true });
+      const bounced = await store.getTask(task.id);
+      expect(bounced.userPaused).toBeUndefined();
+    });
+  });
 
   describe("execution timing timestamps", () => {
     it("preserves the original executionStartedAt across an internal rerun bounce", async () => {

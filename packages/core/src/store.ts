@@ -60,6 +60,7 @@ interface TaskRow {
   worktree: string | null;
   blockedBy: string | null;
   paused: number | null;
+  userPaused: number | null;
   baseBranch: string | null;
   executionStartBranch: string | null;
   branch: string | null;
@@ -492,7 +493,7 @@ function deepMergeWithNullDelete(
 
 export interface TaskStoreEvents {
   "task:created": [task: Task];
-  "task:moved": [data: { task: Task; from: Column; to: Column }];
+  "task:moved": [data: { task: Task; from: Column; to: Column; source: "user" | "engine" }];
   "task:updated": [task: Task];
   "task:deleted": [task: Task, meta?: { githubIssueAction?: GithubIssueAction }];
   "task:merged": [result: MergeResult];
@@ -984,6 +985,7 @@ export class TaskStore extends EventEmitter<TaskStoreEvents> {
       worktree: row.worktree || undefined,
       blockedBy: row.blockedBy || undefined,
       paused: row.paused ? true : undefined,
+      userPaused: row.userPaused ? true : undefined,
       baseBranch: row.baseBranch || undefined,
       executionStartBranch: row.executionStartBranch || undefined,
       branch: row.branch || undefined,
@@ -1341,7 +1343,7 @@ export class TaskStore extends EventEmitter<TaskStoreEvents> {
     const prefix = tableAlias ? `${tableAlias}.` : "";
     return [
       "id", "lineageId", "title", "description", "priority", "\"column\"", "status", "size", "reviewLevel", "currentStep",
-      "worktree", "blockedBy", "paused", "baseBranch", "branch", "executionStartBranch", "baseCommitSha",
+      "worktree", "blockedBy", "paused", "userPaused", "baseBranch", "branch", "executionStartBranch", "baseCommitSha",
       "modelPresetId", "modelProvider", "modelId",
       "validatorModelProvider", "validatorModelId",
       "planningModelProvider", "planningModelId",
@@ -1390,7 +1392,7 @@ export class TaskStore extends EventEmitter<TaskStoreEvents> {
   private getTaskSelectClauseWithActivityLogLimit(limit: number): string {
     const columns = [
       "id", "lineageId", "title", "description", "priority", "\"column\"", "status", "size", "reviewLevel", "currentStep",
-      "worktree", "blockedBy", "paused", "baseBranch", "branch", "executionStartBranch", "baseCommitSha",
+      "worktree", "blockedBy", "paused", "userPaused", "baseBranch", "branch", "executionStartBranch", "baseCommitSha",
       "modelPresetId", "modelProvider", "modelId",
       "validatorModelProvider", "validatorModelId",
       "planningModelProvider", "planningModelId",
@@ -1443,6 +1445,7 @@ export class TaskStore extends EventEmitter<TaskStoreEvents> {
       task.worktree ?? null,
       task.blockedBy ?? null,
       task.paused ? 1 : 0,
+      task.userPaused ? 1 : 0,
       task.baseBranch ?? null,
       task.branch ?? null,
       task.executionStartBranch ?? null,
@@ -1541,7 +1544,7 @@ export class TaskStore extends EventEmitter<TaskStoreEvents> {
     this.db.prepare(`
       INSERT INTO tasks (
         id, lineageId, title, description, priority, "column", status, size, reviewLevel, currentStep,
-        worktree, blockedBy, paused, baseBranch, branch, executionStartBranch, baseCommitSha, modelPresetId, modelProvider,
+        worktree, blockedBy, paused, userPaused, baseBranch, branch, executionStartBranch, baseCommitSha, modelPresetId, modelProvider,
         modelId, validatorModelProvider, validatorModelId, planningModelProvider, planningModelId, mergeRetries,
         workflowStepRetries, stuckKillCount, postReviewFixCount, recoveryRetryCount, taskDoneRetryCount, verificationFailureCount, mergeConflictBounceCount, mergeAuditBounceCount, nextRecoveryAt, error,
         summary, thinkingLevel, executionMode, tokenUsageInputTokens, tokenUsageOutputTokens, tokenUsageCachedTokens,
@@ -1566,7 +1569,7 @@ export class TaskStore extends EventEmitter<TaskStoreEvents> {
     this.db.prepare(`
       INSERT INTO tasks (
         id, lineageId, title, description, priority, "column", status, size, reviewLevel, currentStep,
-        worktree, blockedBy, paused, baseBranch, branch, executionStartBranch, baseCommitSha, modelPresetId, modelProvider,
+        worktree, blockedBy, paused, userPaused, baseBranch, branch, executionStartBranch, baseCommitSha, modelPresetId, modelProvider,
         modelId, validatorModelProvider, validatorModelId, planningModelProvider, planningModelId, mergeRetries,
         workflowStepRetries, stuckKillCount, postReviewFixCount, recoveryRetryCount, taskDoneRetryCount, verificationFailureCount, mergeConflictBounceCount, mergeAuditBounceCount, nextRecoveryAt, error,
         summary, thinkingLevel, executionMode, tokenUsageInputTokens, tokenUsageOutputTokens, tokenUsageCachedTokens,
@@ -1590,6 +1593,7 @@ export class TaskStore extends EventEmitter<TaskStoreEvents> {
         worktree = excluded.worktree,
         blockedBy = excluded.blockedBy,
         paused = excluded.paused,
+        userPaused = excluded.userPaused,
         baseBranch = excluded.baseBranch,
         branch = excluded.branch,
         executionStartBranch = excluded.executionStartBranch,
@@ -3707,6 +3711,8 @@ export class TaskStore extends EventEmitter<TaskStoreEvents> {
        * scheduler) so the store stays free of worktree-naming policy.
        */
       allocateWorktree?: (reservedNames: Set<string>) => string | null;
+      /** Distinguishes user-initiated moves from engine-internal transitions. */
+      moveSource?: "user" | "engine";
     },
   ): Promise<Task> {
     return this.withTaskLock(id, async () => {
@@ -3740,6 +3746,7 @@ export class TaskStore extends EventEmitter<TaskStoreEvents> {
         );
       }
 
+      const moveSource = options?.moveSource ?? "engine";
       const fromColumn = task.column;
       if (fromColumn === "in-review" && toColumn === "done") {
         const mergeBlocker = getTaskMergeBlocker(task);
@@ -3756,6 +3763,9 @@ export class TaskStore extends EventEmitter<TaskStoreEvents> {
       // logic below for the path that resets these for a fresh run.
       if (toColumn === "in-progress" && !task.executionStartedAt) {
         task.executionStartedAt = task.columnMovedAt;
+      }
+      if (toColumn === "in-progress") {
+        task.userPaused = undefined;
       }
       if (toColumn === "done" && !task.executionCompletedAt) {
         task.executionCompletedAt = task.columnMovedAt;
@@ -3784,6 +3794,11 @@ export class TaskStore extends EventEmitter<TaskStoreEvents> {
         task.blockedBy = undefined;
         task.paused = undefined;
         task.pausedByAgentId = undefined;
+        if (moveSource === "user" && toColumn === "todo") {
+          task.userPaused = true;
+        } else {
+          task.userPaused = undefined;
+        }
 
         const hasNonPendingStepProgress = task.steps.some((step) => step.status !== "pending");
         const preserveStepProgress =
@@ -3880,7 +3895,7 @@ export class TaskStore extends EventEmitter<TaskStoreEvents> {
       // Update cache if watcher is active
       if (this.isWatching) this.taskCache.set(id, { ...task });
 
-      this.emit("task:moved", { task, from: fromColumn, to: toColumn });
+      this.emit("task:moved", { task, from: fromColumn, to: toColumn, source: moveSource });
       return task;
     });
   }
@@ -4406,7 +4421,7 @@ export class TaskStore extends EventEmitter<TaskStoreEvents> {
       }
 
       if (movedToTriage) {
-        this.emit("task:moved", { task, from: "todo" as Column, to: "triage" as Column });
+        this.emit("task:moved", { task, from: "todo" as Column, to: "triage" as Column, source: "engine" });
       }
       this.emit("task:updated", task);
       return task;
@@ -5402,7 +5417,7 @@ export class TaskStore extends EventEmitter<TaskStoreEvents> {
         await this.atomicWriteTaskJson(dir, task);
         this.clearLinkedAgentTaskIds(id, task.updatedAt);
         if (this.isWatching) this.taskCache.set(id, { ...task });
-        this.emit("task:moved", { task, from: "done" as Column, to: "archived" as Column });
+        this.emit("task:moved", { task, from: "done" as Column, to: "archived" as Column, source: "engine" });
         return task;
       }
 
@@ -5428,7 +5443,7 @@ export class TaskStore extends EventEmitter<TaskStoreEvents> {
         this.taskCache.delete(id);
       }
 
-      this.emit("task:moved", { task, from: "done" as Column, to: "archived" as Column });
+      this.emit("task:moved", { task, from: "done" as Column, to: "archived" as Column, source: "engine" });
       return this.archiveEntryToTask(entry, false);
     });
   }
@@ -5508,7 +5523,7 @@ export class TaskStore extends EventEmitter<TaskStoreEvents> {
       // Update cache if watcher is active
       if (this.isWatching) this.taskCache.set(id, { ...task });
 
-      this.emit("task:moved", { task, from: "archived" as Column, to: "done" as Column });
+      this.emit("task:moved", { task, from: "archived" as Column, to: "done" as Column, source: "engine" });
       return task;
     });
   }
@@ -5537,7 +5552,7 @@ export class TaskStore extends EventEmitter<TaskStoreEvents> {
     // Update cache if watcher is active
     if (this.isWatching) this.taskCache.set(task.id, { ...task });
 
-    this.emit("task:moved", { task, from: fromColumn, to: "done" as Column });
+    this.emit("task:moved", { task, from: fromColumn, to: "done" as Column, source: "engine" });
   }
 
   private clearDoneTransientFields(task: Task): boolean {
@@ -5658,7 +5673,7 @@ export class TaskStore extends EventEmitter<TaskStoreEvents> {
             // Task moved to archive — emit task:moved (matching what
             // archiveTask emits in-process) so the activity-log listener
             // records it correctly.
-            this.emit("task:moved", { task: cached, from: cached.column, to: "archived" as Column });
+            this.emit("task:moved", { task: cached, from: cached.column, to: "archived" as Column, source: "engine" });
           } else {
             this.emit("task:deleted", cached);
           }
@@ -5686,7 +5701,7 @@ export class TaskStore extends EventEmitter<TaskStoreEvents> {
         } else if (cached.column !== task.column) {
           const from = cached.column;
           this.taskCache.set(task.id, { ...task });
-          this.emit("task:moved", { task, from, to: task.column });
+          this.emit("task:moved", { task, from, to: task.column, source: "engine" });
         } else {
           this.taskCache.set(task.id, { ...task });
           this.emit("task:updated", task);

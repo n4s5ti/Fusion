@@ -1222,6 +1222,8 @@ export interface Task {
   blockedBy?: string;
   /** When true, all automated agent and scheduler interaction is suspended. */
   paused?: boolean;
+  /** When true, this task was explicitly moved back to todo by a user and should not auto-dispatch. */
+  userPaused?: boolean;
   /** Optional machine-readable reason for automated pauses (for example dispatch-storm). */
   pausedReason?: string;
   /** ISO timestamp set when the task first crossed the soft token budget cap. */
