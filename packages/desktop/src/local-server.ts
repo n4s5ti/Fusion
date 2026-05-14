@@ -47,7 +47,7 @@ export class DesktopLocalServerManager {
       const store = new TaskStore(this.rootDir) as TaskStoreLike;
       await store.init();
       await store.watch();
-      const app = createServer(store);
+      const app = createServer(store as never);
       const server = app.listen(0);
 
       await Promise.race([

@@ -40,7 +40,7 @@ async function createStoreDefault(rootDir: string): Promise<TaskStoreLike> {
 
 async function createDashboardServerDefault(store: TaskStoreLike): Promise<Server> {
   const { createServer } = await import("@fusion/dashboard");
-  return createServer(store).listen(0);
+  return createServer(store as never).listen(0);
 }
 
 function parsePort(raw: string | undefined): number | undefined {
