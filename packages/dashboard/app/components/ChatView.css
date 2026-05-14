@@ -1536,7 +1536,7 @@
   color: var(--text-muted);
 }
 
-/* Sidebar footer contains the primary New Chat action on desktop and mobile. */
+/* Sidebar footer contains the primary chat-scope action on desktop and mobile. */
 .chat-sidebar-footer {
   display: block;
   padding: var(--space-sm) var(--space-md);
@@ -1604,7 +1604,7 @@
     will-change: transform;
   }
 
-  /* On mobile, the "New Chat" affordance uses a full-width pinned footer. */
+  /* On mobile, the active scope affordance uses a full-width pinned footer. */
   .chat-sidebar-footer {
     display: block;
     padding: var(--space-sm) var(--space-md);
