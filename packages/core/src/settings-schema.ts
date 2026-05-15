@@ -192,6 +192,7 @@ export const DEFAULT_PROJECT_SETTINGS = {
   recycleWorktrees: false,
   executorAllowSiblingBranchRename: false,
   worktreeNaming: "random",
+  worktreesDir: undefined,
   taskPrefix: "FN",
   includeTaskIdInCommit: true,
   commitAuthorEnabled: true,

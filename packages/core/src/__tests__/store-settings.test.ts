@@ -37,6 +37,18 @@ describe("TaskStore", () => {
     });
   });
 
+  describe("worktreesDir setting", () => {
+    it("round-trips worktreesDir via updateSettings and project serialization", async () => {
+      await harness.store().updateSettings({ worktreesDir: "~/.fn-worktrees/{repo}" });
+      const settings = await harness.store().getSettings();
+      expect(settings.worktreesDir).toBe("~/.fn-worktrees/{repo}");
+
+      const configRaw = await readFile(join(harness.rootDir(), ".fusion", "config.json"), "utf-8");
+      const config = JSON.parse(configRaw);
+      expect(config.settings.worktreesDir).toBe("~/.fn-worktrees/{repo}");
+    });
+  });
+
   describe("autoResolveConflicts setting", () => {
     it("persists autoResolveConflicts and returns it via getSettings", async () => {
       await harness.store().updateSettings({ autoResolveConflicts: false });

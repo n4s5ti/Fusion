@@ -2394,6 +2394,13 @@ export interface ProjectSettings {
    *  - "task-title": Use a slugified version of the task title (e.g., fix-login-bug)
    *  Default: "random". */
   worktreeNaming?: "random" | "task-id" | "task-title";
+  /** Optional container directory for task worktrees.
+   *  When unset, worktrees default to `<projectRoot>/.worktrees`.
+   *  Supports leading `~` expansion and the `{repo}` token (basename of the project root).
+   *  Accepts absolute paths or paths relative to the project root.
+   *  Affects newly-created worktrees and pool/self-healing directory scans only;
+   *  existing `task.worktree` absolute paths are honored as-is. */
+  worktreesDir?: string;
   /** Prefix for generated task IDs (e.g. `"KB"` produces `KB-001`).
    *  Defaults to `"KB"`. Only affects new tasks — existing tasks retain
    *  their original IDs. */
