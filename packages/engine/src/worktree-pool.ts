@@ -106,7 +106,7 @@ export async function isUsableTaskWorktree(rootDir: string, worktreePath: string
   if (!await isRegisteredGitWorktree(rootDir, worktreePath)) {
     return false;
   }
-  return isInsideGitWorkTree(worktreePath);
+  return await isInsideGitWorkTree(worktreePath);
 }
 
 export function isInsideWorktreesDir(
