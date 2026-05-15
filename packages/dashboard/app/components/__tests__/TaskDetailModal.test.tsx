@@ -123,6 +123,30 @@ describe("TaskDetailModal in-review stall diagnostics", () => {
     expect(highlighted?.textContent).toContain("In-review stall surfaced [merge-blocker]");
   });
 
+  it("renders retry-exhausted badge label with counter", () => {
+    render(
+      <TaskDetailModal
+        task={makeTask({
+          column: "in-review",
+          mergeRetries: 3,
+          inReviewStall: {
+            code: "merge-retries-exhausted",
+            reason: "Auto-merge retries exhausted",
+            observedAt: "2026-05-13T00:00:00.000Z",
+          },
+        })}
+        onClose={noop}
+        onMoveTask={noopMove}
+        onDeleteTask={noopDelete}
+        onMergeTask={noopMerge}
+        onOpenDetail={noopOpenDetail}
+        addToast={noop}
+      />,
+    );
+
+    expect(screen.getByText("Retries exhausted 3/3")).toBeInTheDocument();
+  });
+
   it("shows no-log copy when no matching stall entry exists", () => {
     render(
       <TaskDetailModal

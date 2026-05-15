@@ -42,7 +42,7 @@ import { subscribeSse } from "../sse-bus";
 import { usePluginUiSlots } from "../hooks/usePluginUiSlots";
 import { appendTokenQuery } from "../auth";
 import { extractDependencyDeleteConflict } from "../utils/taskDelete";
-import { computeBlockerFanoutMap } from "../hooks/useBlockerFanout";
+import { MAX_AUTO_MERGE_RETRIES, computeBlockerFanoutMap } from "../hooks/useBlockerFanout";
 import { resolveEffectiveGithubRepoDefault } from "./githubTracking";
 import { linkifyFilePaths, linkifyReactChildren } from "../utils/filePathLinkify";
 import { getInReviewStallCopy, shouldShowInReviewStallBadge } from "../utils/inReviewStallCopy";
@@ -3176,7 +3176,10 @@ export function TaskDetailContent({
           {task.column === "in-review" && (
             <>
               {shouldShowInReviewStallBadge(workingTask) && workingTask.inReviewStall && (() => {
-                const copy = getInReviewStallCopy(workingTask.inReviewStall);
+                const copy = getInReviewStallCopy(workingTask.inReviewStall, {
+                  mergeRetries: workingTask.mergeRetries,
+                  maxAutoMergeRetries: MAX_AUTO_MERGE_RETRIES,
+                });
                 const logMatch = findInReviewStallLogEntry(workingTask, workingTask.inReviewStall.code);
                 return (
                   <div
@@ -3185,7 +3188,7 @@ export function TaskDetailContent({
                   >
                     <div className="detail-in-review-stall-header">
                       <span className="card-status-badge card-status-badge--in-review in-review-stall">
-                        {copy.badgeLabel}
+                        {copy.badgeLabel}{copy.counter ? ` ${copy.counter}` : ""}
                       </span>
                       <span className="detail-in-review-stall-headline">{copy.headline}</span>
                     </div>
