@@ -51,6 +51,8 @@ export function useCurrentProject(
   const settingsCacheRef = useRef<Record<string, string> | null>(null);
   // Consecutive poll cycles where current project is missing from availableProjects
   const absentCountRef = useRef(0);
+  // Consecutive poll cycles confirming auto-default is safe when selection is null
+  const autoDefaultCountRef = useRef(0);
 
   const nodeKey = getNodeKey(nodeId);
 
@@ -72,6 +74,7 @@ export function useCurrentProject(
           // Try to find the saved project in available projects
           const found = availableProjects.find((p) => p.id === savedProjectId);
           if (found) {
+            autoDefaultCountRef.current = 0;
             setCurrentProjectState(found);
             hydratedRef.current = true;
           }
@@ -89,6 +92,7 @@ export function useCurrentProject(
                 // Check if project still exists
                 const exists = availableProjects.some((p) => p.id === parsed.id);
                 if (exists) {
+                  autoDefaultCountRef.current = 0;
                   setCurrentProjectState(parsed);
                   hydratedRef.current = true;
                   // Migrate to global settings
@@ -125,6 +129,7 @@ export function useCurrentProject(
   // Reset absence tracking when selection changes
   useEffect(() => {
     absentCountRef.current = 0;
+    autoDefaultCountRef.current = 0;
   }, [currentProject?.id]);
 
   // Validate project still exists and persist to global settings
@@ -132,6 +137,7 @@ export function useCurrentProject(
     if (loading) return;
 
     if (currentProject) {
+      autoDefaultCountRef.current = 0;
       // Validate project still exists in available projects
       const stillExists = availableProjects.some((p) => p.id === currentProject.id);
       if (stillExists) {
@@ -158,12 +164,20 @@ export function useCurrentProject(
       });
     } else {
       absentCountRef.current = 0;
-      if (availableProjects.length > 0 && !explicitlyClearedRef.current) {
-        // No selection but projects available - default to first active
-        // Skip if user explicitly cleared (navigated to overview)
-        const firstActive = availableProjects.find((p) => p.status === "active");
-        if (firstActive) {
-          setCurrentProjectState(firstActive);
+      if (availableProjects.length === 0) {
+        autoDefaultCountRef.current = 0;
+        return;
+      }
+      if (!explicitlyClearedRef.current) {
+        autoDefaultCountRef.current += 1;
+        if (autoDefaultCountRef.current >= CONSECUTIVE_ABSENCE_THRESHOLD) {
+          autoDefaultCountRef.current = 0;
+          // No selection but projects available - default to first active
+          // after consecutive poll confirmation.
+          const firstActive = availableProjects.find((p) => p.status === "active");
+          if (firstActive) {
+            setCurrentProjectState(firstActive);
+          }
         }
       }
     }
@@ -173,6 +187,7 @@ export function useCurrentProject(
     (project: ProjectInfo | null) => {
       explicitlyClearedRef.current = false;
       absentCountRef.current = 0;
+      autoDefaultCountRef.current = 0;
       setCurrentProjectState(project);
 
       if (project) {
@@ -189,6 +204,7 @@ export function useCurrentProject(
   const clearCurrentProject = useCallback(() => {
     explicitlyClearedRef.current = true;
     absentCountRef.current = 0;
+    autoDefaultCountRef.current = 0;
     setCurrentProjectState(null);
 
     // Remove from cache and persist
