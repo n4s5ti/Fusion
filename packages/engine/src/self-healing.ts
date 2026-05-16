@@ -1045,10 +1045,17 @@ export class SelfHealingManager {
   async archiveStaleDoneTasks(): Promise<number> {
     try {
       const settings = await this.store.getSettings();
-      if (settings.autoArchiveDoneTasksEnabled === false) {
+      const doneAutoArchiveDaysRaw = settings.doneAutoArchiveDays;
+      const doneAutoArchiveDays =
+        Number.isFinite(doneAutoArchiveDaysRaw) && Number.isInteger(doneAutoArchiveDaysRaw) && doneAutoArchiveDaysRaw > 0
+          ? doneAutoArchiveDaysRaw
+          : 0;
+      if (settings.autoArchiveDoneTasksEnabled === false && doneAutoArchiveDays === 0) {
         return 0;
       }
-      const archiveAfterMs = settings.autoArchiveDoneAfterMs ?? SelfHealingManager.AUTO_ARCHIVE_AFTER_MS;
+      const archiveAfterMs = doneAutoArchiveDays > 0
+        ? doneAutoArchiveDays * 24 * 60 * 60 * 1000
+        : (settings.autoArchiveDoneAfterMs ?? SelfHealingManager.AUTO_ARCHIVE_AFTER_MS);
       if (!Number.isFinite(archiveAfterMs) || archiveAfterMs <= 0) {
         return 0;
       }
@@ -1057,7 +1064,8 @@ export class SelfHealingManager {
       // staleness. Pulling full task payloads (logs, comments, steps) here used
       // to drag in tens of MB on busy boards and stalled the maintenance loop.
       const tasks = await this.store.listTasks({ slim: true, includeArchived: false });
-      const cutoff = Date.now() - archiveAfterMs;
+      const now = Date.now();
+      const cutoff = now - archiveAfterMs;
 
       // Build a set of task IDs that have at least one *active* dependent —
       // i.e., another task in triage/todo/in-progress/in-review that lists
@@ -1093,10 +1101,15 @@ export class SelfHealingManager {
       log.log(`Auto-archiving ${stale.length} done task(s) older than ${archiveAfterMs}ms`);
 
       let archived = 0;
+      const thresholdDays = Math.floor(archiveAfterMs / 86_400_000);
       for (const task of stale) {
         try {
           await this.store.archiveTaskAndCleanup(task.id);
           archived++;
+          const ts = task.columnMovedAt || task.updatedAt;
+          const movedAt = ts ? Date.parse(ts) : NaN;
+          const ageDays = Number.isFinite(movedAt) ? Math.floor((now - movedAt) / 86_400_000) : 0;
+          log.log(`auto-archive: archived ${task.id} (age ${ageDays}d, threshold ${thresholdDays}d)`);
         } catch (err: unknown) { const errorMessage = err instanceof Error ? err.message : String(err);
           log.error(`Failed to auto-archive ${task.id}: ${errorMessage}`);
         }
