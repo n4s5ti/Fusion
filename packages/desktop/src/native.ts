@@ -8,7 +8,6 @@ import {
   type OpenDialogOptions,
   type SaveDialogOptions,
 } from "electron";
-import { autoUpdater } from "electron-updater";
 
 export interface WindowState {
   x?: number;
@@ -167,34 +166,54 @@ export function showDesktopNotification(
 }
 
 export function setupAutoUpdater(mainWindow?: BrowserWindow): void {
-  try {
-    autoUpdater.autoDownload = true;
-    autoUpdater.autoInstallOnAppQuit = true;
+  void (async () => {
+    try {
+      const mod = (await import("electron-updater")) as {
+        default?: { autoUpdater?: unknown };
+        autoUpdater?: unknown;
+      };
+      const autoUpdater = (mod.default?.autoUpdater ?? mod.autoUpdater) as
+        | {
+            autoDownload: boolean;
+            autoInstallOnAppQuit: boolean;
+            on: (event: string, handler: (...args: unknown[]) => void) => unknown;
+            checkForUpdates: () => Promise<unknown>;
+          }
+        | undefined;
 
-    autoUpdater.on("update-available", (info) => {
-      showDesktopNotification("Fusion Update Available", "Update available — downloading in background", {
-        silent: true,
+      if (!autoUpdater) {
+        console.warn("[desktop/native] Auto-updater module loaded without autoUpdater export");
+        return;
+      }
+
+      autoUpdater.autoDownload = true;
+      autoUpdater.autoInstallOnAppQuit = true;
+
+      autoUpdater.on("update-available", (info) => {
+        showDesktopNotification("Fusion Update Available", "Update available — downloading in background", {
+          silent: true,
+        });
+        mainWindow?.webContents.send("update-available", info);
       });
-      mainWindow?.webContents.send("update-available", info);
-    });
 
-    autoUpdater.on("update-downloaded", (info) => {
-      showDesktopNotification("Fusion Update Ready", "Update ready — will install on quit", {
-        silent: true,
+      autoUpdater.on("update-downloaded", (info) => {
+        showDesktopNotification("Fusion Update Ready", "Update ready — will install on quit", {
+          silent: true,
+        });
+        mainWindow?.webContents.send("update-downloaded", info);
       });
-      mainWindow?.webContents.send("update-downloaded", info);
-    });
 
-    autoUpdater.on("error", (error) => {
-      console.error("[desktop/native] Auto-updater error", error);
-    });
+      autoUpdater.on("error", (error) => {
+        console.error("[desktop/native] Auto-updater error", error);
+      });
 
-    void autoUpdater.checkForUpdates().catch((error) => {
-      console.error("[desktop/native] Auto-updater check failed", error);
-    });
-  } catch (error) {
-    console.error("[desktop/native] Auto-updater unavailable", error);
-  }
+      await autoUpdater.checkForUpdates().catch((error: unknown) => {
+        console.error("[desktop/native] Auto-updater check failed", error);
+      });
+    } catch (error) {
+      console.warn("[desktop/native] Auto-updater unavailable", error);
+    }
+  })();
 }
 
 function normalizeServerBaseUrl(serverUrl: string): string | null {

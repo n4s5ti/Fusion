@@ -14,4 +14,7 @@ declare module "electron-updater" {
   }
 
   export const autoUpdater: AutoUpdater;
+
+  const electronUpdater: { autoUpdater: AutoUpdater };
+  export default electronUpdater;
 }
