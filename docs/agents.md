@@ -211,6 +211,10 @@ The `taskId` field is suppressed in API responses when the linked task is in a t
 - If task lookup fails (e.g., task deleted), `taskId` is preserved in the response to avoid false negatives
 - The underlying `taskId` is NOT modified in storage — only the API response is sanitized
 
+**Performance notes:**
+- Task-link sanitization now uses `TaskStore.getTaskColumns(ids)` for one batched status lookup instead of per-task `getTask()` hydration.
+- `GET /api/agents/stats` now uses `AgentStore.getRunStatusCounts()` to aggregate completed/failed run totals in one grouped query (no per-agent `getRecentRuns()` loop).
+
 ### Update-Only Fields
 
 These fields can only be set during update (not on create):

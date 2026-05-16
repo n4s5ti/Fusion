@@ -2,4 +2,4 @@
 "@runfusion/fusion": patch
 ---
 
-Speed up initial Agents view load by batching linked-task column lookups instead of hydrating each task, and by replacing per-agent run-history scans in `/api/agents/stats` with a single aggregated run-status query.
+Speed up Agents API startup paths by batching task-column sanitization and agent run-status aggregation. This removes per-agent task hydration and per-agent recent-run scans from initial Agents view loading.
