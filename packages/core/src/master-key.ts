@@ -1,6 +1,7 @@
 import { randomBytes } from "node:crypto";
 import * as fs from "node:fs/promises";
 import { join } from "node:path";
+import { createRequire } from "node:module";
 import { resolveGlobalDir } from "./global-settings.js";
 
 export const MASTER_KEY_KEYCHAIN_SERVICE = "fusion";
@@ -228,7 +229,9 @@ export class MasterKeyManager {
     }
 
     try {
-      const module = (await import("keytar")) as { default?: KeytarLike } & KeytarLike;
+      const require = createRequire(import.meta.url);
+      const modName = `key${"tar"}`;
+      const module = require(modName) as { default?: KeytarLike } & KeytarLike;
       return module.default ?? module;
     } catch {
       return null;
