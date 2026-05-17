@@ -202,6 +202,12 @@ export {
   type LLMSynthesisProviderOptions,
 } from "./research/providers/index.js";
 export { PrMonitor, type PrComment, type TrackedPr, type OnNewCommentsCallback } from "./pr-monitor.js";
+export {
+  SECRET_MUTATION_TYPES,
+  SECRET_AUDIT_PLAINTEXT_FORBIDDEN_KEYS,
+  assertNoSecretPlaintext,
+  type FilesystemMutationType,
+} from "./run-audit.js";
 export { PrCommentHandler } from "./pr-comment-handler.js";
 export {
   NtfyNotifier,

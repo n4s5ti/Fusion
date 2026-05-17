@@ -40,6 +40,19 @@ interface SecretCipherRow extends SecretRow {
 
 type SecretsDb = Pick<ProjectDatabase, "prepare" | "bumpLastModified"> | Pick<CentralDatabase, "prepare" | "bumpLastModified">;
 
+type SecretsStoreAuditEvent = {
+  mutationType: "secret:create" | "secret:update" | "secret:delete" | "secret:read";
+  scope: SecretScope;
+  secretId: string;
+  key: string;
+  actor?: { agentId?: string | null; userId?: string | null };
+};
+
+export interface SecretsStoreOptions {
+  /** Optional non-blocking audit emitter. Errors are swallowed/warned so CRUD paths continue. */
+  auditEmitter?: (event: SecretsStoreAuditEvent) => void;
+}
+
 export class SecretsStoreError extends Error {
   readonly code: "duplicate-key" | "not-found" | "invalid-policy" | "invalid-key" | "decrypt-failed";
 
@@ -72,8 +85,18 @@ export class SecretsStore {
     private readonly projectDb: Pick<ProjectDatabase, "prepare" | "bumpLastModified">,
     private readonly centralDb: Pick<CentralDatabase, "prepare" | "bumpLastModified">,
     masterKeyProvider: MasterKeyProvider,
+    private readonly options: SecretsStoreOptions = {},
   ) {
     this.cipher = createSecretCipher(masterKeyProvider);
+  }
+
+  private emitAudit(event: SecretsStoreAuditEvent): void {
+    if (!this.options.auditEmitter) return;
+    try {
+      this.options.auditEmitter(event);
+    } catch (error) {
+      console.warn("[secrets-store] audit emitter failed", error);
+    }
   }
 
   private dbForScope(scope: SecretScope): SecretsDb {
@@ -160,7 +183,9 @@ export class SecretsStore {
       throw error;
     }
 
-    return this.getSecretMetadata(id, scope)!;
+    const created = this.getSecretMetadata(id, scope)!;
+    this.emitAudit({ mutationType: "secret:create", scope, secretId: created.id, key: created.key });
+    return created;
   }
 
   async updateSecret(id: string, scope: SecretScope, patch: {
@@ -231,17 +256,22 @@ export class SecretsStore {
       throw error;
     }
 
-    return this.getSecretMetadata(id, scope)!;
+    const updated = this.getSecretMetadata(id, scope)!;
+    this.emitAudit({ mutationType: "secret:update", scope, secretId: updated.id, key: updated.key });
+    return updated;
   }
 
   deleteSecret(id: string, scope: SecretScope): void {
-    const db = this.dbForScope(scope);
-    const table = tableForScope(scope);
-    const result = db.prepare(`DELETE FROM ${table} WHERE id = ?`).run(id) as { changes?: number };
-    if ((result.changes ?? 0) === 0) {
+    const existing = this.getSecretMetadata(id, scope);
+    if (!existing) {
       throw new SecretsStoreError({ code: "not-found", message: "Secret not found" });
     }
+
+    const db = this.dbForScope(scope);
+    const table = tableForScope(scope);
+    db.prepare(`DELETE FROM ${table} WHERE id = ?`).run(id);
     db.bumpLastModified();
+    this.emitAudit({ mutationType: "secret:delete", scope, secretId: id, key: existing.key });
   }
 
   async revealSecret(
@@ -272,6 +302,7 @@ export class SecretsStore {
     db.prepare(`UPDATE ${table} SET last_read_at = ?, last_read_by = ?, updated_at = ? WHERE id = ?`).run(now, lastReadBy, now, id);
     db.bumpLastModified();
 
+    this.emitAudit({ mutationType: "secret:read", scope, secretId: id, key: row.key, actor: reader });
     return { key: row.key, plaintextValue };
   }
 }

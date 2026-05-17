@@ -6,7 +6,7 @@ import {
   type ApprovalRequestActorSnapshot,
   type ApprovalRequestStatus,
 } from "@fusion/core";
-import { executeApprovedAgentProvisioning, executeApprovedWorktrunkInstall } from "@fusion/engine";
+import { assertNoSecretPlaintext, executeApprovedAgentProvisioning, executeApprovedWorktrunkInstall } from "@fusion/engine";
 import { ApiError, badRequest, conflict, notFound } from "../api-error.js";
 import type { ApiRoutesContext } from "./types.js";
 import { emitApprovalSseEvent } from "../sse.js";
@@ -132,6 +132,42 @@ function emitProvisioningDecisionAudit(params: {
       resourceId: request.targetAction.resourceId,
       requesterAgentId: request.requester.actorId,
     },
+    runId: request.id,
+  };
+  if (request.taskId) event.taskId = request.taskId;
+  if (request.runId) event.runId = request.runId;
+  scopedStore.recordRunAuditEvent(event);
+}
+
+function emitSecretsAccessDecisionAudit(params: {
+  scopedStore: import("@fusion/core").TaskStore;
+  request: ApprovalRequest;
+  decision: "approve" | "deny";
+}): void {
+  const { scopedStore, request, decision } = params;
+  if (request.targetAction.category !== "secrets_access") return;
+
+  const context = request.targetAction.context ?? {};
+  const scope = typeof context.scope === "string" ? context.scope : undefined;
+  const key = typeof context.key === "string" ? context.key : undefined;
+  const policySource = typeof context.policySource === "string" ? context.policySource : undefined;
+  const target = scope && key ? `${scope}:${key}` : request.targetAction.resourceId;
+
+  const metadata = {
+    approvalRequestId: request.id,
+    key,
+    scope,
+    policySource,
+    requesterAgentId: request.requester.actorId,
+  };
+  assertNoSecretPlaintext(metadata);
+
+  const event: Parameters<typeof scopedStore.recordRunAuditEvent>[0] = {
+    agentId: request.requester.actorId,
+    domain: "filesystem",
+    mutationType: decision === "approve" ? "secret:approval-granted" : "secret:approval-denied",
+    target,
+    metadata,
     runId: request.id,
   };
   if (request.taskId) event.taskId = request.taskId;
@@ -329,6 +365,8 @@ export function registerApprovalRoutes(ctx: ApiRoutesContext): void {
           }
         }
       }
+
+      emitSecretsAccessDecisionAudit({ scopedStore, request: updated, decision: body.decision });
 
       if (updated.targetAction.category === "sandbox_provisioning") {
         if (body.decision === "approve") {
