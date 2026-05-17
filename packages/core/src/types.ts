@@ -126,7 +126,7 @@ export const COLOR_THEMES = [
 ] as const;
 export type ColorTheme = (typeof COLOR_THEMES)[number];
 
-export type PrStatus = "open" | "closed" | "merged";
+export type PrStatus = "open" | "closed" | "merged" | "draft";
 export type MergeStrategy = "direct" | "pull-request";
 export const DIRECT_MERGE_COMMIT_STRATEGIES = ["auto", "always-squash", "always-rebase"] as const;
 export type DirectMergeCommitStrategy = (typeof DIRECT_MERGE_COMMIT_STRATEGIES)[number];
@@ -746,6 +746,8 @@ export interface PrInfo {
   headBranch: string;
   baseBranch: string;
   commentCount: number;
+  isDraft?: boolean;
+  checkRollup?: "success" | "failure" | "pending" | "none";
   lastCommentAt?: string;
   lastCheckedAt?: string;
 }
