@@ -26,7 +26,7 @@ import { exec, execSync } from "node:child_process";
 import { promisify } from "node:util";
 import { existsSync, mkdirSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { isAbsolute, join, relative, resolve } from "node:path";
-import { detectSelfDefeatingDependency, getInReviewStallReason, getStalePausedReviewSignal, getTaskHardMergeBlocker, getTaskMergeBlocker, isEphemeralAgent, type AgentStore, type ChatStore, type MessageStore, type TaskStore, type Settings, type Task, type MergeDetails, type TaskPriority } from "@fusion/core";
+import { IN_REVIEW_STALL_DEADLOCK_LOG_PREFIX, IN_REVIEW_STALL_LOG_PREFIX, countRecentIdenticalStallEntries, detectSelfDefeatingDependency, getInReviewStallReason, getStalePausedReviewSignal, getTaskHardMergeBlocker, getTaskMergeBlocker, isEphemeralAgent, type AgentStore, type ChatStore, type MessageStore, type TaskStore, type Settings, type Task, type MergeDetails, type TaskPriority } from "@fusion/core";
 import type { MeshLeaseManager } from "./mesh-lease-manager.js";
 import { createLogger } from "./logger.js";
 import { RemovalReason, getRegisteredWorktreePaths, isUsableTaskWorktree, removeWorktree, resolveWorktreeBackend, scanIdleWorktrees, scanOrphanedBranches } from "./worktree-pool.js";
@@ -2852,7 +2852,7 @@ export class SelfHealingManager {
 
         const previous = [...(task.log ?? [])]
           .reverse()
-          .find((entry) => entry.action.startsWith("In-review stall surfaced ["));
+          .find((entry) => entry.action.startsWith(IN_REVIEW_STALL_LOG_PREFIX));
         if (previous) {
           const parsed = /^In-review stall surfaced \[([^\]]+)\]/.exec(previous.action);
           const previousCode = parsed?.[1];
@@ -2862,7 +2862,45 @@ export class SelfHealingManager {
           }
         }
 
-        await this.store.logEntry(task.id, `In-review stall surfaced [${signal.code}]: ${signal.reason}`);
+        const threshold = settings.inReviewStallDeadlockThreshold ?? 3;
+        const identicalCount = countRecentIdenticalStallEntries(task, { code: signal.code, reason: signal.reason });
+        const nextCount = identicalCount + 1;
+        const shouldDispose = threshold > 0 && task.userPaused !== true && nextCount >= threshold;
+
+        if (shouldDispose) {
+          await this.store.logEntry(
+            task.id,
+            `${IN_REVIEW_STALL_DEADLOCK_LOG_PREFIX}${signal.code}]: deadlock-prevention threshold reached after ${nextCount} identical stalls — pausing task. last reason: ${signal.reason}`,
+          );
+          await this.store.updateTask(task.id, {
+            paused: true,
+            pausedReason: "in-review-stall-deadlock",
+            status: "failed",
+            error: `In-review stall deadlock: ${signal.code} repeated ${nextCount}× without progress. ${signal.reason}`,
+          });
+          const auditor = createRunAuditor(this.store, {
+            runId: generateSyntheticRunId("self-healing-stall-deadlock", task.id),
+            agentId: "self-healing",
+            taskId: task.id,
+            phase: "self-healing",
+          });
+          await auditor.database({
+            type: "task:in-review-stall-deadlock-disposed",
+            target: task.id,
+            metadata: {
+              code: signal.code,
+              reason: signal.reason,
+              repetitionCount: nextCount,
+              threshold,
+              branch: task.branch ?? null,
+              worktree: task.worktree ?? null,
+            },
+          });
+          surfaced += 1;
+          continue;
+        }
+
+        await this.store.logEntry(task.id, `${IN_REVIEW_STALL_LOG_PREFIX}${signal.code}]: ${signal.reason}`);
         surfaced += 1;
       }
 
