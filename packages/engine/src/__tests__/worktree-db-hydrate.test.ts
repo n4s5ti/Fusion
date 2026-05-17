@@ -1,3 +1,5 @@
+// Real-git/SQLite wallclock under parallel CI load; do not lower per-test timeouts
+// without re-measuring under pnpm test:full. (FN-4839)
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { chmodSync, existsSync, mkdirSync, readFileSync } from "node:fs";
 import { mkdtempSync, rmSync } from "node:fs";
@@ -95,7 +97,7 @@ describe("hydrateWorktreeDb", () => {
     const capped = await hydrateWorktreeDb({ rootDir: root, worktreePath: worktree, taskId: "FN-0", store: store as any, logger: { warn: vi.fn() } });
     expect(cyc.degraded).toBe(false);
     expect(capped.tasksCopied).toBeLessThanOrEqual(50);
-  });
+  }, 20_000);
 
   it("handles schema drift by dropping missing destination columns", async () => {
     const root = makeProject("h-drift-");

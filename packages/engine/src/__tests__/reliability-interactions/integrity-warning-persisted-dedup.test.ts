@@ -1,4 +1,7 @@
 /**
+ * Real-git wallclock under parallel CI load; do not lower per-test timeouts
+ * without re-measuring under pnpm test:full. (FN-4839)
+ *
  * FN-4811 follow-up: persisted dedup of done-task finalize-integrity warnings.
  *
  * Before this change, `SelfHealingManager.reconcileDoneTaskIntegrity()` deduped

@@ -1,3 +1,5 @@
+// Real-git wallclock under parallel CI load; do not lower per-test timeouts
+// without re-measuring under pnpm test:full. (FN-4839)
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
@@ -299,7 +301,7 @@ describe("diff-volume gate merger integration", () => {
     expect(success).toBe(true);
     expect(git(dir, "git rev-parse HEAD")).not.toBe(preAttemptHeadSha);
     expect(git(dir, "git show --format= --name-only HEAD").split("\n")).toContain("src/data.gen.ts");
-  });
+  }, 15_000);
 
   it("allows dropped lockfile-only content in attemptWithSideStrategy", async () => {
     const dir = mkdtempSync(join(testTempParent(), "fusion-test-diff-volume-merge-"));

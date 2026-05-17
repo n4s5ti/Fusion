@@ -1,3 +1,5 @@
+// Real-git wallclock under parallel CI load; do not lower per-test timeouts
+// without re-measuring under pnpm test:full. (FN-4839)
 import { afterEach, describe, expect, it } from "vitest";
 import { appendFile, mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -51,7 +53,7 @@ describe("inspectBranchConflict ghost references", () => {
     });
 
     expect(result.kind).toBe("stale-resolved");
-  });
+  }, 20_000);
 
   it("returns tip-already-merged when branch tip is reachable from main despite stale startPoint", async () => {
     const repoDir = await setupRepo();
@@ -80,7 +82,7 @@ describe("inspectBranchConflict ghost references", () => {
       expect(result.integrationRef).toBe("main");
       expect(result.tipSha).toBe(await run("git rev-parse fusion/fn-9999", repoDir));
     }
-  });
+  }, 20_000);
 
   it("returns tip-already-merged when startPoint is HEAD and tip is ancestor", async () => {
     const repoDir = await setupRepo();
@@ -100,7 +102,7 @@ describe("inspectBranchConflict ghost references", () => {
     });
 
     expect(result.kind).toBe("tip-already-merged");
-  });
+  }, 20_000);
 
   it("keeps genuine live-foreign conflicts unchanged", async () => {
     const repoDir = await setupRepo();
@@ -127,7 +129,7 @@ describe("inspectBranchConflict ghost references", () => {
     if (result.kind === "live-foreign") {
       expect(result.error.name).toBe("BranchConflictError");
     }
-  });
+  }, 20_000);
 
   it("keeps stale conflictingWorktreePath short-circuit behavior", async () => {
     const repoDir = await setupRepo();
@@ -143,5 +145,5 @@ describe("inspectBranchConflict ghost references", () => {
     });
 
     expect(result.kind).toBe("stale");
-  });
+  }, 20_000);
 });

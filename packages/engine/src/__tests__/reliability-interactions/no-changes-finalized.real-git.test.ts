@@ -1,3 +1,5 @@
+// Real-git wallclock under parallel CI load; do not lower per-test timeouts
+// without re-measuring under pnpm test:full. (FN-4839)
 import { describe, it, expect, vi } from "vitest";
 import { classifyOwnedLandedEvidence } from "../../merger.js";
 import { makeReliabilityFixture, hasGit } from "./_helpers.js";
@@ -75,5 +77,5 @@ describe("no-changes-finalized reliability interactions (real git)", () => {
     } finally {
       await fixture.cleanup();
     }
-  });
+  }, 20_000);
 });

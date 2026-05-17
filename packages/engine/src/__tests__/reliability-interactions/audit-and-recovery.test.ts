@@ -1,3 +1,5 @@
+// Real-git wallclock under parallel CI load; do not lower per-test timeouts
+// without re-measuring under pnpm test:full. (FN-4839)
 import { afterEach, describe, expect, it } from "vitest";
 import { makeReliabilityFixture, hasGit, git } from "./_helpers.js";
 
@@ -23,7 +25,7 @@ describeIfGit("reliability interactions: audit + recovery", () => {
     const task = await fx.store.getTask(fx.task.id);
     expect(recovered).toBeGreaterThanOrEqual(0);
     expect(["in-review", "done"]).toContain(task?.column ?? "");
-  });
+  }, 20_000);
 
   it("Case 4: already-done is idempotent", async () => {
     const fx = await makeReliabilityFixture({ taskId: "FN-4361-C4" });
@@ -31,7 +33,7 @@ describeIfGit("reliability interactions: audit + recovery", () => {
     await fx.store.updateTask(fx.task.id, { column: "done", status: null } as any);
     const recovered = await fx.selfHeal.recoverAlreadyMergedReviewTasks();
     expect(recovered).toBe(0);
-  });
+  }, 20_000);
 
   it("Case 13: tree-equal does not promote when worktree has staged changes", async () => {
     const fx = await makeReliabilityFixture({ taskId: "FN-4361-C13" });
@@ -51,5 +53,5 @@ describeIfGit("reliability interactions: audit + recovery", () => {
     const task = await fx.store.getTask(fx.task.id);
     expect(["in-review", "done"]).toContain(task?.column ?? "");
     expect(git(fx.rootDir, "git rev-parse HEAD").length).toBe(40);
-  });
+  }, 20_000);
 });

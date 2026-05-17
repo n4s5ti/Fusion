@@ -1,3 +1,5 @@
+// Real-git wallclock under parallel CI load; do not lower per-test timeouts
+// without re-measuring under pnpm test:full. (FN-4839)
 import { afterEach, describe, expect, it } from "vitest";
 import { checkDiffVolume } from "../../merger-diff-volume-gate.js";
 import { makeReliabilityFixture, hasGit, git } from "./_helpers.js";

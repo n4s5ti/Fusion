@@ -1,3 +1,5 @@
+// Real-git wallclock under parallel CI load; do not lower per-test timeouts
+// without re-measuring under pnpm test:full. (FN-4839)
 import { afterEach, describe, expect, it } from "vitest";
 import { mkdtemp, rm, writeFile, appendFile, mkdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -41,7 +43,7 @@ describe("inspectBranchConflict zero-unique behavior", () => {
 
     const result = await inspectBranchConflict({ repoDir, branchName: "fusion/fn-9001", conflictingWorktreePath: stalePath, requestingTaskId: "FN-9001", ownerTaskId: "FN-9001", startPoint: "main" });
     expect(result.kind).toBe("tip-already-merged");
-  });
+  }, 20_000);
 
   it("classifies branch patch already existing upstream as merged/subsumed", async () => {
     const repoDir = await setupRepo();
@@ -60,7 +62,7 @@ describe("inspectBranchConflict zero-unique behavior", () => {
 
     const result = await inspectBranchConflict({ repoDir, branchName: "fusion/fn-9001", conflictingWorktreePath: stalePath, requestingTaskId: "FN-9001", ownerTaskId: "FN-9001", startPoint: "main" });
     expect(["tip-already-merged", "fully-subsumed"]).toContain(result.kind);
-  });
+  }, 20_000);
 
   it("returns reclaimable when branch still has unique commit", async () => {
     const repoDir = await setupRepo();
@@ -77,7 +79,7 @@ describe("inspectBranchConflict zero-unique behavior", () => {
 
     const result = await inspectBranchConflict({ repoDir, branchName: "fusion/fn-9001", conflictingWorktreePath: stalePath, requestingTaskId: "FN-9001", ownerTaskId: "FN-9001", startPoint: "main" });
     expect(result.kind).toBe("reclaimable");
-  });
+  }, 20_000);
 
   it("keeps zero-attributed foreign branch as live-foreign", async () => {
     const repoDir = await setupRepo();
@@ -94,5 +96,5 @@ describe("inspectBranchConflict zero-unique behavior", () => {
 
     const result = await inspectBranchConflict({ repoDir, branchName: "topic/other", conflictingWorktreePath: stalePath, requestingTaskId: "FN-9001", ownerTaskId: "FN-9001", startPoint: "main" });
     expect(result.kind).toBe("live-foreign");
-  });
+  }, 20_000);
 });

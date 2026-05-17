@@ -1,3 +1,5 @@
+// Real-git wallclock under parallel CI load; do not lower per-test timeouts
+// without re-measuring under pnpm test:full. (FN-4839)
 import { afterEach, describe, expect, it } from "vitest";
 import { appendFile, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -69,7 +71,7 @@ describe("branch contamination recovery classification", () => {
 
     expect(result.alreadyUpstream.map((entry) => entry.sha)).toEqual([commit.sha]);
     expect(result.unique).toEqual([]);
-  });
+  }, 20_000);
 
   it("classifies all foreign commits as unique when patches are absent on main", async () => {
     const { repoDir, baseSha } = await setupRepo();
@@ -85,7 +87,7 @@ describe("branch contamination recovery classification", () => {
 
     expect(result.alreadyUpstream).toEqual([]);
     expect(result.unique.map((entry) => entry.sha)).toEqual([commit.sha]);
-  });
+  }, 20_000);
 
   it("classifies mixed foreign commits into already-upstream and unique buckets", async () => {
     const { repoDir, baseSha } = await setupRepo();
@@ -106,7 +108,7 @@ describe("branch contamination recovery classification", () => {
 
     expect(result.alreadyUpstream.map((entry) => entry.sha)).toEqual([upstreamCommit.sha]);
     expect(result.unique.map((entry) => entry.sha)).toEqual([uniqueCommit.sha]);
-  });
+  }, 20_000);
 
   it("classifies bootstrap misbinding when range has only foreign-attributed commits", async () => {
     const { repoDir, baseSha } = await setupRepo();
@@ -125,7 +127,7 @@ describe("branch contamination recovery classification", () => {
       ownCommitCount: 0,
       nonAttributedCount: 0,
     });
-  });
+  }, 20_000);
 
   it("does not classify bootstrap misbinding when an own-task commit exists", async () => {
     const { repoDir, baseSha } = await setupRepo();

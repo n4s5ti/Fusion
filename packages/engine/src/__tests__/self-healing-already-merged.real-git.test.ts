@@ -1,3 +1,5 @@
+// Real-git wallclock under parallel CI load; do not lower per-test timeouts
+// without re-measuring under pnpm test:full. (FN-4839)
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { execSync, spawnSync } from "node:child_process";
 import { existsSync, mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
@@ -267,7 +269,7 @@ describeIfGit("SelfHealingManager recoverAlreadyMergedReviewTasks (real git)", (
     expect((store as any).recordRunAuditEvent).toHaveBeenCalledWith(
       expect.objectContaining({ mutationType: "task:auto-recover-branch-misbound", target: "FN-TEST-MISBOUND" }),
     );
-  });
+  }, 20_000);
 
   it("is idempotent across two maintenance passes", async () => {
     const repo = setupRepo();
@@ -292,7 +294,7 @@ describeIfGit("SelfHealingManager recoverAlreadyMergedReviewTasks (real git)", (
     const secondRecoveryLogs = (store.logEntry as any).mock.calls.filter((call: unknown[]) => String(call[1]).includes("Auto-finalized from in-review/paused")).length;
     expect(firstRecoveryLogs).toBe(1);
     expect(secondRecoveryLogs).toBe(1);
-  });
+  }, 20_000);
 
   it("short-circuits when paused", async () => {
     const repo = setupRepo();
@@ -309,5 +311,5 @@ describeIfGit("SelfHealingManager recoverAlreadyMergedReviewTasks (real git)", (
     const enginePausedManager = new SelfHealingManager(enginePausedStore, { rootDir: repo, getExecutingTaskIds: () => new Set() });
     await enginePausedManager.recoverAlreadyMergedReviewTasks();
     expect(enginePausedStore.listTasks).not.toHaveBeenCalled();
-  });
+  }, 20_000);
 });
