@@ -2807,6 +2807,11 @@ export interface ProjectSettings {
    *    to permanent executor agents using the reporting chain heuristic.
    *  Tasks without an eligible permanent executor remain queued. */
   ephemeralAgentsEnabled?: boolean;
+  /** Default access policy applied to a secret when its row-level `access_policy`
+   *  is null/unset. One of "auto" (return value to caller and audit),
+   *  "prompt" (route through approvals), or "deny" (reject without prompt).
+   *  Default when unset: "prompt". */
+  secretsAccessPolicy?: SecretAccessPolicy;
   /** Approval policy for agent provisioning tools (fn_agent_create/fn_agent_delete). */
   agentProvisioning?: {
     approvalMode?: AgentProvisioningApprovalMode;
@@ -4904,6 +4909,9 @@ export const AGENT_PERMISSION_POLICY_EXEMPT_TOOL_EXAMPLES: readonly string[] = [
 
 export const AGENT_PROVISIONING_APPROVAL_MODES = ["always", "trusted-only", "never"] as const;
 export type AgentProvisioningApprovalMode = (typeof AGENT_PROVISIONING_APPROVAL_MODES)[number];
+
+export const SECRET_ACCESS_POLICIES = ["auto", "prompt", "deny"] as const;
+export type SecretAccessPolicy = (typeof SECRET_ACCESS_POLICIES)[number];
 
 export const SANDBOX_PROVISIONING_APPROVAL_MODES = ["always", "trusted-only", "never"] as const;
 export type SandboxProvisioningApprovalMode = (typeof SANDBOX_PROVISIONING_APPROVAL_MODES)[number];
