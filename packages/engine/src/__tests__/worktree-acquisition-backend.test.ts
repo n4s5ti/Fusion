@@ -1,4 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+
+vi.mock("../worktree-hooks.js", () => ({
+  installTaskWorktreeIdentityGuard: vi.fn().mockResolvedValue(undefined),
+}));
 import { acquireTaskWorktree } from "../worktree-acquisition.js";
 import type { WorktreeBackend } from "../worktree-backend.js";
 

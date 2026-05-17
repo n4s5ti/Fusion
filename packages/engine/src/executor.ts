@@ -75,6 +75,7 @@ import type { PluginRunner } from "./plugin-runner.js";
 import { isContextLimitError } from "./context-limit-detector.js";
 import { StepSessionExecutor } from "./step-session-executor.js";
 import { acquireTaskWorktree } from "./worktree-acquisition.js";
+import { installTaskWorktreeIdentityGuard } from "./worktree-hooks.js";
 import {
   resolveAgentInstructions,
   buildSystemPromptWithInstructions,
@@ -8410,6 +8411,7 @@ Backward compat fallback: if JSON is unavailable, you may still begin output wit
         }
       } else {
         executorLog.log(`Worktree already exists: ${path}`);
+        await installTaskWorktreeIdentityGuard({ worktreePath: path, taskId });
         return { path, branch };
       }
     }
@@ -8456,6 +8458,7 @@ Backward compat fallback: if JSON is unavailable, you may still begin output wit
       if (attemptNumber > 0) {
         await this.store.logEntry(taskId, `Worktree created on attempt ${attemptNumber + 1}`, path);
       }
+      await installTaskWorktreeIdentityGuard({ worktreePath: path, taskId });
       return { path, branch };
     } catch (initialError: unknown) {
       const conflictInfo = this.extractWorktreeConflictInfo(initialError);
@@ -8466,6 +8469,7 @@ Backward compat fallback: if JSON is unavailable, you may still begin output wit
         if (recovered) {
           await createWithBranch(branch);
           executorLog.log(`Worktree created after stale lock recovery: ${path}`);
+          await installTaskWorktreeIdentityGuard({ worktreePath: path, taskId });
           return { path, branch };
         }
       }
@@ -8525,6 +8529,7 @@ Backward compat fallback: if JSON is unavailable, you may still begin output wit
       try {
         await createFromExistingBranch();
         executorLog.log(`Worktree created from existing branch: ${path}`);
+        await installTaskWorktreeIdentityGuard({ worktreePath: path, taskId });
         return { path, branch };
       } catch (fallbackError: unknown) {
         const fallbackErrorMessage = fallbackError instanceof Error ? fallbackError.message : String(fallbackError);
@@ -8536,6 +8541,7 @@ Backward compat fallback: if JSON is unavailable, you may still begin output wit
           if (recovered) {
             await createFromExistingBranch();
             executorLog.log(`Worktree created from existing branch after stale lock recovery: ${path}`);
+            await installTaskWorktreeIdentityGuard({ worktreePath: path, taskId });
             return { path, branch };
           }
         }

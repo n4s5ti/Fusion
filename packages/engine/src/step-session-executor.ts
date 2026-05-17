@@ -29,6 +29,7 @@ import type { AgentActionGateContext } from "./agent-action-gate.js";
 import type { SkillSelectionContext } from "./skill-resolver.js";
 import { generateWorktreeName } from "./worktree-names.js";
 import { resolveTaskWorktreePath } from "./worktree-paths.js";
+import { installTaskWorktreeIdentityGuard } from "./worktree-hooks.js";
 import { AgentSemaphore } from "./concurrency.js";
 import { StuckTaskDetector } from "./stuck-task-detector.js";
 import { AgentLogger } from "./agent-logger.js";
@@ -1344,6 +1345,11 @@ Follow instructions precisely and avoid unrelated changes.`,
       }
       throw err;
     }
+
+    await installTaskWorktreeIdentityGuard({
+      worktreePath,
+      taskId: this.options.taskDetail.id,
+    });
 
     this.registerParallelWorktree(stepIndex, worktreePath);
     this.parallelBranches.set(stepIndex, branchName);

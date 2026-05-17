@@ -10,6 +10,10 @@ import { AgentLogger } from "../agent-logger.js";
 import * as worktreeBackendModule from "../worktree-backend.js";
 import type { TaskDetail, Settings, TaskStore } from "@fusion/core";
 
+vi.mock("../worktree-hooks.js", () => ({
+  installTaskWorktreeIdentityGuard: vi.fn().mockResolvedValue(undefined),
+}));
+
 // ── Shared test fixtures ──────────────────────────────────────────────
 
 function makePrompt(steps: string[]): string {

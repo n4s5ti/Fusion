@@ -1,9 +1,9 @@
-import { execFile } from "node:child_process";
-import { chmod, mkdir, readFile, rename, stat, writeFile } from "node:fs/promises";
+import { exec } from "node:child_process";
+import * as fs from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { promisify } from "node:util";
 
-const execFileAsync = promisify(execFile);
+const execAsync = promisify(exec);
 
 export const DEFAULT_ALLOWED_BRANCH_PATTERNS = ["^fusion/step-\\d+-[a-z0-9-]+$"] as const;
 
@@ -16,9 +16,7 @@ function toShellCasePattern(pattern: string): string {
 }
 
 export function buildIdentityGuardHook(taskId: string, allowedBranchPatterns: readonly string[] = DEFAULT_ALLOWED_BRANCH_PATTERNS): string {
-  const allowChecks = allowedBranchPatterns
-    .map((pattern) => `  ${toShellCasePattern(pattern)}) exit 0 ;;`)
-    .join("\n");
+  const allowChecks = allowedBranchPatterns.map((pattern) => `  ${toShellCasePattern(pattern)}) exit 0 ;;`).join("\n");
 
   return `#!/bin/sh
 set -eu
@@ -56,10 +54,7 @@ exit 1
 
 async function resolveGitDir(worktreePath: string): Promise<string> {
   try {
-    const { stdout } = await execFileAsync("git", ["rev-parse", "--git-dir"], {
-      cwd: worktreePath,
-      encoding: "utf-8",
-    });
+    const { stdout } = await execAsync("git rev-parse --git-dir", { cwd: worktreePath, encoding: "utf-8" });
     return resolve(worktreePath, stdout.trim());
   } catch (error) {
     throw new Error(`Failed to resolve git dir for worktree ${worktreePath}: ${(error as Error).message}`);
@@ -67,20 +62,13 @@ async function resolveGitDir(worktreePath: string): Promise<string> {
 }
 
 async function writeFileAtomic(targetPath: string, content: string, mode?: number): Promise<void> {
-  await mkdir(dirname(targetPath), { recursive: true });
+  await execAsync(`mkdir -p ${JSON.stringify(dirname(targetPath))}`);
   const tmpPath = `${targetPath}.tmp`;
-  const current = await readFile(targetPath, "utf-8").catch(() => null);
-  if (current === content) {
-    if (mode != null) {
-      await chmod(targetPath, mode);
-    }
-    return;
-  }
-  await writeFile(tmpPath, content, { encoding: "utf-8", mode });
-  if (mode != null) {
-    await chmod(tmpPath, mode);
-  }
-  await rename(tmpPath, targetPath);
+  const current = await fs.readFile(targetPath, "utf-8").catch(() => null);
+  if (current === content) return;
+  await fs.writeFile(tmpPath, content, { encoding: "utf-8", mode });
+  if (mode != null) await fs.chmod(tmpPath, mode);
+  await fs.rename(tmpPath, targetPath);
 }
 
 export async function installTaskWorktreeIdentityGuard(input: {
@@ -89,16 +77,10 @@ export async function installTaskWorktreeIdentityGuard(input: {
   allowedBranchPatterns?: readonly string[];
 }): Promise<void> {
   const gitDir = await resolveGitDir(input.worktreePath);
-  const guard = buildIdentityGuardHook(input.taskId, input.allowedBranchPatterns ?? DEFAULT_ALLOWED_BRANCH_PATTERNS);
-
+  const hook = buildIdentityGuardHook(input.taskId, input.allowedBranchPatterns ?? DEFAULT_ALLOWED_BRANCH_PATTERNS);
   const metadataPath = resolve(gitDir, "fusion-task-id");
   const hookPath = resolve(gitDir, "hooks", "pre-commit");
 
   await writeFileAtomic(metadataPath, `${input.taskId}\n`);
-  await writeFileAtomic(hookPath, guard, 0o755);
-
-  const hookStat = await stat(hookPath);
-  if ((hookStat.mode & 0o111) === 0) {
-    await chmod(hookPath, 0o755);
-  }
+  await writeFileAtomic(hookPath, hook, 0o755);
 }

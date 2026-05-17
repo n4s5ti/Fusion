@@ -9,6 +9,7 @@ import type { RunAuditor } from "./run-audit.js";
 import { resolveTaskWorktreePath } from "./worktree-paths.js";
 import { inspectBranchConflict } from "./branch-conflicts.js";
 import { formatError } from "./logger.js";
+import { installTaskWorktreeIdentityGuard } from "./worktree-hooks.js";
 import {
   StaleWorktreeIndexLockError,
   classifyStaleLock,
@@ -191,7 +192,9 @@ export class NativeWorktreeBackend implements WorktreeBackend {
 
     let staleLockRecoveryAttempted = false;
     try {
-      return await createWithBranch(input.branch);
+      const created = await createWithBranch(input.branch);
+      await installTaskWorktreeIdentityGuard({ worktreePath: created.path, taskId: input.taskId });
+      return created;
     } catch (error) {
       const lockPath = parseIndexLockPath(`${(error as { message?: string })?.message ?? ""}\n${getErrorStderr(error) ?? ""}`);
       if (lockPath && !staleLockRecoveryAttempted) {
@@ -221,7 +224,9 @@ export class NativeWorktreeBackend implements WorktreeBackend {
                 target: input.worktreePath,
                 metadata: { lockPath },
               });
-              return await createWithBranch(input.branch);
+              const created = await createWithBranch(input.branch);
+              await installTaskWorktreeIdentityGuard({ worktreePath: created.path, taskId: input.taskId });
+              return created;
             }
             await this.deps.audit?.git({
               type: "worktree:stale-lock-recovery-failed",
@@ -263,7 +268,9 @@ export class NativeWorktreeBackend implements WorktreeBackend {
       for (let suffix = 2; suffix <= 50; suffix += 1) {
         const candidateBranch = `${input.branch}-${suffix}`;
         try {
-          return await createWithBranch(candidateBranch);
+          const created = await createWithBranch(candidateBranch);
+          await installTaskWorktreeIdentityGuard({ worktreePath: created.path, taskId: input.taskId });
+          return created;
         } catch {
           // continue probing suffixes
         }
@@ -446,6 +453,7 @@ export class WorktrunkWorktreeBackend implements WorktreeBackend {
       );
     }
 
+    await installTaskWorktreeIdentityGuard({ worktreePath: resolvedPath, taskId: input.taskId });
     return { path: resolvedPath, branch: input.branch };
   }
 

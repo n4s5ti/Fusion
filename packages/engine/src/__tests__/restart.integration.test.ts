@@ -10,6 +10,10 @@
  * - Crash scenarios are handled gracefully (semaphore release, status cleanup)
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+
+vi.mock("../worktree-hooks.js", () => ({
+  installTaskWorktreeIdentityGuard: vi.fn().mockResolvedValue(undefined),
+}));
 import { AgentSemaphore } from "../concurrency.js";
 
 const WAIT_FOR_ASYNC_OPTIONS = { timeout: 2000, interval: 5 };

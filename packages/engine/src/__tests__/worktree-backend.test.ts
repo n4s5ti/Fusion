@@ -8,7 +8,7 @@ import {
   RemovalReason,
 } from "../worktree-backend.js";
 
-const { execMock, accessMock, existsSyncMock, parseIndexLockPathMock, classifyStaleLockMock, tryRemoveStaleLockMock } = vi.hoisted(() => {
+const { execMock, accessMock, existsSyncMock, parseIndexLockPathMock, classifyStaleLockMock, tryRemoveStaleLockMock, installGuardMock } = vi.hoisted(() => {
   const mock = vi.fn();
   (mock as any)[Symbol.for("nodejs.util.promisify.custom")] = mock;
   return {
@@ -18,6 +18,7 @@ const { execMock, accessMock, existsSyncMock, parseIndexLockPathMock, classifySt
     parseIndexLockPathMock: vi.fn(),
     classifyStaleLockMock: vi.fn(),
     tryRemoveStaleLockMock: vi.fn(),
+    installGuardMock: vi.fn(),
   };
 });
 
@@ -26,6 +27,9 @@ vi.mock("node:fs", () => ({ existsSync: existsSyncMock }));
 vi.mock("node:fs/promises", () => ({ access: accessMock }));
 vi.mock("../branch-conflicts.js", () => ({
   inspectBranchConflict: vi.fn().mockResolvedValue({ kind: "stale" }),
+}));
+vi.mock("../worktree-hooks.js", () => ({
+  installTaskWorktreeIdentityGuard: installGuardMock,
 }));
 vi.mock("../worktree-stale-lock.js", () => ({
   StaleWorktreeIndexLockError: class StaleWorktreeIndexLockError extends Error {
@@ -54,6 +58,8 @@ beforeEach(() => {
   parseIndexLockPathMock.mockReset();
   classifyStaleLockMock.mockReset();
   tryRemoveStaleLockMock.mockReset();
+  installGuardMock.mockReset();
+  installGuardMock.mockResolvedValue(undefined);
   parseIndexLockPathMock.mockReturnValue(null);
   classifyStaleLockMock.mockResolvedValue({ kind: "fresh", reason: "fresh" });
   tryRemoveStaleLockMock.mockResolvedValue({ removed: true });
@@ -77,6 +83,7 @@ describe("NativeWorktreeBackend", () => {
       'git worktree add -b "fusion/fn-1" "/repo/.worktrees/fn-1" "main"',
       expect.objectContaining({ cwd: "/repo", timeout: 120000, maxBuffer: 10485760 }),
     );
+    expect(installGuardMock).toHaveBeenCalledWith({ worktreePath: "/repo/.worktrees/fn-1", taskId: "FN-1" });
   });
 
   it("retries with suffix and resolves", async () => {

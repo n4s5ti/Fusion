@@ -8,6 +8,9 @@ const { execMock, existsSyncMock } = vi.hoisted(() => {
 
 vi.mock("node:child_process", () => ({ exec: execMock }));
 vi.mock("node:fs", () => ({ existsSync: existsSyncMock }));
+vi.mock("../worktree-hooks.js", () => ({
+  installTaskWorktreeIdentityGuard: vi.fn().mockResolvedValue(undefined),
+}));
 vi.mock("../worktree-pool.js", async () => {
   const actual = await vi.importActual<any>("../worktree-pool.js");
   return { ...actual, isUsableTaskWorktree: vi.fn().mockResolvedValue(true) };

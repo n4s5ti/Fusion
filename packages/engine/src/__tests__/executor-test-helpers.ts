@@ -1,4 +1,5 @@
 import { vi } from "vitest";
+import { installTaskWorktreeIdentityGuard } from "../worktree-hooks.js";
 
 // Mock external dependencies
 vi.mock("../pi.js", () => ({
@@ -115,6 +116,10 @@ vi.mock("../worktree-pool.js", async (importOriginal) => {
     isUsableTaskWorktree: vi.fn().mockResolvedValue(true),
   };
 });
+vi.mock("../worktree-hooks.js", () => ({
+  installTaskWorktreeIdentityGuard: vi.fn().mockResolvedValue(undefined),
+}));
+
 vi.mock("../worktree-stale-lock.js", async () => {
   const actual = await vi.importActual<typeof import("../worktree-stale-lock.js")>("../worktree-stale-lock.js");
   return {
@@ -268,6 +273,7 @@ export const mockedDescribeRegisteredWorktrees = vi.mocked(describeRegisteredWor
 export const mockedIsUsableTaskWorktree = vi.mocked(isUsableTaskWorktree);
 export const mockedClassifyStaleLock = vi.mocked(classifyStaleLock);
 export const mockedTryRemoveStaleLock = vi.mocked(tryRemoveStaleLock);
+export const mockedInstallTaskWorktreeIdentityGuard = vi.mocked(installTaskWorktreeIdentityGuard);
 
 export type EventListener = (...args: unknown[]) => void;
 
@@ -349,7 +355,9 @@ export function resetExecutorMocks() {
   });
   mockedClassifyStaleLock.mockReset();
   mockedTryRemoveStaleLock.mockReset();
+  mockedInstallTaskWorktreeIdentityGuard.mockReset();
   mockedClassifyStaleLock.mockResolvedValue({ kind: "fresh", reason: "fresh" } as any);
+  mockedInstallTaskWorktreeIdentityGuard.mockResolvedValue(undefined);
   mockedTryRemoveStaleLock.mockResolvedValue({ removed: true });
   mockExecuteAll.mockResolvedValue([]);
   mockTerminateAllSessions.mockResolvedValue(undefined);
