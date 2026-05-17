@@ -5,6 +5,43 @@ import { getAuthFileCandidates, type StoredAuthProvider } from "../auth-paths.js
 
 export const MISSING_REMOTE_NODE_API_KEY_MESSAGE = "Remote node requires an apiKey for authenticated sync";
 
+// FN-4847: Stable denial-reason enum surfaced by sync-status for actionable remote probe failures.
+export const SYNC_STATUS_DENIAL_REASONS = ["missing-remote-api-key", "auth-failed", "unreachable", "unknown"] as const;
+
+// FN-4847: Public contract type for actionable sync-status denial diagnostics.
+export type SyncStatusDenialReason = (typeof SYNC_STATUS_DENIAL_REASONS)[number];
+
+// FN-4847: Classify remote probe failures to a non-leaking enum suitable for API responses.
+export function classifySyncStatusDenialReason(err: unknown): SyncStatusDenialReason {
+  if (err instanceof ApiError && err.message === MISSING_REMOTE_NODE_API_KEY_MESSAGE) {
+    return "missing-remote-api-key";
+  }
+
+  if (err instanceof ApiError && err.message === "Remote node authentication failed") {
+    return "auth-failed";
+  }
+
+  if (err instanceof ApiError && err.message === "Remote node unreachable") {
+    return "unreachable";
+  }
+
+  if (err instanceof Error) {
+    const message = err.message ?? "";
+    const causeCode = (err as { cause?: { code?: unknown } }).cause?.code;
+    if (
+      err.name === "AbortError"
+      || /fetch failed|ECONNREFUSED|ENOTFOUND|ETIMEDOUT|network/i.test(message)
+      || causeCode === "ECONNREFUSED"
+      || causeCode === "ENOTFOUND"
+      || causeCode === "ETIMEDOUT"
+    ) {
+      return "unreachable";
+    }
+  }
+
+  return "unknown";
+}
+
 export async function readStoredAuthProvidersFromDisk(): Promise<Record<string, StoredAuthProvider>> {
   const merged: Record<string, StoredAuthProvider> = {};
   for (const authJsonPath of getAuthFileCandidates()) {

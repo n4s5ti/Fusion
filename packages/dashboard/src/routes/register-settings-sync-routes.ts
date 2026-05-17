@@ -3,10 +3,12 @@ import { basename } from "node:path";
 import { ApiError, badRequest, notFound } from "../api-error.js";
 import { getFusionAuthPath } from "../auth-paths.js";
 import {
+  classifySyncStatusDenialReason,
   fetchFromRemoteNode,
   MISSING_REMOTE_NODE_API_KEY_MESSAGE,
   readStoredAuthProvidersFromDisk,
   toProviderAuthEntries,
+  type SyncStatusDenialReason,
 } from "./register-settings-sync-helpers.js";
 import type { ApiRouteRegistrar } from "./types.js";
 
@@ -294,6 +296,7 @@ export const registerSettingsSyncRoutes: ApiRouteRegistrar = (ctx) => {
       let remoteSettings: { global: Record<string, unknown>; project: Record<string, unknown> } | null = null;
       let diffGlobal: string[] = [];
       let diffProject: string[] = [];
+      let denialReason: SyncStatusDenialReason | null = null; // FN-4847: stable, non-leaking denial classification for degraded probes.
 
       try {
         remoteSettings = await fetchFromRemoteNode(node, "/api/settings/scopes") as {
@@ -311,8 +314,9 @@ export const registerSettingsSyncRoutes: ApiRouteRegistrar = (ctx) => {
         );
         diffGlobal = diff.global;
         diffProject = diff.project;
-      } catch {
-        // Remote unreachable - diff will be empty arrays
+      } catch (err) {
+        // FN-4847: Remote probe failures are classified into actionable, enum-only denial reasons.
+        denialReason = classifySyncStatusDenialReason(err);
       }
 
       await central.close();
@@ -322,6 +326,7 @@ export const registerSettingsSyncRoutes: ApiRouteRegistrar = (ctx) => {
         lastSyncDirection: syncState ? "sync" : null, // Direction not tracked in new schema
         localUpdatedAt: syncState?.updatedAt ?? new Date().toISOString(),
         remoteReachable,
+        actionableDenialReason: denialReason, // FN-4847: explicit null on success, enum value on degraded failures.
         diff: { global: diffGlobal, project: diffProject },
       });
     } catch (err: unknown) {
