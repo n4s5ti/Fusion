@@ -1,5 +1,5 @@
 import "./MailboxModal.css";
-import { useState, useEffect, useCallback, useMemo, type CSSProperties } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef, type CSSProperties } from "react";
 import {
   X,
   Mail,
@@ -39,6 +39,7 @@ import { useMobileScrollLock } from "../hooks/useMobileScrollLock";
 import { useMobileKeyboard } from "../hooks/useMobileKeyboard";
 import { useViewportMode } from "./Header";
 import { subscribeSse } from "../sse-bus";
+import { readCache, SWR_CACHE_KEYS, writeCache } from "../utils/swrCache";
 
 // ── Types ─────────────────────────────────────────────────────────────────
 
@@ -154,11 +155,19 @@ export function MailboxModal({
   addToast,
   agents = [],
 }: MailboxModalProps) {
+  const cacheSuffix = projectId ?? "";
+  const inboxCacheKey = `${SWR_CACHE_KEYS.MAILBOX_INBOX_PREFIX}${cacheSuffix}`;
+  const outboxCacheKey = `${SWR_CACHE_KEYS.MAILBOX_OUTBOX_PREFIX}${cacheSuffix}`;
+  const unreadCountCacheKey = `${SWR_CACHE_KEYS.MAILBOX_UNREAD_COUNT_PREFIX}${cacheSuffix}`;
+  const initialInbox = readCache<InboxResponse | null>(inboxCacheKey);
+  const initialOutbox = readCache<OutboxResponse | null>(outboxCacheKey);
+  const initialUnreadCount = readCache<number>(unreadCountCacheKey);
+
   useMobileScrollLock(isOpen);
   const [activeTab, setActiveTab] = useState<MailboxTab>("inbox");
-  const [inbox, setInbox] = useState<InboxResponse | null>(null);
-  const [outbox, setOutbox] = useState<OutboxResponse | null>(null);
-  const [unreadCount, setUnreadCount] = useState(0);
+  const [inbox, setInbox] = useState<InboxResponse | null>(() => initialInbox ?? null);
+  const [outbox, setOutbox] = useState<OutboxResponse | null>(() => initialOutbox ?? null);
+  const [unreadCount, setUnreadCount] = useState(initialUnreadCount ?? 0);
   const [isLoading, setIsLoading] = useState(false);
   const [selectedMessage, setSelectedMessage] = useState<Message | null>(null);
   const [conversationMessages, setConversationMessages] = useState<Message[]>([]);
@@ -173,6 +182,8 @@ export function MailboxModal({
   const [replyContextLoading, setReplyContextLoading] = useState<Record<string, boolean>>({});
   const [replyContextErrors, setReplyContextErrors] = useState<Record<string, string>>({});
   const [replyContextCache, setReplyContextCache] = useState<Map<string, Message>>(new Map());
+  const skipOpenSpinnerInboxRef = useRef(false);
+  const skipOpenSpinnerOutboxRef = useRef(false);
   const agentNamesById = useMemo(() => {
     const map = new Map<string, string>();
     for (const agent of agents) {
@@ -203,29 +214,48 @@ export function MailboxModal({
   // ── Data fetching ─────────────────────────────────────────────────────
 
   const loadInbox = useCallback(async () => {
-    setIsLoading(true);
+    const shouldSkipOpenSpinner = skipOpenSpinnerInboxRef.current;
+    if (!shouldSkipOpenSpinner) {
+      setIsLoading(true);
+    }
+    skipOpenSpinnerInboxRef.current = false;
     try {
       const data = await fetchInbox({ limit: 50 }, projectId);
       setInbox(data);
       setUnreadCount(data.unreadCount);
+      writeCache(
+        inboxCacheKey,
+        { ...data, messages: data.messages.slice(0, 100) },
+        { maxBytes: 500_000 },
+      );
+      writeCache(unreadCountCacheKey, data.unreadCount, { maxBytes: 500_000 });
     } catch {
       // Silently fail — empty state will show
     } finally {
       setIsLoading(false);
     }
-  }, [projectId]);
+  }, [inboxCacheKey, projectId, unreadCountCacheKey]);
 
   const loadOutbox = useCallback(async () => {
-    setIsLoading(true);
+    const shouldSkipOpenSpinner = skipOpenSpinnerOutboxRef.current;
+    if (!shouldSkipOpenSpinner) {
+      setIsLoading(true);
+    }
+    skipOpenSpinnerOutboxRef.current = false;
     try {
       const data = await fetchOutbox({ limit: 50 }, projectId);
       setOutbox(data);
+      writeCache(
+        outboxCacheKey,
+        { ...data, messages: data.messages.slice(0, 100) },
+        { maxBytes: 500_000 },
+      );
     } catch {
       // Silently fail
     } finally {
       setIsLoading(false);
     }
-  }, [projectId]);
+  }, [outboxCacheKey, projectId]);
 
   const loadAgentMailbox = useCallback(async (agentId: string) => {
     setIsLoading(true);
@@ -255,10 +285,30 @@ export function MailboxModal({
     try {
       const data = await fetchUnreadCount(projectId);
       setUnreadCount(data.unreadCount);
+      writeCache(unreadCountCacheKey, data.unreadCount, { maxBytes: 500_000 });
     } catch {
       // Silently fail
     }
-  }, [projectId]);
+  }, [projectId, unreadCountCacheKey]);
+
+  useEffect(() => {
+    setInbox(readCache<InboxResponse | null>(inboxCacheKey) ?? null);
+    setOutbox(readCache<OutboxResponse | null>(outboxCacheKey) ?? null);
+    setUnreadCount(readCache<number>(unreadCountCacheKey) ?? 0);
+  }, [inboxCacheKey, outboxCacheKey, unreadCountCacheKey]);
+
+  useEffect(() => {
+    if (!isOpen) {
+      skipOpenSpinnerInboxRef.current = false;
+      skipOpenSpinnerOutboxRef.current = false;
+      return;
+    }
+
+    const cachedInbox = readCache<InboxResponse | null>(inboxCacheKey);
+    const cachedOutbox = readCache<OutboxResponse | null>(outboxCacheKey);
+    skipOpenSpinnerInboxRef.current = Boolean(cachedInbox);
+    skipOpenSpinnerOutboxRef.current = Boolean(cachedOutbox);
+  }, [isOpen, inboxCacheKey, outboxCacheKey]);
 
   // Load data on tab change
   useEffect(() => {
@@ -329,16 +379,24 @@ export function MailboxModal({
       try {
         const updated = await markMessageRead(message.id, projectId);
         // Update inbox state
-        setInbox((prev) =>
-          prev
+        setInbox((prev) => {
+          const next = prev
             ? {
                 ...prev,
                 messages: prev.messages.map((m) => (m.id === updated.id ? updated : m)),
                 unreadCount: Math.max(0, prev.unreadCount - 1),
               }
-            : prev,
-        );
-        setUnreadCount((c) => Math.max(0, c - 1));
+            : prev;
+          if (next) {
+            writeCache(inboxCacheKey, { ...next, messages: next.messages.slice(0, 100) }, { maxBytes: 500_000 });
+          }
+          return next;
+        });
+        setUnreadCount((c) => {
+          const next = Math.max(0, c - 1);
+          writeCache(unreadCountCacheKey, next, { maxBytes: 500_000 });
+          return next;
+        });
       } catch {
         // Non-critical
       }
@@ -350,7 +408,7 @@ export function MailboxModal({
     } catch {
       setConversationMessages([message]);
     }
-  }, [projectId, activeTab]);
+  }, [activeTab, inboxCacheKey, projectId, unreadCountCacheKey]);
 
   // Deep-link: open and highlight a specific message from URL params.
   useEffect(() => {
@@ -417,20 +475,25 @@ export function MailboxModal({
     try {
       const result = await markAllMessagesRead(projectId);
       setUnreadCount(0);
-      setInbox((prev) =>
-        prev
+      writeCache(unreadCountCacheKey, 0, { maxBytes: 500_000 });
+      setInbox((prev) => {
+        const next = prev
           ? {
               ...prev,
               messages: prev.messages.map((m) => ({ ...m, read: true })),
               unreadCount: 0,
             }
-          : prev,
-      );
+          : prev;
+        if (next) {
+          writeCache(inboxCacheKey, { ...next, messages: next.messages.slice(0, 100) }, { maxBytes: 500_000 });
+        }
+        return next;
+      });
       addToast?.(`Marked ${result.markedAsRead} messages as read`, "success");
     } catch {
       addToast?.("Failed to mark messages as read", "error");
     }
-  }, [projectId, addToast]);
+  }, [addToast, inboxCacheKey, projectId, unreadCountCacheKey]);
 
   const handleDeleteMessage = useCallback(async (id: string) => {
     try {

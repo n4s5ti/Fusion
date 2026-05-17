@@ -99,6 +99,7 @@ import {
   type AiSessionSummary,
 } from "../api";
 import type { AutopilotState, MissionInterviewDraftSummary } from "./mission-types";
+import { readCache, SWR_CACHE_KEYS, writeCache } from "../utils/swrCache";
 
 const MISSION_SIDEBAR_DEFAULT_WIDTH = 300;
 const MISSION_SIDEBAR_MIN_WIDTH = 220;
@@ -473,9 +474,14 @@ function getAutopilotActivitySummary(state: AutopilotState, lastActivityAt?: str
 
 export function MissionManager({ isOpen, isInline = false, onClose, addToast, projectId, onSelectTask, availableTasks = [], resumeSessionId, targetMissionId, milestoneSliceResumeSessionId, onMilestoneSliceResumeFetchError }: MissionManagerProps) {
   const isActive = isInline || isOpen;
-  const [missions, setMissions] = useState<MissionWithSummary[]>([]);
+  const cacheSuffix = projectId ?? "";
+  const missionsCacheKey = `${SWR_CACHE_KEYS.MISSIONS_PREFIX}${cacheSuffix}`;
+  const selectedMissionIdCacheKey = `${SWR_CACHE_KEYS.MISSIONS_SELECTED_ID_PREFIX}${cacheSuffix}`;
+  const initialMissions = readCache<MissionWithSummary[]>(missionsCacheKey);
+  const [missions, setMissions] = useState<MissionWithSummary[]>(() => (Array.isArray(initialMissions) ? initialMissions : []));
   const [selectedMission, setSelectedMission] = useState<MissionWithHierarchy | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(!(Array.isArray(initialMissions) && initialMissions.length > 0));
+  const hasHydratedRef = useRef(Array.isArray(initialMissions) && initialMissions.length > 0);
   const [detailLoading, setDetailLoading] = useState(false);
   const isMobile = useViewportMode() === "mobile";
   const { pushNav } = useNavigationHistoryContext();
@@ -802,16 +808,24 @@ export function MissionManager({ isOpen, isInline = false, onClose, addToast, pr
 
   const loadMissions = useCallback(async () => {
     try {
-      setLoading(true);
+      if (!hasHydratedRef.current) {
+        setLoading(true);
+      }
       const data = await fetchMissions(projectId);
       setMissions(data);
+      writeCache(
+        missionsCacheKey,
+        data.length > 200 ? data.slice(0, 200) : data,
+        { maxBytes: 500_000 },
+      );
+      hasHydratedRef.current = true;
       void loadMissionHealth(data);
     } catch (err) {
       addToast(getErrorMessage(err) || "Failed to load missions", "error");
     } finally {
       setLoading(false);
     }
-  }, [addToast, projectId, loadMissionHealth]);
+  }, [addToast, loadMissionHealth, missionsCacheKey, projectId]);
 
   const loadMissionDetail = useCallback(async (missionId: string) => {
     try {
@@ -1022,6 +1036,31 @@ export function MissionManager({ isOpen, isInline = false, onClose, addToast, pr
   useEffect(() => {
     missionEventsRef.current = missionEvents;
   }, [missionEvents]);
+
+  useEffect(() => {
+    const cachedMissions = readCache<MissionWithSummary[]>(missionsCacheKey);
+    const hasCachedMissions = Array.isArray(cachedMissions) && cachedMissions.length > 0;
+    setMissions(Array.isArray(cachedMissions) ? cachedMissions : []);
+    setLoading(!hasCachedMissions);
+    hasHydratedRef.current = hasCachedMissions;
+  }, [missionsCacheKey]);
+
+  useEffect(() => {
+    const selectedMissionId = readCache<string | null>(selectedMissionIdCacheKey);
+    if (!selectedMissionId) {
+      return;
+    }
+    const hasMissionSummary = missions.some((mission) => mission.id === selectedMissionId);
+    if (hasMissionSummary && !selectedMission) {
+      void loadMissionDetail(selectedMissionId);
+    }
+  }, [loadMissionDetail, missions, selectedMission, selectedMissionIdCacheKey]);
+
+  useEffect(() => {
+    if (selectedMission?.id) {
+      writeCache(selectedMissionIdCacheKey, selectedMission.id, { maxBytes: 500_000 });
+    }
+  }, [selectedMission?.id, selectedMissionIdCacheKey]);
 
   useEffect(() => {
     if (isActive) {
