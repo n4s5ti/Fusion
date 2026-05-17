@@ -788,12 +788,18 @@ describe("TaskExecutor worktree recovery", () => {
     );
   });
 
-  it("records recovery context when handling a branch conflict", async () => {
+  it("records recovery context when handling a branch conflict (FN-4847: now discards + requeues instead of pausing)", async () => {
+    // FN-4847: branch-conflict-unrecoverable previously paused the task with
+    // status=failed + pausedReason="branch-conflict-unrecoverable". The user has
+    // opted into discard-and-recreate, so the executor's handleBranchConflict now
+    // delegates to the auto-recovery dispatcher which in 'deterministic-only' mode
+    // returns action='retry'. The handler discards the foreign branch and requeues
+    // the task to todo. status='failed' is no longer set; moveTask IS called.
     const store = createMockStore();
     const onError = vi.fn();
     const executor = new TaskExecutor(store, "/tmp/test", { onError });
 
-    await (executor as any).handleBranchConflict(
+    const result = await (executor as any).handleBranchConflict(
       makeTask(),
       new BranchConflictError({
         branchName: "fusion/fn-050",
@@ -808,15 +814,14 @@ describe("TaskExecutor worktree recovery", () => {
       }),
     );
 
-    expect(store.updateTask).toHaveBeenCalledWith(
+    // New contract: handleBranchConflict returns 'retry' (not 'sticky') and does
+    // NOT mark the task failed. The branch-conflict context still gets logged and
+    // surfaced for observability, but the task continues via requeue.
+    expect(result).toBe("retry");
+    expect(store.updateTask).not.toHaveBeenCalledWith(
       "FN-050",
-      expect.objectContaining({
-        status: "failed",
-        branch: "fusion/fn-050",
-        worktree: "/tmp/test/.worktrees/green-sage",
-      }),
+      expect.objectContaining({ status: "failed" }),
     );
-    expect(store.moveTask).not.toHaveBeenCalled();
     expect(store.logEntry).toHaveBeenCalledWith(
       "FN-050",
       expect.stringContaining("Existing tip: abc123def456"),
@@ -830,7 +835,8 @@ describe("TaskExecutor worktree recovery", () => {
       expect.stringContaining("stranded=aaa111 Preserve prior fix"),
       "executor",
     );
-    expect(onError).toHaveBeenCalledWith(expect.objectContaining({ id: "FN-050" }), expect.any(BranchConflictError));
+    // onError no longer fires for the recoverable branch-conflict-unrecoverable path.
+    expect(onError).not.toHaveBeenCalled();
   });
 
   it("FN-4397 reproduces repeated branch-conflict recovery-required emissions for the same task", async () => {

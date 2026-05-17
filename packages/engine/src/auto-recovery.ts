@@ -35,7 +35,15 @@ export interface AutoRecoveryHandlers {
 const autoRecoveryLog = createLogger("auto-recovery");
 
 function actionForMode(mode: AutoRecoveryMode, failureClass: AutoRecoveryFailureClass): AutoRecoveryAction {
-  if (mode === "off" || mode === "deterministic-only") return "pause";
+  if (mode === "off") return "pause";
+  if (mode === "deterministic-only") {
+    // FN-4847: branch-conflict-unrecoverable is deterministically retryable via the
+    // discard-and-recreate path in BranchWorktreeAutoRecoveryHandler. The user has
+    // explicitly opted into discarding stranded commits on contaminated branches
+    // rather than pausing the task with "branch conflict unrecoverable".
+    if (failureClass === "branch-conflict-unrecoverable") return "retry";
+    return "pause";
+  }
   if (mode === "programmatic") {
     if (failureClass === "file-scope-invariant" || failureClass === "post-squash-audit-blocker") return "pause";
     return "retry";

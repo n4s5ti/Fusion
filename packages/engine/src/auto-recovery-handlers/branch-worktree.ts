@@ -8,6 +8,7 @@ import {
   reanchorBranchToBase,
 } from "../branch-conflicts.js";
 import type { AutoRecoveryContext, AutoRecoveryDecision, AutoRecoveryFailure } from "../auto-recovery.js";
+import { activeSessionRegistry } from "../active-session-registry.js";
 import { createLogger, type Logger } from "../logger.js";
 import type { RunAuditor } from "../run-audit.js";
 
@@ -222,9 +223,67 @@ export class BranchWorktreeAutoRecoveryHandler {
     }
 
     if (inspection.kind === "live-foreign") {
-      await this.emitIrreduciblePause(ctx.task, failure, "live-foreign", {
-        branchName,
-        conflictingWorktreePath,
+      // FN-4847: discard-and-recreate. Previously this emitted irreducible-pause and the
+      // task got stuck with "branch conflict unrecoverable". The user opted into
+      // force-deleting the foreign branch (with stranded contamination commits) and
+      // requeuing so the executor's next pickup creates a fresh `fusion/<task-id>`.
+      // Safety: respect FN-4811 active-session gate — don't yank live worktrees.
+      const tipSha = await this.getTipSha(repoDir, branchName);
+      const isLiveOwned = activeSessionRegistry.isPathActive(conflictingWorktreePath);
+      let branchDeleted = false;
+      let worktreeRemoved = false;
+      if (!isLiveOwned) {
+        if (existsSync(conflictingWorktreePath)) {
+          try {
+            await execAsync(`git worktree remove --force ${this.quote(conflictingWorktreePath)}`, {
+              cwd: repoDir,
+              timeout: GIT_TIMEOUT_MS,
+              maxBuffer: GIT_MAX_BUFFER,
+            });
+            worktreeRemoved = true;
+          } catch (err) {
+            this.logger.warn(`FN-4847 discard: worktree remove failed for ${conflictingWorktreePath}: ${err instanceof Error ? err.message : String(err)}`);
+          }
+        }
+        try {
+          await execAsync("git worktree prune", {
+            cwd: repoDir,
+            timeout: GIT_TIMEOUT_MS,
+            maxBuffer: GIT_MAX_BUFFER,
+          });
+        } catch {
+          // best-effort
+        }
+        try {
+          await execAsync(`git branch -D ${this.quote(branchName)}`, {
+            cwd: repoDir,
+            timeout: GIT_TIMEOUT_MS,
+            maxBuffer: GIT_MAX_BUFFER,
+          });
+          branchDeleted = true;
+        } catch (err) {
+          this.logger.warn(`FN-4847 discard: branch -D failed for ${branchName}: ${err instanceof Error ? err.message : String(err)}`);
+        }
+      }
+      await this.deps.runAudit.database({
+        type: "branch-worktree:foreign-branch-discarded",
+        target: ctx.task.id,
+        metadata: {
+          class: failure.class,
+          branchName,
+          conflictingWorktreePath,
+          inspectionKind: inspection.kind,
+          tipSha,
+          isLiveOwned,
+          branchDeleted,
+          worktreeRemoved,
+          rationale: "FN-4847 user-opted discard-and-recreate for cross-task contamination residue",
+        },
+      });
+      await this.requeueAfterRecovery(ctx.task, failure, "live-foreign-discard-and-recreate", {
+        branchExists: !branchDeleted,
+        worktreePresent: !worktreeRemoved && existsSync(conflictingWorktreePath),
+        tipSha,
         inspectionKind: inspection.kind,
       });
       return;

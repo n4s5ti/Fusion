@@ -178,6 +178,7 @@ export type DatabaseMutationType =
   | "branch-worktree:auto-requeue"
   | "branch-worktree:ai-session-spawned"
   | "branch-worktree:irreducible-pause"
+  | "branch-worktree:foreign-branch-discarded"
   | "document:write"
   | "workflow-step:result"
   | "agent:create:requested"
