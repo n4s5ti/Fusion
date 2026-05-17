@@ -406,9 +406,28 @@ Breakpoints: 768px (primary mobile), 1024px (tablet `min-width: 769px and max-wi
 
 **Safe area:** `max(var(--space-md), env(safe-area-inset-left, 0px))` for notch-aware horizontal padding.
 
-### Lazy-loaded heavy views
+### Lazy-Loaded Heavy Views
 
-18 views loaded via `React.lazy()` with `<Suspense fallback={null}>`: AgentsView, NodesView, ChatView, MemoryView, DevServerView, InsightsView, DocumentsView, SkillsView, ResearchView, ReliabilityView, EvalsView, TodoView, GoalsView, StashRecoveryView, SetupWizardModal, PluginManager, PiExtensionsManager, AgentDetailView. `prefetchLazyViews()` warms chunks once on mount via `requestIdleCallback`. **Do not make these eager.**
+These 18 views are lazy-loaded via `React.lazy()` with `<Suspense fallback={null}>`. `prefetchLazyViews()` warms chunks once on mount via `requestIdleCallback`. **Do not make these eager.**
+
+- `AgentsView`
+- `NodesView`
+- `ChatView`
+- `MemoryView`
+- `DevServerView`
+- `InsightsView`
+- `DocumentsView`
+- `SkillsView`
+- `ResearchView`
+- `ReliabilityView`
+- `EvalsView`
+- `TodoView`
+- `GoalsView`
+- `StashRecoveryView`
+- `SetupWizardModal`
+- `PluginManager`
+- `PiExtensionsManager`
+- `AgentDetailView`
 
 When adding or removing entries, update `packages/dashboard/app/__tests__/lazy-loaded-views-docs.test.ts` (expected set + count).
 

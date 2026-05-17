@@ -799,9 +799,15 @@ function AppInner() {
   const previousCapacityRiskBannerEnabledRef = useRef(capacityRiskBannerEnabled);
   const previousCapacityRiskTodoThresholdRef = useRef(capacityRiskTodoThreshold);
   const previousCapacityRiskProjectIdRef = useRef(currentProject?.id);
+  const capacityRiskSettingsHydratedRef = useRef(false);
 
   useEffect(() => {
-    if (previousCapacityRiskProjectIdRef.current !== currentProject?.id) {
+    if (!settingsLoaded) {
+      return;
+    }
+
+    if (!capacityRiskSettingsHydratedRef.current || previousCapacityRiskProjectIdRef.current !== currentProject?.id) {
+      capacityRiskSettingsHydratedRef.current = true;
       previousCapacityRiskProjectIdRef.current = currentProject?.id;
       previousCapacityRiskBannerEnabledRef.current = capacityRiskBannerEnabled;
       previousCapacityRiskTodoThresholdRef.current = capacityRiskTodoThreshold;
@@ -821,7 +827,7 @@ function AppInner() {
     previousCapacityRiskProjectIdRef.current = currentProject?.id;
     previousCapacityRiskBannerEnabledRef.current = capacityRiskBannerEnabled;
     previousCapacityRiskTodoThresholdRef.current = capacityRiskTodoThreshold;
-  }, [capacityRiskBannerEnabled, capacityRiskTodoThreshold, currentProject?.id]);
+  }, [settingsLoaded, capacityRiskBannerEnabled, capacityRiskTodoThreshold, currentProject?.id]);
 
   const skillsEnabled = experimentalFeatures.skillsView === true;
   const nodesEnabled = experimentalFeatures.nodesView === true;

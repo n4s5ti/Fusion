@@ -7299,7 +7299,7 @@ export class TaskStore extends EventEmitter<TaskStoreEvents> {
       return { moved: false, skipped: "not-merged" };
     }
     if (task.column !== "in-review") {
-      this.logger?.warn?.(`[store] applyPrMergedTransition skipped for ${taskId}: column=${task.column}`);
+      storeLog.warn(`[store] applyPrMergedTransition skipped for ${taskId}: column=${task.column}`);
       return { moved: false, skipped: "wrong-column" };
     }
 
@@ -7314,7 +7314,7 @@ export class TaskStore extends EventEmitter<TaskStoreEvents> {
       return { moved: false, skipped: "not-merged" };
     }
     if (freshTask.column !== "in-review") {
-      this.logger?.warn?.(`[store] applyPrMergedTransition skipped for ${taskId}: column=${freshTask.column}`);
+      storeLog.warn(`[store] applyPrMergedTransition skipped for ${taskId}: column=${freshTask.column}`);
       return { moved: false, skipped: "wrong-column" };
     }
 

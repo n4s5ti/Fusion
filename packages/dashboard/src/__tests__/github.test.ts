@@ -325,6 +325,7 @@ describe("GitHubClient", () => {
         url: "https://github.com/owner/repo/pull/42",
         title: "Test PR",
         state: "OPEN",
+        isDraft: false,
         baseRefName: "main",
         headRefName: "feature-branch",
       });
@@ -334,7 +335,7 @@ describe("GitHubClient", () => {
       expect(mockRunGhJsonAsync).toHaveBeenCalledWith([
         "pr", "view", "42",
         "--repo", "owner/repo",
-        "--json", "number,url,title,state,baseRefName,headRefName",
+        "--json", "number,url,title,state,isDraft,baseRefName,headRefName",
       ]);
       expect(result.number).toBe(42);
       expect(result.status).toBe("open");

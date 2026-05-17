@@ -59,6 +59,7 @@ For a full walkthrough (installation, onboarding, first task, and daily workflow
 | [Docker](./docker.md) | Container builds, deployment, and persistence configuration |
 | [Code Signing](./CODE_SIGNING.md) | macOS and Windows code signing configuration for release binaries |
 | [Sandbox Backends](./sandbox.md) | Pluggable sandbox backends for executor command isolation (bubblewrap, spawn-based) |
+| [Secrets](./secrets.md) | Encrypted secrets storage, per-secret access policies, scopes, and agent tool wiring |
 | [Mobile](../MOBILE.md) | Capacitor/PWA mobile development setup and workflow |
 
 ### Plugins
@@ -97,6 +98,11 @@ For a full walkthrough (installation, onboarding, first task, and daily workflow
 | [Experiment Session Model](./research/experiment-session-model.md) | Experiment session data model: state transitions, iteration tracking, and persisted run state |
 | [Experiment Session MVP Spec](./research/experiment-session-mvp-spec.md) | MVP specification for the experiment session feature: scope, invariants, and delivery milestones |
 | [Sandbox Options Research (FN-4635)](./research/sandbox-options.md) | Pluggable sandbox options research: threat model, backend evaluation, and spawn-based isolation design |
+| [Triage Duplicate Detection Postmortem](./triage-duplicate-detection-postmortem.md) | Postmortem on duplicate task detection gaps and scheduler dedup hardening |
+| [Multi-Node Runtime Readiness (FN-4814)](./design/fn-4814-multi-node-runtime-readiness.md) | Runtime readiness assessment for multi-node distributed coordination |
+| [Distributed Multi-Node Coordination Gap (FN-4819)](./design/fn-4819-distributed-multi-node-coordination-gap.md) | Gap analysis for distributed multi-node agent coordination and cross-node task assignment |
+| [Cross-Node Assignment Wake Contract (FN-4824)](./design/fn-4824-cross-node-assignment-wake-contract.md) | Contract specification for cross-node task assignment wake signaling |
+| [Multi-Node Coordination Validation Findings (FN-4820)](./findings/fn-4820-multi-node-coordination-validation.md) | Validation findings from multi-node coordination testing and edge-case analysis |
 
 ## External Resources
 
