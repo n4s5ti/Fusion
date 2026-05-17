@@ -715,6 +715,7 @@ vi.mock("@fusion/engine", async (importOriginal) => {
     PeerExchangeService: vi.fn().mockImplementation(() => ({
       start: vi.fn(),
       stop: vi.fn().mockResolvedValue(undefined),
+      updateGlobalSettings: vi.fn(),
     })),
     shouldUseHybridExecutor: mockShouldUseHybridExecutor,
     HybridExecutor: mockHybridExecutorCtor,
@@ -2626,6 +2627,7 @@ describe("runDashboard — mesh lifecycle ownership", () => {
     expect(peerExchangeCtor.mock.calls.length).toBeGreaterThan(baselineCalls);
     const peerExchangeInstance = peerExchangeCtor.mock.results.at(-1)?.value;
     expect(peerExchangeInstance.start).toHaveBeenCalledTimes(1);
+    expect(peerExchangeInstance.updateGlobalSettings).toHaveBeenCalledTimes(1);
     expect(startDiscovery).toHaveBeenCalledWith(expect.objectContaining({
       broadcast: true,
       listen: true,

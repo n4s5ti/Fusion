@@ -6,6 +6,17 @@ import type { TaskStore, GlobalSettings, CustomProvider } from "@fusion/core";
 import { createApiRoutes } from "../../routes.js";
 import { request as performRequest } from "../../test-request.js";
 
+const { mockInvalidateAllGlobalSettingsCaches } = vi.hoisted(() => ({
+  mockInvalidateAllGlobalSettingsCaches: vi.fn(),
+}));
+vi.mock("../../project-store-resolver.js", async () => {
+  const actual = await vi.importActual<typeof import("../../project-store-resolver.js")>("../../project-store-resolver.js");
+  return {
+    ...actual,
+    invalidateAllGlobalSettingsCaches: mockInvalidateAllGlobalSettingsCaches,
+  };
+});
+
 function createMockGlobalSettingsStore(settings: GlobalSettings) {
   return {
     getSettings: vi.fn(async () => settings),
@@ -97,6 +108,7 @@ describe("custom provider routes", () => {
 
   beforeEach(() => {
     settings = {};
+    mockInvalidateAllGlobalSettingsCaches.mockReset();
   });
 
   it("GET /custom-providers returns empty array when none configured", async () => {
@@ -165,6 +177,7 @@ describe("custom provider routes", () => {
     );
     expect(res.body.apiKey).toBe("sk-•••••5678");
     expect(updates).toHaveLength(1);
+    expect(mockInvalidateAllGlobalSettingsCaches).toHaveBeenCalledTimes(1);
 
     const persisted = updates[0].customProviders as CustomProvider[];
     expect(persisted[0]?.apiKey).toBe("sk-my-secret-5678");
@@ -264,6 +277,7 @@ describe("custom provider routes", () => {
     expect(res.status).toBe(200);
     expect(res.body).toEqual({ success: true });
     expect(settings.customProviders).toEqual([]);
+    expect(mockInvalidateAllGlobalSettingsCaches).toHaveBeenCalledTimes(1);
   });
 
   it("DELETE /custom-providers/:id returns 404 for non-existent id", async () => {

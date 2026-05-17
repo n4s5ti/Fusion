@@ -34,6 +34,7 @@ const mockApplyRemoteSettings = vi.fn();
 const mockGetSettingsForSync = vi.fn();
 const mockGetAuthMaterialSnapshot = vi.fn();
 const mockApplyAuthMaterialSnapshot = vi.fn();
+const mockStoreUpdateGlobalSettings = vi.fn().mockResolvedValue({});
 const mockChatStoreInit = vi.fn().mockResolvedValue(undefined);
 const mockAgentStoreInit = vi.fn().mockResolvedValue(undefined);
 const mockAgentStoreGetAgent = vi.fn().mockResolvedValue(null);
@@ -118,6 +119,10 @@ class MockStore extends EventEmitter {
       },
     };
   }
+
+  async updateGlobalSettings(patch: Record<string, unknown>) {
+    return mockStoreUpdateGlobalSettings(patch);
+  }
 }
 
 // ── Test helpers ──────────────────────────────────────────────────────
@@ -177,6 +182,7 @@ describe("Node settings sync routes", () => {
     mockGetSettingsSyncState.mockResolvedValue(null);
     mockUpdateSettingsSyncState.mockResolvedValue({});
     mockApplyRemoteSettings.mockResolvedValue({ success: true, globalCount: 1, projectCount: 1, authCount: 0 });
+    mockStoreUpdateGlobalSettings.mockReset();
     mockGetSettingsForSync.mockResolvedValue({});
     mockGetAuthMaterialSnapshot.mockReturnValue({
       version: 1,
@@ -1024,6 +1030,34 @@ describe("Node settings sync routes", () => {
       expect(res.status).toBe(200);
       expect(res.body.success).toBe(true);
       expect(mockApplyRemoteSettings).toHaveBeenCalled();
+    });
+
+    it("applies inbound global settings via store.updateGlobalSettings when local values are unset", async () => {
+      const localNode = createMockLocalNode();
+      mockListNodes.mockResolvedValue([localNode]);
+      mockApplyRemoteSettings.mockResolvedValue({
+        success: true,
+        globalCount: 2,
+        projectCount: 0,
+        authCount: 0,
+      });
+
+      const res = await request(
+        app,
+        "POST",
+        "/api/settings/sync-receive",
+        JSON.stringify({
+          sourceNodeId: "node-remote-001",
+          exportedAt: "2026-04-14T10:00:00.000Z",
+          checksum: "abc123",
+          version: 1,
+          global: { dashboardCurrentNodeId: "node-remote-001", defaultProvider: "openai" },
+        }),
+        { "content-type": "application/json", "Authorization": `Bearer ${localNode.apiKey}` },
+      );
+
+      expect(res.status).toBe(200);
+      expect(mockStoreUpdateGlobalSettings).toHaveBeenCalledWith({ dashboardCurrentNodeId: "node-remote-001" });
     });
 
     it("returns 401 when auth header is missing", async () => {

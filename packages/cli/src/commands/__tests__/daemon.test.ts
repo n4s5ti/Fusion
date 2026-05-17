@@ -573,6 +573,7 @@ vi.mock("@fusion/engine", async (importOriginal) => {
   PeerExchangeService: vi.fn().mockImplementation(() => ({
     start: vi.fn(),
     stop: vi.fn().mockResolvedValue(undefined),
+    updateGlobalSettings: vi.fn(),
   })),
   TriageProcessor: mocks.triageCtor,
   TaskExecutor: mocks.executorCtor,
