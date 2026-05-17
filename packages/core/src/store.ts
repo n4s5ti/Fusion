@@ -4510,6 +4510,14 @@ export class TaskStore extends EventEmitter<TaskStoreEvents> {
         }
       }
       if (updates.description !== undefined) task.description = updates.description;
+      if (updates.sourceMetadataPatch === null) {
+        task.sourceMetadata = undefined;
+      } else if (updates.sourceMetadataPatch !== undefined) {
+        task.sourceMetadata = {
+          ...(task.sourceMetadata ?? {}),
+          ...updates.sourceMetadataPatch,
+        };
+      }
       if (updates.priority === null) {
         task.priority = normalizeTaskPriority(undefined);
       } else if (updates.priority !== undefined) {
