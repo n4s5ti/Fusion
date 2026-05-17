@@ -2144,6 +2144,126 @@ describe("TaskCard", () => {
     });
   });
 
+  describe("FN-4923 tracking chip alignment", () => {
+    it("FN-4923 right-aligns tracking chip next to timer in done when files-changed is absent", () => {
+      const cleanupCss = mountCssForBadgeTests();
+      try {
+        const { container } = render(
+          <TaskCard
+            task={makeTask({
+              column: "done",
+              sourceType: "dashboard_ui",
+              modifiedFiles: [],
+              githubTracking: {
+                issue: {
+                  owner: "owner",
+                  repo: "repo",
+                  number: 42,
+                  url: "https://github.com/owner/repo/issues/42",
+                  createdAt: "2026-05-12T00:00:00.000Z",
+                },
+              },
+              executionStartedAt: "2026-04-25T12:00:00.000Z",
+              executionCompletedAt: "2026-04-25T12:12:00.000Z",
+            })}
+            onOpenDetail={noop}
+            addToast={noop}
+            onOpenDetailWithTab={vi.fn()}
+          />,
+        );
+
+        const footerRow = container.querySelector(".card-footer-row") as HTMLElement | null;
+        const trackingChip = container.querySelector(".card-github-tracking-chip") as HTMLElement | null;
+        const timerChip = container.querySelector(".card-time-indicator") as HTMLElement | null;
+        expect(footerRow).not.toBeNull();
+        expect(footerRow).toHaveClass("card-footer-row--chip-far-right");
+        expect(trackingChip).not.toBeNull();
+        expect(timerChip).not.toBeNull();
+        expect(getComputedStyle(trackingChip as HTMLElement).marginLeft).toBe("auto");
+        expect((trackingChip as HTMLElement).nextElementSibling).toBe(timerChip);
+      } finally {
+        cleanupCss();
+      }
+    });
+
+    it("FN-4923 preserves in-progress tracking-chip right alignment without files-changed", () => {
+      const cleanupCss = mountCssForBadgeTests();
+      try {
+        const { container } = render(
+          <TaskCard
+            task={makeTask({
+              column: "in-progress",
+              sourceType: "dashboard_ui",
+              modifiedFiles: [],
+              githubTracking: {
+                issue: {
+                  owner: "owner",
+                  repo: "repo",
+                  number: 42,
+                  url: "https://github.com/owner/repo/issues/42",
+                  createdAt: "2026-05-12T00:00:00.000Z",
+                },
+              },
+              executionStartedAt: "2026-04-25T12:00:00.000Z",
+              updatedAt: "2026-04-25T12:12:00.000Z",
+            })}
+            onOpenDetail={noop}
+            addToast={noop}
+            onOpenDetailWithTab={vi.fn()}
+          />,
+        );
+
+        const trackingChip = container.querySelector(".card-github-tracking-chip") as HTMLElement | null;
+        expect(trackingChip).not.toBeNull();
+        expect(getComputedStyle(trackingChip as HTMLElement).marginLeft).toBe("auto");
+      } finally {
+        cleanupCss();
+      }
+    });
+
+    it("FN-4923 keeps tracking chip grouped with files-changed while timer remains right-aligned", () => {
+      const cleanupCss = mountCssForBadgeTests();
+      try {
+        const { container } = render(
+          <TaskCard
+            task={makeTask({
+              column: "in-progress",
+              sourceType: "dashboard_ui",
+              modifiedFiles: ["src/file.ts"],
+              githubTracking: {
+                issue: {
+                  owner: "owner",
+                  repo: "repo",
+                  number: 42,
+                  url: "https://github.com/owner/repo/issues/42",
+                  createdAt: "2026-05-12T00:00:00.000Z",
+                },
+              },
+              executionStartedAt: "2026-04-25T12:00:00.000Z",
+              updatedAt: "2026-04-25T12:12:00.000Z",
+            })}
+            onOpenDetail={noop}
+            addToast={noop}
+            onOpenDetailWithTab={vi.fn()}
+          />,
+        );
+
+        const footerRow = container.querySelector(".card-footer-row") as HTMLElement | null;
+        const filesChangedButton = screen.getByRole("button", { name: "1 file changed" });
+        const trackingChip = container.querySelector(".card-github-tracking-chip") as HTMLElement | null;
+        const timerChip = container.querySelector(".card-time-indicator") as HTMLElement | null;
+        expect(footerRow).not.toBeNull();
+        expect(footerRow).not.toHaveClass("card-footer-row--chip-far-right");
+        expect(trackingChip).not.toBeNull();
+        expect(timerChip).not.toBeNull();
+        expect(filesChangedButton.compareDocumentPosition(trackingChip as HTMLElement)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+        expect(getComputedStyle(timerChip as HTMLElement).marginLeft).toBe("auto");
+      } finally {
+        cleanupCss();
+      }
+    });
+  });
+
   it("does not render a GitHub tracking link when githubTracking is absent", () => {
     render(
       <TaskCard
