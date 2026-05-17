@@ -1644,6 +1644,77 @@ async function fetchZaiUsage(authStorage?: AuthStorageLike): Promise<ProviderUsa
 
 // ── GitHub Copilot fetcher ──────────────────────────────────────────────────
 
+type CopilotCredential = {
+  accessToken: string;
+  source: "fusion-auth";
+};
+
+async function loadGitHubCopilotCredential(): Promise<CopilotCredential | null> {
+  let preferredCredential: ReturnType<typeof choosePreferredStoredCredential>;
+  for (const candidatePath of getAuthFileCandidates()) {
+    const authEntries = readStoredCredentialsFromAuthFile(candidatePath);
+    preferredCredential = choosePreferredStoredCredential(preferredCredential, authEntries["github-copilot"]);
+  }
+
+  if (
+    preferredCredential?.type === "oauth"
+    && typeof preferredCredential.access === "string"
+    && preferredCredential.access.length > 0
+    && typeof preferredCredential.expires === "number"
+    && Number.isFinite(preferredCredential.expires)
+    && preferredCredential.expires > Date.now()
+  ) {
+    return {
+      accessToken: preferredCredential.access,
+      source: "fusion-auth",
+    };
+  }
+
+  return null;
+}
+
+function applyGitHubCopilotUsagePayload(usage: ProviderUsage, data: Record<string, unknown>): void {
+  usage.status = "ok";
+
+  if (typeof data.seat_management_setting === "string" && data.seat_management_setting.length > 0) {
+    usage.plan = data.seat_management_setting;
+  }
+
+  const planType =
+    typeof data.copilot_plan_type === "string"
+      ? data.copilot_plan_type
+      : typeof data.plan_type === "string"
+        ? data.plan_type
+        : undefined;
+  if (planType) {
+    usage.plan = planType.charAt(0).toUpperCase() + planType.slice(1);
+  }
+
+  if (data.copilot_plan_type === "free" || data.plan_type === "free") {
+    if (typeof data.chat_messages_used === "number" && typeof data.chat_messages_limit === "number") {
+      const chatPct = data.chat_messages_limit > 0 ? (data.chat_messages_used / data.chat_messages_limit) * 100 : 0;
+      usage.windows.push({
+        label: "Chat (Monthly)",
+        percentUsed: Math.min(100, Math.max(0, chatPct)),
+        percentLeft: Math.min(100, Math.max(0, 100 - chatPct)),
+        resetText: null,
+        windowDurationMs: 30 * 24 * 60 * 60 * 1000,
+      });
+    }
+
+    if (typeof data.completions_used === "number" && typeof data.completions_limit === "number") {
+      const completionPct = data.completions_limit > 0 ? (data.completions_used / data.completions_limit) * 100 : 0;
+      usage.windows.push({
+        label: "Completions (Monthly)",
+        percentUsed: Math.min(100, Math.max(0, completionPct)),
+        percentLeft: Math.min(100, Math.max(0, 100 - completionPct)),
+        resetText: null,
+        windowDurationMs: 30 * 24 * 60 * 60 * 1000,
+      });
+    }
+  }
+}
+
 async function fetchGitHubCopilotUsage(): Promise<ProviderUsage> {
   const usage: ProviderUsage = {
     name: "GitHub Copilot",
@@ -1651,6 +1722,40 @@ async function fetchGitHubCopilotUsage(): Promise<ProviderUsage> {
     status: "no-auth",
     windows: [],
   };
+
+  const fusionCredential = await loadGitHubCopilotCredential();
+  if (fusionCredential) {
+    try {
+      const res = await httpsRequest("https://api.github.com/user/copilot", {
+        method: "GET",
+        headers: {
+          authorization: `Bearer ${fusionCredential.accessToken}`,
+          accept: "application/vnd.github+json",
+          "x-github-api-version": "2022-11-28",
+          "user-agent": "fusion-dashboard",
+        },
+      });
+
+      if (res.status === 200) {
+        applyGitHubCopilotUsagePayload(usage, JSON.parse(res.body));
+        return usage;
+      }
+
+      usage.status = "error";
+      if (res.status === 404) {
+        usage.error = "No Copilot subscription found";
+      } else if (res.status === 401 || res.status === 403) {
+        usage.error = "Auth expired — re-login from Fusion Settings → Authentication";
+      } else {
+        usage.error = `HTTP ${res.status}: ${res.body.slice(0, 200)}`;
+      }
+      return usage;
+    } catch (e: unknown) {
+      usage.status = "error";
+      usage.error = e instanceof Error ? e.message : "Failed to fetch";
+      return usage;
+    }
+  }
 
   try {
     await execFileAsync("gh", ["auth", "status"], { encoding: "utf-8", timeout: 5000 });
@@ -1665,47 +1770,7 @@ async function fetchGitHubCopilotUsage(): Promise<ProviderUsage> {
       timeout: 10000,
     });
 
-    const data = JSON.parse(stdout.trim());
-    usage.status = "ok";
-
-    if (data.seat_management_setting) {
-      usage.plan = data.seat_management_setting;
-    }
-
-    const planType: string | undefined = data.copilot_plan_type || data.plan_type;
-    if (planType) {
-      usage.plan = planType.charAt(0).toUpperCase() + planType.slice(1);
-    }
-
-    if (data.copilot_plan_type === "free" || data.plan_type === "free") {
-      if (data.chat_messages_used !== undefined && data.chat_messages_limit !== undefined) {
-        const chatPct =
-          data.chat_messages_limit > 0
-            ? (data.chat_messages_used / data.chat_messages_limit) * 100
-            : 0;
-        usage.windows.push({
-          label: "Chat (Monthly)",
-          percentUsed: Math.min(100, Math.max(0, chatPct)),
-          percentLeft: Math.min(100, Math.max(0, 100 - chatPct)),
-          resetText: null,
-          windowDurationMs: 30 * 24 * 60 * 60 * 1000,
-        });
-      }
-
-      if (data.completions_used !== undefined && data.completions_limit !== undefined) {
-        const completionPct =
-          data.completions_limit > 0
-            ? (data.completions_used / data.completions_limit) * 100
-            : 0;
-        usage.windows.push({
-          label: "Completions (Monthly)",
-          percentUsed: Math.min(100, Math.max(0, completionPct)),
-          percentLeft: Math.min(100, Math.max(0, 100 - completionPct)),
-          resetText: null,
-          windowDurationMs: 30 * 24 * 60 * 60 * 1000,
-        });
-      }
-    }
+    applyGitHubCopilotUsagePayload(usage, JSON.parse(stdout.trim()));
   } catch (e: unknown) {
     const errMsg = e instanceof Error ? e.message : "Failed to fetch";
     if (errMsg.includes("404") || errMsg.includes("Not Found")) {

@@ -142,8 +142,11 @@ describe("usage", () => {
   });
 
   describe("fetchGitHubCopilotUsage (via fetchAllProviderUsage)", () => {
+    const mockReq = { on: vi.fn(), write: vi.fn(), end: vi.fn() };
+
     it("returns no-auth when gh auth status fails", async () => {
       mockReadFile.mockRejectedValue(new Error("File not found"));
+      coreInteropMocks.readStoredCredentialsFromAuthFile.mockReturnValue({});
       mockExecFileSync.mockImplementation((cmd: string, args: string[]) => {
         if (cmd === "gh" && args[0] === "auth") {
           throw new Error("not logged in");
@@ -157,14 +160,117 @@ describe("usage", () => {
       expect(copilot).toBeUndefined();
     });
 
-    it("returns ok with plan when gh api succeeds", async () => {
-      mockReadFile.mockRejectedValue(new Error("File not found"));
+    it("returns ok when Fusion github-copilot oauth is present", async () => {
+      coreInteropMocks.readStoredCredentialsFromAuthFile.mockReturnValue({
+        "github-copilot": { type: "oauth", access: "fusion-gho", refresh: "r", expires: Date.now() + 60_000 },
+      });
+      mockRequest.mockImplementation((options: any, callback: any) => {
+        const mockRes = {
+          statusCode: 200,
+          headers: {},
+          on: vi.fn((event: string, handler: any) => {
+            if (event === "data") {
+              handler(Buffer.from('{"copilot_plan_type":"individual"}'));
+            }
+            if (event === "end") handler();
+          }),
+        };
+        callback(mockRes);
+        return mockReq;
+      });
+
+      const providers = await fetchAllProviderUsage();
+      const copilot = providers.find((p) => p.name === "GitHub Copilot");
+
+      expect(copilot).toBeDefined();
+      expect(copilot!.status).toBe("ok");
+      expect(copilot!.plan).toBe("Individual");
+    });
+
+    it("prefers Fusion oauth over gh CLI when both are present", async () => {
+      coreInteropMocks.readStoredCredentialsFromAuthFile.mockReturnValue({
+        "github-copilot": { type: "oauth", access: "fusion-gho", refresh: "r", expires: Date.now() + 60_000 },
+      });
+      mockExecFileSync.mockImplementation((cmd: string, args: string[]) => {
+        if (cmd === "gh" && args[0] === "auth") return "";
+        if (cmd === "gh" && args[0] === "api" && args[1] === "/user/copilot") {
+          return JSON.stringify({ copilot_plan_type: "business" });
+        }
+        throw new Error("File not found");
+      });
+      mockRequest.mockImplementation((options: any, callback: any) => {
+        expect(options.headers.authorization).toBe("Bearer fusion-gho");
+        const mockRes = {
+          statusCode: 200,
+          headers: {},
+          on: vi.fn((event: string, handler: any) => {
+            if (event === "data") handler(Buffer.from('{"copilot_plan_type":"individual"}'));
+            if (event === "end") handler();
+          }),
+        };
+        callback(mockRes);
+        return mockReq;
+      });
+
+      const providers = await fetchAllProviderUsage();
+      const copilot = providers.find((p) => p.name === "GitHub Copilot");
+
+      expect(copilot?.status).toBe("ok");
+      expect(mockRequest).toHaveBeenCalled();
+      expect(
+        mockExecFileSync.mock.calls.some(
+          ([cmd, args]) => cmd === "gh" && Array.isArray(args) && args[0] === "api" && args[1] === "/user/copilot"
+        )
+      ).toBe(false);
+    });
+
+    it("returns no-auth when Fusion github-copilot oauth is expired and gh CLI is also missing", async () => {
+      coreInteropMocks.readStoredCredentialsFromAuthFile.mockReturnValue({
+        "github-copilot": { type: "oauth", access: "fusion-gho", refresh: "r", expires: Date.now() - 60_000 },
+      });
+      mockExecFileSync.mockImplementation((cmd: string, args: string[]) => {
+        if (cmd === "gh" && args[0] === "auth") {
+          throw new Error("not logged in");
+        }
+        throw new Error("File not found");
+      });
+
+      const providers = await fetchAllProviderUsage();
+      const copilot = providers.find((p) => p.name === "GitHub Copilot");
+      expect(copilot).toBeUndefined();
+    });
+
+    it("surfaces Fusion re-login guidance when Fusion-sourced token gets 401", async () => {
+      coreInteropMocks.readStoredCredentialsFromAuthFile.mockReturnValue({
+        "github-copilot": { type: "oauth", access: "fusion-gho", refresh: "r", expires: Date.now() + 60_000 },
+      });
+      mockRequest.mockImplementation((_options: any, callback: any) => {
+        const mockRes = {
+          statusCode: 401,
+          headers: {},
+          on: vi.fn((event: string, handler: any) => {
+            if (event === "data") handler(Buffer.from('{"message":"Bad credentials"}'));
+            if (event === "end") handler();
+          }),
+        };
+        callback(mockRes);
+        return mockReq;
+      });
+
+      const providers = await fetchAllProviderUsage();
+      const copilot = providers.find((p) => p.name === "GitHub Copilot");
+      expect(copilot?.status).toBe("error");
+      expect(copilot?.error).toContain("re-login from Fusion Settings");
+    });
+
+    it("falls back to gh CLI when no Fusion credential is present", async () => {
+      coreInteropMocks.readStoredCredentialsFromAuthFile.mockReturnValue({});
       mockExecFileSync.mockImplementation((cmd: string, args: string[]) => {
         if (cmd === "gh" && args[0] === "auth") {
           return "";
         }
         if (cmd === "gh" && args[0] === "api" && args[1] === "/user/copilot") {
-          return JSON.stringify({ copilot_plan_type: "individual" });
+          return JSON.stringify({ copilot_plan_type: "free", chat_messages_used: 5, chat_messages_limit: 10 });
         }
         throw new Error("File not found");
       });
@@ -173,7 +279,8 @@ describe("usage", () => {
       const copilot = providers.find((p) => p.name === "GitHub Copilot");
       expect(copilot).toBeDefined();
       expect(copilot!.status).toBe("ok");
-      expect(copilot!.plan).toBe("Individual");
+      expect(copilot!.plan).toBe("Free");
+      expect(copilot!.windows.some((window) => window.label === "Chat (Monthly)")).toBe(true);
     });
 
     it("returns error when Copilot subscription not found (404)", async () => {
