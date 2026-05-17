@@ -870,6 +870,7 @@ export class Scheduler {
             { preserveProgress: true },
           );
           if (!recovered) {
+            await this.options.leaseManager.reconcileLeaseRow(task.id);
             await this.store.updateTask(task.id, { status: "queued" });
             await this.logDispatchQueuedReason(task.id, "queued — checkout lease recovery blocked dispatch");
             continue;

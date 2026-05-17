@@ -485,7 +485,7 @@ Task ownership supports explicit checkout leases. Agents should be aware of:
 - If `task.checkedOutBy` is set to another agent, the run exits with `reason: "checkout_conflict"`
 - Heartbeat execution does not auto-checkout — callers are responsible for obtaining checkout before starting work
 
-When a `CentralClaimStore` is wired, the authoritative lease owner is the central `taskClaims` row in `~/.fusion/fusion-central.db`; per-project task lease fields are treated as a synchronization mirror of that central result. Without a claim store configured, checkout behavior remains the existing single-node per-project lease flow.
+When a `CentralClaimStore` is wired, the authoritative lease owner is the central `taskClaims` row in `~/.fusion/fusion-central.db`; per-project task lease fields are treated as a synchronization mirror of that central result. Lease recovery follows FN-4819 §2.5: `MeshLeaseManager.recoverAbandonedLease()` releases central claim ownership first, then clears local lease fields and bumps the local epoch. If one write succeeds and the other fails, `reconcileLeaseRow(taskId)` converges local vs central state on the next scheduler/self-healing tick and emits `task:auto-recover-lease-*` run-audit telemetry. Without a claim store configured, checkout behavior remains the existing single-node per-project lease flow.
 
 ## Per-Agent Heartbeat Configuration
 

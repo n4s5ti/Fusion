@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import type { AgentStore, RunAuditEventInput, Task, TaskStore } from "@fusion/core";
+import type { AgentStore, CentralClaimStore, RunAuditEventInput, Task, TaskStore } from "@fusion/core";
 import { MeshLeaseManager } from "../mesh-lease-manager.js";
 
 function task(overrides: Partial<Task> = {}): Task {
@@ -171,6 +171,103 @@ describe("MeshLeaseManager", () => {
     const ok = await manager.recoverAbandonedLease("FN-1", "stale-heartbeat");
     expect(ok).toBe(true);
     expect(recordRunAuditEvent).not.toHaveBeenCalled();
+  });
+
+  it("emits lease-released when central + local recovery succeeds", async () => {
+    const currentTask = task({ column: "in-progress" });
+    const recordRunAuditEvent = vi.fn().mockResolvedValue(undefined);
+    const centralClaimStore: CentralClaimStore = {
+      tryClaimTask: vi.fn() as any,
+      renewTaskClaim: vi.fn() as any,
+      getTaskClaim: vi.fn().mockReturnValue(null),
+      releaseTaskClaim: vi.fn().mockReturnValue({ ok: true }),
+    };
+    const taskStore = {
+      getTask: vi.fn().mockResolvedValue(currentTask),
+      updateTask: vi.fn().mockResolvedValue(currentTask),
+      moveTask: vi.fn().mockResolvedValue(currentTask),
+      logEntry: vi.fn().mockResolvedValue(undefined),
+      recordRunAuditEvent,
+    } as unknown as TaskStore;
+
+    const manager = new MeshLeaseManager({
+      taskStore,
+      centralClaimStore,
+      projectId: "project-1",
+      agentStore: {
+        getAgent: vi.fn().mockResolvedValue({ lastHeartbeatAt: "2026-04-30T00:00:00.000Z" }),
+      } as any,
+    });
+
+    const ok = await manager.recoverAbandonedLease("FN-1", "stale-heartbeat");
+    expect(ok).toBe(true);
+    expect(centralClaimStore.releaseTaskClaim).toHaveBeenCalledWith({
+      projectId: "project-1",
+      taskId: "FN-1",
+      nodeId: "node-a",
+      agentId: "agent-1",
+    });
+    expect(recordRunAuditEvent.mock.calls.some((call) => call[0].mutationType === "task:auto-recover-lease-released")).toBe(true);
+  });
+
+  it("returns false and emits foreign-owner when central release rejects ownership", async () => {
+    const currentTask = task();
+    const recordRunAuditEvent = vi.fn().mockResolvedValue(undefined);
+    const centralClaimStore: CentralClaimStore = {
+      tryClaimTask: vi.fn() as any,
+      renewTaskClaim: vi.fn() as any,
+      getTaskClaim: vi.fn().mockReturnValue(null),
+      releaseTaskClaim: vi.fn().mockReturnValue({
+        ok: false,
+        reason: "not_owner",
+        current: {
+          projectId: "project-1",
+          taskId: "FN-1",
+          ownerNodeId: "node-b",
+          ownerAgentId: "agent-2",
+          ownerRunId: null,
+          leaseEpoch: 3,
+          leaseRenewedAt: "2026-05-01T00:00:00.000Z",
+          createdAt: "2026-05-01T00:00:00.000Z",
+          updatedAt: "2026-05-01T00:00:00.000Z",
+        },
+      }),
+    };
+    const taskStore = {
+      getTask: vi.fn().mockResolvedValue(currentTask),
+      updateTask: vi.fn().mockResolvedValue(currentTask),
+      moveTask: vi.fn().mockResolvedValue(currentTask),
+      logEntry: vi.fn().mockResolvedValue(undefined),
+      recordRunAuditEvent,
+    } as unknown as TaskStore;
+
+    const manager = new MeshLeaseManager({ taskStore, centralClaimStore, projectId: "project-1" });
+    const ok = await manager.recoverAbandonedLease("FN-1", "stale-heartbeat");
+    expect(ok).toBe(false);
+    expect(taskStore.updateTask).not.toHaveBeenCalled();
+    expect(recordRunAuditEvent.mock.calls.some((call) => call[0].mutationType === "task:auto-recover-lease-foreign-owner")).toBe(true);
+  });
+
+  it("reconcileLeaseRow clears local owner when central claim is already gone", async () => {
+    const currentTask = task();
+    const centralClaimStore: CentralClaimStore = {
+      tryClaimTask: vi.fn() as any,
+      renewTaskClaim: vi.fn() as any,
+      releaseTaskClaim: vi.fn() as any,
+      getTaskClaim: vi.fn().mockReturnValue(null),
+    };
+    const taskStore = {
+      getTask: vi.fn().mockResolvedValue(currentTask),
+      updateTask: vi.fn().mockResolvedValue(currentTask),
+      moveTask: vi.fn().mockResolvedValue(currentTask),
+      logEntry: vi.fn().mockResolvedValue(undefined),
+      recordRunAuditEvent: vi.fn().mockResolvedValue(undefined),
+    } as unknown as TaskStore;
+    const manager = new MeshLeaseManager({ taskStore, centralClaimStore, projectId: "project-1" });
+
+    const ok = await manager.reconcileLeaseRow("FN-1");
+    expect(ok).toBe(true);
+    expect(taskStore.updateTask).toHaveBeenCalledWith("FN-1", expect.objectContaining({ checkedOutBy: null }));
   });
 
   it("swallows audit emission failures and still returns expected result", async () => {

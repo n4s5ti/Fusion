@@ -5137,6 +5137,40 @@ describe("SelfHealingManager", () => {
 
       managerWithRecovery.stop();
     });
+
+    it("reconciles lease state once when abandoned-lease recovery returns false", async () => {
+      const getExecuting = vi.fn().mockReturnValue(new Set<string>());
+      const reconcileLeaseRow = vi.fn().mockResolvedValue(false);
+      const managerWithRecovery = new SelfHealingManager(store, {
+        rootDir: "/tmp/test-project",
+        getExecutingTaskIds: getExecuting,
+        leaseManager: {
+          recoverAbandonedLease: vi.fn().mockResolvedValue(false),
+          reconcileLeaseRow,
+        } as any,
+      });
+
+      (store.listTasks as ReturnType<typeof vi.fn>).mockResolvedValue([
+        {
+          id: "FN-212",
+          column: "in-progress",
+          paused: false,
+          checkedOutBy: "agent-1",
+          worktree: undefined,
+          steps: [{ status: "in-progress" }],
+          updatedAt: "2026-01-01T00:00:00.000Z",
+        },
+      ]);
+
+      vi.setSystemTime(new Date("2026-01-01T00:05:00.000Z"));
+
+      const result = await managerWithRecovery.recoverOrphanedExecutions();
+
+      expect(result).toBe(1);
+      expect(reconcileLeaseRow).toHaveBeenCalledTimes(1);
+      expect(reconcileLeaseRow).toHaveBeenCalledWith("FN-212");
+      managerWithRecovery.stop();
+    });
   });
 
   describe("recoverApprovedTriageTasks", () => {

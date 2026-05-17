@@ -53,9 +53,11 @@ Peer/mesh coordination spans core + engine, with startup ownership in CLI proces
 
 Task ownership is shared as persisted lease metadata (`checkedOutBy`, `checkedOutAt`, `checkoutNodeId`, `checkoutRunId`, `checkoutLeaseRenewedAt`, `checkoutLeaseEpoch`) through the canonical mesh sync payloads.
 
-When a node disappears or stops renewing ownership, recovery is routed only through `MeshLeaseManager.recoverAbandonedLease(...)`. The manager releases ownership only after staleness checks pass and no active local executor session exists for the task. Recovery then bumps `checkoutLeaseEpoch`, clears owner fields, logs the abandonment reason, and returns the task to scheduler-visible work.
+When a node disappears or stops renewing ownership, recovery is routed only through `MeshLeaseManager.recoverAbandonedLease(...)`. The manager now performs a two-write release: it releases the authoritative central `taskClaims` row first, then clears per-project owner fields (`checkedOutBy`, `checkoutNodeId`, `checkoutRunId`, `checkoutLeaseRenewedAt`, `checkedOutAt`) and bumps `checkoutLeaseEpoch` locally.
 
-This fencing prevents double-claims: a restarted or delayed stale owner cannot reclaim work using older epoch state once recovery has advanced the lease generation.
+If one side succeeds and the other fails, the next scheduler/self-healing tick runs `reconcileLeaseRow(taskId)` to deterministically converge local and central lease state without a side queue. Recovery/reconciliation paths emit `task:auto-recover-lease-*` run-audit events (`...-released`, `...-already-healed`, `...-foreign-owner`, `...-central-unavailable`, `...-partial-write`, `...-reconciled`) for traceability.
+
+This fencing prevents double-claims: a restarted or delayed stale owner cannot reclaim work once central ownership has been released and lease generation has advanced.
 
 ## Registering and Managing Projects
 

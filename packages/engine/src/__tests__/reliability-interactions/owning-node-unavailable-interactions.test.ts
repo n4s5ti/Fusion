@@ -220,9 +220,11 @@ describe("reliability interactions: owning-node unavailable handoff", () => {
       nodeId: "node-b",
     });
     const store = createMockStore(task, { maxConcurrent: 1, maxWorktrees: 1, owningNodeHandoffPolicy: "reassign-to-local" });
+    const reconcileLeaseRow = vi.fn().mockResolvedValue(false);
     const scheduler = new Scheduler(store, {
       leaseManager: {
         recoverAbandonedLease: vi.fn().mockResolvedValue(false),
+        reconcileLeaseRow,
       } as any,
       nodeHealthMonitor: createMockHealthMonitor({ "node-a": "online", "node-b": "online" }),
       validateNodeDispatch: vi.fn().mockResolvedValue({ allowed: true }),
@@ -232,6 +234,8 @@ describe("reliability interactions: owning-node unavailable handoff", () => {
     await scheduler.schedule();
 
     expect(store.logEntry).not.toHaveBeenCalledWith(task.id, expect.stringContaining("Owning-node handoff applied"));
+    expect(reconcileLeaseRow).toHaveBeenCalledTimes(1);
+    expect(reconcileLeaseRow).toHaveBeenCalledWith(task.id);
     expect(store.updateTask).toHaveBeenCalledWith(task.id, { status: "queued" });
   });
 
@@ -250,7 +254,7 @@ describe("reliability interactions: owning-node unavailable handoff", () => {
       unavailableNodePolicy: "block",
     });
     const scheduler = new Scheduler(store, {
-      leaseManager: { recoverAbandonedLease: vi.fn().mockResolvedValue(true) } as any,
+      leaseManager: { recoverAbandonedLease: vi.fn().mockResolvedValue(true), reconcileLeaseRow: vi.fn() } as any,
       nodeHealthMonitor: createMockHealthMonitor({ "node-a": "offline", "node-b": "online" }),
       validateNodeDispatch: vi.fn().mockResolvedValue({ allowed: true }),
     });

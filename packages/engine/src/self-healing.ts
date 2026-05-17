@@ -3973,6 +3973,7 @@ export class SelfHealingManager {
               recovered++;
               continue;
             }
+            await this.options.leaseManager.reconcileLeaseRow(task.id);
           }
 
           // Reset steps whose work was never committed before clearing the worktree

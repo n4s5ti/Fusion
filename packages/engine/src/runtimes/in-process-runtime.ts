@@ -311,7 +311,9 @@ export class InProcessRuntime
       this.leaseManager = new MeshLeaseManager({
         taskStore: this.taskStore,
         agentStore: this.agentStore,
+        getHandoffPolicy: () => this.taskStore.getSettings().then((settings) => settings.owningNodeHandoffPolicy),
         getExecutingTaskIds: () => this.executor?.getExecutingTaskIds() ?? new Set<string>(),
+        projectId: this.config.projectId,
       });
 
       const autoClaimSnapshotManager = new AutoClaimSnapshotManager({ taskStore: this.taskStore });
