@@ -388,6 +388,37 @@ describe("GitHubTrackingStateService", () => {
       expect(store.logEntry).toHaveBeenCalledWith("FN-1", "Failed to close linked GitHub tracking issue", "delete close failed");
     });
 
+    it("still attempts close and emits failure event when logEntry rejects for deleted task", async () => {
+      service.start();
+      store.logEntry = vi.fn().mockRejectedValue(new Error("Task FN-1 not found"));
+      mockSetIssueState.mockRejectedValueOnce(new Error("delete close failed"));
+      const emitSpy = vi.spyOn(store, "emit");
+      const unhandledRejections: unknown[] = [];
+      const onUnhandledRejection = (reason: unknown) => {
+        unhandledRejections.push(reason);
+      };
+      process.on("unhandledRejection", onUnhandledRejection);
+
+      try {
+        store.emit("task:deleted", createTask(), { githubIssueAction: "close" });
+        await flushAsync();
+
+        expect(mockSetIssueState).toHaveBeenCalledTimes(1);
+        expect(unhandledRejections).toHaveLength(0);
+        expect(emitSpy).toHaveBeenCalledWith(
+          "github-issue:action",
+          expect.objectContaining({
+            taskId: "FN-1",
+            action: "close",
+            outcome: "failed",
+            error: "delete close failed",
+          }),
+        );
+      } finally {
+        process.off("unhandledRejection", onUnhandledRejection);
+      }
+    });
+
     it("logs delete failures without throwing", async () => {
       service.start();
       mockDeleteIssue.mockRejectedValueOnce(new Error("delete failed"));
@@ -398,6 +429,37 @@ describe("GitHubTrackingStateService", () => {
       await flushAsync();
 
       expect(store.logEntry).toHaveBeenCalledWith("FN-1", "Failed to delete linked GitHub tracking issue", "delete failed");
+    });
+
+    it("still attempts delete and emits failure event when logEntry rejects for deleted task", async () => {
+      service.start();
+      store.logEntry = vi.fn().mockRejectedValue(new Error("Task FN-1 not found"));
+      mockDeleteIssue.mockRejectedValueOnce(new Error("delete failed"));
+      const emitSpy = vi.spyOn(store, "emit");
+      const unhandledRejections: unknown[] = [];
+      const onUnhandledRejection = (reason: unknown) => {
+        unhandledRejections.push(reason);
+      };
+      process.on("unhandledRejection", onUnhandledRejection);
+
+      try {
+        store.emit("task:deleted", createTask(), { githubIssueAction: "delete" });
+        await flushAsync();
+
+        expect(mockDeleteIssue).toHaveBeenCalledTimes(1);
+        expect(unhandledRejections).toHaveLength(0);
+        expect(emitSpy).toHaveBeenCalledWith(
+          "github-issue:action",
+          expect.objectContaining({
+            taskId: "FN-1",
+            action: "delete",
+            outcome: "failed",
+            error: "delete failed",
+          }),
+        );
+      } finally {
+        process.off("unhandledRejection", onUnhandledRejection);
+      }
     });
   });
 });

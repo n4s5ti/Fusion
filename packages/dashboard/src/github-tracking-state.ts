@@ -58,6 +58,16 @@ async function delay(ms: number): Promise<void> {
   await new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+type GitHubIssueActionEvent = {
+  taskId: string;
+  action: "close" | "reopen" | "delete" | "leave";
+  owner: string;
+  repo: string;
+  number: number;
+  outcome: "success" | "failed" | "skipped";
+  error?: string;
+};
+
 export class GitHubTrackingStateService {
   private readonly defaultStore: TaskStore;
   private readonly listeners = new Map<TaskStore, {
@@ -197,6 +207,23 @@ export class GitHubTrackingStateService {
     }
   }
 
+  private emitGitHubIssueAction(store: TaskStore, event: GitHubIssueActionEvent): void {
+    (store as unknown as { emit: (eventName: string, payload: GitHubIssueActionEvent) => void }).emit("github-issue:action", event);
+  }
+
+  private async safeLogDeletedTaskEntry(store: TaskStore, taskId: string, message: string, details: string): Promise<void> {
+    try {
+      await store.logEntry(taskId, message, details);
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      if (errorMessage.includes(`Task ${taskId} not found`)) {
+        console.warn(`[github-tracking-state] Unable to write log entry for deleted task ${taskId}: ${message}`);
+        return;
+      }
+      throw error;
+    }
+  }
+
   private async handleTaskDeleted(store: TaskStore, task: Task, meta?: { githubIssueAction?: GithubIssueAction }): Promise<void> {
     if (task.githubTracking?.enabled !== true) {
       return;
@@ -214,7 +241,8 @@ export class GitHubTrackingStateService {
 
     const githubIssueAction = meta?.githubIssueAction ?? "auto";
     if (githubIssueAction === "leave") {
-      await store.logEntry(task.id, "Left linked GitHub tracking issue unchanged on task delete", `${owner}/${repo}#${number}`);
+      await this.safeLogDeletedTaskEntry(store, task.id, "Left linked GitHub tracking issue unchanged on task delete", `${owner}/${repo}#${number}`);
+      this.emitGitHubIssueAction(store, { taskId: task.id, action: "leave", owner, repo, number, outcome: "skipped" });
       return;
     }
 
@@ -222,6 +250,15 @@ export class GitHubTrackingStateService {
     const globalSettings = (await store.getGlobalSettingsStore?.()?.getSettings?.() ?? {}) as Pick<GlobalSettings, never>;
     const resolution = resolveGithubTrackingAuth({ projectSettings, globalSettings });
     if (!resolution.ok) {
+      this.emitGitHubIssueAction(store, {
+        taskId: task.id,
+        action: githubIssueAction === "delete" ? "delete" : "close",
+        owner,
+        repo,
+        number,
+        outcome: "failed",
+        error: resolution.message,
+      });
       return;
     }
 
@@ -231,18 +268,57 @@ export class GitHubTrackingStateService {
 
     if (githubIssueAction === "delete") {
       try {
-        await client.deleteIssue(owner, repo, number);
-        await store.logEntry(task.id, "Deleted linked GitHub tracking issue", `${owner}/${repo}#${number}`);
+        const deleteIssue = async () => {
+          await client.deleteIssue(owner, repo, number);
+        };
+        try {
+          await deleteIssue();
+        } catch (error) {
+          if (!isTransientGitHubError(error)) {
+            throw error;
+          }
+          await delay(TRANSIENT_RETRY_DELAY_MS);
+          await deleteIssue();
+        }
+
+        await this.safeLogDeletedTaskEntry(store, task.id, "Deleted linked GitHub tracking issue", `${owner}/${repo}#${number}`);
+        this.emitGitHubIssueAction(store, { taskId: task.id, action: "delete", owner, repo, number, outcome: "success" });
       } catch (err) {
-        await store.logEntry(task.id, "Failed to delete linked GitHub tracking issue", err instanceof Error ? err.message : String(err));
+        const message = err instanceof Error ? err.message : String(err);
+        this.emitGitHubIssueAction(store, { taskId: task.id, action: "delete", owner, repo, number, outcome: "failed", error: message });
+        await this.safeLogDeletedTaskEntry(store, task.id, "Failed to delete linked GitHub tracking issue", message);
       }
       return;
     }
 
     try {
-      await client.setIssueState(owner, repo, number, "closed", "not_planned");
+      const existing = await client.getIssue(owner, repo, number);
+      if (existing?.state === "closed") {
+        await this.safeLogDeletedTaskEntry(store, task.id, "Linked GitHub tracking issue already closed", `${owner}/${repo}#${number}`);
+        this.emitGitHubIssueAction(store, { taskId: task.id, action: "close", owner, repo, number, outcome: "skipped" });
+        return;
+      }
+
+      const closeIssue = async () => {
+        await client.setIssueState(owner, repo, number, "closed", "not_planned");
+      };
+
+      try {
+        await closeIssue();
+      } catch (error) {
+        if (!isTransientGitHubError(error)) {
+          throw error;
+        }
+        await delay(TRANSIENT_RETRY_DELAY_MS);
+        await closeIssue();
+      }
+
+      await this.safeLogDeletedTaskEntry(store, task.id, "Closed linked GitHub tracking issue", `${owner}/${repo}#${number}`);
+      this.emitGitHubIssueAction(store, { taskId: task.id, action: "close", owner, repo, number, outcome: "success" });
     } catch (err) {
-      await store.logEntry(task.id, "Failed to close linked GitHub tracking issue", err instanceof Error ? err.message : String(err));
+      const message = err instanceof Error ? err.message : String(err);
+      this.emitGitHubIssueAction(store, { taskId: task.id, action: "close", owner, repo, number, outcome: "failed", error: message });
+      await this.safeLogDeletedTaskEntry(store, task.id, "Failed to close linked GitHub tracking issue", message);
     }
   }
 }
