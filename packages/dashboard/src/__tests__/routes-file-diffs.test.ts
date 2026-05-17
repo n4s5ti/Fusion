@@ -237,6 +237,35 @@ describe("GET /api/tasks/:id/file-diffs", () => {
       rmSync(repoDir, { recursive: true, force: true });
     }
   }, 15_000);
+
+  it("returns renamed destination and oldPath for active worktree tasks", async () => {
+    const repoDir = mkdtempSync(join(tmpdir(), "fn-file-diffs-active-rename-"));
+
+    try {
+      execFileSync("git", ["init", "-b", "main", repoDir], { stdio: "pipe" });
+      execFileSync("git", ["-C", repoDir, "config", "user.email", "active-rename@example.com"], { stdio: "pipe" });
+      execFileSync("git", ["-C", repoDir, "config", "user.name", "Active Rename Test"], { stdio: "pipe" });
+
+      writeFileSync(join(repoDir, "old.ts"), "export const oldValue = 1;\n");
+      execFileSync("git", ["-C", repoDir, "add", "old.ts"], { stdio: "pipe" });
+      execFileSync("git", ["-C", repoDir, "commit", "-m", "base"], { stdio: "pipe" });
+
+      execFileSync("git", ["-C", repoDir, "mv", "old.ts", "new.ts"], { stdio: "pipe" });
+      execFileSync("git", ["-C", repoDir, "commit", "-m", "rename in worktree"], { stdio: "pipe" });
+
+      const store = new RepoBackedStore(repoDir);
+      store.addTask(createTask({ id: "KB-651-active-rename", column: "in-progress", worktree: repoDir, baseBranch: "main" }));
+
+      const app = createServer(store as any);
+      const response = await requestFileDiffs(app, "KB-651-active-rename");
+
+      expect(response.status).toBe(200);
+      expect(response.body).toHaveLength(1);
+      expect(response.body[0]).toMatchObject({ path: "new.ts", status: "renamed", oldPath: "old.ts" });
+    } finally {
+      rmSync(repoDir, { recursive: true, force: true });
+    }
+  }, 15_000);
 });
 
 describe("resolveDiffBase", () => {

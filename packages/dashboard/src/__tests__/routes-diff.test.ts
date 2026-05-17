@@ -674,9 +674,9 @@ describe("FN-4308 multi-commit done task aggregation", () => {
     store.addTask(createTask({ column: "in-progress", worktree: process.cwd() }));
 
     gitResponses({
-      "diff --name-status origin/main..HEAD": "M\tcommitted.ts",
-      "diff --cached --name-status": "A\tstaged.ts",
-      "diff --name-status": "M\tunstaged.ts",
+      "diff --name-status -M origin/main..HEAD": "M\tcommitted.ts",
+      "diff --cached --name-status -M": "A\tstaged.ts",
+      "diff --name-status -M": "M\tunstaged.ts",
       "diff origin/main -- committed.ts": "+c\n",
       "diff origin/main -- staged.ts": "+s\n",
       "diff origin/main -- unstaged.ts": "+u\n",
@@ -691,6 +691,86 @@ describe("FN-4308 multi-commit done task aggregation", () => {
       expect(file.additions + file.deletions).toBeGreaterThan(0);
     }
     expect(response.body.files.length).toBe(response.body.stats.filesChanged);
+  });
+
+  it("uses destination path for committed rename in active worktree /diff", async () => {
+    const store = new MockStore();
+    store.addTask(createTask({ column: "in-progress", worktree: process.cwd() }));
+
+    gitResponses({
+      "diff --name-status -M origin/main..HEAD": "R100\told.ts\tnew.ts",
+      "diff --cached --name-status -M": "",
+      "diff --name-status -M": "",
+      "diff origin/main -- new.ts": "rename from old.ts\nrename to new.ts\n",
+    });
+
+    const app = createServer(store as any);
+    const response = await requestDiff(app);
+
+    expect(response.status).toBe(200);
+    expect(response.body.files).toHaveLength(1);
+    expect(response.body.files[0].path).toBe("new.ts");
+    expect(response.body.stats.filesChanged).toBe(1);
+  });
+
+  it("uses destination path for committed copy in active worktree /diff", async () => {
+    const store = new MockStore();
+    store.addTask(createTask({ column: "in-review", worktree: process.cwd() }));
+
+    gitResponses({
+      "diff --name-status -M origin/main..HEAD": "C100\tsrc.ts\tdst.ts",
+      "diff --cached --name-status -M": "",
+      "diff --name-status -M": "",
+      "diff origin/main -- dst.ts": "+copied\n",
+    });
+
+    const app = createServer(store as any);
+    const response = await requestDiff(app);
+
+    expect(response.status).toBe(200);
+    expect(response.body.files).toHaveLength(1);
+    expect(response.body.files[0].path).toBe("dst.ts");
+    expect(response.body.stats.filesChanged).toBe(1);
+  });
+
+  it("uses destination path for staged rename in active worktree /diff", async () => {
+    const store = new MockStore();
+    store.addTask(createTask({ column: "in-progress", worktree: process.cwd() }));
+
+    gitResponses({
+      "diff --name-status -M origin/main..HEAD": "",
+      "diff --cached --name-status -M": "R100\told-staged.ts\tnew-staged.ts",
+      "diff --name-status -M": "",
+      "diff origin/main -- new-staged.ts": "rename from old-staged.ts\nrename to new-staged.ts\n",
+    });
+
+    const app = createServer(store as any);
+    const response = await requestDiff(app);
+
+    expect(response.status).toBe(200);
+    expect(response.body.files).toHaveLength(1);
+    expect(response.body.files[0].path).toBe("new-staged.ts");
+    expect(response.body.stats.filesChanged).toBe(1);
+  });
+
+  it("uses destination path for unstaged rename in active worktree /diff", async () => {
+    const store = new MockStore();
+    store.addTask(createTask({ column: "in-review", worktree: process.cwd() }));
+
+    gitResponses({
+      "diff --name-status -M origin/main..HEAD": "",
+      "diff --cached --name-status -M": "",
+      "diff --name-status -M": "R100\told-unstaged.ts\tnew-unstaged.ts",
+      "diff origin/main -- new-unstaged.ts": "rename from old-unstaged.ts\nrename to new-unstaged.ts\n",
+    });
+
+    const app = createServer(store as any);
+    const response = await requestDiff(app);
+
+    expect(response.status).toBe(200);
+    expect(response.body.files).toHaveLength(1);
+    expect(response.body.files[0].path).toBe("new-unstaged.ts");
+    expect(response.body.stats.filesChanged).toBe(1);
   });
 
   it("includes mergeDetails.commitSha even when missing from associations", async () => {
