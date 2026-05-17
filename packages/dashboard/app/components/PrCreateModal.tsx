@@ -437,12 +437,15 @@ export function PrCreateModal({
             </details>
 
             {error && (
-              <div className="form-error" role="alert">
+              <div className="form-error pr-error" role="alert">
                 <p>{error}</p>
-                {lastGhError?.hint ? <p>{lastGhError.hint}</p> : null}
-                {lastGhError?.action?.kind === "shell" ? <p>Action: run <code>{lastGhError.action.command}</code></p> : null}
-                {lastGhError?.action?.kind === "open" ? <p>Action: open <a href={lastGhError.action.url} target="_blank" rel="noreferrer">docs</a></p> : null}
-                {lastGhError?.retryable ? <button type="button" className="btn btn-sm" onClick={() => void submit()}>Retry</button> : null}
+                {lastGhError?.hint ? <p className="pr-error__hint">{lastGhError.hint}</p> : null}
+                <div className="pr-error__actions">
+                  {lastGhError?.action?.kind === "shell" ? <p>Action: run <code>{lastGhError.action.command}</code></p> : null}
+                  {lastGhError?.action?.kind === "open" ? <p>Action: open <a href={lastGhError.action.url} target="_blank" rel="noreferrer">docs</a></p> : null}
+                  {lastGhError?.retryable ? <button type="button" className="btn btn-sm pr-error__retry" onClick={() => void submit()}>Retry</button> : null}
+                  <button type="button" className="btn btn-sm pr-error__dismiss" onClick={() => { setLastGhError(null); setError(null); }} aria-label="Dismiss PR error">×</button>
+                </div>
               </div>
             )}
           </>

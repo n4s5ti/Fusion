@@ -235,11 +235,14 @@ export function PrPanel({
         </div>
         <div className="pr-title">{prInfo.title}</div>
         {lastGhError ? (
-          <div className="pr-hint pr-hint--warning" role="alert">
+          <div className="pr-error" role="alert">
             <div>{lastGhError.message}</div>
-            {lastGhError.hint ? <div>{lastGhError.hint}</div> : null}
-            {lastGhError.action?.kind === "shell" ? <div>Action: run <code>{lastGhError.action.command}</code></div> : null}
-            {lastGhError.retryable ? <button className="btn btn-sm" onClick={() => void handleRefresh()}>Retry</button> : null}
+            {lastGhError.hint ? <div className="pr-error__hint">{lastGhError.hint}</div> : null}
+            <div className="pr-error__actions">
+              {lastGhError.action?.kind === "shell" ? <div>Action: run <code>{lastGhError.action.command}</code></div> : null}
+              {lastGhError.retryable ? <button className="btn btn-sm pr-error__retry" onClick={() => void handleRefresh()}>Retry</button> : null}
+              <button className="btn btn-sm pr-error__dismiss" onClick={() => setLastGhError(null)} aria-label="Dismiss PR error">×</button>
+            </div>
           </div>
         ) : null}
         <div className="pr-meta">
