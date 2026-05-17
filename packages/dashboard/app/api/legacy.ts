@@ -2192,6 +2192,7 @@ export interface PrInfo {
   commentCount: number;
   lastCommentAt?: string;
   lastCheckedAt?: string;
+  lastReviewDecision?: "APPROVED" | "CHANGES_REQUESTED" | "REVIEW_REQUIRED" | null;
 }
 
 export interface PrCheckStatus {
