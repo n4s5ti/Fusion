@@ -1927,11 +1927,6 @@ input[type="range"]:focus-visible {
   margin-right: var(--space-sm);
 }
 
-.pr-section-icon--sm {
-  vertical-align: middle;
-  margin-right: var(--space-xs);
-}
-
 .pr-hint--muted {
   opacity: 0.8;
   font-size: 13px;

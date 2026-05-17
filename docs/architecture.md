@@ -1633,7 +1633,7 @@ API flow:
 
 UI contract boundary:
 
-- `PrSection` owns branch/PR lifecycle metadata and automation status.
+- `PrPanel` owns branch/PR lifecycle metadata and automation status.
 - `TaskReviewTab` owns review decisions, detailed review items, selection, and addressing progress.
 - `TaskComments` remains separate for general discussion.
 

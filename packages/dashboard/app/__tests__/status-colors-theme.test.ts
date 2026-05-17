@@ -7,7 +7,7 @@ const themeDataPath = path.resolve(__dirname, "../public/theme-data.css");
 
 /**
  * Theme-safety regression tests for status color tokens across
- * TaskCard, GitHubBadge, and PrSection components.
+ * TaskCard, GitHubBadge, and PrPanel components.
  *
  * These tests verify that hardcoded rgba/hex colors have been replaced
  * with theme-aware CSS custom properties using color-mix(), ensuring
@@ -228,8 +228,8 @@ describe("GitHubBadge theme safety", () => {
   });
 });
 
-describe("PrSection theme safety", () => {
-  const componentPath = path.resolve(__dirname, "../components/PrSection.tsx");
+describe("PrPanel theme safety", () => {
+  const componentPath = path.resolve(__dirname, "../components/PrPanel.tsx");
   let source: string;
 
   beforeAll(() => {

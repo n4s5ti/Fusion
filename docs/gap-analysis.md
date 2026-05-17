@@ -91,7 +91,7 @@ Impact:
 ### Finding 3.3 — Dashboard UI still exposes `kb` text in visible strings (**Medium**, already tracked)
 
 User-visible occurrences include:
-- `packages/dashboard/app/components/PrSection.tsx`: `kb is creating/merging...`
+- `packages/dashboard/app/components/PrPanel.tsx`: `kb is creating/merging...`
 - `packages/dashboard/app/components/ProjectDetectionResults.tsx`: `No kb database found - will be initialized`
 - `packages/dashboard/app/components/SettingsModal.tsx`: `These settings are shared across all your kb projects`, and text describing merge behavior as `kb` behavior.
 

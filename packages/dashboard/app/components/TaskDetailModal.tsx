@@ -25,7 +25,7 @@ import { useAgentLogs } from "../hooks/useAgentLogs";
 import { useConfirm } from "../hooks/useConfirm";
 import { AgentLogViewer } from "./AgentLogViewer";
 import { ModelSelectorTab } from "./ModelSelectorTab";
-import { PrSection } from "./PrSection";
+import { PrPanel } from "./PrPanel";
 import { TaskComments } from "./TaskComments";
 import { TaskReviewTab } from "./TaskReviewTab";
 import { MergeDetails } from "./MergeDetails";
@@ -3284,7 +3284,7 @@ export function TaskDetailContent({
                 );
               })()}
               <div className="detail-section detail-pr-section">
-              <PrSection
+              <PrPanel
                 taskId={task.id}
                 projectId={projectId}
                 prInfo={task.prInfo}
@@ -3292,10 +3292,8 @@ export function TaskDetailContent({
                 autoMerge={settings?.autoMerge ?? false}
                 isManualPrFlow={isManualPrFlow}
                 prAuthAvailable={prAuthAvailable ?? false}
-                onPrCreated={(prInfo) => {
-                  // Update task locally to show new PR
-                  (task as TaskDetail).prInfo = prInfo;
-                }}
+                // TODO(FN-4758): wire create-PR modal trigger
+                onRequestCreatePr={undefined}
                 onPrUpdated={(prInfo) => {
                   (task as TaskDetail).prInfo = prInfo;
                 }}

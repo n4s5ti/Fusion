@@ -42,7 +42,7 @@ vi.mock("../../api", async (importOriginal) => {
   });
 });
 
-// Mock lucide-react icons used by TaskDetailModal, TaskForm, PrSection, CustomModelDropdown
+// Mock lucide-react icons used by TaskDetailModal, TaskForm, PrPanel, CustomModelDropdown
 vi.mock("lucide-react", () => ({
   Pencil: () => null,
   Sparkles: () => null,
