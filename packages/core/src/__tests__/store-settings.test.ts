@@ -52,6 +52,35 @@ describe("TaskStore", () => {
     });
   });
 
+  describe("secrets integration settings", () => {
+    it("round-trips secretsEnv and secretsSyncPassphrase via project settings", async () => {
+      await harness.store().updateSettings({
+        secretsEnv: {
+          enabled: true,
+          filename: ".fusion.env",
+          overwritePolicy: "merge",
+          keyPrefix: "FUSION_",
+          requireGitignored: true,
+        },
+        secretsSyncPassphrase: "encrypted:abc123",
+      });
+
+      const settings = await harness.store().getSettings();
+      expect(settings.secretsEnv).toEqual({
+        enabled: true,
+        filename: ".fusion.env",
+        overwritePolicy: "merge",
+        keyPrefix: "FUSION_",
+        requireGitignored: true,
+      });
+      expect(settings.secretsSyncPassphrase).toBe("encrypted:abc123");
+
+      const { project } = await harness.store().getSettingsByScope();
+      expect(project.secretsEnv?.enabled).toBe(true);
+      expect(project.secretsSyncPassphrase).toBe("encrypted:abc123");
+    });
+  });
+
   describe("autoResolveConflicts setting", () => {
     it("persists autoResolveConflicts and returns it via getSettings", async () => {
       await harness.store().updateSettings({ autoResolveConflicts: false });

@@ -198,6 +198,8 @@ export const DEFAULT_PROJECT_SETTINGS = {
   unavailableNodePolicy: "block",
   owningNodeHandoffPolicy: "reassign-to-local",
   defaultNodeId: undefined,
+  secretsEnv: undefined,
+  secretsSyncPassphrase: undefined,
   worktreeInitCommand: undefined,
   testCommand: undefined,
   buildCommand: undefined,
