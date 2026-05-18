@@ -45,11 +45,19 @@ import { findAlreadyMergedTaskCommit } from "./already-merged-detector.js";
 import { resolveWorktreesDir } from "./worktree-paths.js";
 import type { OwnedLandedClassification } from "./merger.js";
 import { recoverForeignOnlyContamination } from "./recovery/foreign-only-contamination.js";
+import {
+  buildNtfyClickUrl,
+  isNtfyEventEnabled,
+  resolveNtfyEvents,
+  sendNtfyNotification,
+  type NtfyNotifier,
+} from "./notifier.js";
 
 const log = createLogger("self-healing");
 const worktreeMetadataReconcileLog = createLogger("worktree-metadata-reconcile");
 const execAsync = promisify(exec);
 const DONE_TASK_INTEGRITY_SWEEP_LIMIT = 50;
+const BOARD_STALL_NOTIFICATION_COOLDOWN_MS = 60 * 60_000;
 export const STALE_ACTIVE_BRANCH_EXECUTION_GRACE_MS = 10 * 60_000;
 
 async function classifyOwnedLandedEvidenceForSelfHealing(rootDir: string, task: Task, mergeTargetBranch: string): Promise<OwnedLandedClassification> {
@@ -489,18 +497,6 @@ export class SelfHealingManager {
     pendingVerification: { holderIds: string[]; followerCount: number; startedAt: number; tick: number } | null;
     lastNtfyAt: number | null;
   } | null = null;
-
-  private static readonly PAUSED_SCOPE_DECAY_EXCLUDED_REASONS = new Set([
-    "branch-conflict-unrecoverable",
-    "worktrunk_operation_failed",
-    "token_budget_exceeded",
-  ]);
-
-  private static readonly PAUSED_SCOPE_DECAY_EXCLUDED_REASONS = new Set([
-    "branch-conflict-unrecoverable",
-    "worktrunk_operation_failed",
-    "token_budget_exceeded",
-  ]);
 
   private static readonly PAUSED_SCOPE_DECAY_EXCLUDED_REASONS = new Set([
     "branch-conflict-unrecoverable",
@@ -2445,7 +2441,7 @@ export class SelfHealingManager {
   async reconcileTaskWorktreeMetadata(options?: { includeTaskIds?: Set<string> }): Promise<number> {
     try {
       const settings = await this.store.getSettings();
-      if (settings.globalPause || settings.enginePaused) return { count: 0, reboundedIds: [] };
+      if (settings.globalPause || settings.enginePaused) return 0;
 
       const allTasks = await this.store.listTasks({ slim: true, includeArchived: false });
       const branchMap = await getRegisteredWorktreeBranchMap(this.options.rootDir);
@@ -2516,23 +2512,161 @@ export class SelfHealingManager {
     return result.count;
   }
 
+  private async autoReboundPausedScopeDecayDetailed(options?: { ignoreAgeGate?: boolean }): Promise<{ count: number; reboundedIds: string[] }> {
+    const settings = await this.store.getSettings();
+    if (settings.globalPause || settings.enginePaused) return { count: 0, reboundedIds: [] };
+
+    const thresholdMs = Number(settings.pausedScopeDecayMs ?? 0);
+    if (!options?.ignoreAgeGate && (!Number.isFinite(thresholdMs) || thresholdMs <= 0)) {
+      return { count: 0, reboundedIds: [] };
+    }
+
+    const tasks = await this.store.listTasks({ slim: true, includeArchived: false });
+    const followersByHolder = new Map<string, number>();
+    for (const task of tasks) {
+      if (typeof task.blockedBy !== "string" || task.blockedBy.trim().length === 0) continue;
+      followersByHolder.set(task.blockedBy, (followersByHolder.get(task.blockedBy) ?? 0) + 1);
+    }
+
+    const now = Date.now();
+    const reboundedIds: string[] = [];
+    for (const task of tasks) {
+      if (task.column !== "in-progress" || task.paused !== true) continue;
+      if (SelfHealingManager.PAUSED_SCOPE_DECAY_EXCLUDED_REASONS.has(task.pausedReason ?? "")) continue;
+      const followerCount = followersByHolder.get(task.id) ?? 0;
+      if (followerCount <= 0) continue;
+
+      const movedAtMs = Date.parse(task.columnMovedAt ?? task.updatedAt ?? "");
+      const ageMs = Number.isFinite(movedAtMs) ? now - movedAtMs : Number.POSITIVE_INFINITY;
+      if (!options?.ignoreAgeGate && ageMs < thresholdMs) continue;
+
+      await this.store.moveTask(task.id, "todo", {
+        preserveProgress: true,
+        preserveWorktree: true,
+        preserveResumeState: true,
+        moveSource: "engine",
+      });
+      await this.store.logEntry(
+        task.id,
+        `Auto-rebounded (FN-4890): paused in-progress holder exceeded scope-decay threshold with ${followerCount} blocked follower(s)`,
+      );
+      const auditor = createRunAuditor(this.store, {
+        runId: generateSyntheticRunId("fn4890-paused-scope-decay", task.id),
+        agentId: "self-healing",
+        taskId: task.id,
+        phase: "auto-rebound-paused-scope-decay",
+      });
+      await auditor.database({
+        type: "task:auto-rebound-paused-scope-decay",
+        target: task.id,
+        metadata: {
+          taskId: task.id,
+          followerCount,
+          ignoredAgeGate: options?.ignoreAgeGate === true,
+          thresholdMs,
+          ageMs,
+        },
+      });
+      reboundedIds.push(task.id);
+    }
+
+    return { count: reboundedIds.length, reboundedIds };
+  }
+
+  private classifyMetaTask(task: Task): { isMeta: boolean; targetTaskId: string | null } {
+    const title = task.title ?? "";
+    const description = task.description ?? "";
+    const targetTaskId = task.sourceParentTaskId ?? title.match(/\bFN-\d+\b/i)?.[0] ?? description.match(/\bFN-\d+\b/i)?.[0] ?? null;
+    const isMeta = Boolean(task.noCommitsExpected) || /\b(recover|unblock|finalize|meta)\b/i.test(`${title} ${description}`);
+    return { isMeta, targetTaskId: targetTaskId?.toUpperCase() ?? null };
+  }
+
+  private resolveMetaTargetTaskId(byId: Map<string, Task>, task: Task): string | null {
+    const classified = this.classifyMetaTask(task);
+    if (classified.targetTaskId) return classified.targetTaskId;
+    if (!classified.isMeta) return null;
+
+    const ordered = [...byId.values()].sort((a, b) => {
+      const aTime = Date.parse(a.createdAt ?? "");
+      const bTime = Date.parse(b.createdAt ?? "");
+      if (Number.isFinite(aTime) && Number.isFinite(bTime) && aTime !== bTime) return aTime - bTime;
+      return a.id.localeCompare(b.id);
+    });
+    const metaTasks = ordered.filter((candidate) => this.classifyMetaTask(candidate).isMeta);
+    const nonMetaTasks = ordered.filter((candidate) => !this.classifyMetaTask(candidate).isMeta);
+    const currentIndex = metaTasks.findIndex((candidate) => candidate.id === task.id);
+    const previousMeta = currentIndex > 0 ? metaTasks[currentIndex - 1] : null;
+    const firstNonMeta = nonMetaTasks[0] ?? null;
+    const action = (task.title ?? "").trim().split(/\s+/, 1)[0]?.toLowerCase() ?? "";
+
+    if (action === "recover" || action === "unblock") {
+      return previousMeta?.id ?? firstNonMeta?.id ?? null;
+    }
+    if (action === "finalize") {
+      return firstNonMeta?.id ?? previousMeta?.id ?? null;
+    }
+    return previousMeta?.id ?? firstNonMeta?.id ?? null;
+  }
+
+  private computeMetaChainDepth(byId: Map<string, Task>, targetTaskId: string): number {
+    let depth = 0;
+    const visited = new Set<string>();
+    let currentId: string | null = targetTaskId.toUpperCase();
+    while (currentId && !visited.has(currentId)) {
+      visited.add(currentId);
+      const task = byId.get(currentId);
+      if (!task) break;
+      if (!this.classifyMetaTask(task).isMeta) break;
+      const nextTargetId = this.resolveMetaTargetTaskId(byId, task);
+      if (!nextTargetId) break;
+      depth += 1;
+      currentId = nextTargetId.toUpperCase();
+    }
+    return depth;
+  }
+
+  private async archiveMetaTask(taskId: string): Promise<void> {
+    const task = await this.store.getTask(taskId);
+    if (!task || task.column === "archived") return;
+    if (task.column === "triage" || task.column === "todo") {
+      await this.store.moveTask(taskId, "in-progress", { moveSource: "engine" });
+    }
+    const progressed = await this.store.getTask(taskId);
+    if (progressed && progressed.column === "in-progress") {
+      await this.store.moveTask(taskId, "done", { moveSource: "engine", skipMergeBlocker: true });
+    }
+    if (typeof this.store.archiveTaskAndCleanup === "function") {
+      await this.store.archiveTaskAndCleanup(taskId);
+      return;
+    }
+    if (typeof this.store.archiveTask === "function") {
+      await this.store.archiveTask(taskId, true);
+    }
+  }
+
+  private countBlockedDepth(tasks: Task[]): number {
+    return tasks.filter((task) => typeof task.blockedBy === "string" && task.blockedBy.trim().length > 0).length;
+  }
+
   async autoArchiveResolvedMetaTasks(reboundedTargets?: Set<string>): Promise<number> {
     const tasks = await this.store.listTasks({ slim: true, includeArchived: true });
     const byId = new Map(tasks.map((task) => [task.id.toUpperCase(), task]));
     let archived = 0;
     for (const task of tasks) {
+      if (task.column === "archived") continue;
       const classified = this.classifyMetaTask(task);
-      if (!classified.isMeta || !classified.targetTaskId) continue;
-      const chainDepth = this.computeMetaChainDepth(byId, classified.targetTaskId);
-      const target = byId.get(classified.targetTaskId.toUpperCase());
-      const resolved = Boolean(target && (target.column === "done" || target.column === "archived"));
-      const rebounded = Boolean(reboundedTargets?.has(classified.targetTaskId));
+      const targetTaskId = this.resolveMetaTargetTaskId(byId, task);
+      if (!classified.isMeta || !targetTaskId) continue;
+      const chainDepth = this.computeMetaChainDepth(byId, targetTaskId);
+      const target = byId.get(targetTaskId.toUpperCase());
+      const resolved = Boolean(target && !this.classifyMetaTask(target).isMeta && (target.column === "done" || target.column === "archived" || target.column === "todo"));
+      const rebounded = Boolean(reboundedTargets?.has(targetTaskId));
       if (!resolved && !rebounded && chainDepth < 2) continue;
       try {
-        await this.store.logEntry(task.id, `Auto-archived meta-task (FN-4890): target ${classified.targetTaskId} resolved/superseded.`);
+        await this.store.logEntry(task.id, `Auto-archived meta-task (FN-4890): target ${targetTaskId} resolved/superseded.`);
         await this.archiveMetaTask(task.id);
         const auditor = createRunAuditor(this.store, { runId: generateSyntheticRunId("fn4890-meta", task.id), agentId: "self-healing", taskId: task.id, phase: "auto-archive-meta-resolved" });
-        await auditor.database({ type: "task:auto-archived-meta-resolved", target: task.id, metadata: { taskId: task.id, targetTaskId: classified.targetTaskId, targetColumn: target?.column ?? "unknown", chainDepth } });
+        await auditor.database({ type: "task:auto-archived-meta-resolved", target: task.id, metadata: { taskId: task.id, targetTaskId, targetColumn: target?.column ?? "unknown", chainDepth } });
         archived++;
       } catch (err: unknown) {
         log.error(`autoArchiveResolvedMetaTasks failed for ${task.id}: ${err instanceof Error ? err.message : String(err)}`);
@@ -2550,20 +2684,22 @@ export class SelfHealingManager {
     let archived = 0;
     const now = Date.now();
     for (const task of tasks) {
+      if (task.column === "archived") continue;
       const classified = this.classifyMetaTask(task);
-      if (!classified.isMeta || !classified.targetTaskId) continue;
-      const chainDepth = this.computeMetaChainDepth(byId, classified.targetTaskId);
+      const targetTaskId = this.resolveMetaTargetTaskId(byId, task);
+      if (!classified.isMeta || !targetTaskId) continue;
+      const chainDepth = this.computeMetaChainDepth(byId, targetTaskId);
       const ageMs = now - Date.parse(task.columnMovedAt ?? task.updatedAt);
       if (chainDepth < 2 && (!Number.isFinite(ageMs) || ageMs < thresholdMs)) continue;
-      const target = byId.get(classified.targetTaskId.toUpperCase());
+      const target = byId.get(targetTaskId.toUpperCase());
       const targetMovedAtMs = Date.parse(target?.columnMovedAt ?? target?.updatedAt ?? "");
       const targetStalled = !Number.isFinite(targetMovedAtMs) || (now - targetMovedAtMs >= thresholdMs);
       if (chainDepth < 2 && !targetStalled) continue;
       try {
-        await this.store.logEntry(task.id, `Auto-archived meta-task (FN-4890): superseded — not spawning further meta; rely on self-heal on target ${classified.targetTaskId}`);
+        await this.store.logEntry(task.id, `Auto-archived meta-task (FN-4890): superseded — not spawning further meta; rely on self-heal on target ${targetTaskId}`);
         await this.archiveMetaTask(task.id);
         const auditor = createRunAuditor(this.store, { runId: generateSyntheticRunId("fn4890-meta", task.id), agentId: "self-healing", taskId: task.id, phase: "auto-archive-meta-stalled" });
-        await auditor.database({ type: "task:auto-archived-meta-stalled", target: task.id, metadata: { taskId: task.id, targetTaskId: classified.targetTaskId, chainDepth, stalledMs: Math.max(ageMs, 0) } });
+        await auditor.database({ type: "task:auto-archived-meta-stalled", target: task.id, metadata: { taskId: task.id, targetTaskId, chainDepth, stalledMs: Math.max(ageMs, 0) } });
         archived++;
       } catch (err: unknown) {
         log.error(`autoArchiveStalledMetaTasks failed for ${task.id}: ${err instanceof Error ? err.message : String(err)}`);

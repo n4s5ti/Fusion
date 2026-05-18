@@ -15,7 +15,7 @@ function createStoreMock(overrides?: {
 }
 
 describe("createPlanningBoardTools", () => {
-  it("fn_task_list excludes done tasks, includes deps, and handles empty list", async () => {
+  it("fn_task_list does not throw TypeError on happy path and excludes done tasks", async () => {
     const store = createStoreMock({
       listTasks: vi.fn(async () => [
         {
@@ -37,6 +37,7 @@ describe("createPlanningBoardTools", () => {
 
     const taskList = createPlanningBoardTools(store).find((tool) => tool.name === "fn_task_list");
     expect(taskList).toBeDefined();
+    await expect(taskList!.execute("c1", {})).resolves.not.toThrow();
     const result = await taskList!.execute("c1", {});
     expect(result.content[0]?.text).toBe("FN-1 (todo): Task one [deps: FN-0]");
 

@@ -30,6 +30,13 @@ describe("getProjectRootFromWorktree", () => {
   });
 });
 
+describe("@fusion/core export surface", () => {
+  it("re-exports getProjectRootFromWorktree as a callable function", async () => {
+    const core = await import("../index.js");
+    expect(typeof core.getProjectRootFromWorktree).toBe("function");
+  });
+});
+
 describe("resolvePiExtensionProjectRoot", () => {
   it("prefers parent repo root for worktree paths when parent .fusion exists", () => {
     const root = mkdtempSync(join(tmpdir(), "fn-4904-root-"));
