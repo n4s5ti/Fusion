@@ -136,6 +136,13 @@ export {
   type DuplicateMatch,
   type DuplicateMatchInput,
 } from "./duplicate-detection.js";
+export {
+  findSameAgentDuplicates,
+  archiveAsSameAgentDuplicate,
+  type SameAgentDuplicateInput,
+  type SameAgentDuplicateCandidate,
+  type SameAgentDuplicateMatch,
+} from "./duplicate-intake.js";
 export { computeRetrySummary, RETRY_STORM_WARNING_RATIO } from "./retry-summary.js";
 export { RetryStormError, serializeRetryStormError } from "./retry-storm-error.js";
 export { aggregateAgentTokenUsage } from "./agent-token-usage.js";

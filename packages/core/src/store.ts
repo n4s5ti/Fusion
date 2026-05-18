@@ -43,6 +43,7 @@ import { generateTaskLineageId, normalizeTaskCommitAssociation } from "./task-li
 import { createDistributedTaskIdAllocator, reconcileTaskIdState, resolveLocalNodeId, type DistributedTaskIdAllocator } from "./distributed-task-id.js";
 import { detectStalledReview } from "./stalled-review-detector.js";
 import { computeRetrySummary } from "./retry-summary.js";
+import { archiveAsSameAgentDuplicate, findSameAgentDuplicates } from "./duplicate-intake.js";
 import {
   detectTaskIdIntegrityAnomalies,
   type TaskIdIntegrityReport,
@@ -3275,11 +3276,51 @@ export class TaskStore extends EventEmitter<TaskStoreEvents> {
     await mkdir(dir, { recursive: true });
     await writeFile(join(dir, "PROMPT.md"), prompt);
 
+    await this._maybeAutoArchiveSameAgentDuplicate(task, input);
+
     this.emit("task:created", task);
     if (options?.invokeTaskCreatedHook !== false) {
       await this.invokeTaskCreatedHook(task);
     }
     return task;
+  }
+
+  private async _maybeAutoArchiveSameAgentDuplicate(task: Task, input: TaskCreateInput): Promise<void> {
+    const sourceAgentId = task.sourceAgentId ?? null;
+    if (!sourceAgentId) return;
+
+    try {
+      const nowMs = Date.now();
+      const recent = (await this.listTasks({ slim: true, includeArchived: false })).filter((candidate) => {
+        if (candidate.id === task.id) return false;
+        if (candidate.sourceAgentId !== sourceAgentId) return false;
+        const createdMs = Date.parse(candidate.createdAt);
+        if (Number.isNaN(createdMs)) return false;
+        return createdMs >= nowMs - 24 * 60 * 60 * 1000;
+      });
+
+      const matches = findSameAgentDuplicates(
+        { title: input.title ?? task.title, description: input.description },
+        recent.map((candidate) => ({
+          id: candidate.id,
+          title: candidate.title ?? "",
+          description: candidate.description,
+          column: candidate.column,
+          createdAt: Date.parse(candidate.createdAt),
+          sourceAgentId: candidate.sourceAgentId ?? null,
+        })),
+        { nowMs },
+      );
+
+      if (matches.length === 0) return;
+
+      const siblingTaskIds = matches.map((match) => match.id);
+      const scores = Object.fromEntries(matches.map((match) => [match.id, match.score]));
+      await archiveAsSameAgentDuplicate(this, task.id, siblingTaskIds, scores);
+      task.column = "archived";
+    } catch (error) {
+      storeLog.warn(`FN-4892 same-agent duplicate intake failed open for ${task.id}: ${getErrorMessage(error)}`);
+    }
   }
 
   private async invokeTaskCreatedHook(task: Task): Promise<void> {
