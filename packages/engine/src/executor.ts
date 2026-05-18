@@ -8301,7 +8301,7 @@ Backward compat fallback: if JSON is unavailable, you may still begin output wit
     const recovery = await autoRecoverWorktreeSessionStartFailure(this.store, task, {
       failure: error,
       source: "executor-session-start",
-      auditor: null,
+      auditor: audit,
     });
 
     await audit.git({
