@@ -3,6 +3,7 @@ import "../executor-test-helpers.js";
 import { TaskExecutor } from "../../executor.js";
 import { createFnAgent } from "../../pi.js";
 import { createMockStore, mockedExecSync, resetExecutorMocks } from "../executor-test-helpers.js";
+import { MAX_WORKTREE_SESSION_RETRIES } from "../../self-healing.js";
 
 const mockedCreateFnAgent = vi.mocked(createFnAgent);
 
@@ -53,7 +54,35 @@ describe("reliability interactions: FN-4917 worktree incomplete session-start", 
     await executor.execute(task);
 
     expect(task.column).toBe("todo");
-    expect(Array.isArray(events)).toBe(true);
+
+    const incompleteDetectedIndex = events.findIndex((event) => event.type === "worktree:incomplete-detected" || event.mutationType === "worktree:incomplete-detected");
+    const autoRecoveredIndex = events.findIndex((event) => event.type === "worktree:auto-recovered" || event.mutationType === "worktree:auto-recovered");
+    expect(incompleteDetectedIndex).toBeGreaterThanOrEqual(0);
+    expect(autoRecoveredIndex).toBeGreaterThanOrEqual(0);
+    expect(incompleteDetectedIndex).toBeLessThan(autoRecoveredIndex);
+
+    expect(events[incompleteDetectedIndex]).toEqual(expect.objectContaining({
+      metadata: expect.objectContaining({
+        classification,
+        source: "session-start",
+        taskId: "FN-4917-T",
+      }),
+    }));
+    expect(events[autoRecoveredIndex]).toEqual(expect.objectContaining({
+      metadata: expect.objectContaining({
+        classification,
+        action: "requeue-todo",
+        maxRetries: MAX_WORKTREE_SESSION_RETRIES,
+        staleWorktree: "/tmp/wt",
+      }),
+    }));
+
+    expect(store.moveTask.mock.calls).toContainEqual(["FN-4917-T", "todo"]);
+    expect(store.moveTask.mock.calls.some((call) => call.length > 2)).toBe(false);
+    for (const call of store.logEntry.mock.calls) {
+      const leaked = call.some((arg) => typeof arg === "string" && /Refusing to start coding agent/.test(arg));
+      expect(leaked).toBe(false);
+    }
   });
 
   it("preserves progress when steps already completed", async () => {
