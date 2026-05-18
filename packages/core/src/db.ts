@@ -120,7 +120,7 @@ export function probeFts5(db: DatabaseSync): boolean {
 
 // ── Schema Definition ────────────────────────────────────────────────
 
-const SCHEMA_VERSION = 85;
+const SCHEMA_VERSION = 86;
 
 function normalizeTaskComments(
   steeringComments: SteeringComment[] | undefined,
@@ -251,6 +251,7 @@ CREATE TABLE IF NOT EXISTS tasks (
   reviewState TEXT,
   workflowStepResults TEXT DEFAULT '[]',
   prInfo TEXT,
+  prInfos TEXT,
   issueInfo TEXT,
   githubTracking TEXT,
   sourceIssueProvider TEXT,
@@ -3404,6 +3405,12 @@ export class Database {
     if (version < 85) {
       this.applyMigration(85, () => {
         this.addColumnIfMissing("tasks", "completionHandoffLimboRecoveryCount", "INTEGER DEFAULT 0");
+      });
+    }
+
+    if (version < 86) {
+      this.applyMigration(86, () => {
+        this.addColumnIfMissing("tasks", "prInfos", "TEXT");
       });
     }
 

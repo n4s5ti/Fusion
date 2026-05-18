@@ -301,6 +301,10 @@ interface TaskCardProps {
   autoMergeEnabled?: boolean;
 }
 
+function getTaskPrimaryPrInfo(task: Pick<Task, "prInfo" | "prInfos">): PrInfo | undefined {
+  return task.prInfos?.[0] ?? task.prInfo;
+}
+
 function areTaskBadgeInfosEqual(
   previous: PrInfo | IssueInfo | undefined,
   next: PrInfo | IssueInfo | undefined,
@@ -504,6 +508,11 @@ function areTaskCardPropsEqual(previous: TaskCardProps, next: TaskCardProps): bo
     areTaskWorkflowStepIdsEqual(previousTask.enabledWorkflowSteps, nextTask.enabledWorkflowSteps) &&
     areTaskWorkflowResultsEqual(previousTask.workflowStepResults, nextTask.workflowStepResults) &&
     areTaskBadgeInfosEqual(previousTask.prInfo, nextTask.prInfo) &&
+    ((previousTask.prInfos?.length ?? 0) === (nextTask.prInfos?.length ?? 0)) &&
+    (previousTask.prInfos ?? []).every((pr, index) => {
+      const nextPr = nextTask.prInfos?.[index];
+      return nextPr?.number === pr.number && nextPr?.status === pr.status;
+    }) &&
     areTaskBadgeInfosEqual(previousTask.issueInfo, nextTask.issueInfo)
   );
 }
@@ -972,7 +981,7 @@ function TaskCardComponent({
 
   const hasEverHadGitHubBadgeSourceRef = useRef(false);
   const hasCurrentGitHubBadgeSource = Boolean(
-    task.prInfo
+    getTaskPrimaryPrInfo(task)
     || task.issueInfo
     || liveBadgeData?.prInfo
     || liveBadgeData?.issueInfo
@@ -1023,8 +1032,8 @@ function TaskCardComponent({
     const wsTimestamp = liveBadgeData?.timestamp;
     const batchInfo = batchData?.result?.prInfo;
     const batchTimestamp = batchData?.timestamp ? new Date(batchData.timestamp).toISOString() : undefined;
-    const taskInfo = task.prInfo;
-    const taskTimestamp = task.prInfo?.lastCheckedAt ?? task.updatedAt;
+    const taskInfo = getTaskPrimaryPrInfo(task);
+    const taskTimestamp = taskInfo?.lastCheckedAt ?? task.updatedAt;
 
     let bestData = taskInfo;
     let bestTimestamp = taskTimestamp;
@@ -1039,8 +1048,7 @@ function TaskCardComponent({
     }
 
     return bestData;
-  }, [liveBadgeData, batchData, task.prInfo, task.updatedAt]);
-
+  }, [liveBadgeData, batchData, task, task.updatedAt]);
   const liveIssueInfo = useMemo(() => {
     const wsData = liveBadgeData?.issueInfo;
     const wsTimestamp = liveBadgeData?.timestamp;
@@ -1560,10 +1568,20 @@ function TaskCardComponent({
           </span>
         )}
         {(livePrInfo || liveIssueInfo) && (
-          <GitHubBadge
-            prInfo={livePrInfo}
-            issueInfo={liveIssueInfo}
-          />
+          <>
+            {livePrInfo && (task.prInfos?.length ?? 0) >= 2 ? (
+              <a className={`card-github-badge card-github-badge--${livePrInfo.status}`} title={`PR #${livePrInfo.number}: ${livePrInfo.title}`} href={livePrInfo.url} target="_blank" rel="noopener noreferrer">
+                <GitPullRequest size={10} />
+                <span>{`${task.prInfos?.length}x #${livePrInfo.number}`}</span>
+              </a>
+            ) : null}
+            {(task.prInfos?.length ?? 0) < 2 || liveIssueInfo ? (
+              <GitHubBadge
+                prInfo={(task.prInfos?.length ?? 0) >= 2 ? undefined : livePrInfo}
+                issueInfo={liveIssueInfo}
+              />
+            ) : null}
+          </>
         )}
         {isAgentCreated && (
           <span

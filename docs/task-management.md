@@ -537,7 +537,7 @@ Archive entries preserve key metadata needed for restoration, including:
 
 - `id`, `title`, `description`, `priority`, `column`
 - `dependencies`, `steps`, `currentStep`
-- `size`, `reviewLevel`, `prInfo`, `issueInfo`
+- `size`, `reviewLevel`, `prInfo` (primary mirror), `prInfos` (canonical linked PR list), `issueInfo`
 - `attachments` metadata
 - task `log`
 - timestamps (`createdAt`, `updatedAt`, `columnMovedAt`, `archivedAt`)

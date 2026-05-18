@@ -28,7 +28,7 @@ import { exec, execSync } from "node:child_process";
 import { promisify } from "node:util";
 import { existsSync, mkdirSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { isAbsolute, join, relative, resolve } from "node:path";
-import { IN_REVIEW_STALL_DEADLOCK_LOG_PREFIX, IN_REVIEW_STALL_LOG_PREFIX, countRecentIdenticalStallEntries, detectSelfDefeatingDependency, getInReviewStallReason, getStalePausedReviewSignal, getTaskHardMergeBlocker, getTaskMergeBlocker, isEphemeralAgent, type AgentStore, type ChatStore, type MessageStore, type TaskStore, type Settings, type Task, type MergeDetails, type TaskPriority, type MergeResult } from "@fusion/core";
+import { IN_REVIEW_STALL_DEADLOCK_LOG_PREFIX, IN_REVIEW_STALL_LOG_PREFIX, countRecentIdenticalStallEntries, detectSelfDefeatingDependency, getInReviewStallReason, getPrimaryPrInfo, getStalePausedReviewSignal, getTaskHardMergeBlocker, getTaskMergeBlocker, isEphemeralAgent, type AgentStore, type ChatStore, type MessageStore, type TaskStore, type Settings, type Task, type MergeDetails, type TaskPriority, type MergeResult } from "@fusion/core";
 import type { MeshLeaseManager } from "./mesh-lease-manager.js";
 import { createLogger } from "./logger.js";
 import { RemovalReason, getRegisteredWorktreeBranchMap, getRegisteredWorktreePaths, isUsableTaskWorktree, removeWorktree, resolveWorktreeBackend, scanIdleWorktrees, scanOrphanedBranches } from "./worktree-pool.js";
@@ -1508,7 +1508,10 @@ export class SelfHealingManager {
 
   async reclaimPrConflicts(): Promise<number> {
     const tasks = await this.store.listTasks({ slim: true });
-    const candidates = tasks.filter((task) => task.prInfo?.mergeable === "conflicting");
+    const candidates = tasks.filter((task) => {
+      const prList = task.prInfos ?? (task.prInfo ? [task.prInfo] : []);
+      return prList.some((pr) => pr.mergeable === "conflicting");
+    });
     let reclaimed = 0;
     for (const task of candidates) {
       const result = await this.reclaimPrConflictForTask(task.id);
@@ -1519,18 +1522,31 @@ export class SelfHealingManager {
     return reclaimed;
   }
 
-  async reclaimPrConflictForTask(taskId: string): Promise<{ outcome: "reclaimed" | "stale-resolved" | "tip-already-merged" | "paused-unrecoverable" | "skipped"; reason?: string }> {
+  async reclaimPrConflictForTask(taskId: string): Promise<{ outcome: "reclaimed" | "stale-resolved" | "tip-already-merged" | "paused-unrecoverable" | "skipped"; reason?: string; perPr?: Array<{ number: number; outcome: "reclaimed" | "stale-resolved" | "tip-already-merged" | "paused-unrecoverable" | "skipped"; reason?: string }> }> {
     const task = await this.store.getTask(taskId);
     if (!task) return { outcome: "skipped", reason: "task-not-found" };
+    const conflictingPrs = (task.prInfos ?? (task.prInfo ? [task.prInfo] : [])).filter((pr) => pr.mergeable === "conflicting");
+    if (conflictingPrs.length === 0) {
+      return { outcome: "skipped", reason: "no-conflicting-pr" };
+    }
+    const withPerPr = (result: { outcome: "reclaimed" | "stale-resolved" | "tip-already-merged" | "paused-unrecoverable" | "skipped"; reason?: string }) => {
+      if (conflictingPrs.length <= 1) {
+        return result;
+      }
+      return {
+        ...result,
+        perPr: conflictingPrs.map((pr) => ({ number: pr.number, outcome: result.outcome, reason: result.reason })),
+      };
+    };
 
     const settings = await this.store.getSettings();
-    if (settings.globalPause || settings.enginePaused) return { outcome: "skipped", reason: "engine-paused" };
-    if (!task.branch || !task.worktree) return { outcome: "skipped", reason: "missing-branch-or-worktree" };
-    if (task.userPaused) return { outcome: "skipped", reason: "user-paused" };
-    if (task.checkedOutBy) return { outcome: "skipped", reason: "checked-out" };
-    if (task.pausedReason === "worktrunk_operation_failed") return { outcome: "skipped", reason: "worktrunk-paused" };
-    if (activeSessionRegistry.isPathActive(task.worktree)) return { outcome: "skipped", reason: "active-session" };
-    if (!await isUsableTaskWorktree(this.options.rootDir, task.worktree)) return { outcome: "skipped", reason: "unusable-worktree" };
+    if (settings.globalPause || settings.enginePaused) return withPerPr({ outcome: "skipped", reason: "engine-paused" });
+    if (!task.branch || !task.worktree) return withPerPr({ outcome: "skipped", reason: "missing-branch-or-worktree" });
+    if (task.userPaused) return withPerPr({ outcome: "skipped", reason: "user-paused" });
+    if (task.checkedOutBy) return withPerPr({ outcome: "skipped", reason: "checked-out" });
+    if (task.pausedReason === "worktrunk_operation_failed") return withPerPr({ outcome: "skipped", reason: "worktrunk-paused" });
+    if (activeSessionRegistry.isPathActive(task.worktree)) return withPerPr({ outcome: "skipped", reason: "active-session" });
+    if (!await isUsableTaskWorktree(this.options.rootDir, task.worktree)) return withPerPr({ outcome: "skipped", reason: "unusable-worktree" });
 
     try {
       const inspection = await inspectBranchConflict({
@@ -1552,17 +1568,17 @@ export class SelfHealingManager {
 
       if (inspection.kind === "stale") {
         await auditor.database({ type: "task:pr-conflict-reclaim", target: task.id, metadata: { outcome: "skipped", reason: "stale" } });
-        return { outcome: "skipped", reason: "stale" };
+        return withPerPr({ outcome: "skipped", reason: "stale" });
       }
       if (inspection.kind === "stale-resolved") {
         await this.store.updateTask(task.id, { worktree: null, branch: null, baseCommitSha: null });
         await auditor.database({ type: "task:pr-conflict-reclaim", target: task.id, metadata: { outcome: "stale-resolved" } });
-        return { outcome: "stale-resolved" };
+        return withPerPr({ outcome: "stale-resolved" });
       }
       if (inspection.kind === "tip-already-merged") {
         await this.reclaimSelfOwnedBranchConflicts();
         await auditor.database({ type: "task:pr-conflict-reclaim", target: task.id, metadata: { outcome: "tip-already-merged" } });
-        return { outcome: "tip-already-merged" };
+        return withPerPr({ outcome: "tip-already-merged" });
       }
       if (inspection.kind === "live-foreign") {
         throw inspection.error;
@@ -1586,7 +1602,7 @@ export class SelfHealingManager {
           await execAsync(`git branch -D ${JSON.stringify(task.branch)}`, { cwd: this.options.rootDir, timeout: 120_000, maxBuffer: 10 * 1024 * 1024 });
           await this.store.updateTask(task.id, { worktree: null, branch: null, paused: false, pausedReason: undefined, status: null, error: null });
           await auditor.database({ type: "task:pr-conflict-reclaim", target: task.id, metadata: { outcome: "reclaimed", mode: "fully-subsumed", recoveredFromPaused: wasPausedBranchConflict } });
-          return { outcome: "reclaimed" };
+          return withPerPr({ outcome: "reclaimed" });
         }
       }
 
@@ -1607,7 +1623,7 @@ export class SelfHealingManager {
         });
       }
       await auditor.database({ type: "task:pr-conflict-reclaim", target: task.id, metadata: { outcome: "reclaimed", mode: inspection.kind } });
-      return { outcome: "reclaimed" };
+      return withPerPr({ outcome: "reclaimed" });
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
       const patchPath = await preserveWorktreeChanges(this.options.rootDir, task.worktree, task.id);
@@ -1644,7 +1660,7 @@ export class SelfHealingManager {
         await this.store.moveTask(task.id, "in-review");
         await this.store.logEntry(task.id, `Auto-recovery failed: branch conflict unrecoverable — ${message}`);
       }
-      return { outcome: "paused-unrecoverable", reason: message };
+      return withPerPr({ outcome: "paused-unrecoverable", reason: message });
     }
   }
 
@@ -3875,7 +3891,7 @@ export class SelfHealingManager {
               mergeCommitMessage: landedCommit.subject,
               mergedAt: new Date().toISOString(),
               mergeConfirmed: true,
-              prNumber: task.prInfo?.number,
+              prNumber: getPrimaryPrInfo(task)?.number,
             };
 
             await this.store.updateTask(task.id, {
@@ -4031,7 +4047,7 @@ export class SelfHealingManager {
                 mergeCommitMessage: task.mergeDetails?.mergeCommitMessage ?? landed.subject,
                 rebaseBaseSha: task.mergeDetails?.rebaseBaseSha ?? landed.rebaseBaseSha,
                 mergedAt: task.mergeDetails?.mergedAt ?? new Date().toISOString(),
-                prNumber: task.prInfo?.number,
+                prNumber: getPrimaryPrInfo(task)?.number,
               },
               modifiedFiles: liveLandedFiles && liveLandedFiles.length > 0 ? liveLandedFiles : undefined,
             });
@@ -4093,7 +4109,7 @@ export class SelfHealingManager {
               landedFiles: landedFiles ?? task.mergeDetails?.landedFiles,
               mergedAt: task.mergeDetails?.mergedAt ?? new Date().toISOString(),
               mergeConfirmed: true,
-              prNumber: task.prInfo?.number,
+              prNumber: getPrimaryPrInfo(task)?.number,
             },
             modifiedFiles: landedFiles && landedFiles.length > 0 ? landedFiles : undefined,
           });
@@ -4266,7 +4282,7 @@ export class SelfHealingManager {
               mergeCommitMessage: landedCommit.subject,
               mergedAt: new Date().toISOString(),
               mergeConfirmed: true,
-              prNumber: task.prInfo?.number,
+              prNumber: getPrimaryPrInfo(task)?.number,
             };
 
             await this.store.updateTask(task.id, {
@@ -4559,7 +4575,7 @@ export class SelfHealingManager {
             commitSha: landed.sha,
             mergedAt: new Date().toISOString(),
             mergeConfirmed: true,
-            prNumber: task.prInfo?.number,
+            prNumber: getPrimaryPrInfo(task)?.number,
           };
 
           const hardBlocker = getTaskHardMergeBlocker({
@@ -4768,7 +4784,7 @@ export class SelfHealingManager {
             commitSha: check.landed.sha,
             mergedAt: new Date().toISOString(),
             mergeConfirmed: true,
-            prNumber: task.prInfo?.number,
+            prNumber: getPrimaryPrInfo(task)?.number,
           };
 
           await this.store.updateTask(task.id, {

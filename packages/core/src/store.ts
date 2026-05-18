@@ -129,6 +129,7 @@ interface TaskRow {
   reviewState: string | null;
   workflowStepResults: string | null;
   prInfo: string | null;
+  prInfos: string | null;
   issueInfo: string | null;
   githubTracking: string | null;
   sourceIssueProvider: string | null;
@@ -1215,6 +1216,12 @@ export class TaskStore extends EventEmitter<TaskStoreEvents> {
       reviewState: normalizeTaskReviewState(fromJson<import("./types.js").TaskReviewState>(row.reviewState) ?? undefined),
       workflowStepResults: (() => { const w = fromJson<import("./types.js").WorkflowStepResult[]>(row.workflowStepResults); return w && w.length > 0 ? w : undefined; })(),
       prInfo: fromJson<import("./types.js").PrInfo>(row.prInfo),
+      prInfos: (() => {
+        const multi = fromJson<import("./types.js").PrInfo[]>(row.prInfos);
+        if (multi && multi.length > 0) return multi;
+        const single = fromJson<import("./types.js").PrInfo>(row.prInfo);
+        return single ? [single] : undefined;
+      })(),
       issueInfo: fromJson<import("./types.js").IssueInfo>(row.issueInfo),
       githubTracking: fromJson<import("./types.js").TaskGithubTracking>(row.githubTracking) ?? undefined,
       sourceIssue: (() => {
@@ -1285,6 +1292,7 @@ export class TaskStore extends EventEmitter<TaskStoreEvents> {
       size: entry.size,
       reviewLevel: entry.reviewLevel,
       prInfo: slim ? undefined : entry.prInfo,
+      prInfos: slim ? undefined : entry.prInfos,
       issueInfo: slim ? undefined : entry.issueInfo,
       githubTracking: entry.githubTracking,
       sourceIssue: slim ? undefined : entry.sourceIssue,
@@ -1414,6 +1422,7 @@ export class TaskStore extends EventEmitter<TaskStoreEvents> {
       size: task.size,
       reviewLevel: task.reviewLevel,
       prInfo: task.prInfo,
+      prInfos: task.prInfos,
       issueInfo: task.issueInfo,
       githubTracking: task.githubTracking,
       sourceIssue: task.sourceIssue,
@@ -1503,7 +1512,7 @@ export class TaskStore extends EventEmitter<TaskStoreEvents> {
       "tokenUsageInputTokens", "tokenUsageOutputTokens", "tokenUsageCachedTokens", "tokenUsageCacheWriteTokens", "tokenUsageTotalTokens", "tokenUsageFirstUsedAt", "tokenUsageLastUsedAt", "tokenBudgetSoftAlertedAt", "tokenBudgetHardAlertedAt", "tokenBudgetOverride",
       "createdAt", "updatedAt", "columnMovedAt", "firstExecutionAt", "cumulativeActiveMs", "executionStartedAt", "executionCompletedAt",
       "dependencies", "steps", "comments", "review", "reviewState", "workflowStepResults", "steeringComments",
-      "attachments", "prInfo", "issueInfo", "githubTracking", "sourceIssueProvider", "sourceIssueRepository", "sourceIssueExternalIssueId", "sourceIssueNumber", "sourceIssueUrl", "mergeDetails",
+      "attachments", "prInfo", "prInfos", "issueInfo", "githubTracking", "sourceIssueProvider", "sourceIssueRepository", "sourceIssueExternalIssueId", "sourceIssueNumber", "sourceIssueUrl", "mergeDetails",
       "breakIntoSubtasks", "noCommitsExpected", "enabledWorkflowSteps", "modifiedFiles",
       "missionId", "sliceId", "scopeOverride", "scopeOverrideReason", "assignedAgentId", "pausedByAgentId", "assigneeUserId", "nodeId", "effectiveNodeId", "effectiveNodeSource",
       "sourceType", "sourceAgentId", "sourceRunId", "sourceSessionId", "sourceMessageId", "sourceParentTaskId", "sourceMetadata",
@@ -1552,7 +1561,7 @@ export class TaskStore extends EventEmitter<TaskStoreEvents> {
       "tokenUsageInputTokens", "tokenUsageOutputTokens", "tokenUsageCachedTokens", "tokenUsageCacheWriteTokens", "tokenUsageTotalTokens", "tokenUsageFirstUsedAt", "tokenUsageLastUsedAt", "tokenBudgetSoftAlertedAt", "tokenBudgetHardAlertedAt", "tokenBudgetOverride",
       "createdAt", "updatedAt", "columnMovedAt", "firstExecutionAt", "cumulativeActiveMs", "executionStartedAt", "executionCompletedAt",
       "dependencies", "steps", "attachments", "steeringComments",
-      "comments", "review", "reviewState", "workflowStepResults", "prInfo", "issueInfo", "githubTracking", "sourceIssueProvider", "sourceIssueRepository", "sourceIssueExternalIssueId", "sourceIssueNumber", "sourceIssueUrl", "mergeDetails",
+      "comments", "review", "reviewState", "workflowStepResults", "prInfo", "prInfos", "issueInfo", "githubTracking", "sourceIssueProvider", "sourceIssueRepository", "sourceIssueExternalIssueId", "sourceIssueNumber", "sourceIssueUrl", "mergeDetails",
       "breakIntoSubtasks", "noCommitsExpected", "enabledWorkflowSteps", "modifiedFiles",
       "missionId", "sliceId", "scopeOverride", "scopeOverrideReason", "assignedAgentId", "pausedByAgentId", "assigneeUserId", "nodeId", "effectiveNodeId", "effectiveNodeSource",
       "sourceType", "sourceAgentId", "sourceRunId", "sourceSessionId", "sourceMessageId", "sourceParentTaskId", "sourceMetadata",
@@ -1655,6 +1664,7 @@ export class TaskStore extends EventEmitter<TaskStoreEvents> {
       toJsonNullable(task.reviewState),
       toJson(task.workflowStepResults || []),
       toJsonNullable(task.prInfo),
+      toJson(task.prInfos || []),
       toJsonNullable(task.issueInfo),
       toJsonNullable(task.githubTracking),
       task.sourceIssue?.provider ?? null,
@@ -1710,7 +1720,7 @@ export class TaskStore extends EventEmitter<TaskStoreEvents> {
         tokenUsageCacheWriteTokens, tokenUsageTotalTokens, tokenUsageFirstUsedAt, tokenUsageLastUsedAt, tokenBudgetSoftAlertedAt, tokenBudgetHardAlertedAt, tokenBudgetOverride, createdAt, updatedAt, columnMovedAt,
         firstExecutionAt, cumulativeActiveMs, executionStartedAt, executionCompletedAt,
         dependencies, steps, log, attachments, steeringComments,
-        comments, review, reviewState, workflowStepResults, prInfo, issueInfo, githubTracking,
+        comments, review, reviewState, workflowStepResults, prInfo, prInfos, issueInfo, githubTracking,
         sourceIssueProvider, sourceIssueRepository, sourceIssueExternalIssueId, sourceIssueNumber, sourceIssueUrl,
         mergeDetails, breakIntoSubtasks, noCommitsExpected, enabledWorkflowSteps, modifiedFiles, missionId, sliceId, scopeOverride, scopeOverrideReason, assignedAgentId, pausedByAgentId, assigneeUserId, nodeId, effectiveNodeId, effectiveNodeSource, sourceType, sourceAgentId, sourceRunId, sourceSessionId, sourceMessageId, sourceParentTaskId, sourceMetadata, checkedOutBy, checkedOutAt, checkoutNodeId, checkoutRunId, checkoutLeaseRenewedAt, checkoutLeaseEpoch
       ) VALUES (${placeholders})
@@ -1737,7 +1747,7 @@ export class TaskStore extends EventEmitter<TaskStoreEvents> {
         tokenUsageCacheWriteTokens, tokenUsageTotalTokens, tokenUsageFirstUsedAt, tokenUsageLastUsedAt, tokenBudgetSoftAlertedAt, tokenBudgetHardAlertedAt, tokenBudgetOverride, createdAt, updatedAt, columnMovedAt,
         firstExecutionAt, cumulativeActiveMs, executionStartedAt, executionCompletedAt,
         dependencies, steps, log, attachments, steeringComments,
-        comments, review, reviewState, workflowStepResults, prInfo, issueInfo, githubTracking,
+        comments, review, reviewState, workflowStepResults, prInfo, prInfos, issueInfo, githubTracking,
         sourceIssueProvider, sourceIssueRepository, sourceIssueExternalIssueId, sourceIssueNumber, sourceIssueUrl,
         mergeDetails, breakIntoSubtasks, noCommitsExpected, enabledWorkflowSteps, modifiedFiles, missionId, sliceId, scopeOverride, scopeOverrideReason, assignedAgentId, pausedByAgentId, assigneeUserId, nodeId, effectiveNodeId, effectiveNodeSource, sourceType, sourceAgentId, sourceRunId, sourceSessionId, sourceMessageId, sourceParentTaskId, sourceMetadata, checkedOutBy, checkedOutAt, checkoutNodeId, checkoutRunId, checkoutLeaseRenewedAt, checkoutLeaseEpoch
       ) VALUES (${placeholders})
@@ -1813,6 +1823,7 @@ export class TaskStore extends EventEmitter<TaskStoreEvents> {
         reviewState = excluded.reviewState,
         workflowStepResults = excluded.workflowStepResults,
         prInfo = excluded.prInfo,
+        prInfos = excluded.prInfos,
         issueInfo = excluded.issueInfo,
         githubTracking = excluded.githubTracking,
         sourceIssueProvider = excluded.sourceIssueProvider,
@@ -7315,13 +7326,39 @@ export class TaskStore extends EventEmitter<TaskStoreEvents> {
     this.emit("task:updated", task);
   }
 
+  private getTaskPrInfos(task: Task): import("./types.js").PrInfo[] {
+    return [...(task.prInfos ?? (task.prInfo ? [task.prInfo] : []))];
+  }
+
+  private resolvePrimaryPrInfo(prInfos: import("./types.js").PrInfo[]): import("./types.js").PrInfo | undefined {
+    // Primary selection rule: prefer the most-recently-updated open PR; if none are open,
+    // fall back to the first linked PR for stable back-compat rendering.
+    const openPrs = prInfos.filter((entry) => entry.status === "open");
+    if (openPrs.length === 0) return prInfos[0];
+    const sorted = [...openPrs].sort((a, b) => {
+      const aTs = Date.parse(a.lastCheckedAt ?? a.lastCommentAt ?? "");
+      const bTs = Date.parse(b.lastCheckedAt ?? b.lastCommentAt ?? "");
+      if (Number.isFinite(aTs) && Number.isFinite(bTs)) return bTs - aTs;
+      if (Number.isFinite(aTs)) return -1;
+      if (Number.isFinite(bTs)) return 1;
+      return 0;
+    });
+    return sorted[0] ?? prInfos[0];
+  }
+
+  private upsertPrInfoByNumber(prInfos: import("./types.js").PrInfo[], prInfo: import("./types.js").PrInfo): import("./types.js").PrInfo[] {
+    const idx = prInfos.findIndex((entry) => entry.number === prInfo.number);
+    if (idx >= 0) {
+      const next = [...prInfos];
+      next[idx] = { ...next[idx], ...prInfo };
+      return next;
+    }
+    return [prInfo, ...prInfos];
+  }
+
   /**
    * Update or clear PR information for a task.
    * Updates task.json atomically and emits `task:updated` event.
-   *
-   * @param id - The task ID
-   * @param prInfo - The PR info to set, or null to clear
-   * @returns The updated task
    */
   async updatePrInfo(
     id: string,
@@ -7343,41 +7380,89 @@ export class TaskStore extends EventEmitter<TaskStoreEvents> {
         previous?.lastCommentAt !== prInfo?.lastCommentAt;
       const linkChanged = previous?.number !== prInfo?.number || previous?.url !== prInfo?.url;
 
+      let prInfos = this.getTaskPrInfos(task);
       if (prInfo) {
-        task.prInfo = prInfo;
+        prInfos = this.upsertPrInfoByNumber(prInfos, prInfo);
         if (!previous || linkChanged) {
-          task.log.push({
-            timestamp: new Date().toISOString(),
-            action: "PR linked",
-            outcome: `PR #${prInfo.number}: ${prInfo.url}`,
-          });
+          task.log.push({ timestamp: new Date().toISOString(), action: "PR linked", outcome: `PR #${prInfo.number}: ${prInfo.url}` });
         } else if (badgeChanged) {
-          task.log.push({
-            timestamp: new Date().toISOString(),
-            action: "PR updated",
-            outcome: `PR #${prInfo.number} badge metadata refreshed`,
-          });
+          task.log.push({ timestamp: new Date().toISOString(), action: "PR updated", outcome: `PR #${prInfo.number} badge metadata refreshed` });
         }
       } else {
-        task.prInfo = undefined;
-        if (previous?.number) {
-          task.log.push({
-            timestamp: new Date().toISOString(),
-            action: "PR unlinked",
-            outcome: `PR #${previous.number} removed`,
-          });
+        if (previous?.number !== undefined) {
+          task.log.push({ timestamp: new Date().toISOString(), action: "PR unlinked", outcome: `PR #${previous.number} removed` });
         }
+        prInfos = [];
       }
 
+      task.prInfos = prInfos.length > 0 ? prInfos : undefined;
+      task.prInfo = this.resolvePrimaryPrInfo(prInfos);
       task.updatedAt = new Date().toISOString();
 
       await this.atomicWriteTaskJson(dir, task);
       if (this.isWatching) this.taskCache.set(id, { ...task });
+      if (badgeChanged || linkChanged || !prInfo) this.emit("task:updated", task);
+      return task;
+    });
+  }
 
-      if (badgeChanged) {
-        this.emit("task:updated", task);
+  async addPrInfo(id: string, prInfo: import("./types.js").PrInfo): Promise<Task | undefined> {
+    return this.withTaskLock(id, async () => {
+      const dir = this.taskDir(id);
+      const task = await this.readTaskJson(dir);
+      let prInfos = this.getTaskPrInfos(task);
+      const existingIndex = prInfos.findIndex((entry) => entry.number === prInfo.number);
+      if (existingIndex >= 0) {
+        prInfos[existingIndex] = { ...prInfos[existingIndex], ...prInfo };
+      } else {
+        prInfos = [prInfo, ...prInfos];
       }
+      task.prInfos = prInfos;
+      task.prInfo = this.resolvePrimaryPrInfo(prInfos);
+      task.updatedAt = new Date().toISOString();
+      await this.atomicWriteTaskJson(dir, task);
+      if (this.isWatching) this.taskCache.set(id, { ...task });
+      this.emit("task:updated", task);
+      return task;
+    });
+  }
 
+  async updatePrInfoByNumber(id: string, number: number, patch: Partial<import("./types.js").PrInfo>): Promise<Task | undefined> {
+    return this.withTaskLock(id, async () => {
+      const dir = this.taskDir(id);
+      const task = await this.readTaskJson(dir);
+      const prInfos = this.getTaskPrInfos(task);
+      const index = prInfos.findIndex((entry) => entry.number === number);
+      if (index < 0) {
+        storeLog.warn(`[store] updatePrInfoByNumber: PR #${number} not found for ${id}`);
+        return task;
+      }
+      prInfos[index] = { ...prInfos[index], ...patch };
+      task.prInfos = prInfos;
+      task.prInfo = this.resolvePrimaryPrInfo(prInfos);
+      task.updatedAt = new Date().toISOString();
+      await this.atomicWriteTaskJson(dir, task);
+      if (this.isWatching) this.taskCache.set(id, { ...task });
+      this.emit("task:updated", task);
+      return task;
+    });
+  }
+
+  async removePrInfoByNumber(id: string, number: number): Promise<Task | undefined> {
+    return this.withTaskLock(id, async () => {
+      const dir = this.taskDir(id);
+      const task = await this.readTaskJson(dir);
+      const prInfos = this.getTaskPrInfos(task).filter((entry) => entry.number !== number);
+      if ((task.prInfos ?? []).length === prInfos.length && task.prInfo?.number !== number) {
+        storeLog.warn(`[store] removePrInfoByNumber: PR #${number} not found for ${id}`);
+        return task;
+      }
+      task.prInfos = prInfos.length > 0 ? prInfos : undefined;
+      task.prInfo = this.resolvePrimaryPrInfo(prInfos);
+      task.updatedAt = new Date().toISOString();
+      await this.atomicWriteTaskJson(dir, task);
+      if (this.isWatching) this.taskCache.set(id, { ...task });
+      this.emit("task:updated", task);
       return task;
     });
   }

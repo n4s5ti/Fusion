@@ -831,6 +831,7 @@ export interface BatchStatusRequest {
 export interface BatchStatusEntry {
   issueInfo?: IssueInfo;
   prInfo?: PrInfo;
+  prInfos?: PrInfo[];
   stale: boolean;
   error?: string;
 }
@@ -1543,6 +1544,8 @@ export interface Task {
   reviewState?: TaskReviewState;
   /** PR information for tasks linked to GitHub pull requests */
   prInfo?: PrInfo;
+  /** Canonical list of linked PRs; prInfo mirrors the primary PR for back-compat. */
+  prInfos?: PrInfo[];
   mergeDetails?: MergeDetails;
   /** Issue information for tasks imported from GitHub issues */
   issueInfo?: IssueInfo;
@@ -3499,6 +3502,7 @@ export interface ArchivedTaskEntry {
    *  - "fast": Expedited execution with minimal overhead for simple tasks */
   executionMode?: ExecutionMode;
   prInfo?: PrInfo;
+  prInfos?: PrInfo[];
   issueInfo?: IssueInfo;
   githubTracking?: TaskGithubTracking;
   /** Durable source provenance for the originating external issue. */

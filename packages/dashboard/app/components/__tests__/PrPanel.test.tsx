@@ -9,9 +9,10 @@ vi.mock("../../api", () => ({
   mergePr: vi.fn(),
   reclaimPrConflict: vi.fn(),
   setAutoMergeOnGreen: vi.fn(),
+  unlinkPr: vi.fn(),
 }));
 
-import { refreshPrStatus, fetchPrChecks, fetchPrReviews, mergePr, reclaimPrConflict, setAutoMergeOnGreen } from "../../api";
+import { refreshPrStatus, fetchPrChecks, fetchPrReviews, mergePr, reclaimPrConflict, setAutoMergeOnGreen, unlinkPr } from "../../api";
 
 const originalClipboard = navigator.clipboard;
 const mockAddToast = vi.fn();
@@ -115,6 +116,21 @@ describe("PrPanel", () => {
       checks: [],
       reviewDecision: null,
       blockingReasons: [],
+      primary: {
+        prInfo: { ...mockPrInfo, status: "merged" },
+        checks: [],
+        reviewDecision: null,
+        blockingReasons: [],
+        mergeReady: false,
+      },
+      all: [{
+        prInfo: { ...mockPrInfo, status: "merged" },
+        checks: [],
+        reviewDecision: null,
+        blockingReasons: [],
+        mergeReady: false,
+      }],
+      mergeReady: false,
     });
 
     render(<PrPanel taskId="FN-001" projectId="project-1" prInfo={mockPrInfo} prAuthAvailable={true} onPrUpdated={mockOnPrUpdated} addToast={mockAddToast} />);
@@ -323,6 +339,43 @@ describe("PrPanel", () => {
     await waitFor(() => {
       expect(navigator.clipboard.writeText).toHaveBeenCalledWith("git fetch origin\ngit checkout fusion/fn-001");
     });
+  });
+
+  it("renders multi-pr summary and unlinks targeted PR", async () => {
+    const onPrUnlinked = vi.fn();
+    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true);
+    render(
+      <PrPanel
+        taskId="FN-001"
+        projectId="project-1"
+        prInfos={[mockPrInfo, { ...mockPrInfo, number: 99, url: "https://github.com/owner/repo/pull/99", title: "Another" }]}
+        prAuthAvailable={true}
+        onPrUpdated={mockOnPrUpdated}
+        onPrUnlinked={onPrUnlinked}
+        addToast={mockAddToast}
+      />,
+    );
+
+    expect(screen.getByText("2 pull requests")).toBeInTheDocument();
+    expect(document.querySelector(".pr-panel-summary-badge")?.textContent).toBe("open");
+    fireEvent.click(screen.getAllByRole("button", { name: "Unlink" })[1]!);
+    await waitFor(() => expect(unlinkPr).toHaveBeenCalledWith("FN-001", 99, "project-1"));
+    expect(onPrUnlinked).toHaveBeenCalledWith(99);
+    confirmSpy.mockRestore();
+  });
+
+  it("uses worst rollup state badge for multi-pr summary", () => {
+    render(
+      <PrPanel
+        taskId="FN-001"
+        prInfos={[{ ...mockPrInfo, mergeable: "conflicting" as const }, { ...mockPrInfo, number: 100, url: "https://github.com/owner/repo/pull/100" }]}
+        prAuthAvailable={true}
+        onPrUpdated={mockOnPrUpdated}
+        addToast={mockAddToast}
+      />,
+    );
+
+    expect(screen.getByText("conflicting")).toBeInTheDocument();
   });
 
   it("re-check conflicts triggers refreshPrStatus", async () => {

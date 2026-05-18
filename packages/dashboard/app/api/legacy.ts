@@ -2194,11 +2194,12 @@ export interface PrCheckStatus {
 
 export interface PrStatusResponse {
   prInfo: PrInfo;
+  prInfos?: PrInfo[];
   stale: boolean;
   automationStatus?: string | null;
 }
 
-export interface PrRefreshResponse {
+export interface PrRefreshEntry {
   prInfo: PrInfo;
   conflictDiagnostics?: PrConflictDiagnostics;
   mergeReady: boolean;
@@ -2210,12 +2211,18 @@ export interface PrRefreshResponse {
   conflictReclaimQueued?: boolean;
 }
 
+export interface PrRefreshResponse extends PrRefreshEntry {
+  primary: PrRefreshEntry;
+  all: PrRefreshEntry[];
+}
+
 export interface PrMergeResponse {
   prInfo: PrInfo;
   alreadyMerged?: boolean;
 }
 
 export interface PrChecksResponse {
+  prInfos?: PrInfo[];
   checks: PrCheckStatus[];
   rollup: "success" | "pending" | "failure" | "unknown";
   lastCheckedAt: string;
@@ -2232,6 +2239,7 @@ export interface PrReviewThreadItem {
 }
 
 export interface PrReviewsResponse {
+  prInfos?: PrInfo[];
   snapshot: {
     decision: "APPROVED" | "CHANGES_REQUESTED" | "REVIEW_REQUIRED" | null;
     items: Array<{
@@ -2345,14 +2353,22 @@ export function refreshPrStatus(id: string, projectId?: string): Promise<PrRefre
   });
 }
 
+export function unlinkPr(taskId: string, number: number, projectId?: string): Promise<{ task: TaskDetail; prInfos: PrInfo[] }> {
+  return api<{ task: TaskDetail; prInfos: PrInfo[] }>(withProjectId(`/tasks/${taskId}/pr/${number}/unlink`, projectId), {
+    method: "POST",
+    body: JSON.stringify({}),
+  });
+}
+
 export function reclaimPrConflict(id: string, projectId?: string): Promise<{ queued: boolean; reason?: string }> {
   return api<{ queued: boolean; reason?: string }>(withProjectId(`/tasks/${id}/pr/reclaim-conflict`, projectId), {
     method: "POST",
   });
 }
 
-export function mergePr(id: string, method?: "merge" | "squash" | "rebase", projectId?: string): Promise<PrMergeResponse> {
-  return api<PrMergeResponse>(withProjectId(`/tasks/${id}/pr/merge`, projectId), {
+export function mergePr(id: string, method?: "merge" | "squash" | "rebase", projectId?: string, prNumber?: number): Promise<PrMergeResponse> {
+  const search = prNumber ? `?pr=${encodeURIComponent(String(prNumber))}` : "";
+  return api<PrMergeResponse>(withProjectId(`/tasks/${id}/pr/merge${search}`, projectId), {
     method: "POST",
     body: JSON.stringify(method ? { method } : {}),
   });
@@ -2363,20 +2379,24 @@ export function setAutoMergeOnGreen(
   enabled: boolean,
   strategy?: "merge" | "squash" | "rebase",
   projectId?: string,
+  prNumber?: number,
 ): Promise<{ prInfo: PrInfo }> {
-  return api<{ prInfo: PrInfo }>(withProjectId(`/tasks/${id}/pr/auto-merge`, projectId), {
+  const search = prNumber ? `?pr=${encodeURIComponent(String(prNumber))}` : "";
+  return api<{ prInfo: PrInfo }>(withProjectId(`/tasks/${id}/pr/auto-merge${search}`, projectId), {
     method: "POST",
     body: JSON.stringify({ enabled, strategy }),
   });
 }
 
 /** Fetch all PR checks for a task */
-export function fetchPrChecks(id: string, projectId?: string): Promise<PrChecksResponse> {
-  return api<PrChecksResponse>(withProjectId(`/tasks/${id}/pr/checks`, projectId));
+export function fetchPrChecks(id: string, projectId?: string, prNumber?: number): Promise<PrChecksResponse> {
+  const search = prNumber ? `?pr=${encodeURIComponent(String(prNumber))}` : "";
+  return api<PrChecksResponse>(withProjectId(`/tasks/${id}/pr/checks${search}`, projectId));
 }
 
-export function fetchPrReviews(id: string, projectId?: string): Promise<PrReviewsResponse> {
-  return api<PrReviewsResponse>(withProjectId(`/tasks/${id}/pr/reviews`, projectId));
+export function fetchPrReviews(id: string, projectId?: string, prNumber?: number): Promise<PrReviewsResponse> {
+  const search = prNumber ? `?pr=${encodeURIComponent(String(prNumber))}` : "";
+  return api<PrReviewsResponse>(withProjectId(`/tasks/${id}/pr/reviews${search}`, projectId));
 }
 
 // --- Issue Management API ---

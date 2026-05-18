@@ -45,6 +45,9 @@ function createStore(task: Task): TaskStore {
     getAgentLogs: vi.fn().mockResolvedValue([]),
     addSteeringComment: vi.fn(),
     updatePrInfo: vi.fn().mockResolvedValue(undefined),
+    updatePrInfoByNumber: vi.fn().mockResolvedValue(undefined),
+    addPrInfo: vi.fn().mockResolvedValue(undefined),
+    removePrInfoByNumber: vi.fn().mockResolvedValue(undefined),
     updateIssueInfo: vi.fn().mockResolvedValue(undefined),
     getRootDir: vi.fn().mockReturnValue("/tmp/project"),
     getFusionDir: vi.fn().mockReturnValue("/tmp/project/.fusion"),
@@ -82,13 +85,12 @@ describe("PR routes contract", () => {
     expect(response.body.error).toContain("title is required");
   });
 
-  it("returns conflict when task already has PR", async () => {
+  it("does not return conflict when task already has PR", async () => {
     const app = createServer(createStore(createTask()));
     const response = await performRequest(app, "POST", "/api/tasks/FN-001/pr/create", JSON.stringify({ title: "x" }), {
       "content-type": "application/json",
     });
 
-    expect(response.status).toBe(409);
-    expect(response.body.error).toContain("already has PR");
+    expect(response.status).not.toBe(409);
   });
 });

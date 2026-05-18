@@ -1593,6 +1593,7 @@ The GitHub tracking state listener now attaches to every registered project stor
 - Badge snapshots are streamed via `/api/ws` and `useBadgeWebSocket.ts`
 
 #### PR checks API
+- Tasks now support multiple linked PRs via `Task.prInfos` (canonical list). `Task.prInfo` remains as a back-compat primary mirror and should be treated as `prInfos[0]` when present.
 - `GET /api/tasks/:id/pr/checks` returns live PR check data for the task PR:
   - `checks: PrCheckStatus[]` (required and non-required checks)
   - `rollup: "success" | "pending" | "failure" | "unknown"` derived from **required checks only** (merge-readiness semantics)
@@ -1602,9 +1603,10 @@ The GitHub tracking state listener now attaches to every registered project stor
   - `429` when `githubRateLimiter` denies the repo request window, including `retryAfter`/`resetAt` details
 
 #### PR review ingestion and auto-transition
-- `POST /api/tasks/:id/pr/refresh` and background `refreshPrInBackground()` call `getPrReviewSnapshot()` and sync review data into task comments with idempotency on `(source, externalId)`.
+- `POST /api/tasks/:id/pr/refresh` and background `refreshPrInBackground()` refresh every linked PR (`prInfos`) in bounded batches, return a primary entry plus `all` entries, then sync review data into task comments with idempotency on `(source, externalId)`.
 - Synced comment sources are `github-review` and `github-review-comment`; refinement auto-creation is skipped for these external comments.
 - `GET /api/tasks/:id/pr/reviews` returns the live GitHub review snapshot plus the Fusion-threaded stored review comments for the task.
+- `POST /api/tasks/:id/pr/:number/unlink` removes only the task↔PR link (does not close the PR) and returns the updated `prInfos` list.
 - When review decision transitions to `CHANGES_REQUESTED` while the task is in `in-review`, Fusion auto-moves the task back to `todo` with `preserveProgress` and `preserveWorktree`, writes a `review-feedback` task document, and records run-audit mutation `pr:changes-requested-auto-move`.
 
 ---

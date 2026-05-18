@@ -1,3 +1,27 @@
+.pr-panel-stack {
+  display: grid;
+  gap: var(--space-md);
+}
+
+.pr-panel-summary {
+  align-items: center;
+  display: flex;
+  gap: var(--space-sm);
+  justify-content: space-between;
+  margin-bottom: var(--space-sm);
+}
+
+.pr-panel-summary-badge {
+  background: color-mix(in srgb, var(--color-info) 20%, transparent);
+  border: var(--btn-border-width) solid color-mix(in srgb, var(--color-info) 30%, transparent);
+  border-radius: var(--radius-pill);
+  color: var(--color-info);
+  font-size: 0.75rem;
+  font-weight: 600;
+  padding: 0 var(--space-sm);
+  text-transform: uppercase;
+}
+
 .pr-panel-section {
   display: grid;
   gap: var(--space-sm);

@@ -333,6 +333,49 @@ describe("TaskCard", () => {
     expect(card.getAttribute("draggable")).toBe("false");
   });
 
+  it("renders Nx PR badge label when multiple PRs are linked", () => {
+    render(
+      <TaskCard
+        task={makeTask({
+          column: "in-review",
+          prInfo: {
+            url: "https://github.com/owner/repo/pull/42",
+            number: 42,
+            status: "open",
+            title: "PR",
+            headBranch: "fusion/fn-001",
+            baseBranch: "main",
+            commentCount: 0,
+          } as any,
+          prInfos: [
+            {
+              url: "https://github.com/owner/repo/pull/42",
+              number: 42,
+              status: "open",
+              title: "PR",
+              headBranch: "fusion/fn-001",
+              baseBranch: "main",
+              commentCount: 0,
+            },
+            {
+              url: "https://github.com/owner/repo/pull/99",
+              number: 99,
+              status: "open",
+              title: "PR 2",
+              headBranch: "fusion/fn-001-2",
+              baseBranch: "main",
+              commentCount: 0,
+            },
+          ] as any,
+        })}
+        onOpenDetail={noop}
+        addToast={noop}
+      />,
+    );
+
+    expect(screen.getByRole("link", { name: /2x #42/i })).toBeDefined();
+  });
+
   it("clicking PR badge link does not open the task detail modal", () => {
     const onOpenDetail = vi.fn();
     render(

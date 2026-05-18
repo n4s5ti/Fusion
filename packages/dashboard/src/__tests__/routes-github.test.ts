@@ -203,6 +203,9 @@ function createMockStore(overrides: Partial<TaskStore> = {}): TaskStore {
     upsertTaskDocument: vi.fn(),
     deleteTaskDocument: vi.fn().mockResolvedValue(undefined),
     updatePrInfo: vi.fn().mockResolvedValue(undefined),
+    addPrInfo: vi.fn().mockResolvedValue(undefined),
+    updatePrInfoByNumber: vi.fn().mockResolvedValue(undefined),
+    removePrInfoByNumber: vi.fn().mockResolvedValue(undefined),
     updateIssueInfo: vi.fn().mockResolvedValue(undefined),
     getRootDir: vi.fn().mockReturnValue("/fake/root"),
     listWorkflowSteps: vi.fn().mockResolvedValue([]),
@@ -2428,6 +2431,9 @@ describe("PR conflict refresh + reclaim routes", () => {
       getTask: vi.fn(),
       getSettings: vi.fn().mockResolvedValue({ directMergeCommitStrategy: "auto" }),
       updatePrInfo: vi.fn().mockResolvedValue(undefined),
+      updatePrInfoByNumber: vi.fn().mockResolvedValue(undefined),
+      addPrInfo: vi.fn().mockResolvedValue(undefined),
+      removePrInfoByNumber: vi.fn().mockResolvedValue(undefined),
       applyPrMergedTransition: vi.fn().mockResolvedValue(undefined),
     });
     mockIsGhAuthenticated.mockReturnValue(true);
@@ -2443,6 +2449,37 @@ describe("PR conflict refresh + reclaim routes", () => {
     app.use("/api", createApiRoutes(store, options));
     return app;
   }
+
+  it("create-PR on a task with an existing PR appends instead of overwriting", async () => {
+    process.env.GITHUB_REPOSITORY = "owner/repo";
+    const existingPr = {
+      url: "https://github.com/owner/repo/pull/900",
+      number: 900,
+      status: "open",
+      title: "Existing",
+      headBranch: "fusion/fn-900",
+      baseBranch: "main",
+      commentCount: 0,
+    };
+    const task = { ...FAKE_TASK_DETAIL, id: "FN-900", column: "in-review", prInfo: existingPr, prInfos: [existingPr] };
+    (store.getTask as ReturnType<typeof vi.fn>).mockResolvedValue(task);
+
+    vi.spyOn(GitHubClient.prototype, "findPrForBranch").mockResolvedValue({
+      url: "https://github.com/owner/repo/pull/901",
+      number: 901,
+      status: "open",
+      title: "New",
+      headBranch: "fusion/fn-900",
+      baseBranch: "main",
+      commentCount: 0,
+    } as any);
+
+    const res = await REQUEST(buildApp(), "POST", `/api/tasks/${task.id}/pr/create`, JSON.stringify({ title: "New PR" }), { "content-type": "application/json" });
+
+    expect(res.status).toBe(201);
+    expect(store.addPrInfo).toHaveBeenCalledWith(task.id, expect.objectContaining({ number: 901 }));
+    expect(store.updatePrInfo).not.toHaveBeenCalled();
+  });
 
   it("queues conflict reclaim during refresh when mergeable is conflicting", async () => {
     const task = {
@@ -2487,8 +2524,9 @@ describe("PR conflict refresh + reclaim routes", () => {
     const res = await REQUEST(buildApp({ engine } as any), "POST", `/api/tasks/${task.id}/pr/refresh`, JSON.stringify({}), { "content-type": "application/json" });
     expect(res.status).toBe(200);
     expect(res.body.conflictReclaimQueued).toBe(true);
-    expect(store.updatePrInfo).toHaveBeenCalledWith(
+    expect(store.updatePrInfoByNumber).toHaveBeenCalledWith(
       task.id,
+      task.prInfo.number,
       expect.objectContaining({
         conflictDiagnostics: expect.objectContaining({
           conflictingFiles: ["packages/dashboard/src/github.ts"],
@@ -2577,8 +2615,9 @@ describe("PR conflict refresh + reclaim routes", () => {
     const res = await REQUEST(buildApp(), "POST", `/api/tasks/${task.id}/pr/refresh`, JSON.stringify({}), { "content-type": "application/json" });
 
     expect(res.status).toBe(200);
-    expect(store.updatePrInfo).toHaveBeenCalledWith(
+    expect(store.updatePrInfoByNumber).toHaveBeenCalledWith(
       task.id,
+      task.prInfo.number,
       expect.objectContaining({
         mergeable: "clean",
         conflictDiagnostics: undefined,
@@ -2619,8 +2658,9 @@ describe("PR conflict refresh + reclaim routes", () => {
     const res = await REQUEST(buildApp(), "POST", `/api/tasks/${task.id}/pr/refresh`, JSON.stringify({}), { "content-type": "application/json" });
 
     expect(res.status).toBe(200);
-    expect(store.updatePrInfo).toHaveBeenCalledWith(
+    expect(store.updatePrInfoByNumber).toHaveBeenCalledWith(
       task.id,
+      task.prInfo.number,
       expect.objectContaining({
         conflictDiagnostics: expect.objectContaining({
           conflictingFiles: ["a.ts"],
@@ -2685,5 +2725,48 @@ describe("PR conflict refresh + reclaim routes", () => {
     (store.getTask as ReturnType<typeof vi.fn>).mockResolvedValue(task);
     const res = await REQUEST(buildApp(), "POST", `/api/tasks/${task.id}/pr/reclaim-conflict`, JSON.stringify({}), { "content-type": "application/json" });
     expect(res.status).toBe(409);
+  });
+
+  it("refresh returns primary/all for multi-pr tasks", async () => {
+    const task = {
+      ...FAKE_TASK_DETAIL,
+      id: "FN-920",
+      branch: "fusion/fn-920",
+      worktree: "/tmp/test/.worktrees/fn-920",
+      prInfo: { url: "https://github.com/owner/repo/pull/920", number: 920, status: "open", title: "PR920", commentCount: 0 },
+      prInfos: [
+        { url: "https://github.com/owner/repo/pull/920", number: 920, status: "open", title: "PR920", commentCount: 0 },
+        { url: "https://github.com/owner/repo/pull/921", number: 921, status: "open", title: "PR921", commentCount: 0 },
+      ],
+    };
+    (store.getTask as ReturnType<typeof vi.fn>).mockResolvedValue(task);
+    vi.spyOn(GitHubClient.prototype, "getPrReviewSnapshot").mockResolvedValue({ decision: "approved", items: [], summary: { approved: 0, changesRequested: 0, commented: 0 } } as any);
+    vi.spyOn(GitHubClient.prototype, "getPrMergeStatus").mockResolvedValue({ mergeReady: true, blockingReasons: [], checks: [], prInfo: { status: "open", mergeable: "clean" } } as any);
+
+    const res = await REQUEST(buildApp(), "POST", `/api/tasks/${task.id}/pr/refresh`, JSON.stringify({}), { "content-type": "application/json" });
+    expect(res.status).toBe(200);
+    expect(res.body.all).toHaveLength(2);
+    expect(res.body.primary.prInfo.number).toBe(res.body.prInfo.number);
+    expect(res.body.mergeReady).toBe(res.body.primary.mergeReady);
+  });
+
+  it("unlink removes targeted PR without closing github PR", async () => {
+    const task = {
+      ...FAKE_TASK_DETAIL,
+      id: "FN-930",
+      prInfo: { url: "https://github.com/owner/repo/pull/930", number: 930, status: "open", title: "PR930" },
+      prInfos: [
+        { url: "https://github.com/owner/repo/pull/930", number: 930, status: "open", title: "PR930" },
+        { url: "https://github.com/owner/repo/pull/931", number: 931, status: "open", title: "PR931" },
+      ],
+    };
+    (store.getTask as ReturnType<typeof vi.fn>).mockResolvedValue(task);
+    (store.removePrInfoByNumber as ReturnType<typeof vi.fn>).mockResolvedValue({ ...task, prInfo: task.prInfos[1], prInfos: [task.prInfos[1]] });
+    const mergeSpy = vi.spyOn(GitHubClient.prototype, "mergePr");
+
+    const res = await REQUEST(buildApp(), "POST", `/api/tasks/${task.id}/pr/930/unlink`, JSON.stringify({}), { "content-type": "application/json" });
+    expect(res.status).toBe(200);
+    expect(store.removePrInfoByNumber).toHaveBeenCalledWith(task.id, 930);
+    expect(mergeSpy).not.toHaveBeenCalled();
   });
 });

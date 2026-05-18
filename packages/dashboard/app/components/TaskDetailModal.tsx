@@ -3324,6 +3324,7 @@ export function TaskDetailContent({
                 taskId={task.id}
                 projectId={projectId}
                 prInfo={task.prInfo}
+                prInfos={task.prInfos}
                 automationStatus={task.status ?? null}
                 taskColumn={task.column}
                 autoMerge={settings?.autoMerge ?? false}
@@ -3332,7 +3333,21 @@ export function TaskDetailContent({
                 prAuthAvailable={prAuthAvailable ?? false}
                 onRequestCreatePr={() => setPrCreateOpen(true)}
                 onPrUpdated={(prInfo) => {
-                  (task as TaskDetail).prInfo = prInfo;
+                  const existing = task.prInfos ?? (task.prInfo ? [task.prInfo] : []);
+                  const nextPrInfos = existing.some((entry) => entry.number === prInfo.number)
+                    ? existing.map((entry) => (entry.number === prInfo.number ? prInfo : entry))
+                    : [...existing, prInfo];
+                  (task as TaskDetail).prInfos = nextPrInfos;
+                  (task as TaskDetail).prInfo = nextPrInfos[0] ?? prInfo;
+                }}
+                onPrsRefreshed={(prInfos) => {
+                  (task as TaskDetail).prInfos = prInfos;
+                  (task as TaskDetail).prInfo = prInfos[0];
+                }}
+                onPrUnlinked={(prNumber) => {
+                  const nextPrInfos = (task.prInfos ?? (task.prInfo ? [task.prInfo] : [])).filter((entry) => entry.number !== prNumber);
+                  (task as TaskDetail).prInfos = nextPrInfos;
+                  (task as TaskDetail).prInfo = nextPrInfos[0];
                 }}
                 addToast={addToast}
               />
@@ -3343,8 +3358,10 @@ export function TaskDetailContent({
                 defaultBaseBranch={undefined}
                 onClose={() => setPrCreateOpen(false)}
                 onCreated={(prInfo) => {
-                  (task as TaskDetail).prInfo = prInfo;
-                  onTaskUpdated?.({ ...workingTask, prInfo } as Task);
+                  const nextPrInfos = [...(task.prInfos ?? (task.prInfo ? [task.prInfo] : [])), prInfo];
+                  (task as TaskDetail).prInfo = nextPrInfos[0] ?? prInfo;
+                  (task as TaskDetail).prInfos = nextPrInfos;
+                  onTaskUpdated?.({ ...workingTask, prInfo: nextPrInfos[0] ?? prInfo, prInfos: nextPrInfos } as Task);
                   setPrCreateOpen(false);
                 }}
                 addToast={addToast}
