@@ -13,7 +13,7 @@ All skill/extension tool invocations in this catalog use the public `fn_*` names
 | Tool | Purpose |
 |------|---------|
 | `fn_task_create` | Create a new task on the Fusion task board. The task enters the planning column where the AI planning agent will plan it into a full prompt with steps, file scope, and acceptance criteria. |
-| `fn_task_update` | Update fields on an existing task. Supports modifying the title, description, dependencies, and assigned agent after task creation. |
+| `fn_task_update` | Update fields on an existing task. Supports modifying the title, description, dependencies, assigned agent, and priority after task creation. |
 | `fn_task_list` | List all tasks on the Fusion board, grouped by column. |
 | `fn_task_show` | Show full details for a task including steps, progress, and log entries. |
 | `fn_task_attach` | Attach a file to a task. Supports images (png, jpg, gif, webp) and text files (txt, log, json, yaml, yml, toml, csv, xml). |

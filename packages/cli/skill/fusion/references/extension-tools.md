@@ -21,7 +21,7 @@ Create a new task on the Fusion task board. The task enters the planning column 
 
 ### fn_task_update
 
-Update fields on an existing task. Supports modifying the title, description, dependencies, and assigned agent after task creation.
+Update fields on an existing task. Supports modifying the title, description, dependencies, assigned agent, and priority after task creation.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
@@ -31,6 +31,7 @@ Update fields on an existing task. Supports modifying the title, description, de
 | `depends` | array | — | New dependency list — replaces existing dependencies (e.g. ['FN-001', 'FN-002']) |
 | `agentId` | union | — | Agent ID to assign this task to, or null to clear (e.g. 'agent-abc123') |
 | `nodeId` | union | — | Node ID override for this task, or null to clear |
+| `priority` | string(enum) | — | Task priority (low, normal, high, urgent) |
 
 ### fn_task_list
 
