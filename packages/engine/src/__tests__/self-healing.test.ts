@@ -523,6 +523,7 @@ describe("SelfHealingManager", () => {
       const clearStaleBlockedBy = vi.spyOn(manager, "clearStaleBlockedBy").mockResolvedValue(1);
       const surfaceInReviewStalls = vi.spyOn(manager, "surfaceInReviewStalls").mockResolvedValue(1);
       const surfaceStalePausedReviews = vi.spyOn(manager, "surfaceStalePausedReviews").mockResolvedValue(1);
+      const surfaceStalePausedTodos = vi.spyOn(manager, "surfaceStalePausedTodos").mockResolvedValue(1);
 
       await manager.runStartupRecovery();
 
@@ -538,6 +539,7 @@ describe("SelfHealingManager", () => {
       expect(clearStaleBlockedBy).toHaveBeenCalledTimes(1);
       expect(surfaceInReviewStalls).toHaveBeenCalledTimes(1);
       expect(surfaceStalePausedReviews).toHaveBeenCalledTimes(1);
+      expect(surfaceStalePausedTodos).toHaveBeenCalledTimes(1);
     });
 
     it("runStartupRecovery clears stale blockedBy rows", async () => {
@@ -4956,6 +4958,96 @@ describe("SelfHealingManager", () => {
 
       expect(await managerWithRecovery.surfaceStalePausedReviews()).toBe(0);
       expect(await managerWithRecovery.surfaceStalePausedReviews()).toBe(1);
+      managerWithRecovery.stop();
+    });
+  });
+
+  describe("surfaceStalePausedTodos", () => {
+    function pausedTodoTask(overrides: Record<string, unknown> = {}) {
+      return {
+        id: "FN-5034",
+        column: "todo",
+        paused: true,
+        pausedReason: "manual-hold",
+        columnMovedAt: "2026-01-01T00:00:00.000Z",
+        updatedAt: "2026-01-01T00:00:00.000Z",
+        log: [],
+        ...overrides,
+      };
+    }
+
+    it("logs for stale paused todo tasks", async () => {
+      vi.setSystemTime(new Date("2026-01-02T01:00:00.000Z"));
+      const managerWithRecovery = new SelfHealingManager(store, { rootDir: "/tmp/test-project" });
+      (store.getSettings as ReturnType<typeof vi.fn>).mockResolvedValue({ stalePausedTodoThresholdMs: 24 * 60 * 60_000 });
+      (store.listTasks as ReturnType<typeof vi.fn>).mockResolvedValue([pausedTodoTask()]);
+
+      expect(await managerWithRecovery.surfaceStalePausedTodos()).toBe(1);
+      expect(store.logEntry).toHaveBeenCalledWith(
+        "FN-5034",
+        expect.stringContaining("Stale paused todo surfaced [stale-paused-todo]: paused"),
+      );
+      expect(store.logEntry).toHaveBeenCalledWith(
+        "FN-5034",
+        expect.stringContaining("disposition options — unpause, move to triage, archive, or create follow-up task"),
+      );
+      managerWithRecovery.stop();
+    });
+
+    it("skips under threshold and for unpaused/non-todo tasks", async () => {
+      vi.setSystemTime(new Date("2026-01-01T00:10:00.000Z"));
+      const managerWithRecovery = new SelfHealingManager(store, { rootDir: "/tmp/test-project" });
+      (store.getSettings as ReturnType<typeof vi.fn>).mockResolvedValue({ stalePausedTodoThresholdMs: 24 * 60 * 60_000 });
+      (store.listTasks as ReturnType<typeof vi.fn>).mockResolvedValue([
+        pausedTodoTask(),
+        pausedTodoTask({ id: "FN-UP", paused: false }),
+        pausedTodoTask({ id: "FN-IR", column: "in-review" }),
+      ]);
+
+      expect(await managerWithRecovery.surfaceStalePausedTodos()).toBe(0);
+      expect(store.logEntry).not.toHaveBeenCalled();
+      managerWithRecovery.stop();
+    });
+
+    it("returns zero while paused or when threshold is disabled", async () => {
+      vi.setSystemTime(new Date("2026-01-02T01:00:00.000Z"));
+      const managerWithRecovery = new SelfHealingManager(store, { rootDir: "/tmp/test-project" });
+      (store.getSettings as ReturnType<typeof vi.fn>)
+        .mockResolvedValueOnce({ stalePausedTodoThresholdMs: 24 * 60 * 60_000, globalPause: true })
+        .mockResolvedValueOnce({ stalePausedTodoThresholdMs: 24 * 60 * 60_000, enginePaused: true })
+        .mockResolvedValueOnce({ stalePausedTodoThresholdMs: 0 });
+
+      expect(await managerWithRecovery.surfaceStalePausedTodos()).toBe(0);
+      expect(await managerWithRecovery.surfaceStalePausedTodos()).toBe(0);
+      expect(await managerWithRecovery.surfaceStalePausedTodos()).toBe(0);
+      expect(store.logEntry).not.toHaveBeenCalled();
+      managerWithRecovery.stop();
+    });
+
+    it("dedupes within threshold window and re-emits after window", async () => {
+      vi.setSystemTime(new Date("2026-01-02T01:00:00.000Z"));
+      const managerWithRecovery = new SelfHealingManager(store, { rootDir: "/tmp/test-project" });
+      (store.getSettings as ReturnType<typeof vi.fn>).mockResolvedValue({ stalePausedTodoThresholdMs: 24 * 60 * 60_000 });
+      (store.listTasks as ReturnType<typeof vi.fn>)
+        .mockResolvedValueOnce([
+          pausedTodoTask({
+            log: [{
+              timestamp: "2026-01-01T12:00:00.000Z",
+              action: "Stale paused todo surfaced [stale-paused-todo]: recent",
+            }],
+          }),
+        ])
+        .mockResolvedValueOnce([
+          pausedTodoTask({
+            log: [{
+              timestamp: "2025-12-30T00:00:00.000Z",
+              action: "Stale paused todo surfaced [stale-paused-todo]: old",
+            }],
+          }),
+        ]);
+
+      expect(await managerWithRecovery.surfaceStalePausedTodos()).toBe(0);
+      expect(await managerWithRecovery.surfaceStalePausedTodos()).toBe(1);
       managerWithRecovery.stop();
     });
   });

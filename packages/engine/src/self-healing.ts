@@ -662,6 +662,7 @@ export class SelfHealingManager {
       { name: "reclaim-stale-active-branches", fn: () => this.reclaimStaleActiveBranches().then(() => undefined) },
       { name: "surface-in-review-stalls", fn: () => this.surfaceInReviewStalls().then(() => undefined) },
       { name: "surface-stale-paused-reviews", fn: () => this.surfaceStalePausedReviews().then(() => undefined) },
+      { name: "surface-stale-paused-todos", fn: () => this.surfaceStalePausedTodos().then(() => undefined) },
       { name: "audit-no-commits-expected-candidates", fn: () => this.auditNoCommitsExpectedCandidates().then(() => undefined) },
     ];
 
@@ -1248,6 +1249,7 @@ export class SelfHealingManager {
           { name: "reclaim-stale-active-branches", fn: () => this.reclaimStaleActiveBranches() },
           { name: "surface-in-review-stalls", fn: () => this.surfaceInReviewStalls() },
           { name: "surface-stale-paused-reviews", fn: () => this.surfaceStalePausedReviews() },
+          { name: "surface-stale-paused-todos", fn: () => this.surfaceStalePausedTodos() },
           { name: "audit-no-commits-expected-candidates", fn: () => this.auditNoCommitsExpectedCandidates() },
         ];
         for (const fn of batch2Fns) {
@@ -4081,6 +4083,52 @@ export class SelfHealingManager {
     } catch (err: unknown) {
       const errorMessage = err instanceof Error ? err.message : String(err);
       log.error(`Stale paused review surfacing failed: ${errorMessage}`);
+      return 0;
+    }
+  }
+
+  async surfaceStalePausedTodos(): Promise<number> {
+    try {
+      const settings = await this.store.getSettings();
+      if (settings.globalPause || settings.enginePaused) return 0;
+
+      const cycleStartMs = Date.now();
+      const thresholdMs = settings.stalePausedTodoThresholdMs;
+      if (!thresholdMs || thresholdMs <= 0) return 0;
+
+      const tasks = await this.store.listTasks({ column: "todo", slim: false });
+      let surfaced = 0;
+
+      for (const task of tasks) {
+        if (task.paused !== true) continue;
+        const signal = getStalePausedTodoSignal(task, { now: cycleStartMs, thresholdMs });
+        if (!signal) continue;
+        if (Date.parse(task.updatedAt) >= cycleStartMs) continue;
+
+        const previous = [...(task.log ?? [])]
+          .reverse()
+          .find((entry) => entry.action.startsWith("Stale paused todo surfaced ["));
+        if (previous) {
+          const parsed = /^Stale paused todo surfaced \[([^\]]+)\]/.exec(previous.action);
+          const previousCode = parsed?.[1];
+          const previousAt = Date.parse(previous.timestamp);
+          if (Number.isFinite(previousAt) && previousAt >= cycleStartMs - thresholdMs && previousCode === signal.code) {
+            continue;
+          }
+        }
+
+        const hours = (signal.ageMs / 3_600_000).toFixed(1);
+        await this.store.logEntry(
+          task.id,
+          `Stale paused todo surfaced [${signal.code}]: paused ${hours}h beyond ${(thresholdMs / 3_600_000).toFixed(1)}h threshold; disposition options — unpause, move to triage, archive, or create follow-up task. pausedReason=${signal.pausedReason ?? "none"}`,
+        );
+        surfaced += 1;
+      }
+
+      return surfaced;
+    } catch (err: unknown) {
+      const errorMessage = err instanceof Error ? err.message : String(err);
+      log.error(`Stale paused todo surfacing failed: ${errorMessage}`);
       return 0;
     }
   }
