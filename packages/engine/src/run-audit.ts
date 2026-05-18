@@ -157,6 +157,7 @@ export type GitMutationType =
   | "merge:layer3:scope-override-bypass"
   | "merge:audit-failure"
   | "branch:auto-reclaim"
+  | "branch:auto-canonicalize-case"
   | "branch:stale-active-reclaim"
   | "branch:stale-active-reclaim-deferred"
   | "branch:orphan-prune"

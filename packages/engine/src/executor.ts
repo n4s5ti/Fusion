@@ -44,6 +44,7 @@ import type { SandboxBackend } from "./sandbox/types.js";
 import { ModelRegistry, SessionManager, type ToolDefinition, type AgentSession } from "@mariozechner/pi-coding-agent";
 import { PRIORITY_EXECUTE, type AgentSemaphore } from "./concurrency.js";
 import { RemovalReason, classifyTaskWorktree, describeRegisteredWorktrees, getRegisteredWorktreePaths, isGitRepository, isInsideWorktreesDir, isRegisteredGitWorktree, removeWorktree, type WorktreePool } from "./worktree-pool.js";
+import { attemptBranchAutocorrect } from "./branch-autocorrect.js";
 import { ActiveSessionWorktreeRemovalError } from "./worktree-backend.js";
 import { activeSessionRegistry, executingTaskLock } from "./active-session-registry.js";
 import {
@@ -5358,6 +5359,31 @@ export class TaskExecutor {
       });
       const observedBranch = stdout.trim();
       if (observedBranch && observedBranch !== branchName) {
+        if (observedBranch.toLowerCase() === branchName.toLowerCase()) {
+          executorLog.log(`${task.id}: branch case-mismatch detected; canonicalizing observed=${observedBranch} expected=${branchName}`);
+          const autocorrectResult = await attemptBranchAutocorrect({
+            worktreePath,
+            observedBranch,
+            expectedBranch: branchName,
+            rootDir: this.rootDir,
+          });
+          if (autocorrectResult.status !== "failed") {
+            const auditor = createRunAuditor(this.store, this.getRunContextFor(task.id));
+            await auditor.git({
+              type: "branch:auto-canonicalize-case",
+              target: worktreePath,
+              metadata: {
+                taskId: task.id,
+                observed: observedBranch,
+                expected: branchName,
+                worktreePath,
+                mode: autocorrectResult.status,
+              },
+            });
+            return { ok: true };
+          }
+          executorLog.warn(`${task.id}: failed to canonicalize branch case mismatch: ${autocorrectResult.reason ?? "unknown"}`);
+        }
         return {
           ok: false,
           reason: "wrong_branch",
