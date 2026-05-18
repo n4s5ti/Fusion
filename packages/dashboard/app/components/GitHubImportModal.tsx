@@ -1,5 +1,5 @@
 import "./GitHubImportModal.css";
-import { useState, useEffect, useCallback, useRef, type KeyboardEvent, type PointerEvent } from "react";
+import { useState, useEffect, useCallback, useRef, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent } from "react";
 import type { Task } from "@fusion/core";
 import { getErrorMessage } from "@fusion/core";
 import {
@@ -261,7 +261,7 @@ export function GitHubImportModal({ isOpen, onClose, onImport, tasks, projectId 
   // Handle escape key
   useEffect(() => {
     if (!isOpen) return;
-    const handleKey = (e: KeyboardEvent) => {
+    const handleKey = (e: globalThis.KeyboardEvent) => {
       if (e.key === "Escape") onClose();
     };
     document.addEventListener("keydown", handleKey);
@@ -295,7 +295,7 @@ export function GitHubImportModal({ isOpen, onClose, onImport, tasks, projectId 
     }
   }, [listPaneWidth]);
 
-  const handleListPaneResizeStart = useCallback((event: PointerEvent<HTMLDivElement>) => {
+  const handleListPaneResizeStart = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
     if (isMobile) {
       return;
     }
@@ -305,7 +305,7 @@ export function GitHubImportModal({ isOpen, onClose, onImport, tasks, projectId 
     const target = event.currentTarget;
     target.setPointerCapture(event.pointerId);
 
-    const handlePointerMove = (moveEvent: PointerEvent) => {
+    const handlePointerMove = (moveEvent: globalThis.PointerEvent) => {
       const deltaX = moveEvent.clientX - startX;
       setListPaneWidth(clampListPaneWidth(startWidth + deltaX));
     };
@@ -322,7 +322,7 @@ export function GitHubImportModal({ isOpen, onClose, onImport, tasks, projectId 
     document.addEventListener("pointerup", handlePointerUp);
   }, [isMobile, listPaneWidth]);
 
-  const handleListPaneResizeKeyDown = useCallback((event: KeyboardEvent<HTMLDivElement>) => {
+  const handleListPaneResizeKeyDown = useCallback((event: ReactKeyboardEvent<HTMLDivElement>) => {
     if (isMobile) {
       return;
     }
