@@ -114,7 +114,7 @@ describe("getInReviewStalledSignal", () => {
   it("uses updated when only updatedAt is parseable", () => {
     const signal = getInReviewStalledSignal({
       ...baseTask,
-      columnMovedAt: "not-a-date",
+      columnMovedAt: undefined,
       updatedAt: iso(NOW - 12_000),
       log: [],
     }, { now: NOW, thresholdMs: 10_000 });

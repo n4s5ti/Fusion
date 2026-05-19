@@ -225,6 +225,15 @@ export {
 } from "./capacity.js";
 export type { CapacityRiskSignal } from "./capacity.js";
 export {
+  computeDependencyBlockedTodoReport,
+  DEFAULT_DEPENDENCY_BLOCKED_TODO_MAX_GROUPS,
+} from "./dependency-blocked-todo-report.js";
+export type {
+  DependencyBlockedTodoGroup,
+  DependencyBlockedTodoReport,
+  DependencyBlockedTodoReportContext,
+} from "./dependency-blocked-todo-report.js";
+export {
   getTaskMergeBlocker,
   getTaskHardMergeBlocker,
   getTaskCompletionBlocker,
