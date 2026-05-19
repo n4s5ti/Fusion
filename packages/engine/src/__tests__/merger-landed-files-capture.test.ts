@@ -47,10 +47,11 @@ describe("FN-4646 aiMergeTask landedFiles capture", () => {
     const store = makeStore({ directMergeCommitStrategy: "always-rebase" });
     vi.spyOn(attributionModule, "filterFilesToOwnTaskCommits").mockResolvedValue({
       files: ["packages/engine/src/self-healing.ts"],
-      foreignCommits: Array.from({ length: 66 }, (_, i) => `foreign-${i}`),
+      foreignCommits: Array.from({ length: 66 }, (_, i) => ({ sha: `foreign-${i}`, subject: `feat(FN-${4000 + i}): foreign`, attributedTaskId: `FN-${4000 + i}` })),
       ownCommitCount: 1,
       ownCommitShas: ["ownsha1"],
       rawDiffFileCount: 67,
+      commitAttributions: [],
     });
     mockedExecSync.mockImplementation((cmd: any) => {
       const s = String(cmd);
@@ -79,7 +80,12 @@ describe("FN-4646 aiMergeTask landedFiles capture", () => {
   it("FN-5052 short-circuit variant: zero own commits yields empty landed files and keeps modifiedFiles", async () => {
     const store = makeStore({ directMergeCommitStrategy: "always-rebase" });
     vi.spyOn(attributionModule, "filterFilesToOwnTaskCommits").mockResolvedValue({
-      files: [], foreignCommits: Array.from({ length: 66 }, (_, i) => `foreign-${i}`), ownCommitCount: 0, ownCommitShas: [], rawDiffFileCount: 66,
+      files: [],
+      foreignCommits: Array.from({ length: 66 }, (_, i) => ({ sha: `foreign-${i}`, subject: `feat(FN-${5000 + i}): foreign`, attributedTaskId: `FN-${5000 + i}` })),
+      ownCommitCount: 0,
+      ownCommitShas: [],
+      rawDiffFileCount: 66,
+      commitAttributions: [],
     });
     mockedExecSync.mockImplementation((cmd: any) => {
       const s = String(cmd);
@@ -111,6 +117,7 @@ describe("FN-4646 aiMergeTask landedFiles capture", () => {
       ownCommitCount: 3,
       ownCommitShas: ["ownsha1", "ownsha2", "ownsha3"],
       rawDiffFileCount: 3,
+      commitAttributions: [],
     });
     mockedExecSync.mockImplementation((cmd: any) => {
       const s = String(cmd);
