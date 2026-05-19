@@ -834,6 +834,14 @@ export class TaskStore extends EventEmitter<TaskStoreEvents> {
   /** SQLite database for structured data storage */
   private _db: Database | null = null;
   private activityListenersWired = false;
+  /**
+   * When true, the activity-log listeners skip recording. Set by the polling
+   * loop (`checkForChanges`) so that events re-emitted after observing another
+   * TaskStore instance's DB write don't double- or triple-log to activityLog.
+   * The in-process emit path (moveTask, updateTask, etc.) leaves this false
+   * and remains the sole source of truth for activity rows.
+   */
+  private suppressActivityLogForPollingEmit = false;
   /** Separate SQLite database for compact archived task snapshots. */
   private _archiveDb: ArchiveDatabase | null = null;
 
@@ -2069,6 +2077,7 @@ export class TaskStore extends EventEmitter<TaskStoreEvents> {
 
     // Task created
     this.on("task:created", (task) => {
+      if (this.suppressActivityLogForPollingEmit) return;
       this.recordActivityFromListener(
         {
           type: "task:created",
@@ -2082,6 +2091,7 @@ export class TaskStore extends EventEmitter<TaskStoreEvents> {
 
     // Task moved
     this.on("task:moved", (data) => {
+      if (this.suppressActivityLogForPollingEmit) return;
       this.recordActivityFromListener(
         {
           type: "task:moved",
@@ -2111,6 +2121,7 @@ export class TaskStore extends EventEmitter<TaskStoreEvents> {
 
     // Task updated (check for failures)
     this.on("task:updated", (task) => {
+      if (this.suppressActivityLogForPollingEmit) return;
       if (task.status === "failed") {
         this.recordActivityFromListener(
           {
@@ -2155,6 +2166,7 @@ export class TaskStore extends EventEmitter<TaskStoreEvents> {
 
     // Task deleted
     this.on("task:deleted", (task) => {
+      if (this.suppressActivityLogForPollingEmit) return;
       this.recordActivityFromListener(
         {
           type: "task:deleted",
@@ -6616,13 +6628,19 @@ export class TaskStore extends EventEmitter<TaskStoreEvents> {
           const cached = this.taskCache.get(id);
           if (!cached) continue;
           this.taskCache.delete(id);
-          if (archivedSet.has(id)) {
-            // Task moved to archive — emit task:moved (matching what
-            // archiveTask emits in-process) so the activity-log listener
-            // records it correctly.
-            this.emit("task:moved", { task: cached, from: cached.column, to: "archived" as Column, source: "engine" });
-          } else {
-            this.emit("task:deleted", cached);
+          this.suppressActivityLogForPollingEmit = true;
+          try {
+            if (archivedSet.has(id)) {
+              // Task moved to archive — emit task:moved (matching what
+              // archiveTask emits in-process) so other subscribers can react.
+              // Activity-log listeners skip this emit; the originating
+              // TaskStore instance wrote the row in-process.
+              this.emit("task:moved", { task: cached, from: cached.column, to: "archived" as Column, source: "engine" });
+            } else {
+              this.emit("task:deleted", cached);
+            }
+          } finally {
+            this.suppressActivityLogForPollingEmit = false;
           }
         }
       }
@@ -6643,24 +6661,29 @@ export class TaskStore extends EventEmitter<TaskStoreEvents> {
         const task = this.rowToTask(row);
         const cached = this.taskCache.get(task.id);
 
-        if (task.deletedAt) {
-          if (cached) {
-            this.taskCache.delete(task.id);
-            this.emit("task:deleted", cached);
+        this.suppressActivityLogForPollingEmit = true;
+        try {
+          if (task.deletedAt) {
+            if (cached) {
+              this.taskCache.delete(task.id);
+              this.emit("task:deleted", cached);
+            }
+            continue;
           }
-          continue;
-        }
 
-        if (!cached) {
-          this.taskCache.set(task.id, { ...task });
-          this.emit("task:created", task);
-        } else if (cached.column !== task.column) {
-          const from = cached.column;
-          this.taskCache.set(task.id, { ...task });
-          this.emit("task:moved", { task, from, to: task.column, source: "engine" });
-        } else {
-          this.taskCache.set(task.id, { ...task });
-          this.emit("task:updated", task);
+          if (!cached) {
+            this.taskCache.set(task.id, { ...task });
+            this.emit("task:created", task);
+          } else if (cached.column !== task.column) {
+            const from = cached.column;
+            this.taskCache.set(task.id, { ...task });
+            this.emit("task:moved", { task, from, to: task.column, source: "engine" });
+          } else {
+            this.taskCache.set(task.id, { ...task });
+            this.emit("task:updated", task);
+          }
+        } finally {
+          this.suppressActivityLogForPollingEmit = false;
         }
 
         // Yield every ~50 rows to prevent blocking the event loop during large updates

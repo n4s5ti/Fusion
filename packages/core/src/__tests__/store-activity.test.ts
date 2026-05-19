@@ -260,6 +260,32 @@ describe("TaskStore", () => {
       expect(logs[0].type).toBe("settings:updated");
     });
 
+    it("a second TaskStore polling the same DB does not double-log activity", async () => {
+      // Reproduces the duplicate-emitter bug: dashboard + engine each construct
+      // their own TaskStore against the same SQLite file. Without suppression,
+      // every move was recorded once per polling instance.
+      const observer = new TaskStore(rootDir, globalDir);
+      await observer.init();
+      await observer.watch();
+      try {
+        const task = await store.createTask({ description: "Test polling dedup" });
+        await store.moveTask(task.id, "todo");
+        // Drive the observer's poll cycle directly so we don't wait 1s.
+        await (observer as any).checkForChanges();
+        await new Promise((r) => setTimeout(r, 10));
+
+        const movedLogs = await store.getActivityLog({ type: "task:moved" });
+        const moves = movedLogs.filter((l) => l.taskId === task.id);
+        expect(moves).toHaveLength(1);
+
+        const createdLogs = await store.getActivityLog({ type: "task:created" });
+        const creates = createdLogs.filter((l) => l.taskId === task.id);
+        expect(creates).toHaveLength(1);
+      } finally {
+        await observer.close();
+      }
+    });
+
     it("records activity on task:deleted", async () => {
       const task = await store.createTask({ description: "Test deleted event" });
       await store.deleteTask(task.id);
