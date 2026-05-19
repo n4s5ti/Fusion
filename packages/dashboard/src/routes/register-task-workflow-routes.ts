@@ -187,7 +187,7 @@ export function registerTaskWorkflowRoutes(ctx: ApiRoutesContext, deps: TaskWork
     runGitCommand,
     trimTaskDetailActivityLog,
     triggerCommentWakeForAssignedAgent,
-    resolveSelfHealingManager,
+    resolveSelfHealingManager: _resolveSelfHealingManager,
   } = deps;
   const TASK_DETAIL_ACTIVITY_LOG_LIMIT = taskDetailActivityLogLimit;
 
