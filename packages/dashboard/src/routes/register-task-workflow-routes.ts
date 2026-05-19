@@ -428,14 +428,14 @@ export function registerTaskWorkflowRoutes(ctx: ApiRoutesContext, deps: TaskWork
 
       let deterministicGuard: Awaited<ReturnType<typeof runDeterministicDuplicateGuard>>;
       let contentFingerprint: string | null = null;
-      try {
-        if (preexistingLockKey) {
-          const preexistingLock = __fingerprintCreateLocksForTests.get(preexistingLockKey);
-          if (preexistingLock) {
-            await preexistingLock;
-          }
+      if (preexistingLockKey) {
+        const preexistingLock = __fingerprintCreateLocksForTests.get(preexistingLockKey);
+        if (preexistingLock) {
+          await preexistingLock;
         }
+      }
 
+      try {
         deterministicGuard = await runDeterministicDuplicateGuard(
           scopedStore,
           {
@@ -1290,8 +1290,32 @@ export function registerTaskWorkflowRoutes(ctx: ApiRoutesContext, deps: TaskWork
     }
   });
 
-  router.post("/tasks/:id/recover-branch-binding", async (_req, _res) => {
-    throw notFound("Route not found");
+  router.post("/tasks/:id/recover-branch-binding", async (req, res) => {
+    try {
+      const { store: scopedStore } = await getProjectContext(req);
+      const task = await scopedStore.getTask(req.params.id);
+      if (!task) {
+        throw notFound(`Task ${req.params.id} not found`);
+      }
+      if (task.column !== "in-review") {
+        throw badRequest("Task must be in 'in-review' column to recover branch binding");
+      }
+
+      const selfHealingManager = resolveSelfHealingManager(scopedStore);
+      if (!selfHealingManager) {
+        throw badRequest("Self-healing manager unavailable");
+      }
+
+      const result = await selfHealingManager.reconcileInReviewBranchRebind({
+        includeTaskIds: new Set([task.id]),
+      });
+      res.json(result);
+    } catch (err: unknown) {
+      if (err instanceof ApiError) {
+        throw err;
+      }
+      rethrowAsApiError(err);
+    }
   });
 
   // Approve plan for a task in awaiting-approval status
