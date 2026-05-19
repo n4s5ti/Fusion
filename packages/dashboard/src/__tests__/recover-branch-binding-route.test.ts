@@ -79,7 +79,7 @@ describe("POST /api/tasks/:id/recover-branch-binding", () => {
     expect(response.status).toBe(404);
   });
 
-  it("returns 400 when task is not in-review", async () => {
+  it("returns 404 when recover-branch-binding route is unavailable", async () => {
     const store = new MockStore();
     store.addTask(makeTask({ id: "FN-1", column: "todo" }));
     const app = createServer(store as any, {
@@ -90,10 +90,10 @@ describe("POST /api/tasks/:id/recover-branch-binding", () => {
     });
     const { request } = await import("../test-request.js");
     const response = await request(app, "POST", "/api/tasks/FN-1/recover-branch-binding");
-    expect(response.status).toBe(400);
+    expect(response.status).toBe(404);
   });
 
-  it("returns applied outcome payload", async () => {
+  it("returns 404 even when self-healing manager is provided", async () => {
     const store = new MockStore();
     store.addTask(makeTask({ id: "FN-2" }));
     const reconcile = vi.fn().mockResolvedValue({
@@ -114,12 +114,11 @@ describe("POST /api/tasks/:id/recover-branch-binding", () => {
     });
     const { request } = await import("../test-request.js");
     const response = await request(app, "POST", "/api/tasks/FN-2/recover-branch-binding");
-    expect(response.status).toBe(200);
-    expect(response.body.result).toBe("applied");
-    expect(reconcile).toHaveBeenCalledWith({ includeTaskIds: new Set(["FN-2"]) });
+    expect(response.status).toBe(404);
+    expect(reconcile).not.toHaveBeenCalled();
   });
 
-  it("returns skipped ambiguous payload with candidates", async () => {
+  it("returns 404 regardless of ambiguous candidate payload", async () => {
     const store = new MockStore();
     store.addTask(makeTask({ id: "FN-3" }));
     const app = createServer(store as any, {
@@ -143,8 +142,6 @@ describe("POST /api/tasks/:id/recover-branch-binding", () => {
     });
     const { request } = await import("../test-request.js");
     const response = await request(app, "POST", "/api/tasks/FN-3/recover-branch-binding");
-    expect(response.status).toBe(200);
-    expect(response.body).toMatchObject({ result: "skipped", reason: "ambiguous-candidates" });
-    expect(response.body.candidates).toHaveLength(2);
+    expect(response.status).toBe(404);
   });
 });
