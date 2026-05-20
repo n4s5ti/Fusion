@@ -942,6 +942,7 @@ export type ActivityEventType =
   | "task:auto-archived-near-duplicate"
   | "task:auto-archived-ghost-bug"
   | "task:auto-archived-duplicate"
+  | "task:merge-worktree-reacquired"
   | "settings:updated"
   | "project:isolation-transition";
 

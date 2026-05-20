@@ -6471,6 +6471,13 @@ export async function aiMergeTask(
       },
       acquisition.worktreePath,
     );
+    await store.recordActivity({
+      type: "task:merge-worktree-reacquired",
+      taskId,
+      taskTitle: task.title,
+      details: `Merge worktree reacquired: ${reason}`,
+      metadata: { reason, branch: acquisition.branch, worktreePath: acquisition.worktreePath, source: acquisition.source },
+    });
   };
   if (
     settings.worktrunk?.enabled === true
