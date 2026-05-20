@@ -21,6 +21,7 @@ vi.mock("lucide-react", () => ({
   Trash2: () => null,
   RotateCw: () => null,
   Zap: () => null,
+  AlertTriangle: () => null,
 }));
 
 vi.mock("../ProviderIcon", () => ({
