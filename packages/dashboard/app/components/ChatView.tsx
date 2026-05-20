@@ -1,6 +1,6 @@
 // ChatView.css is imported eagerly from App.tsx to avoid a flash of
 // unstyled content when the lazy chunk loads. Do not re-import here.
-import React, { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import React, { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import type { Components } from "react-markdown";
@@ -999,6 +999,11 @@ export function ChatView({ projectId, addToast, experimentalFeatures }: ChatView
   const directThreadDeferredAnchorTimeoutRef = useRef<number | null>(null);
   const hideSkillMenuTimeoutRef = useRef<number | null>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
+  const chatThreadRef = useRef<HTMLDivElement | null>(null);
+  // FN-5365: mirror QuickChat's mid-dismiss suppress gate so transient
+  // visualViewport shrink samples do not jerk the chat thread/composer.
+  const suppressVvShrinkRef = useRef(false);
+  const suppressVvShrinkTimeoutRef = useRef<number | null>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const pendingAttachmentsRef = useRef<PendingAttachment[]>([]);
@@ -1113,24 +1118,9 @@ export function ChatView({ projectId, addToast, experimentalFeatures }: ChatView
   }, [activeDraftKey, messageInput]);
 
   const roomThreadActive = chatRoomsEnabled && chatScope === "rooms" && !!rooms.activeRoom;
-  const { keyboardOverlap, viewportHeight, viewportOffsetTop, keyboardOpen } = useMobileKeyboard({
+  const { keyboardOverlap, keyboardOpen } = useMobileKeyboard({
     enabled: isMobile && (!!activeSession || roomThreadActive),
   });
-
-  // FN-5155: only publish keyboard-active viewport vars once the hook has a
-  // self-consistent open sample. A transient offsetTop without vvHeight causes
-  // mobile ChatView to shrink/translate the thread before the keyboard settles.
-  const hasKeyboardViewportMetrics = viewportHeight !== null;
-  const hasKeyboardViewportDisplacement = hasKeyboardViewportMetrics && (keyboardOverlap > 0 || viewportOffsetTop > 0);
-  const threadKeyboardStyle: CSSProperties =
-    keyboardOpen && hasKeyboardViewportDisplacement
-      ? ({
-          "--keyboard-overlap": `${keyboardOverlap}px`,
-          "--vv-offset-top": `${viewportOffsetTop}px`,
-          "--vv-height": `${viewportHeight}px`,
-        } as CSSProperties)
-      : {};
-  const threadClassName = `chat-thread${keyboardOpen && hasKeyboardViewportDisplacement ? " chat-thread--keyboard-active" : ""}`;
 
   const filteredSkills = useMemo(() => {
     const normalizedFilter = skillFilter.trim().toLowerCase();
@@ -1334,6 +1324,57 @@ export function ChatView({ projectId, addToast, experimentalFeatures }: ChatView
   // the visual viewport (offsetTop > 0). Shared hook also restores
   // window.scrollTo(0, 0) on cleanup to recover from any iOS drift.
   useMobileScrollLock(isMobile && keyboardOpen);
+
+  // FN-5365: mirror QuickChatFAB keyboard handling by writing visualViewport
+  // metrics directly to .chat-thread, avoiding React commit lag/jitter.
+  useLayoutEffect(() => {
+    if (!isMobile || (!activeSession && !roomThreadActive)) return;
+    if (typeof window === "undefined") return;
+
+    const thread = chatThreadRef.current;
+    const vv = window.visualViewport;
+    if (!thread || !vv) return;
+
+    const isKeyboardTrackingFocusable = (element: Element | null): boolean => {
+      if (!(element instanceof HTMLElement)) return false;
+      if (element.tagName === "TEXTAREA") return true;
+      if (element.tagName !== "INPUT") return false;
+      const inputType = (element as HTMLInputElement).type.toLowerCase();
+      return ["", "text", "search", "email", "url", "tel", "password", "number"].includes(inputType);
+    };
+
+    const apply = () => {
+      if (suppressVvShrinkRef.current) {
+        thread.classList.remove("chat-thread--keyboard-active");
+        return;
+      }
+      const overlap = Math.max(0, window.innerHeight - vv.offsetTop - vv.height);
+      const offsetTop = vv.offsetTop || 0;
+      thread.style.setProperty("--vv-height", `${vv.height}px`);
+      thread.style.setProperty("--vv-offset-top", `${offsetTop}px`);
+      thread.style.setProperty("--keyboard-overlap", `${overlap}px`);
+
+      const keyboardActive = (overlap > 0 || offsetTop > 0) && isKeyboardTrackingFocusable(document.activeElement);
+      thread.classList.toggle("chat-thread--keyboard-active", keyboardActive);
+    };
+
+    apply();
+    vv.addEventListener("resize", apply);
+    vv.addEventListener("scroll", apply);
+    document.addEventListener("focusin", apply);
+    document.addEventListener("focusout", apply);
+    window.addEventListener("pageshow", apply);
+    document.addEventListener("visibilitychange", apply);
+    return () => {
+      vv.removeEventListener("resize", apply);
+      vv.removeEventListener("scroll", apply);
+      document.removeEventListener("focusin", apply);
+      document.removeEventListener("focusout", apply);
+      window.removeEventListener("pageshow", apply);
+      document.removeEventListener("visibilitychange", apply);
+      thread.classList.remove("chat-thread--keyboard-active");
+    };
+  }, [activeSession, isMobile, roomThreadActive]);
 
   // Close context menu on outside click
   useEffect(() => {
@@ -1956,6 +1997,17 @@ export function ChatView({ projectId, addToast, experimentalFeatures }: ChatView
   );
 
   const handleInputBlur = useCallback(() => {
+    if (typeof window !== "undefined" && window.innerWidth <= 768) {
+      suppressVvShrinkRef.current = true;
+      if (suppressVvShrinkTimeoutRef.current !== null) {
+        window.clearTimeout(suppressVvShrinkTimeoutRef.current);
+      }
+      suppressVvShrinkTimeoutRef.current = window.setTimeout(() => {
+        suppressVvShrinkRef.current = false;
+        suppressVvShrinkTimeoutRef.current = null;
+      }, 450);
+    }
+
     if (hideSkillMenuTimeoutRef.current !== null) {
       window.clearTimeout(hideSkillMenuTimeoutRef.current);
     }
@@ -1972,6 +2024,11 @@ export function ChatView({ projectId, addToast, experimentalFeatures }: ChatView
   }, [fileMention]);
 
   const handleInputFocus = useCallback(() => {
+    suppressVvShrinkRef.current = false;
+    if (suppressVvShrinkTimeoutRef.current !== null) {
+      window.clearTimeout(suppressVvShrinkTimeoutRef.current);
+      suppressVvShrinkTimeoutRef.current = null;
+    }
     if (hideSkillMenuTimeoutRef.current !== null) {
       window.clearTimeout(hideSkillMenuTimeoutRef.current);
       hideSkillMenuTimeoutRef.current = null;
@@ -1992,6 +2049,14 @@ export function ChatView({ projectId, addToast, experimentalFeatures }: ChatView
         }
       });
     }
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (suppressVvShrinkTimeoutRef.current !== null) {
+        window.clearTimeout(suppressVvShrinkTimeoutRef.current);
+      }
+    };
   }, []);
 
   // Handle archive
@@ -2639,7 +2704,7 @@ export function ChatView({ projectId, addToast, experimentalFeatures }: ChatView
       )}
       {/* Thread */}
       {chatRoomsEnabled && chatScope === "rooms" ? (
-        <div className={threadClassName} style={threadKeyboardStyle}>
+        <div ref={chatThreadRef} className="chat-thread">
           {rooms.activeRoom ? (
             <>
               <div className="chat-room-thread-header">
@@ -2822,7 +2887,7 @@ export function ChatView({ projectId, addToast, experimentalFeatures }: ChatView
           )}
         </div>
       ) : (
-      <div className={threadClassName} style={threadKeyboardStyle}>
+      <div ref={chatThreadRef} className="chat-thread">
         {/* Header - always rendered in desktop/tablet, only rendered in mobile when viewing a thread */}
         {(hasThreadInView || !isMobile) && (
           <div className="chat-thread-header">

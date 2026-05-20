@@ -3586,7 +3586,7 @@ describe("ChatView mobile behavior", () => {
 
       const thread = document.querySelector(".chat-thread") as HTMLDivElement;
       expect(thread).toBeInTheDocument();
-      expect(thread.style.getPropertyValue("--keyboard-overlap")).toBe("");
+      expect(thread.style.getPropertyValue("--keyboard-overlap")).toBe("0px");
 
       // Focus the chat textarea so the hook treats the active element as a
       // keyboard-focusable target.
@@ -3598,11 +3598,6 @@ describe("ChatView mobile behavior", () => {
         document.dispatchEvent(new Event("focusin"));
       });
 
-      Object.defineProperty(window, "innerHeight", {
-        value: 560,
-        writable: true,
-        configurable: true,
-      });
       Object.defineProperty(mockVV, "height", {
         value: 560,
         writable: true,
@@ -3632,8 +3627,8 @@ describe("ChatView mobile behavior", () => {
       });
 
       await waitFor(() => {
-        expect(thread.style.getPropertyValue("--keyboard-overlap")).toBe("");
-        expect(thread.style.getPropertyValue("--vv-height")).toBe("");
+        expect(thread.style.getPropertyValue("--keyboard-overlap")).toBe("284px");
+        expect(thread.style.getPropertyValue("--vv-height")).toBe("560px");
       });
     } finally {
       restoreMatchMedia.mockRestore();
@@ -3684,9 +3679,9 @@ describe("ChatView mobile behavior", () => {
     }
   });
 
-  it("FN-5155: mobile mode does not apply keyboard-active styles for impossible mid-transition viewport samples", async () => {
+  it("FN-5365: mobile keyboard viewport vars follow settled sample and suppress blur-dismiss shrink", async () => {
     const restoreMatchMedia = mockMobileViewport();
-    const { mockVV } = mockMobileVisualViewport({
+    const { listeners, mockVV } = mockMobileVisualViewport({
       innerHeight: 844,
       vvHeight: 844,
     });
@@ -3701,34 +3696,71 @@ describe("ChatView mobile behavior", () => {
 
       const thread = document.querySelector(".chat-thread") as HTMLDivElement;
       expect(thread).toBeInTheDocument();
+      expect(thread.style.getPropertyValue("--vv-height")).toBe("844px");
+      expect(thread.style.getPropertyValue("--vv-offset-top")).toBe("0px");
+      expect(thread.style.getPropertyValue("--keyboard-overlap")).toBe("0px");
 
       const textarea = screen.getByTestId("chat-input") as HTMLTextAreaElement;
       await act(async () => {
         textarea.focus();
       });
-
-      Object.defineProperty(mockVV, "offsetTop", {
-        value: 180,
-        writable: true,
-        configurable: true,
-      });
-      Object.defineProperty(mockVV, "height", {
-        value: 820,
-        writable: true,
-        configurable: true,
-      });
-
       act(() => {
         document.dispatchEvent(new Event("focusin"));
       });
 
+      Object.defineProperty(mockVV, "offsetTop", { value: 180, writable: true, configurable: true });
+      Object.defineProperty(mockVV, "height", { value: 820, writable: true, configurable: true });
+      act(() => {
+        for (const cb of listeners.resize) cb();
+      });
+      expect(thread.style.getPropertyValue("--vv-height")).toBe("820px");
+
+      Object.defineProperty(mockVV, "offsetTop", { value: 0, writable: true, configurable: true });
+      Object.defineProperty(mockVV, "height", { value: 560, writable: true, configurable: true });
+      act(() => {
+        for (const cb of listeners.resize) cb();
+      });
+
       await waitFor(() => {
-        // FN-5155 fix keeps transient impossible metrics out of ChatView until
-        // the viewport settles, so the composer never floats above the keyboard.
+        expect(thread.style.getPropertyValue("--vv-height")).toBe("560px");
+        expect(thread.style.getPropertyValue("--vv-offset-top")).toBe("0px");
+        expect(thread.style.getPropertyValue("--keyboard-overlap")).toBe("284px");
+        expect(thread.classList.contains("chat-thread--keyboard-active")).toBe(true);
+      });
+
+      const styleAfterVvEvents = thread.getAttribute("style") ?? "";
+      expect(styleAfterVvEvents).toContain("--vv-height: 560px");
+      expect(styleAfterVvEvents).toContain("--vv-offset-top: 0px");
+      expect(styleAfterVvEvents).toContain("--keyboard-overlap: 284px");
+
+      textarea.blur();
+      act(() => {
+        document.dispatchEvent(new Event("focusout"));
+      });
+      await waitFor(() => {
         expect(thread.classList.contains("chat-thread--keyboard-active")).toBe(false);
-        expect(thread.style.getPropertyValue("--vv-height")).toBe("");
-        expect(thread.style.getPropertyValue("--vv-offset-top")).toBe("");
-        expect(thread.style.getPropertyValue("--keyboard-overlap")).toBe("");
+      });
+
+      Object.defineProperty(mockVV, "height", { value: 700, writable: true, configurable: true });
+      act(() => {
+        for (const cb of listeners.resize) cb();
+      });
+      expect(thread.style.getPropertyValue("--vv-height")).toBe("560px");
+
+      await act(async () => {
+        textarea.focus();
+      });
+      act(() => {
+        document.dispatchEvent(new Event("focusin"));
+      });
+
+      Object.defineProperty(mockVV, "height", { value: 640, writable: true, configurable: true });
+      act(() => {
+        for (const cb of listeners.resize) cb();
+      });
+
+      await waitFor(() => {
+        expect(thread.style.getPropertyValue("--vv-height")).toBe("640px");
       });
     } finally {
       restoreMatchMedia.mockRestore();
@@ -3762,7 +3794,6 @@ describe("ChatView mobile behavior", () => {
       });
 
       Object.defineProperty(mockVV, "height", { value: 560, writable: true, configurable: true });
-      Object.defineProperty(window, "innerHeight", { value: 560, writable: true, configurable: true });
 
       act(() => {
         for (const cb of listeners.resize) cb();

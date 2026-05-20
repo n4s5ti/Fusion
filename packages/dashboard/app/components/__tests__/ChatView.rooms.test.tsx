@@ -560,7 +560,6 @@ describe("ChatView — rooms (FN-3805..FN-3811 contract)", () => {
         document.dispatchEvent(new Event("focusin"));
       });
 
-      Object.defineProperty(window, "innerHeight", { value: 560, configurable: true, writable: true });
       Object.defineProperty(mockVV, "height", { value: 560, configurable: true, writable: true });
       act(() => {
         for (const cb of listeners.resize) cb();
