@@ -35,7 +35,11 @@ import { createHash } from "node:crypto";
 import { join } from "node:path";
 import { resolveTaskWorktreePath } from "./worktree-paths.js";
 import { canonicalFusionBranchName } from "./worktree-names.js";
-import { filterFilesToOwnTaskCommits } from "./branch-attribution.js";
+import {
+  collectOwnTaskCommitsForRange,
+  filterFilesToOwnTaskCommits,
+  SilentNoOpAttributionMismatchError,
+} from "./branch-attribution.js";
 import { hostname } from "node:os";
 import {
   buildTaskLineageTrailer,
@@ -5151,7 +5155,9 @@ export async function captureRebaseLandedFilesForTask(params: {
   rebaseMergeBaseSha: string;
   recordedSha: string;
   taskId: string;
+  sourceBranchRef?: string;
   onAttributionFailure?: (message: string) => Promise<void> | void;
+  onNoOpGuardSkipped?: (reason: "source-ref-unavailable") => Promise<void> | void;
   attributionExecAsyncImpl?: (command: string, options: { cwd?: string; encoding?: BufferEncoding; maxBuffer?: number }) => Promise<{ stdout: string; stderr: string }>;
 }): Promise<{
   landedFiles: string[];
@@ -5162,7 +5168,16 @@ export async function captureRebaseLandedFilesForTask(params: {
   landedFilesAttributionRestricted?: boolean;
   landedFilesCaptureFallback?: MergeDetails["landedFilesCaptureFallback"];
 }> {
-  const { rootDir, rebaseMergeBaseSha, recordedSha, taskId, onAttributionFailure, attributionExecAsyncImpl } = params;
+  const {
+    rootDir,
+    rebaseMergeBaseSha,
+    recordedSha,
+    taskId,
+    sourceBranchRef,
+    onAttributionFailure,
+    onNoOpGuardSkipped,
+    attributionExecAsyncImpl,
+  } = params;
   try {
     const attribution = await filterFilesToOwnTaskCommits({
       worktreePath: rootDir,
@@ -5171,6 +5186,33 @@ export async function captureRebaseLandedFilesForTask(params: {
       execAsyncImpl: attributionExecAsyncImpl as any,
     });
     if (attribution.ownCommitCount === 0) {
+      if (sourceBranchRef && sourceBranchRef !== recordedSha) {
+        const sourceRange = `${rebaseMergeBaseSha}..${sourceBranchRef}`;
+        try {
+          const sourceAttribution = await collectOwnTaskCommitsForRange({
+            worktreePath: rootDir,
+            rangeRef: sourceRange,
+            taskId,
+            execAsyncImpl: attributionExecAsyncImpl as any,
+          });
+          if (sourceAttribution.ownCommitCount > 0) {
+            throw new SilentNoOpAttributionMismatchError({
+              taskId,
+              recordedSha,
+              rebaseMergeBaseSha,
+              sourceBranchRef,
+              sourceBranchOwnCommitCount: sourceAttribution.ownCommitCount,
+              sourceBranchOwnCommitShas: sourceAttribution.ownCommitShas,
+            });
+          }
+        } catch (error) {
+          if (error instanceof SilentNoOpAttributionMismatchError) {
+            throw error;
+          }
+          await onNoOpGuardSkipped?.("source-ref-unavailable");
+        }
+      }
+
       return {
         landedFiles: [],
         filesChanged: 0,
@@ -5191,6 +5233,9 @@ export async function captureRebaseLandedFilesForTask(params: {
       landedFilesAttributionRestricted: true,
     };
   } catch (error) {
+    if (error instanceof SilentNoOpAttributionMismatchError) {
+      throw error;
+    }
     const message = error instanceof Error ? error.message : String(error);
     if (onAttributionFailure) {
       await onAttributionFailure(message);
@@ -8005,6 +8050,7 @@ export async function aiMergeTask(
             rebaseMergeBaseSha,
             recordedSha,
             taskId,
+            sourceBranchRef: branch,
             onAttributionFailure: async (message) => {
               mergerLog.warn(`${taskId}: landed-files attribution failed (Error), falling back to full-range capture (${message})`);
               await store.appendAgentLog(
@@ -8014,6 +8060,14 @@ export async function aiMergeTask(
                 undefined,
                 "merger",
               );
+            },
+            onNoOpGuardSkipped: async (reason) => {
+              mergerLog.warn(`${taskId}: no-op fast-path guard skipped — source branch ref unavailable`);
+              await (audit as any).database({
+                type: "merge:no-op-attribution-mismatch-skipped",
+                target: taskId,
+                metadata: { reason },
+              });
             },
           });
           landedFiles = capture.landedFiles;
@@ -8040,7 +8094,29 @@ export async function aiMergeTask(
             landedFiles = Array.from(new Set(parsedLandedFiles));
           }
         }
-      } catch {
+      } catch (captureError) {
+        if (captureError instanceof SilentNoOpAttributionMismatchError) {
+          mergerLog.error(
+            `[merger] ${taskId}: refused no-op fast-path — branch tip carries ${captureError.sourceBranchOwnCommitCount} attributable own commits not present in rebased HEAD`,
+          );
+          await (audit as any).database({
+            type: "merge:no-op-attribution-mismatch",
+            target: taskId,
+            metadata: {
+              recordedSha: captureError.recordedSha,
+              rebaseMergeBaseSha: captureError.rebaseMergeBaseSha,
+              sourceBranchRef: captureError.sourceBranchRef,
+              sourceBranchOwnCommitCount: captureError.sourceBranchOwnCommitCount,
+              sourceBranchOwnCommitShas: captureError.sourceBranchOwnCommitShas,
+            },
+          });
+          await store.updateTask(taskId, {
+            status: "failed",
+            error: captureError.message,
+          });
+          await store.moveTask(taskId, "in-review", { preserveProgress: true, moveSource: "engine" } as any);
+          throw captureError;
+        }
         // non-fatal
       }
     }
@@ -8114,6 +8190,9 @@ export async function aiMergeTask(
     );
   } catch (err: any) {
     if (err instanceof SquashAuditError || err?.name === "SquashAuditError") {
+      throw err;
+    }
+    if (err instanceof SilentNoOpAttributionMismatchError || err?.name === "SilentNoOpAttributionMismatchError") {
       throw err;
     }
     mergerLog.warn(`${taskId}: failed to collect/store merge details: ${err.message}`);

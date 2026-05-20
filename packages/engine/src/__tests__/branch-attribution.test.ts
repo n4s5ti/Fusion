@@ -1,5 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
-import { BranchAttributionError, filterFilesToOwnTaskCommits } from "../branch-attribution.js";
+import {
+  BranchAttributionError,
+  SilentNoOpAttributionMismatchError,
+  collectOwnTaskCommitsForRange,
+  filterFilesToOwnTaskCommits,
+} from "../branch-attribution.js";
 
 describe("FN-5039 branch-attribution", () => {
   it("returns empty attribution for empty range", async () => {
@@ -151,6 +156,44 @@ describe("FN-5039 branch-attribution", () => {
 
     expect(result.ownCommitCount).toBe(3);
     expect(result.foreignCommits).toEqual([]);
+  });
+
+  it("FN-5304: collectOwnTaskCommitsForRange counts only attributable commits", async () => {
+    const log = [
+      "sha-a\x00fix(FN-5304): one\x00body\x1e",
+      "sha-b\x00fix(FN-9999): foreign\x00body\x1e",
+      "sha-c\x00chore: none\x00body\x1e",
+    ].join("");
+    const execMock = vi.fn().mockResolvedValueOnce({ stdout: log });
+
+    const result = await collectOwnTaskCommitsForRange({
+      worktreePath: "/tmp/wt",
+      rangeRef: "base..fusion/fn-5304",
+      taskId: "FN-5304",
+      execAsyncImpl: execMock as never,
+    });
+
+    expect(result).toEqual({ ownCommitCount: 1, ownCommitShas: ["sha-a"] });
+  });
+
+  it("FN-5304: SilentNoOpAttributionMismatchError carries expected metadata", () => {
+    const err = new SilentNoOpAttributionMismatchError({
+      taskId: "FN-5304",
+      recordedSha: "recorded123",
+      rebaseMergeBaseSha: "base123",
+      sourceBranchRef: "fusion/fn-5304",
+      sourceBranchOwnCommitCount: 2,
+      sourceBranchOwnCommitShas: ["own1", "own2"],
+    });
+
+    expect(err.name).toBe("SilentNoOpAttributionMismatchError");
+    expect(err.taskId).toBe("FN-5304");
+    expect(err.recordedSha).toBe("recorded123");
+    expect(err.rebaseMergeBaseSha).toBe("base123");
+    expect(err.sourceBranchRef).toBe("fusion/fn-5304");
+    expect(err.sourceBranchOwnCommitCount).toBe(2);
+    expect(err.sourceBranchOwnCommitShas).toEqual(["own1", "own2"]);
+    expect(err.message).toContain("silent no-op attribution mismatch");
   });
 
   it("throws BranchAttributionError when git command fails", async () => {

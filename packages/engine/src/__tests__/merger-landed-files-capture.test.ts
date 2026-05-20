@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { BranchAttributionError } from "../branch-attribution.js";
+import { BranchAttributionError, SilentNoOpAttributionMismatchError } from "../branch-attribution.js";
 import * as attributionModule from "../branch-attribution.js";
 import { createMockStore, mockedCreateFnAgent, mockedExecSync, mockedExistsSync, type Task } from "./merger-test-helpers.js";
 import * as mergerModule from "../merger.js";
@@ -107,6 +107,107 @@ describe("FN-4646 aiMergeTask landedFiles capture", () => {
     expect(detailsUpdate?.[1].mergeDetails.landedFiles).toEqual([]);
     expect(detailsUpdate?.[1].mergeDetails.noOpVerifiedShortCircuit).toBe(true);
     expect(detailsUpdate?.[1].modifiedFiles).toBeUndefined();
+  });
+
+  it.each([
+    { sourceOwnCommitCount: 0, expectedNoOp: true },
+    { sourceOwnCommitCount: 2, expectedNoOp: false },
+  ])("FN-5304: source tip attribution guard (sourceOwnCommitCount=$sourceOwnCommitCount)", async ({ sourceOwnCommitCount, expectedNoOp }) => {
+    vi.spyOn(attributionModule, "filterFilesToOwnTaskCommits").mockResolvedValue({
+      files: [],
+      foreignCommits: [],
+      ownCommitCount: 0,
+      ownCommitShas: [],
+      rawDiffFileCount: 0,
+      commitAttributions: [],
+    });
+    vi.spyOn(attributionModule, "collectOwnTaskCommitsForRange").mockResolvedValue({
+      ownCommitCount: sourceOwnCommitCount,
+      ownCommitShas: sourceOwnCommitCount > 0 ? ["own1", "own2"] : [],
+    });
+
+    const capturePromise = mergerModule.captureRebaseLandedFilesForTask({
+      rootDir: "/tmp/root",
+      rebaseMergeBaseSha: "base123",
+      recordedSha: "recorded123",
+      taskId: "FN-5304",
+      sourceBranchRef: "fusion/fn-5304",
+    });
+
+    if (expectedNoOp) {
+      const capture = await capturePromise;
+      expect(capture.noOpVerifiedShortCircuit).toBe(true);
+      expect(capture.landedFilesAttributionRestricted).toBe(true);
+      return;
+    }
+
+    await expect(capturePromise).rejects.toMatchObject({
+      name: "SilentNoOpAttributionMismatchError",
+      taskId: "FN-5304",
+      recordedSha: "recorded123",
+      rebaseMergeBaseSha: "base123",
+      sourceBranchRef: "fusion/fn-5304",
+      sourceBranchOwnCommitCount: 2,
+      sourceBranchOwnCommitShas: ["own1", "own2"],
+    });
+  });
+
+  it("FN-5304: source ref unavailable keeps no-op short-circuit and emits skip callback", async () => {
+    vi.spyOn(attributionModule, "filterFilesToOwnTaskCommits").mockResolvedValue({
+      files: [],
+      foreignCommits: [],
+      ownCommitCount: 0,
+      ownCommitShas: [],
+      rawDiffFileCount: 0,
+      commitAttributions: [],
+    });
+    vi.spyOn(attributionModule, "collectOwnTaskCommitsForRange").mockRejectedValue(new Error("missing ref"));
+    const onNoOpGuardSkipped = vi.fn();
+
+    const capture = await mergerModule.captureRebaseLandedFilesForTask({
+      rootDir: "/tmp/root",
+      rebaseMergeBaseSha: "base123",
+      recordedSha: "recorded123",
+      taskId: "FN-5304",
+      sourceBranchRef: "fusion/fn-5304",
+      onNoOpGuardSkipped,
+    });
+
+    expect(capture.noOpVerifiedShortCircuit).toBe(true);
+    expect(onNoOpGuardSkipped).toHaveBeenCalledWith("source-ref-unavailable");
+  });
+
+  it("FN-5304: aiMergeTask refuses no-op mismatch and parks task in failed in-review", async () => {
+    const store = makeStore({ directMergeCommitStrategy: "always-rebase" });
+    vi.spyOn(attributionModule, "filterFilesToOwnTaskCommits").mockResolvedValue({
+      files: [],
+      foreignCommits: [],
+      ownCommitCount: 0,
+      ownCommitShas: [],
+      rawDiffFileCount: 0,
+      commitAttributions: [],
+    });
+    vi.spyOn(attributionModule, "collectOwnTaskCommitsForRange").mockResolvedValue({ ownCommitCount: 1, ownCommitShas: ["own1"] });
+    mockedExecSync.mockImplementation((cmd: any) => {
+      const s = String(cmd);
+      if (s.includes("rev-parse --verify")) return Buffer.from("abc123");
+      if (s === "git rev-parse HEAD" || s.startsWith("git rev-parse HEAD ")) return "rebasesha123";
+      if (s.includes("git log")) return "- feat: summary";
+      if (s.includes("merge-base")) return Buffer.from("abc123");
+      if (s.includes("rev-parse \"abc123\"")) return "rebasebase123";
+      if (s.includes("rev-list --reverse \"rebasebase123..fusion/FN-4646\"")) return "";
+      if (s.includes("status --porcelain")) return "";
+      if (s.includes("rev-parse --git-path CHERRY_PICK_HEAD")) return ".git/CHERRY_PICK_HEAD";
+      if (s.includes("rev-parse --git-path sequencer")) return ".git/sequencer";
+      if (s.includes("branch -d") || s.includes("branch -D") || s.includes("worktree remove")) return Buffer.from("");
+      return Buffer.from("");
+    });
+
+    await expect(mergerModule.aiMergeTask(store, "/tmp/root", "FN-4646")).rejects.toBeInstanceOf(SilentNoOpAttributionMismatchError);
+    expect(store.moveTask).toHaveBeenCalledWith("FN-4646", "in-review", expect.any(Object));
+    expect(store.updateTask).toHaveBeenCalledWith("FN-4646", expect.objectContaining({ status: "failed" }));
+    const detailsUpdate = (store.updateTask as any).mock.calls.find((call: any[]) => call[1]?.mergeDetails?.noOpVerifiedShortCircuit);
+    expect(detailsUpdate).toBeUndefined();
   });
 
   it("sums shortstat across multiple own commits on rebase", async () => {

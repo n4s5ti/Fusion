@@ -40,11 +40,47 @@ export class BranchAttributionError extends Error {
   }
 }
 
+export class SilentNoOpAttributionMismatchError extends Error {
+  readonly taskId: string;
+  readonly recordedSha: string;
+  readonly rebaseMergeBaseSha: string;
+  readonly sourceBranchRef: string;
+  readonly sourceBranchOwnCommitCount: number;
+  readonly sourceBranchOwnCommitShas: string[];
+
+  constructor(params: {
+    taskId: string;
+    recordedSha: string;
+    rebaseMergeBaseSha: string;
+    sourceBranchRef: string;
+    sourceBranchOwnCommitCount: number;
+    sourceBranchOwnCommitShas: string[];
+  }) {
+    super(
+      `silent no-op attribution mismatch: ${params.sourceBranchRef} carries ${params.sourceBranchOwnCommitCount} attributable commit(s) for ${params.taskId} not present in recorded head ${params.recordedSha}`,
+    );
+    this.name = "SilentNoOpAttributionMismatchError";
+    this.taskId = params.taskId;
+    this.recordedSha = params.recordedSha;
+    this.rebaseMergeBaseSha = params.rebaseMergeBaseSha;
+    this.sourceBranchRef = params.sourceBranchRef;
+    this.sourceBranchOwnCommitCount = params.sourceBranchOwnCommitCount;
+    this.sourceBranchOwnCommitShas = params.sourceBranchOwnCommitShas;
+  }
+}
+
 export interface BranchAttributionOptions {
   worktreePath: string;
   baseRef: string;
   taskId: string;
   requireTrailer?: boolean;
+  execAsyncImpl?: typeof execAsync;
+}
+
+export interface BranchRangeAttributionOptions {
+  worktreePath: string;
+  rangeRef: string;
+  taskId: string;
   execAsyncImpl?: typeof execAsync;
 }
 
@@ -102,6 +138,56 @@ function extractTaskIdFromSubject(subject: string): {
 function taskIdsMatch(a: string | null, b: string): boolean {
   if (!a) return false;
   return a.toUpperCase() === b.toUpperCase();
+}
+
+export async function collectOwnTaskCommitsForRange(opts: BranchRangeAttributionOptions): Promise<{ ownCommitCount: number; ownCommitShas: string[] }> {
+  const execImpl = opts.execAsyncImpl ?? execAsync;
+  let logOutput: string;
+  try {
+    const result = await execImpl(
+      `git log --format=%H%x00%s%x00%B%x1e ${quoteShellArg(opts.rangeRef)}`,
+      {
+        cwd: opts.worktreePath,
+        encoding: "utf-8",
+        timeout: GIT_TIMEOUT_MS,
+        maxBuffer: GIT_MAX_BUFFER,
+      },
+    );
+    logOutput = result.stdout;
+  } catch (error) {
+    const stderr =
+      typeof error === "object" && error && "stderr" in error && typeof error.stderr === "string"
+        ? error.stderr.trim()
+        : String(error);
+    throw new BranchAttributionError(
+      `git command failed: git log --format=%H%x00%s%x00%B%x1e ${opts.rangeRef} (${stderr || "no stderr"})`,
+      error,
+    );
+  }
+
+  if (!logOutput.trim()) {
+    return { ownCommitCount: 0, ownCommitShas: [] };
+  }
+
+  const ownCommitShas: string[] = [];
+  const records = logOutput.split("\x1e").map((record) => record.trim()).filter(Boolean);
+  for (const record of records) {
+    const [sha = "", subject = "", ...bodyParts] = record.split("\x00");
+    if (!sha) {
+      throw new BranchAttributionError("malformed git log output: missing commit sha");
+    }
+    const body = bodyParts.join("\x00");
+    const trailerAttributedTaskId = extractAttributedTaskId(body);
+    const subjectAttribution = trailerAttributedTaskId
+      ? { attributedTaskId: null, source: "none" as const }
+      : extractTaskIdFromSubject(subject);
+    const attributedTaskId = trailerAttributedTaskId ?? subjectAttribution.attributedTaskId;
+    if (taskIdsMatch(attributedTaskId, opts.taskId)) {
+      ownCommitShas.push(sha);
+    }
+  }
+
+  return { ownCommitCount: ownCommitShas.length, ownCommitShas };
 }
 
 export async function filterFilesToOwnTaskCommits(opts: BranchAttributionOptions): Promise<AttributionResult> {

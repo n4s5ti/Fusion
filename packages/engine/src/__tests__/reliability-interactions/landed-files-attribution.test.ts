@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { execSync, spawnSync } from "node:child_process";
 import { captureRebaseLandedFilesForTask, sumShortstatsForCommits } from "../../merger.js";
-import { filterFilesToOwnTaskCommits } from "../../branch-attribution.js";
+import { filterFilesToOwnTaskCommits, SilentNoOpAttributionMismatchError } from "../../branch-attribution.js";
 
 const hasGit = spawnSync("git", ["--version"], { stdio: "pipe" }).status === 0;
 const describeIfGit = hasGit ? describe : describe.skip;
@@ -89,6 +89,32 @@ describeIfGit("FN-5103 reliability interaction: landed-files attribution", () =>
     expect(capture.filesChanged).toBe(0);
     expect(capture.insertions).toBe(0);
     expect(capture.deletions).toBe(0);
+  });
+
+  it("FN-5304: refuses no-op fast-path when source branch tip still carries own commits", async () => {
+    const { repoDir, baseSha } = await initRepo("fn-5304-ri-");
+    dirs.push(repoDir);
+    const taskId = "FN-5304";
+
+    git(repoDir, `git checkout -b fusion/${taskId.toLowerCase()}`);
+    await commitFile(repoDir, "task-owned-a.ts", "a\n", "fix(FN-5304): owned A", taskId);
+    await commitFile(repoDir, "task-owned-b.ts", "b\n", "fix(FN-5304): owned B", taskId);
+
+    git(repoDir, "git checkout main");
+    await commitFile(repoDir, "upstream-a.ts", "u\n", "fix(FN-9999): upstream A", "FN-9999");
+    await commitFile(repoDir, "upstream-b.ts", "v\n", "fix(FN-9999): upstream B", "FN-9999");
+
+    const recordedSha = git(repoDir, "git rev-parse HEAD");
+
+    await expect(
+      captureRebaseLandedFilesForTask({
+        rootDir: repoDir,
+        rebaseMergeBaseSha: baseSha,
+        recordedSha,
+        taskId,
+        sourceBranchRef: `fusion/${taskId.toLowerCase()}`,
+      }),
+    ).rejects.toBeInstanceOf(SilentNoOpAttributionMismatchError);
   });
 
   it("surfaces attribution failure when git reads fail", async () => {
