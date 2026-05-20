@@ -973,12 +973,31 @@ export function registerTaskWorkflowRoutes(ctx: ApiRoutesContext, deps: TaskWork
   router.post("/tasks/:id/archive", async (req, res) => {
     try {
       const { store: scopedStore } = await getProjectContext(req);
-      const task = await scopedStore.archiveTask(req.params.id);
+      const removeLineageReferences = req.query.removeLineageReferences === "1"
+        || req.query.removeLineageReferences === "true";
+      const task = await scopedStore.archiveTask(req.params.id, {
+        cleanup: true,
+        removeLineageReferences,
+      });
       res.json(task);
     } catch (err: unknown) {
       if (err instanceof ApiError) {
         throw err;
       }
+      const isTaskHasLineageChildrenError =
+        err instanceof Error
+        && err.name === "TaskHasLineageChildrenError"
+        && Array.isArray((err as { childIds?: unknown }).childIds);
+
+      if (isTaskHasLineageChildrenError) {
+        const childIds = (err as { childIds: string[] }).childIds;
+        throw new ApiError(409, err instanceof Error ? err.message : "Task has lineage children", {
+          code: "TASK_HAS_LINEAGE_CHILDREN",
+          taskId: req.params.id,
+          lineageChildIds: childIds,
+        });
+      }
+
       const status = (err instanceof Error ? err.message : String(err)).includes("must be in") ? 400 : 500;
       throw new ApiError(status, err instanceof Error ? err.message : String(err));
     }
@@ -2744,6 +2763,8 @@ export function registerTaskWorkflowRoutes(ctx: ApiRoutesContext, deps: TaskWork
       const { store: scopedStore } = await getProjectContext(req);
       const removeDependencyReferences = req.query.removeDependencyReferences === "1"
         || req.query.removeDependencyReferences === "true";
+      const removeLineageReferences = req.query.removeLineageReferences === "1"
+        || req.query.removeLineageReferences === "true";
       const githubIssueActionRaw = req.query.githubIssueAction;
       const githubIssueActionValues: readonly GithubIssueAction[] = ["close", "delete", "leave", "auto"];
       let githubIssueAction: GithubIssueAction | undefined;
@@ -2753,7 +2774,11 @@ export function registerTaskWorkflowRoutes(ctx: ApiRoutesContext, deps: TaskWork
         }
         githubIssueAction = githubIssueActionRaw as GithubIssueAction;
       }
-      const task = await scopedStore.deleteTask(req.params.id, { removeDependencyReferences, githubIssueAction });
+      const task = await scopedStore.deleteTask(req.params.id, {
+        removeDependencyReferences,
+        removeLineageReferences,
+        githubIssueAction,
+      });
       res.json(task);
     } catch (err: unknown) {
       if (err instanceof ApiError) {
@@ -2770,6 +2795,20 @@ export function registerTaskWorkflowRoutes(ctx: ApiRoutesContext, deps: TaskWork
           code: "TASK_HAS_DEPENDENTS",
           taskId: req.params.id,
           dependentIds,
+        });
+      }
+
+      const isTaskHasLineageChildrenError =
+        err instanceof Error
+        && err.name === "TaskHasLineageChildrenError"
+        && Array.isArray((err as { childIds?: unknown }).childIds);
+
+      if (isTaskHasLineageChildrenError) {
+        const childIds = (err as { childIds: string[] }).childIds;
+        throw new ApiError(409, err instanceof Error ? err.message : "Task has lineage children", {
+          code: "TASK_HAS_LINEAGE_CHILDREN",
+          taskId: req.params.id,
+          lineageChildIds: childIds,
         });
       }
 

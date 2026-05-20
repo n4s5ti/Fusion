@@ -25,9 +25,13 @@ interface BoardProps {
     updates: { title?: string; description?: string; dependencies?: string[] }
   ) => Promise<Task>;
   onRetryTask?: (id: string) => Promise<Task>;
-  onArchiveTask?: (id: string) => Promise<Task>;
+  onArchiveTask?: (id: string, options?: { removeLineageReferences?: boolean }) => Promise<Task>;
   onUnarchiveTask?: (id: string) => Promise<Task>;
-  onDeleteTask?: (id: string, options?: { removeDependencyReferences?: boolean; githubIssueAction?: GithubIssueAction }) => Promise<Task>;
+  onDeleteTask?: (id: string, options?: {
+    removeDependencyReferences?: boolean;
+    removeLineageReferences?: boolean;
+    githubIssueAction?: GithubIssueAction;
+  }) => Promise<Task>;
   onArchiveAllDone?: () => Promise<Task[]>;
   /** Lazy-load archived tasks. Called the first time the user expands the archived column. */
   onLoadArchivedTasks?: () => Promise<void>;

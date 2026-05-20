@@ -109,7 +109,12 @@ export class ApiRequestError extends Error {
 /** Options that shape the soft-delete request payload/query, not hard-delete behavior. */
 export interface DeleteTaskOptions {
   removeDependencyReferences?: boolean;
+  removeLineageReferences?: boolean;
   githubIssueAction?: GithubIssueAction;
+}
+
+export interface ArchiveTaskOptions {
+  removeLineageReferences?: boolean;
 }
 
 function looksLikeHtml(body: string): boolean {
@@ -517,6 +522,9 @@ export function deleteTask(id: string, projectId?: string, options?: DeleteTaskO
   if (options?.removeDependencyReferences) {
     search.set("removeDependencyReferences", "true");
   }
+  if (options?.removeLineageReferences) {
+    search.set("removeLineageReferences", "true");
+  }
   if (options?.githubIssueAction) {
     search.set("githubIssueAction", options.githubIssueAction);
   }
@@ -561,8 +569,14 @@ export function unpauseTask(id: string, projectId?: string): Promise<Task> {
   return api<Task>(withProjectId(`/tasks/${id}/unpause`, projectId), { method: "POST" });
 }
 
-export function archiveTask(id: string, projectId?: string): Promise<Task> {
-  return api<Task>(withProjectId(`/tasks/${id}/archive`, projectId), { method: "POST" });
+export function archiveTask(id: string, projectId?: string, options?: ArchiveTaskOptions): Promise<Task> {
+  const search = new URLSearchParams();
+  if (options?.removeLineageReferences) {
+    search.set("removeLineageReferences", "true");
+  }
+
+  const suffix = search.size > 0 ? `?${search.toString()}` : "";
+  return api<Task>(withProjectId(`/tasks/${id}/archive${suffix}`, projectId), { method: "POST" });
 }
 
 export function unarchiveTask(id: string, projectId?: string): Promise<Task> {

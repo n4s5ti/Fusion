@@ -988,6 +988,7 @@ describe("DELETE /tasks/:id", () => {
     expect(res.body.id).toBe("KB-001");
     expect(store.deleteTask).toHaveBeenCalledWith("KB-001", {
       removeDependencyReferences: false,
+      removeLineageReferences: false,
       githubIssueAction: undefined,
     });
   });
@@ -1018,6 +1019,21 @@ describe("DELETE /tasks/:id", () => {
     expect(res.status).toBe(200);
     expect(store.deleteTask).toHaveBeenCalledWith("KB-001", {
       removeDependencyReferences: true,
+      removeLineageReferences: false,
+      githubIssueAction: undefined,
+    });
+  });
+
+  it("passes the removeLineageReferences flag when explicitly requested", async () => {
+    const deletedTask = { ...FAKE_TASK_DETAIL, id: "KB-001" };
+    (store.deleteTask as ReturnType<typeof vi.fn>).mockResolvedValue(deletedTask);
+
+    const res = await REQUEST(buildApp(), "DELETE", "/api/tasks/KB-001?removeLineageReferences=true");
+
+    expect(res.status).toBe(200);
+    expect(store.deleteTask).toHaveBeenCalledWith("KB-001", {
+      removeDependencyReferences: false,
+      removeLineageReferences: true,
       githubIssueAction: undefined,
     });
   });
@@ -1031,7 +1047,25 @@ describe("DELETE /tasks/:id", () => {
     expect(res.status).toBe(200);
     expect(store.deleteTask).toHaveBeenCalledWith("KB-001", {
       removeDependencyReferences: false,
+      removeLineageReferences: false,
       githubIssueAction,
+    });
+  });
+
+  it("returns structured 409 conflict when delete is blocked by lineage children", async () => {
+    const err = new Error("Cannot delete task KB-001: still referenced as a lineage parent by KB-002.");
+    err.name = "TaskHasLineageChildrenError";
+    (err as Error & { childIds: string[] }).childIds = ["KB-002", "KB-003"];
+    (store.deleteTask as ReturnType<typeof vi.fn>).mockRejectedValue(err);
+
+    const res = await REQUEST(buildApp(), "DELETE", "/api/tasks/KB-001");
+
+    expect(res.status).toBe(409);
+    expect(res.body.error).toContain("Cannot delete task KB-001");
+    expect(res.body.details).toEqual({
+      code: "TASK_HAS_LINEAGE_CHILDREN",
+      taskId: "KB-001",
+      lineageChildIds: ["KB-002", "KB-003"],
     });
   });
 
@@ -1070,7 +1104,44 @@ describe("POST /tasks/:id/archive", () => {
 
     expect(res.status).toBe(200);
     expect(res.body.column).toBe("archived");
-    expect(store.archiveTask).toHaveBeenCalledWith("KB-001");
+    expect(store.archiveTask).toHaveBeenCalledWith("KB-001", {
+      cleanup: true,
+      removeLineageReferences: false,
+    });
+  });
+
+  it("passes removeLineageReferences to archive when explicitly requested", async () => {
+    const archivedTask = { ...FAKE_TASK_DETAIL, column: "archived" };
+    (store.archiveTask as ReturnType<typeof vi.fn>).mockResolvedValue(archivedTask);
+
+    const res = await REQUEST(buildApp(), "POST", "/api/tasks/KB-001/archive?removeLineageReferences=true", JSON.stringify({}), {
+      "Content-Type": "application/json",
+    });
+
+    expect(res.status).toBe(200);
+    expect(store.archiveTask).toHaveBeenCalledWith("KB-001", {
+      cleanup: true,
+      removeLineageReferences: true,
+    });
+  });
+
+  it("returns structured 409 conflict when archive is blocked by lineage children", async () => {
+    const err = new Error("Cannot archive task KB-001: still referenced as a lineage parent by KB-002.");
+    err.name = "TaskHasLineageChildrenError";
+    (err as Error & { childIds: string[] }).childIds = ["KB-002", "KB-003"];
+    (store.archiveTask as ReturnType<typeof vi.fn>).mockRejectedValue(err);
+
+    const res = await REQUEST(buildApp(), "POST", "/api/tasks/KB-001/archive", JSON.stringify({}), {
+      "Content-Type": "application/json",
+    });
+
+    expect(res.status).toBe(409);
+    expect(res.body.error).toContain("Cannot archive task KB-001");
+    expect(res.body.details).toEqual({
+      code: "TASK_HAS_LINEAGE_CHILDREN",
+      taskId: "KB-001",
+      lineageChildIds: ["KB-002", "KB-003"],
+    });
   });
 
   it("returns 400 when task is not in done column", async () => {

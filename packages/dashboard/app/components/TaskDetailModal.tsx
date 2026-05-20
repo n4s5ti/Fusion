@@ -43,7 +43,7 @@ import { ProviderIcon } from "./ProviderIcon";
 import { subscribeSse } from "../sse-bus";
 import { usePluginUiSlots } from "../hooks/usePluginUiSlots";
 import { appendTokenQuery } from "../auth";
-import { extractDependencyDeleteConflict } from "../utils/taskDelete";
+import { extractDependencyDeleteConflict, extractLineageDeleteConflict } from "../utils/taskDelete";
 import { MAX_AUTO_MERGE_RETRIES, computeBlockerFanoutMap } from "../hooks/useBlockerFanout";
 import { resolveEffectiveGithubRepoDefault } from "./githubTracking";
 import { linkifyFilePaths, linkifyReactChildren } from "../utils/filePathLinkify";
@@ -284,8 +284,12 @@ export interface TaskDetailModalProps {
   onClose: () => void;
   onOpenDetail: (task: Task | TaskDetail) => void; // For clicking dependencies
   onMoveTask: (id: string, column: Column, optionsOrPosition?: { preserveProgress?: boolean } | number) => Promise<Task>;
-  onDeleteTask: (id: string, options?: { removeDependencyReferences?: boolean; githubIssueAction?: GithubIssueAction }) => Promise<Task>;
-  onArchiveTask?: (id: string) => Promise<Task>;
+  onDeleteTask: (id: string, options?: {
+    removeDependencyReferences?: boolean;
+    removeLineageReferences?: boolean;
+    githubIssueAction?: GithubIssueAction;
+  }) => Promise<Task>;
+  onArchiveTask?: (id: string, options?: { removeLineageReferences?: boolean }) => Promise<Task>;
   onMergeTask: (id: string) => Promise<MergeResult>;
   onRetryTask?: (id: string) => Promise<Task>;
   onResetTask?: (id: string) => Promise<Task>;
@@ -1449,7 +1453,30 @@ export function TaskDetailContent({
           addToast(`Archived ${task.id}`, "success");
           requestClose();
         } catch (err) {
-          addToast(getErrorMessage(err), "error");
+          const lineageConflict = extractLineageDeleteConflict(err);
+          if (!lineageConflict || lineageConflict.lineageChildIds.length === 0) {
+            addToast(getErrorMessage(err), "error");
+            return;
+          }
+
+          const confirmedArchive = await confirm({
+            title: "Force Delete Task",
+            message:
+              `${task.id} has lineage children (${lineageConflict.lineageChildIds.join(", ")}) that reference it as a source parent.\n\n` +
+              "Archive anyway by unlinking these references first?",
+            danger: true,
+          });
+          if (!confirmedArchive) {
+            return;
+          }
+
+          try {
+            await onArchiveTask(task.id, { removeLineageReferences: true });
+            addToast(`Archived ${task.id} after unlinking lineage references`, "success");
+            requestClose();
+          } catch (retryErr) {
+            addToast(getErrorMessage(retryErr), "error");
+          }
         }
         return;
       }
@@ -1502,18 +1529,72 @@ export function TaskDetailContent({
         : "";
       addToast(`Deleted ${task.id}${issueSuffix}`, "info");
     } catch (err) {
-      const conflict = extractDependencyDeleteConflict(err);
-      if (!conflict || conflict.dependentIds.length === 0) {
+      const dependencyConflict = extractDependencyDeleteConflict(err);
+      if (dependencyConflict && dependencyConflict.dependentIds.length > 0) {
+        const dependentList = dependencyConflict.dependentIds.join(", ");
+        const confirmed = await confirm({
+          title: "Force Delete Task",
+          message:
+            `${task.id} is a dependency of ${dependentList}.\n\n` +
+            "Delete anyway by removing these dependency references first?",
+          danger: true,
+        });
+        if (!confirmed) {
+          return;
+        }
+
+        try {
+          await onDeleteTask(task.id, {
+            removeDependencyReferences: true,
+            removeLineageReferences: true,
+            githubIssueAction,
+          });
+          requestClose();
+          addToast(`Deleted ${task.id} after removing dependency references`, "info");
+        } catch (retryErr) {
+          const lineageConflict = extractLineageDeleteConflict(retryErr);
+          if (!lineageConflict || lineageConflict.lineageChildIds.length === 0) {
+            addToast(getErrorMessage(retryErr), "error");
+            return;
+          }
+
+          const confirmedLineage = await confirm({
+            title: "Force Delete Task",
+            message:
+              `${task.id} has lineage children (${lineageConflict.lineageChildIds.join(", ")}) that reference it as a source parent.\n\n` +
+              "Delete anyway by unlinking these references first?",
+            danger: true,
+          });
+          if (!confirmedLineage) {
+            return;
+          }
+
+          try {
+            await onDeleteTask(task.id, {
+              removeDependencyReferences: true,
+              removeLineageReferences: true,
+              githubIssueAction,
+            });
+            requestClose();
+            addToast(`Deleted ${task.id} after unlinking lineage references`, "info");
+          } catch (lineageRetryErr) {
+            addToast(getErrorMessage(lineageRetryErr), "error");
+          }
+        }
+        return;
+      }
+
+      const lineageConflict = extractLineageDeleteConflict(err);
+      if (!lineageConflict || lineageConflict.lineageChildIds.length === 0) {
         addToast(getErrorMessage(err), "error");
         return;
       }
 
-      const dependentList = conflict.dependentIds.join(", ");
       const confirmed = await confirm({
         title: "Force Delete Task",
         message:
-          `${task.id} is a dependency of ${dependentList}.\n\n` +
-          "Delete anyway by removing these dependency references first?",
+          `${task.id} has lineage children (${lineageConflict.lineageChildIds.join(", ")}) that reference it as a source parent.\n\n` +
+          "Delete anyway by unlinking these references first?",
         danger: true,
       });
       if (!confirmed) {
@@ -1521,9 +1602,13 @@ export function TaskDetailContent({
       }
 
       try {
-        await onDeleteTask(task.id, { removeDependencyReferences: true, githubIssueAction });
+        await onDeleteTask(task.id, {
+          removeDependencyReferences: true,
+          removeLineageReferences: true,
+          githubIssueAction,
+        });
         requestClose();
-        addToast(`Deleted ${task.id} after removing dependency references`, "info");
+        addToast(`Deleted ${task.id} after unlinking lineage references`, "info");
       } catch (retryErr) {
         addToast(getErrorMessage(retryErr), "error");
       }

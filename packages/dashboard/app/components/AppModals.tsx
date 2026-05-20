@@ -54,9 +54,13 @@ interface AppModalsProps {
   taskHandlers: Pick<UseTaskHandlersResult, "handleModalCreate" | "handlePlanningTaskCreated" | "handlePlanningTasksCreated" | "handleSubtaskTasksCreated" | "handleGitHubImport">;
   taskOperations: {
     moveTask: (taskId: string, column: Column, optionsOrPosition?: { preserveProgress?: boolean } | number) => Promise<Task>;
-    deleteTask: (taskId: string, options?: { removeDependencyReferences?: boolean; githubIssueAction?: GithubIssueAction }) => Promise<Task>;
+    deleteTask: (taskId: string, options?: {
+      removeDependencyReferences?: boolean;
+      removeLineageReferences?: boolean;
+      githubIssueAction?: GithubIssueAction;
+    }) => Promise<Task>;
     mergeTask: (taskId: string) => Promise<MergeResult>;
-    archiveTask: (taskId: string) => Promise<Task>;
+    archiveTask: (taskId: string, options?: { removeLineageReferences?: boolean }) => Promise<Task>;
     retryTask: (taskId: string) => Promise<Task>;
     resetTask: (taskId: string) => Promise<Task>;
     duplicateTask: (taskId: string) => Promise<Task>;

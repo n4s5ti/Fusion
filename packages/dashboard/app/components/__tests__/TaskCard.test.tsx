@@ -267,7 +267,56 @@ describe("TaskCard", () => {
     });
 
     await waitFor(() => {
-      expect(onDeleteTask).toHaveBeenNthCalledWith(2, "FN-001", { removeDependencyReferences: true, githubIssueAction: "delete" });
+      expect(onDeleteTask).toHaveBeenNthCalledWith(2, "FN-001", {
+        removeDependencyReferences: true,
+        removeLineageReferences: true,
+        githubIssueAction: "delete",
+      });
+    });
+  });
+
+  it("retries delete after lineage-conflict confirmation", async () => {
+    const conflict = new Error("Cannot delete task FN-001: still referenced as a lineage parent by FN-010.") as Error & {
+      status: number;
+      details: { code: string; lineageChildIds: string[] };
+    };
+    conflict.status = 409;
+    conflict.details = { code: "TASK_HAS_LINEAGE_CHILDREN", lineageChildIds: ["FN-010", "FN-011"] };
+    const onDeleteTask = vi.fn()
+      .mockRejectedValueOnce(conflict)
+      .mockResolvedValueOnce(makeTask());
+
+    mockConfirm
+      .mockResolvedValueOnce(true)
+      .mockResolvedValueOnce(false)
+      .mockResolvedValueOnce(true)
+      .mockResolvedValueOnce(true);
+
+    render(
+      <TaskCard
+        task={makeTask({
+          column: "triage",
+          githubTracking: {
+            enabled: true,
+            issue: { owner: "owner", repo: "repo", number: 42, url: "https://github.com/owner/repo/issues/42", createdAt: "2026-01-01T00:00:00Z" },
+          },
+        } as any)}
+        onOpenDetail={noop}
+        addToast={noop}
+        onDeleteTask={onDeleteTask}
+      />,
+    );
+
+    await act(async () => {
+      fireEvent.click(screen.getByLabelText("Delete task"));
+    });
+
+    await waitFor(() => {
+      expect(onDeleteTask).toHaveBeenNthCalledWith(2, "FN-001", {
+        removeDependencyReferences: true,
+        removeLineageReferences: true,
+        githubIssueAction: "delete",
+      });
     });
   });
 

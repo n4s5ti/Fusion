@@ -491,7 +491,11 @@ export function useTasks(options?: UseTasksOptions) {
 
   const deleteTask = useCallback(async (
     id: string,
-    options?: { removeDependencyReferences?: boolean; githubIssueAction?: GithubIssueAction },
+    options?: {
+      removeDependencyReferences?: boolean;
+      removeLineageReferences?: boolean;
+      githubIssueAction?: GithubIssueAction;
+    },
   ): Promise<Task> => {
     return normalizeTask(await api.deleteTask(id, projectId, options));
   }, [projectId]);
@@ -548,8 +552,11 @@ export function useTasks(options?: UseTasksOptions) {
     }
   }, [projectId]);
 
-  const archiveTask = useCallback(async (id: string): Promise<Task> => {
-    const task = normalizeTask(await api.archiveTask(id, projectId));
+  const archiveTask = useCallback(async (
+    id: string,
+    options?: { removeLineageReferences?: boolean },
+  ): Promise<Task> => {
+    const task = normalizeTask(await api.archiveTask(id, projectId, options));
     setTasks((prev) =>
       prev.map((t) => (t.id === id ? task : t))
     );
