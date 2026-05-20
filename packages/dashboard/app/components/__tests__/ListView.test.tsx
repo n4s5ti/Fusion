@@ -554,6 +554,7 @@ describe("ListView", () => {
 
   it("reloads persisted sidebar width when projectId changes", () => {
     const viewportSpy = mockDesktopViewport();
+    const clientWidthSpy = vi.spyOn(window.HTMLElement.prototype, "clientWidth", "get").mockReturnValue(1000);
     localStorage.setItem(scopedKey("kb-dashboard-list-sidebar-width", "project-a"), "300");
     localStorage.setItem(scopedKey("kb-dashboard-list-sidebar-width", "project-b"), "460");
     const tasks = [createMockTask({ id: "FN-001", title: "Task" })];
@@ -581,11 +582,13 @@ describe("ListView", () => {
     );
 
     expect(screen.getByTestId("list-split-sidebar")).toHaveStyle({ width: "460px" });
+    clientWidthSpy.mockRestore();
     viewportSpy.mockRestore();
   });
 
   it("supports keyboard resizing on the desktop split-pane handle", () => {
     const viewportSpy = mockDesktopViewport();
+    const clientWidthSpy = vi.spyOn(window.HTMLElement.prototype, "clientWidth", "get").mockReturnValue(1000);
     const tasks = [createMockTask({ id: "FN-001", title: "Task" })];
 
     renderListView({ tasks });
@@ -600,6 +603,7 @@ describe("ListView", () => {
     fireEvent.keyDown(handle, { key: "ArrowRight" });
 
     expect(Number(handle.getAttribute("aria-valuenow"))).toBeGreaterThan(startWidth);
+    clientWidthSpy.mockRestore();
     viewportSpy.mockRestore();
   });
 

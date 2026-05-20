@@ -2130,6 +2130,7 @@ export function MissionManager({ isOpen, isInline = false, onClose, addToast, pr
   }, [loadMissionDetail]);
 
   const handleBackToList = useCallback(() => {
+    writeCache(selectedMissionIdCacheKey, null, { maxBytes: 500_000 });
     setSelectedMission(null);
     setSelectedMilestoneId(null);
     setValidationTelemetry(null);
@@ -2139,7 +2140,7 @@ export function MissionManager({ isOpen, isInline = false, onClose, addToast, pr
     setEventsFilter("all");
     setExpandedEventMetadata(new Set());
     loadMissions();
-  }, [loadMissions]);
+  }, [loadMissions, selectedMissionIdCacheKey]);
 
   const hasMoreEvents = missionEvents.length < eventsTotal;
   const autopilotState = (selectedMission?.autopilotState ?? "inactive") as AutopilotState;

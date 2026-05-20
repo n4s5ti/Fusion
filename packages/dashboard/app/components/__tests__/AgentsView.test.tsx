@@ -1383,13 +1383,12 @@ describe("AgentsView", () => {
     // Replaced with stub: original assertions deferred (see git history). Restore once underlying feature/bug work lands.
     it("sizes org chart subtree containers based on descendant leaf counts", async () => { expect(true).toBe(true); });
 
-    it("uses tokenized connector edge offsets for org chart child bars", () => {
+    it("styles org chart connectors through the dedicated svg overlay", () => {
       const css = loadAllAppCss();
-      expect(css).toContain("--org-chart-first-child-center-offset");
-      expect(css).toContain("--org-chart-last-child-center-offset");
-      expect(css).toContain("left: var(--org-chart-first-child-center-offset)");
-      expect(css).toContain("right: var(--org-chart-last-child-center-offset)");
-      expect(css).toContain(".org-chart-children > .org-chart-node::before");
+      expect(css).toContain(".agent-org-chart-connectors {");
+      expect(css).toContain(".agent-org-chart-connectors path {");
+      expect(css).toContain("stroke: var(--org-chart-connector-color)");
+      expect(css).toContain("pointer-events: none");
     });
 
     it("keeps a compact mobile Agents label visible, anchors the controls popup to the action row, and expands view toggles to 36px touch targets", () => {
