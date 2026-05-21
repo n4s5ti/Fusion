@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 
@@ -65,7 +65,9 @@ describe("FN-5348 cwd integration fallback removed", () => {
       expect(refused).toHaveLength(1);
       expect(refused[0]?.metadata).toMatchObject({ gate: "working-tree-dirty", reason: "dirty-worktree" });
       expect(refused[0]?.metadata?.integrationBranch).toBeUndefined();
-      expect(JSON.stringify(refused[0]?.metadata ?? {})).not.toContain("\"main\"");
+      const metadataJson = JSON.stringify(refused[0]?.metadata ?? {});
+      expect(metadataJson).not.toMatch(/"(integrationBranch|branch|mergeMode|mode)"\s*:\s*"main"/);
+      expect(metadataJson).not.toContain("\"cwd-main\"");
       const latest = await store.getTask(task.id);
       expect(latest?.column).toBe("in-review");
       // aiMergeTask rethrows refusal; upstream project-engine catch maps this to status=failed.
@@ -124,8 +126,22 @@ describe("FN-5348 cwd integration fallback removed", () => {
 
   it.todo("Scenario E: reserved tripwire — no production emit site after Step 3; future regression would add one");
 
-  it("Scenario E: no production code path assigns integrationRoot.mode = cwd-main", () => {
+  it("Scenario E: no production code path assigns integrationRoot.mode to a cwd-* mode (cwd-main or cwd-integration-branch)", () => {
+    // FN-5440: start-of-line anchoring intentionally targets real assignments, not prose comments.
+    const cwdModeAssignmentRegex = /^\s*integrationRoot\.mode\s*=\s*"(cwd-main|cwd-integration-branch)"/m;
     const merger = readFileSync(new URL("../merger.ts", import.meta.url), "utf-8");
-    expect(merger).not.toMatch(/^\s*integrationRoot\.mode\s*=\s*\"cwd-main\"/m);
+    expect(merger).not.toMatch(cwdModeAssignmentRegex);
+
+    const autoRecoveryRoot = new URL("../", import.meta.url);
+    const autoRecovery = readFileSync(new URL("../auto-recovery.ts", import.meta.url), "utf-8");
+    expect(autoRecovery).not.toMatch(cwdModeAssignmentRegex);
+
+    const autoRecoveryHandlersDir = new URL("../auto-recovery-handlers/", import.meta.url);
+    for (const file of readdirSync(autoRecoveryHandlersDir, { withFileTypes: true })) {
+      if (!file.isFile() || !file.name.endsWith(".ts")) continue;
+      const source = readFileSync(new URL(file.name, autoRecoveryHandlersDir), "utf-8");
+      expect(source).not.toMatch(cwdModeAssignmentRegex);
+    }
+
   });
 });

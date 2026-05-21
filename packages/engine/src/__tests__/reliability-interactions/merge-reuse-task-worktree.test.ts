@@ -676,6 +676,8 @@ describe("FN-5279 reliability interactions: merge reuse task worktree", () => {
       expect(auditTypes).toContain("merge:reuse-fallback-new-worktree");
       expect(auditTypes).toContain("merge:reuse-handoff-acquired");
       expect(auditTypes).not.toContain("merge:reuse-fallback-cwd-main");
+      expect(auditTypes).not.toContain("merge:reuse-fallback-cwd-integration-branch");
+      expect(auditTypes).not.toContain("merge:cwd-integration-fallback-removed");
       const fallback = audits.find((event) => event.mutationType === "merge:reuse-fallback-new-worktree");
       expect(fallback?.metadata).toMatchObject({
         reason: "missing-task-worktree",
@@ -686,7 +688,7 @@ describe("FN-5279 reliability interactions: merge reuse task worktree", () => {
     }
   }, 30_000);
 
-  it.skipIf(!hasGit)("cwd-main mode stays on the legacy path and emits no reuse handoff events", async () => {
+  it.skipIf(!hasGit)("cwd-main legacy alias is normalized to cwd-integration-branch and stays on the opt-in path with no reuse handoff events", async () => {
     const fixture = await makeReliabilityFixture({
       taskId: "FN-5279-RI-CWD-MAIN",
       settings: {
