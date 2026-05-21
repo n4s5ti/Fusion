@@ -2111,6 +2111,18 @@ describe("Mission API", () => {
       expect(res.body.error).toContain("missionTitle");
     });
 
+    it("accepts long missionTitle values on interview start", async () => {
+      const { app } = buildApp();
+      const res = await request(
+        app,
+        "POST",
+        "/api/missions/interview/start",
+        JSON.stringify({ missionTitle: "x".repeat(5000) }),
+        { "content-type": "application/json" }
+      );
+      expect(res.status).not.toBe(400);
+    });
+
     it("should return 400 when sessionId is missing on interview respond", async () => {
       const { app } = buildApp();
       const res = await request(
