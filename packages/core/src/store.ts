@@ -837,6 +837,70 @@ export function detectSelfDefeatingDependency(
   };
 }
 
+export class DependencyCycleError extends Error {
+  readonly code = "DEPENDENCY_CYCLE" as const;
+
+  constructor(
+    readonly taskId: string,
+    readonly cyclePath: readonly string[],
+  ) {
+    super(`Dependency cycle detected for ${taskId}: ${cyclePath.join(" → ")}`);
+    this.name = "DependencyCycleError";
+  }
+}
+
+export function detectDependencyCycle(
+  candidateTaskId: string,
+  candidateDependencies: readonly string[],
+  lookupDependencies: (taskId: string) => readonly string[] | undefined,
+): string[] | null {
+  const visited = new Set<string>();
+
+  for (const dep of candidateDependencies) {
+    if (dep === candidateTaskId) {
+      return [candidateTaskId, candidateTaskId];
+    }
+
+    const initialDeps = lookupDependencies(dep);
+    if (!initialDeps) continue;
+
+    const stack: Array<{ taskId: string; deps: readonly string[]; index: number }> = [
+      { taskId: dep, deps: initialDeps, index: 0 },
+    ];
+    const path = [candidateTaskId, dep];
+
+    while (stack.length > 0) {
+      const top = stack[stack.length - 1]!;
+      if (top.index >= top.deps.length) {
+        stack.pop();
+        path.pop();
+        continue;
+      }
+
+      const next = top.deps[top.index++]!;
+      if (next === candidateTaskId) {
+        return [...path, candidateTaskId];
+      }
+
+      if (visited.has(next)) {
+        continue;
+      }
+
+      const nextDeps = lookupDependencies(next);
+      if (!nextDeps) {
+        visited.add(next);
+        continue;
+      }
+
+      visited.add(next);
+      stack.push({ taskId: next, deps: nextDeps, index: 0 });
+      path.push(next);
+    }
+  }
+
+  return null;
+}
+
 export class MergeQueueTaskNotFoundError extends Error {
   constructor(public readonly taskId: string) {
     super(`Cannot enqueue merge queue entry for missing task ${taskId}`);
@@ -3213,6 +3277,50 @@ export class TaskStore extends EventEmitter<TaskStoreEvents> {
     return resolved.length > 0 ? resolved : undefined;
   }
 
+  private async buildActiveTaskDependencyLookup(overrides?: Map<string, readonly string[]>): Promise<Map<string, readonly string[]>> {
+    const tasks = await this.listTasks({ includeArchived: false });
+    const lookup = new Map<string, readonly string[]>();
+    for (const task of tasks) {
+      lookup.set(task.id, task.dependencies ?? []);
+    }
+    if (overrides) {
+      for (const [taskId, deps] of overrides.entries()) {
+        lookup.set(taskId, deps);
+      }
+    }
+    return lookup;
+  }
+
+  private recordDependencyCycleRejectedAudit(
+    taskId: string,
+    cyclePath: readonly string[],
+    source: "createTask" | "createTaskWithReservedId" | "updateTask" | "replication",
+  ): void {
+    this.insertRunAuditEventRow({
+      taskId,
+      domain: "database",
+      mutationType: source === "replication" ? "task:dependency-cycle-rejected-replication" : "task:dependency-cycle-rejected",
+      target: taskId,
+      metadata: { taskId, cyclePath, source },
+    });
+  }
+
+  private async assertNoDependencyCycle(
+    taskId: string,
+    dependencies: readonly string[],
+    source: "createTask" | "createTaskWithReservedId" | "updateTask" | "replication",
+    overrides?: Map<string, readonly string[]>,
+  ): Promise<void> {
+    const lookup = await this.buildActiveTaskDependencyLookup(overrides);
+    const cyclePath = detectDependencyCycle(taskId, dependencies, (candidateId) => lookup.get(candidateId));
+    if (!cyclePath) return;
+    this.recordDependencyCycleRejectedAudit(taskId, cyclePath, source);
+    if (source === "replication") {
+      storeLog.warn("Skipping replicated task create due to dependency cycle", { taskId, cyclePath });
+      return;
+    }
+    throw new DependencyCycleError(taskId, cyclePath);
+  }
   async createTask(
     input: TaskCreateInput,
     options?: {
@@ -3302,6 +3410,7 @@ export class TaskStore extends EventEmitter<TaskStoreEvents> {
         if (input.dependencies?.includes(taskId)) {
           throw new Error(`Task ${taskId} cannot depend on itself`);
         }
+        await this.assertNoDependencyCycle(taskId, input.dependencies ?? [], "createTask");
         return this._createTaskInternal(
           input,
           title,
@@ -3405,6 +3514,8 @@ export class TaskStore extends EventEmitter<TaskStoreEvents> {
       throw new Error(`Task ${id} cannot depend on itself`);
     }
 
+    await this.assertNoDependencyCycle(id, input.dependencies ?? [], "createTaskWithReservedId");
+
     this.assertTaskIdAvailable(id);
 
     const title = input.title?.trim() || undefined;
@@ -3454,6 +3565,20 @@ export class TaskStore extends EventEmitter<TaskStoreEvents> {
         return { task: existingDetail, applied: false };
       }
       throw replicationCollisionError(payload.taskId);
+    }
+
+    if (payload.input.dependencies?.includes(payload.taskId)) {
+      this.recordDependencyCycleRejectedAudit(payload.taskId, [payload.taskId, payload.taskId], "replication");
+      storeLog.warn("Skipping replicated task create due to self dependency", { taskId: payload.taskId });
+      return { task: payload.input as Task, applied: false };
+    }
+
+    const lookup = await this.buildActiveTaskDependencyLookup(new Map([[payload.taskId, payload.input.dependencies ?? []]]));
+    const replicationCycle = detectDependencyCycle(payload.taskId, payload.input.dependencies ?? [], (candidateId) => lookup.get(candidateId));
+    if (replicationCycle) {
+      this.recordDependencyCycleRejectedAudit(payload.taskId, replicationCycle, "replication");
+      storeLog.warn("Skipping replicated task create due to dependency cycle", { taskId: payload.taskId, cyclePath: replicationCycle });
+      return { task: payload.input as Task, applied: false };
     }
 
     const task = await this.createTaskWithReservedId(payload.input, {
@@ -4943,6 +5068,14 @@ export class TaskStore extends EventEmitter<TaskStoreEvents> {
       // Validate that task doesn't depend on itself
       if (updates.dependencies?.includes(id)) {
         throw new Error(`Task ${id} cannot depend on itself`);
+      }
+      if (updates.dependencies !== undefined) {
+        await this.assertNoDependencyCycle(
+          id,
+          updates.dependencies,
+          "updateTask",
+          new Map([[id, updates.dependencies]]),
+        );
       }
 
       const dir = this.taskDir(id);
