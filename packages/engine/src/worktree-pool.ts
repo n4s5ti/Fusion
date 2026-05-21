@@ -17,6 +17,7 @@ import {
 } from "./worktree-backend.js";
 import { cleanupSecretsEnvFile } from "./secrets-env-writer.js";
 import { removeDesktopBuildArtifacts } from "./worktree-desktop-artifacts.js";
+import { resolveIntegrationBranch } from "./integration-branch.js";
 import type { RunAuditor } from "./run-audit.js";
 import { pruneWorktreeAdminEntries } from "./worktree-prune.js";
 
@@ -452,7 +453,7 @@ export class WorktreePool {
     await execAsync("git clean -fd", { cwd: worktreePath });
     await removeDesktopBuildArtifacts(worktreePath, worktreePoolLog);
 
-    const base = startPoint || "main";
+    const base = startPoint || await resolveIntegrationBranch(options?.repoDir ?? worktreePath, undefined);
     await execAsync(`git checkout --detach ${base}`, {
       cwd: worktreePath,
     });
@@ -482,13 +483,15 @@ export class WorktreePool {
       // conflict or, when explicitly enabled, fall back to the legacy sibling
       // suffix flow.
       const conflictingPath = match[1];
+      const repoDir = options?.repoDir ?? worktreePath;
       const inspection = await inspectBranchConflict({
-        repoDir: options?.repoDir ?? worktreePath,
+        repoDir,
         branchName,
         conflictingWorktreePath: conflictingPath,
         requestingTaskId: options?.requestingTaskId ?? taskId,
         ownerTaskId: taskId,
         startPoint: base,
+        integrationRef: await resolveIntegrationBranch(repoDir, undefined),
       });
       if (inspection.kind === "stale" || inspection.kind === "stale-resolved" || inspection.kind === "tip-already-merged") {
         const backend = resolveWorktreeBackendViaSettings({}, { logger: worktreePoolLog });

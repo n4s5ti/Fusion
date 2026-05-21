@@ -35,6 +35,11 @@ export {
   type AutostashOrphanRecord,
 } from "./merger.js";
 export {
+  resolveIntegrationBranch,
+  resolveIntegrationBranchSync,
+  __resetIntegrationBranchCacheForTests,
+} from "./integration-branch.js";
+export {
   resolveMergeIntegrationRoot,
   resolveIntegrationRemote,
   acquireReuseHandoff,

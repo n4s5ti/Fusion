@@ -6940,9 +6940,27 @@ export class TaskStore extends EventEmitter<TaskStoreEvents> {
       };
 
       const settings = await this.getSettings();
-      const projectDefaultBranch = typeof settings.baseBranch === "string" ? settings.baseBranch : undefined;
+      const normalizedIntegrationBranch =
+        typeof settings.integrationBranch === "string" ? settings.integrationBranch.trim() : "";
+      const normalizedBaseBranch = typeof settings.baseBranch === "string" ? settings.baseBranch.trim() : "";
+      let projectDefaultBranch =
+        normalizedIntegrationBranch.length > 0
+          ? normalizedIntegrationBranch
+          : normalizedBaseBranch.length > 0
+            ? normalizedBaseBranch
+            : "";
+      if (!projectDefaultBranch) {
+        const originHead = await this.runGitCommand("git symbolic-ref --short refs/remotes/origin/HEAD", 5_000);
+        if (originHead.exitCode === 0) {
+          projectDefaultBranch = originHead.stdout
+            .trim()
+            .replace(/^refs\/heads\//, "")
+            .replace(/^refs\/remotes\/origin\//, "")
+            .replace(/^origin\//, "");
+        }
+      }
       const mergeTarget = resolveTaskMergeTarget(task, {
-        projectDefaultBranch,
+        projectDefaultBranch: projectDefaultBranch || undefined,
       });
 
       // 1. Check the branch exists

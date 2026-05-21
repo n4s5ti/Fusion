@@ -101,6 +101,43 @@ describe("branch-conflicts", () => {
     expect(result).toEqual({ kind: "stale-resolved" });
   });
 
+  it("prefers explicit integrationRef when inspecting branch conflicts", async () => {
+    mockedExecSync.mockImplementation((cmd: string | string[]) => {
+      const command = typeof cmd === "string" ? cmd : cmd[0];
+      if (command === "git worktree prune") return Buffer.from("");
+      if (command === "git worktree list --porcelain") {
+        return Buffer.from(["worktree /tmp/existing-wt", "HEAD 2222222", "branch refs/heads/fusion/fn-4068", ""].join("\n"));
+      }
+      if (command.includes("git rev-parse --verify 'refs/heads/fusion/fn-4068^{commit}'")) {
+        return Buffer.from("abc123def456\n");
+      }
+      if (command.includes("git rev-parse --verify 'fusion/fn-4068^{commit}'")) {
+        return Buffer.from("abc123def456\n");
+      }
+      if (command.includes("git rev-parse --verify 'master^{commit}'")) {
+        return Buffer.from("abc123def456\n");
+      }
+      if (command.includes("git merge-base 'master' 'fusion/fn-4068'")) {
+        return Buffer.from("abc123def456\n");
+      }
+      if (command.includes("git merge-base --is-ancestor 'abc123def456' 'master'")) {
+        return Buffer.from("");
+      }
+      throw new Error(`Unexpected command: ${command}`);
+    });
+
+    const result = await inspectBranchConflict({
+      repoDir: "/tmp/repo",
+      branchName: "fusion/fn-4068",
+      conflictingWorktreePath: "/tmp/existing-wt",
+      requestingTaskId: "FN-4068",
+      startPoint: "master",
+      integrationRef: "master",
+    });
+
+    expect(result).toMatchObject({ kind: "tip-already-merged", integrationRef: "master" });
+  });
+
   it("FN-4476/FN-4471: classifies live branch at main tip as tip-already-merged even with stale-base churn", async () => {
     mockedExecSync.mockImplementation((cmd: string | string[]) => {
       const command = typeof cmd === "string" ? cmd : cmd[0];

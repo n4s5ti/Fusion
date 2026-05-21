@@ -72,6 +72,7 @@ import {
   inspectBranchConflict,
 } from "./branch-conflicts.js";
 import { BranchAttributionError, filterFilesToOwnTaskCommits } from "./branch-attribution.js";
+import { resolveIntegrationBranch } from "./integration-branch.js";
 import { AgentLogger } from "./agent-logger.js";
 import { createLogger, executorLog, reviewerLog, formatError } from "./logger.js";
 import { TokenCapDetector } from "./token-cap-detector.js";
@@ -8101,6 +8102,7 @@ Backward compat fallback: if JSON is unavailable, you may still begin output wit
       return "sticky";
     }
 
+    const integrationRef = task.mergeDetails?.mergeTargetBranch ?? task.baseBranch ?? task.executionStartBranch ?? await resolveIntegrationBranch(this.rootDir, undefined);
     const inspection = await inspectBranchConflict({
       repoDir: this.rootDir,
       branchName: error.branchName,
@@ -8108,6 +8110,7 @@ Backward compat fallback: if JSON is unavailable, you may still begin output wit
       requestingTaskId: task.id,
       ownerTaskId: task.id,
       startPoint: error.startPoint,
+      integrationRef,
     });
 
     if (inspection.kind === "stale-resolved") {
@@ -9101,6 +9104,7 @@ Backward compat fallback: if JSON is unavailable, you may still begin output wit
         requestingTaskId: taskId,
         ownerTaskId: taskId,
         startPoint,
+        integrationRef: await resolveIntegrationBranch(this.rootDir, settings),
       });
 
       if (inspection.kind === "stale" || inspection.kind === "stale-resolved" || inspection.kind === "tip-already-merged") {

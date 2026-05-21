@@ -19,6 +19,7 @@ const execAsync = promisify(exec);
 import type { TaskStore } from "@fusion/core";
 import { resolveTaskMergeTarget } from "@fusion/core";
 import type { Settings, TaskDetail, PrInfo, MergeResult } from "@fusion/core";
+import { resolveIntegrationBranch } from "@fusion/engine";
 
 /**
  * Minimal interface for GitHub operations needed by the PR merge workflow.
@@ -183,8 +184,9 @@ async function finalizePullRequestMerge(
   const mergedTask = movedTask ?? (await store.getTask(task.id));
   await store.logEntry(task.id, message, `PR #${prInfo.number}: ${prInfo.url}`);
   const settings = await store.getSettings();
+  const resolvedIntegrationBranch = await resolveIntegrationBranch(cwd, settings);
   const mergeTargetBranch = resolveTaskMergeTarget(mergedTask, {
-    projectDefaultBranch: typeof settings.baseBranch === "string" ? settings.baseBranch : undefined,
+    projectDefaultBranch: resolvedIntegrationBranch,
   });
   store.emit("task:merged", {
     task: mergedTask,
@@ -246,7 +248,8 @@ export async function processPullRequestMergeTask(
 
   const branch = getTaskBranchName(task.id);
   const settings = await store.getSettings();
-  const projectDefaultBranch = typeof settings.baseBranch === "string" ? settings.baseBranch : undefined;
+  const resolvedIntegrationBranch = await resolveIntegrationBranch(cwd, settings);
+  const projectDefaultBranch = resolvedIntegrationBranch;
   const mergeTarget = resolveTaskMergeTarget(task, {
     projectDefaultBranch,
   });

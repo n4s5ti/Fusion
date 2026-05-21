@@ -1084,19 +1084,24 @@ describe("aiMergeTask — merge-target branch resolution", () => {
     ).toBe(true);
   });
 
-  it("defaults merge-target context to main when task.baseBranch is missing", async () => {
+  it("defaults merge-target context to integrationBranch when task.baseBranch is missing", async () => {
     const store = createMockStore({
       id: "FN-050",
       branch: "feature/fn-050-work",
       baseBranch: undefined,
       worktree: "/tmp/root",
     });
+    (store.getSettings as ReturnType<typeof vi.fn>).mockResolvedValue({
+      ...DEFAULT_SETTINGS,
+      mergeIntegrationWorktree: "cwd-main" as const,
+      integrationBranch: "master",
+    });
 
     await aiMergeTask(store, "/tmp/root", "FN-050");
 
     expect(
       mockedExecSync.mock.calls.some(([cmd]) =>
-        String(cmd).includes('git merge-base "feature/fn-050-work" "main"'),
+        String(cmd).includes('git merge-base "feature/fn-050-work" "master"'),
       ),
     ).toBe(true);
 

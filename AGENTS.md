@@ -289,9 +289,16 @@ Sanctioned user-facing daemons that intentionally outlive the caller may keep `d
 - Always include the task ID prefix
 - Fusion-managed task worktrees install identity-guard `pre-commit`, trailer-appending `commit-msg`, and empty-commit-refusal `prepare-commit-msg` hooks. Task-worktree commits should carry a `Fusion-Task-Id: FN-NNNN` trailer (FN-5089, configurable via `commitMsgHookEnabled`). Attribution still falls back to branch/subject when the trailer hook is disabled. The `prepare-commit-msg` empty-commit guard (FN-5345/FN-5377) refuses `git commit --allow-empty` and other zero-staged-diff commits in fusion worktrees; legitimate amend / merge / squash / cherry-pick / revert / rebase ceremonies are allowed (amend is detected via `$2=="commit"` source arg or `--amend` in `ps -o args= -p $PPID`).
 
-## Merging Branches Into Main
+## Merging Branches Into the Integration Branch
 
 Hard-won rules (FN-2370 silently reverted three commits' worth of work):
+
+### Integration branch resolution and invariants
+- Canonical resolver: `resolveIntegrationBranch(rootDir, settings)` (and `resolveIntegrationBranchSync` where sync git plumbing is required).
+- Resolution order: `settings.integrationBranch` → `settings.baseBranch` (legacy bridge) → `origin/HEAD` symbolic ref → fallback `"main"`.
+- `resolveTaskMergeTarget()` remains the task-level resolver; `resolveIntegrationBranch` supplies its `projectDefaultBranch` input and all project-level merge/self-heal/branch-conflict defaults.
+- Always-checked-out invariant: merger and conflict-inspection paths must not `git checkout <integration>` in task/root worktrees. Final integration-branch advance via `git update-ref` is tracked separately in FN-5350.
+- `cwd-main` integration mode removal is out of scope for this change stream and tracked separately in FN-5348.
 
 1. **Drop duplicate commits before merging.** If a branch contains commits that duplicate work already on main, rebase to drop them. Auto-resolvers cannot tell which side is canonical and will silently discard refinements. `git log main..branch --format=%s` should not overlap with `git log <base>..main --format=%s`.
 2. **Rebase over squash for multi-commit branches.** Fusion's direct merger defaults `directMergeCommitStrategy="auto"`: squash for 0–1 substantive commits, history-preserving rebase/cherry-pick otherwise. Force via project setting or `**Direct Merge Commit Strategy:** auto|always-squash|always-rebase` in PROMPT.

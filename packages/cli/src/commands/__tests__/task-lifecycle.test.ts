@@ -13,6 +13,14 @@ vi.mock("node:child_process", () => ({
       cb(err as Error, "", (err as Error).message);
     }
   },
+  execFile: (file: string, args: string[] | undefined, opts: unknown, cb: (err: Error | null, stdout: string, stderr: string) => void) => {
+    try {
+      const result = execMock(`${file} ${(args ?? []).join(" ")}`.trim(), opts);
+      cb(null, typeof result === "string" ? result : "", "");
+    } catch (err) {
+      cb(err as Error, "", (err as Error).message);
+    }
+  },
 }));
 
 import { processPullRequestMergeTask, getTaskBranchName } from "../task-lifecycle.js";

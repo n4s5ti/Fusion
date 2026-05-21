@@ -46,6 +46,7 @@ import { activeSessionRegistry } from "./active-session-registry.js";
 import { findAlreadyMergedTaskCommit } from "./already-merged-detector.js";
 import { resolveWorktreesDir } from "./worktree-paths.js";
 import { canonicalFusionBranchName } from "./worktree-names.js";
+import { resolveIntegrationBranch, resolveIntegrationBranchSync } from "./integration-branch.js";
 import type { OwnedLandedClassification } from "./merger.js";
 import { recoverForeignOnlyContamination } from "./recovery/foreign-only-contamination.js";
 import {
@@ -443,7 +444,7 @@ export async function isBranchAheadOfBase(
     return null;
   }
 
-  const requestedBaseRef = preferredBaseRef || task.mergeDetails?.mergeTargetBranch || "main";
+  const requestedBaseRef = preferredBaseRef || task.mergeDetails?.mergeTargetBranch || await resolveIntegrationBranch(rootDir, undefined);
   let resolvedBaseRef = requestedBaseRef;
 
   try {
@@ -1645,13 +1646,15 @@ export class SelfHealingManager {
     if (!await isUsableTaskWorktree(this.options.rootDir, task.worktree)) return withPerPr({ outcome: "skipped", reason: "unusable-worktree" });
 
     try {
+      const integrationBranch = await resolveIntegrationBranch(this.options.rootDir, settings);
       const inspection = await inspectBranchConflict({
         repoDir: this.options.rootDir,
         branchName: task.branch,
         conflictingWorktreePath: task.worktree,
         requestingTaskId: task.id,
         ownerTaskId: task.id,
-        startPoint: task.baseCommitSha ?? task.mergeDetails?.mergeTargetBranch ?? "main",
+        startPoint: task.baseCommitSha ?? task.mergeDetails?.mergeTargetBranch ?? integrationBranch,
+        integrationRef: integrationBranch,
       });
 
       const auditor = createRunAuditor(this.store, {
@@ -1805,6 +1808,7 @@ export class SelfHealingManager {
       }
 
       let recovered = 0;
+      const integrationBranch = await resolveIntegrationBranch(this.options.rootDir, settings);
       for (const task of candidates) {
         if (task.checkedOutBy || activeTaskIds.has(task.id.toUpperCase()) || !task.branch || !task.worktree) continue;
         if (task.userPaused) continue;
@@ -1833,7 +1837,8 @@ export class SelfHealingManager {
             conflictingWorktreePath: task.worktree,
             requestingTaskId: task.id,
             ownerTaskId: task.id,
-            startPoint: task.baseCommitSha ?? task.mergeDetails?.mergeTargetBranch ?? "main",
+            startPoint: task.baseCommitSha ?? task.mergeDetails?.mergeTargetBranch ?? integrationBranch,
+            integrationRef: integrationBranch,
           });
 
           if (inspection.kind === "stale") {
@@ -2408,7 +2413,7 @@ export class SelfHealingManager {
       return false;
     }
 
-    const baseBranch = task.baseBranch || "main";
+    const baseBranch = task.baseBranch || await resolveIntegrationBranch(this.options.rootDir, undefined);
     const comparison = await listUniqueBranchCommits(this.options.rootDir, baseBranch, branchName);
     if (comparison.commits.length > 0) {
       log.warn(
@@ -2676,7 +2681,7 @@ export class SelfHealingManager {
           if (stem.toLowerCase() === normalizedId) candidates.add(branch);
         }
 
-        const integrationBase = task.baseBranch || "main";
+        const integrationBase = task.baseBranch || await resolveIntegrationBranch(this.options.rootDir, undefined);
         const existingCandidatesByRef = new Map<string, { branch: string; aheadCount: number }>();
         for (const branch of candidates) {
           try {
@@ -3054,7 +3059,7 @@ export class SelfHealingManager {
     const reasons: string[] = [];
 
     try {
-      const ahead = await isBranchAheadOfBase(task, this.options.rootDir, task.baseBranch ?? task.mergeDetails?.mergeTargetBranch ?? "main");
+      const ahead = await isBranchAheadOfBase(task, this.options.rootDir, task.baseBranch ?? task.mergeDetails?.mergeTargetBranch ?? await resolveIntegrationBranch(this.options.rootDir, undefined));
       if (ahead && ahead.aheadCount > 0) reasons.push("branch-has-unique-commits");
     } catch (err: unknown) {
       log.warn(`Meta auto-archive branch probe failed for ${task.id}: ${err instanceof Error ? err.message : String(err)}`);
@@ -3764,9 +3769,7 @@ export class SelfHealingManager {
       if (candidates.length === 0) return 0;
 
       let recovered = 0;
-      const mergeTargetBranch = typeof settings.baseBranch === "string" && settings.baseBranch.trim().length > 0
-        ? settings.baseBranch
-        : "main";
+      const mergeTargetBranch = await resolveIntegrationBranch(this.options.rootDir, settings);
       for (const task of candidates) {
         const ahead = await this.isBranchAheadOfBase(task, task.mergeDetails?.mergeTargetBranch || mergeTargetBranch);
         if (!ahead || ahead.aheadCount !== 0) continue;
@@ -3875,9 +3878,7 @@ export class SelfHealingManager {
 
       if (candidates.length === 0) return 0;
       const settings = await this.store.getSettings();
-      const mergeTargetBranch = typeof settings.baseBranch === "string" && settings.baseBranch.trim().length > 0
-        ? settings.baseBranch
-        : "main";
+      const mergeTargetBranch = await resolveIntegrationBranch(this.options.rootDir, settings);
 
       let reconciled = 0;
       for (const task of candidates) {
@@ -5000,7 +5001,7 @@ export class SelfHealingManager {
               target: task.id,
               metadata: {
                 mergeSha: task.mergeDetails?.commitSha ?? null,
-                baseBranch: task.baseBranch || task.executionStartBranch || "main",
+                baseBranch: task.baseBranch || task.executionStartBranch || await resolveIntegrationBranch(this.options.rootDir, undefined),
                 clearedFlags,
               },
             });
@@ -5230,7 +5231,7 @@ export class SelfHealingManager {
           const hasDeclaredOverlap = orphanFiles.some((file) => matchesScope(file, declaredScope));
           if (hasDeclaredOverlap) continue;
 
-          const baseBranch = task.baseBranch || task.executionStartBranch || "main";
+          const baseBranch = task.baseBranch || task.executionStartBranch || await resolveIntegrationBranch(this.options.rootDir, undefined);
           const landed = await this.findAlreadyMergedTaskCommit({
             taskId: task.id,
             lineageId: task.lineageId,
@@ -5367,7 +5368,7 @@ export class SelfHealingManager {
       let recovered = 0;
       for (const task of candidates) {
         try {
-          const baseBranch = task.baseBranch || task.executionStartBranch || "main";
+          const baseBranch = task.baseBranch || task.executionStartBranch || await resolveIntegrationBranch(this.options.rootDir, undefined);
           if (!baseBranch) continue;
 
           const landed = await this.findAlreadyMergedTaskCommit({
@@ -5594,7 +5595,7 @@ export class SelfHealingManager {
         try {
           const branch = task.branch;
           if (!branch) continue;
-          const baseBranch = task.baseBranch || task.executionStartBranch || "main";
+          const baseBranch = task.baseBranch || task.executionStartBranch || await resolveIntegrationBranch(this.options.rootDir, undefined);
           const check = await this.isBranchTipMisboundToTask({
             branch,
             taskId: task.id,
@@ -5716,9 +5717,10 @@ export class SelfHealingManager {
       ];
 
       let recovered = 0;
+      const integrationBranch = await resolveIntegrationBranch(this.options.rootDir, settings);
       for (const task of candidates) {
         if (!task.branch || !task.worktree) continue;
-        const baseSha = task.baseCommitSha ?? task.baseBranch ?? task.executionStartBranch ?? "main";
+        const baseSha = task.baseCommitSha ?? task.baseBranch ?? task.executionStartBranch ?? integrationBranch;
         try {
           const classification = await classifyForeignOnlyContamination({
             repoDir: this.options.rootDir,
@@ -5745,6 +5747,7 @@ export class SelfHealingManager {
           const result = await recoverForeignOnlyContamination(task, {
             repoDir: this.options.rootDir,
             taskStore: this.store,
+            integrationBranch,
             runAudit: createRunAuditor(this.store, {
               runId: generateSyntheticRunId("self-heal", task.id),
               agentId: "self-healing",
@@ -5846,7 +5849,7 @@ export class SelfHealingManager {
 
       const taskIds: string[] = [];
       for (const task of candidates) {
-        const ahead = await isBranchAheadOfBase(task, this.options.rootDir, task.baseBranch || "main");
+        const ahead = await isBranchAheadOfBase(task, this.options.rootDir, task.baseBranch || await resolveIntegrationBranch(this.options.rootDir, undefined));
         if (ahead && ahead.aheadCount === 0) {
           taskIds.push(task.id);
         }
@@ -7142,6 +7145,7 @@ export class SelfHealingManager {
     }
     return cleaned;
   }
+
 
   /**
    * Resolve orphaned `fusion/*` branches.

@@ -1,6 +1,7 @@
 import { exec } from "node:child_process";
 import { existsSync } from "node:fs";
 import { promisify } from "node:util";
+import { resolveIntegrationBranch } from "./integration-branch.js";
 
 const execAsync = promisify(exec);
 const FUSION_TASK_ID_TRAILER_KEY = "Fusion-Task-Id";
@@ -89,6 +90,7 @@ export interface InspectBranchConflictInput {
   requestingTaskId: string;
   ownerTaskId?: string;
   startPoint?: string;
+  integrationRef?: string;
 }
 
 export type BranchConflictInspectionResult =
@@ -163,7 +165,8 @@ async function resolveBranchComparisonRef(repoDir: string, startPoint: string, b
     await runGit(repoDir, `git merge-base ${quoteShellArg(startPoint)} ${quoteShellArg(branchName)}`);
     return startPoint;
   } catch {
-    return "main";
+    const resolved = await resolveIntegrationBranch(repoDir, undefined);
+    return resolved;
   }
 }
 
@@ -435,7 +438,9 @@ async function classifyForeignCommitsViaPatchId(
 export async function classifyForeignCommits(
   input: ClassifyForeignCommitsInput,
 ): Promise<ClassifyForeignCommitsResult> {
-  const { repoDir, branchName, baseSha, foreignCommits, mainRef = "main" } = input;
+  const resolvedIntegrationBranch = await resolveIntegrationBranch(input.repoDir, undefined);
+  const { repoDir, branchName, baseSha, foreignCommits } = input;
+  const mainRef = input.mainRef?.trim() || resolvedIntegrationBranch;
   const targetBySha = new Map(foreignCommits.map((commit) => [commit.sha, commit]));
   if (targetBySha.size === 0) {
     return { alreadyUpstream: [], unique: [] };
@@ -536,7 +541,9 @@ export async function classifyMisroutedForeignCommit(
 export async function classifyForeignOnlyContamination(
   input: ClassifyForeignOnlyContaminationInput,
 ): Promise<ClassifyForeignOnlyContaminationResult> {
-  const { repoDir, branchName, baseSha, taskId, mainRef = "main" } = input;
+  const resolvedIntegrationBranch = await resolveIntegrationBranch(input.repoDir, undefined);
+  const { repoDir, branchName, baseSha, taskId } = input;
+  const mainRef = input.mainRef?.trim() || resolvedIntegrationBranch;
   // FN-5090 hotfix: stale baseSha (older than the actual fork point with main) caused
   // classifyForeignOnlyContamination to see commits that have since been merged into main
   // as "foreign", returning kind:"ambiguous" and stranding the task. Prefer the live
@@ -848,7 +855,8 @@ export async function inspectBranchConflict(
   }
 
   const existingTipSha = await revParse(input.repoDir, input.branchName);
-  const integrationRef = await resolveBranchComparisonRef(input.repoDir, "main", input.branchName);
+  const requestedIntegrationRef = input.integrationRef ?? await resolveIntegrationBranch(input.repoDir, undefined);
+  const integrationRef = await resolveBranchComparisonRef(input.repoDir, requestedIntegrationRef, input.branchName);
   if (await isAncestor(input.repoDir, existingTipSha, integrationRef)) {
     return {
       kind: "tip-already-merged",

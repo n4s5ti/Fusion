@@ -9,6 +9,7 @@ import {
 } from "../branch-conflicts.js";
 import type { AutoRecoveryContext, AutoRecoveryDecision, AutoRecoveryFailure } from "../auto-recovery.js";
 import { activeSessionRegistry } from "../active-session-registry.js";
+import { resolveIntegrationBranch } from "../integration-branch.js";
 import { createLogger, type Logger } from "../logger.js";
 import type { RunAuditor } from "../run-audit.js";
 
@@ -149,13 +150,18 @@ export class BranchWorktreeAutoRecoveryHandler {
         : "")).trim();
     if (!branchName || !conflictingWorktreePath) return;
 
+    const integrationBranch = await resolveIntegrationBranch(
+      repoDir,
+      ctx.settings as { integrationBranch?: string; baseBranch?: unknown },
+    );
     const inspection = await inspectBranchConflict({
       repoDir,
       branchName,
       conflictingWorktreePath,
       requestingTaskId: ctx.task.id,
       ownerTaskId: ctx.task.id,
-      startPoint: ctx.task.baseCommitSha ?? "main",
+      startPoint: ctx.task.baseCommitSha ?? integrationBranch,
+      integrationRef: integrationBranch,
     });
 
     if (inspection.kind === "stale-resolved" || inspection.kind === "fully-subsumed" || inspection.kind === "tip-already-merged") {
@@ -196,7 +202,7 @@ export class BranchWorktreeAutoRecoveryHandler {
       const bootstrap = await classifyBootstrapMisbinding({
         repoDir,
         branchName,
-        baseSha: ctx.task.baseCommitSha ?? "main",
+        baseSha: ctx.task.baseCommitSha ?? integrationBranch,
         taskId: ctx.task.id,
         foreignCommits: [],
       }).catch(() => ({ isBootstrapMisbinding: false, ownCommitCount: 0, nonAttributedCount: 0 }));
@@ -206,7 +212,7 @@ export class BranchWorktreeAutoRecoveryHandler {
           repoDir,
           worktreePath: inspection.livePath,
           branchName,
-          baseSha: ctx.task.baseCommitSha ?? "main",
+          baseSha: ctx.task.baseCommitSha ?? integrationBranch,
           taskId: ctx.task.id,
         }).catch(() => null);
 

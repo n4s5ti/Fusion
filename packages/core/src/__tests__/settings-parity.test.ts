@@ -157,6 +157,13 @@ describe("settings key parity", () => {
     expect(isGlobalSettingsKey("directMergeCommitStrategy")).toBe(false);
   });
 
+  it("keeps integrationBranch project-scoped", () => {
+    expect(DEFAULT_PROJECT_SETTINGS.integrationBranch).toBeUndefined();
+    expect(isProjectSettingsKey("integrationBranch")).toBe(true);
+    expect(isGlobalSettingsKey("integrationBranch")).toBe(false);
+    expect(PROJECT_SETTINGS_KEYS).toContain("integrationBranch");
+  });
+
   it("keeps task stuck timeout active by default without coupling to workflow step timeout", () => {
     expect(DEFAULT_PROJECT_SETTINGS.taskStuckTimeoutMs).toBe(600_000);
     expect(DEFAULT_PROJECT_SETTINGS.workflowStepTimeoutMs).toBe(360_000);

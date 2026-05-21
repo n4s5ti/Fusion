@@ -2710,6 +2710,10 @@ export interface ProjectSettings {
    *  - "cwd-main": preserve the legacy project-root integration flow
    *  Auto-merge only; manual/direct merge entrypoints outside auto-merge are unchanged. */
   mergeIntegrationWorktree?: MergeIntegrationWorktreeMode;
+  /** Explicit integration branch name (e.g. `main`, `master`, `trunk`, `develop`).
+   *  Resolution order: `integrationBranch` → `baseBranch` → `origin/HEAD` → `main`.
+   *  This value is used as the `projectDefaultBranch` input to `resolveTaskMergeTarget`. */
+  integrationBranch?: string;
   /** When true, automatically push to the configured remote after a successful direct merge.
    *  The push process includes pulling the latest from the remote (rebase) first.
    *  If conflicts arise during the pull, they are resolved using the AI conflict resolution pipeline.

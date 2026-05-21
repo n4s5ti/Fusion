@@ -195,6 +195,7 @@ export const DEFAULT_PROJECT_SETTINGS = {
   mergeStrategy: "direct",
   directMergeCommitStrategy: "auto",
   mergeIntegrationWorktree: "reuse-task-worktree",
+  integrationBranch: undefined,
   requirePrApproval: false,
   pushAfterMerge: false,
   pushRemote: "origin",

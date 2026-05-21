@@ -666,8 +666,8 @@ describe("WorktrunkWorktreeBackend", () => {
     ).rejects.toMatchObject({ code: "worktrunk_timeout" });
   });
 
-  it("syncs by fetching then rebasing branch", async () => {
-    execMock.mockResolvedValue({ stdout: "", stderr: "" });
+  it("syncs by fetching then rebasing resolved integration branch", async () => {
+    execMock.mockResolvedValue({ stdout: "origin/main\n", stderr: "" });
     const backend = new WorktrunkWorktreeBackend({ binaryPath: "worktrunk" });
 
     await expect(
@@ -676,11 +676,16 @@ describe("WorktrunkWorktreeBackend", () => {
 
     expect(execMock).toHaveBeenNthCalledWith(
       1,
+      "git symbolic-ref --short refs/remotes/origin/HEAD",
+      expect.objectContaining({ cwd: "/repo", timeout: 5000, maxBuffer: 1048576 }),
+    );
+    expect(execMock).toHaveBeenNthCalledWith(
+      2,
       'git fetch origin "main"',
       expect.objectContaining({ cwd: "/repo/.worktrees/fn-1", timeout: 180000, maxBuffer: 10485760 }),
     );
     expect(execMock).toHaveBeenNthCalledWith(
-      2,
+      3,
       'git rebase "main"',
       expect.objectContaining({ cwd: "/repo/.worktrees/fn-1", timeout: 180000, maxBuffer: 10485760 }),
     );

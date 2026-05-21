@@ -13,6 +13,7 @@ import {
 import type { RunAuditor } from "./run-audit.js";
 import { resolveTaskWorktreePath } from "./worktree-paths.js";
 import { inspectBranchConflict } from "./branch-conflicts.js";
+import { resolveIntegrationBranch } from "./integration-branch.js";
 import { formatError } from "./logger.js";
 import { installTaskWorktreeIdentityGuard } from "./worktree-hooks.js";
 import { pruneWorktreeAdminEntries } from "./worktree-prune.js";
@@ -383,6 +384,7 @@ export class NativeWorktreeBackend implements WorktreeBackend {
           conflictingWorktreePath: input.worktreePath,
           requestingTaskId: input.taskId,
           startPoint: input.startPoint,
+          integrationRef: await resolveIntegrationBranch(input.rootDir, undefined),
         });
       } catch (inspectError) {
         this.deps.logger?.warn?.(
@@ -648,7 +650,7 @@ export class WorktrunkWorktreeBackend implements WorktreeBackend {
 
   async sync(input: WorktreeSyncInput): Promise<{ skipped: boolean }> {
     try {
-      const trunk = input.trunk ?? "main";
+      const trunk = input.trunk ?? await resolveIntegrationBranch(input.rootDir, undefined);
       await execAsync(`git fetch origin ${quoteShellArg(trunk)}`, {
         cwd: input.worktreePath,
         encoding: "utf-8",

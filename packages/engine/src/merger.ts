@@ -107,6 +107,7 @@ import {
   type HandoffResult,
 } from "./merger-integration-worktree.js";
 import { acquireTaskWorktree } from "./worktree-acquisition.js";
+import { resolveIntegrationBranch } from "./integration-branch.js";
 
 export { DiffVolumeRegressionError } from "./merger-diff-volume-gate.js";
 
@@ -6663,9 +6664,9 @@ export async function aiMergeTask(
 
   const projectRootDir = rootDir;
   const settings = await store.getSettings();
-  const projectDefaultBranch = typeof settings.baseBranch === "string" ? settings.baseBranch : undefined;
+  const resolvedIntegrationBranch = await resolveIntegrationBranch(projectRootDir, settings);
   const mergeTarget = resolveTaskMergeTarget(task, {
-    projectDefaultBranch,
+    projectDefaultBranch: resolvedIntegrationBranch,
   });
   let branch = task.branch || canonicalFusionBranchName(taskId);
 
@@ -7677,13 +7678,13 @@ export async function aiMergeTask(
     }
 
     // Layer 1: surgical drop of declared-dependency commits.
-    // When `task.executionStartBranch` is a non-main branch (a sibling task's branch),
+    // When `task.executionStartBranch` is a non-integration branch (a sibling task's branch),
     // the dependent worktree was forked off it and inherited its commits.
-    // If the dep was later squash-merged to main, those raw commits are now
+    // If the dep was later squash-merged to the integration branch, those raw commits are now
     // orphans whose content already exists in main. Re-rebase the task
-    // branch onto main using `git rebase --onto <target> <dep-tip> <branch>`,
+    // branch onto the integration branch using `git rebase --onto <target> <dep-tip> <branch>`,
     // which peels off the dep's commits cleanly.
-    if (rebaseTarget && task.executionStartBranch && task.executionStartBranch !== "main") {
+    if (rebaseTarget && task.executionStartBranch && task.executionStartBranch !== mergeTarget.branch) {
       // Resolve the dep's tip — prefer the live branch ref, fall back to
       // the recorded baseCommitSha if the branch was already deleted.
       let depTip: string | undefined;

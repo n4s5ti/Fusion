@@ -148,6 +148,7 @@ import {
   type ConflictCategory,
 } from "../merger.js";
 import { mergerLog } from "../logger.js";
+import { __resetIntegrationBranchCacheForTests } from "../integration-branch.js";
 import { createFnAgent } from "../pi.js";
 import { execSync, exec } from "node:child_process";
 import * as core from "@fusion/core";
@@ -383,6 +384,38 @@ describe("aiMergeTask — includeTaskIdInCommit setting", () => {
   });
 });
 
+
+describe("aiMergeTask — integration branch resolution", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    __resetIntegrationBranchCacheForTests();
+    mockedExistsSync.mockReturnValue(true);
+    setupHappyPathExecSync();
+    mockedCreateFnAgent.mockResolvedValue({
+      session: {
+        prompt: vi.fn().mockResolvedValue(undefined),
+        dispose: vi.fn(),
+      },
+    } as any);
+  });
+
+  it("threads settings.baseBranch into merge target branch", async () => {
+    const store = createMockStore(
+      { id: "FN-050", worktree: "/tmp/root/.worktrees/KB-050" },
+      [{ id: "FN-050", worktree: "/tmp/root/.worktrees/KB-050", column: "in-review" } as Task],
+    );
+    (store.getSettings as ReturnType<typeof vi.fn>).mockResolvedValue({
+      ...DEFAULT_SETTINGS,
+      mergeIntegrationWorktree: "cwd-main" as const,
+      baseBranch: "trunk",
+    });
+
+    await aiMergeTask(store, "/tmp/root", "FN-050");
+
+    const commands = mockedExecSync.mock.calls.map(([cmd]) => String(cmd));
+    expect(commands.some((cmd) => cmd.includes("checkout \"trunk\""))).toBe(true);
+  });
+});
 
 describe("aiMergeTask — model settings threading", () => {
   beforeEach(() => {
