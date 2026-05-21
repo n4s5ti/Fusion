@@ -934,6 +934,11 @@ export class TaskExecutor {
    *  Prevents the task:moved handler from dispatching execute() before the
    *  bounce finishes its own dispatch. */
   private workflowRerunPending = new Set<string>();
+  /** FN-5256: in-flight session-disposal promises keyed by taskId. The
+   *  task:moved (away from in-progress) and task:deleted listeners populate
+   *  this so a fast re-dispatch (task:moved → in-progress) awaits the prior
+   *  session being fully reaped before creating/acquiring a new worktree. */
+  private pendingTaskDisposals = new Map<string, Promise<void>>();
   /** Active agent sessions per task, used to terminate on pause and inject steering. */
   private activeSessions = new Map<string, {
     session: AgentSession;
@@ -1196,10 +1201,11 @@ export class TaskExecutor {
       undefined,
       this.getRunContextFor(taskId),
     ).catch(() => undefined);
-    // FN-5256: synchronously reap any spawned shells BEFORE moving the task. The
-    // task:moved listener fires `abortInFlightTaskWork` (fire-and-forget) so by the
-    // time it runs, the abort needs to already be complete — otherwise a fast
-    // re-dispatch races the live shell and yanks the worktree.
+    // FN-5256: synchronously reap any spawned shells BEFORE moving the task so
+    // a fast re-dispatch (task:moved → in-progress) doesn't race a live shell.
+    // The task:moved (away) listener also tracks an awaited disposal as a
+    // backstop, but doing it here keeps `parkTaskAfterWorkflowStepPause`'s
+    // contract straightforward for its callers.
     await this.awaitAbortInFlightTaskWork(taskId, "pause-before-park").catch((err) => {
       executorLog.warn(`${taskId}: awaitAbortInFlightTaskWork failed in pause-before-park: ${err}`);
     });
@@ -1453,6 +1459,25 @@ export class TaskExecutor {
   }
 
   /**
+   * FN-5256: register an in-flight disposal so a subsequent dispatch (task:moved
+   * → in-progress) can await it before acquiring/creating a worktree. Swallows
+   * errors so a failed disposal doesn't poison the map; surfaces them via the
+   * executor log instead.
+   */
+  private trackTaskDisposal(taskId: string, disposal: Promise<void>): void {
+    const wrapped = disposal
+      .catch((err) => {
+        executorLog.warn(`${taskId}: tracked disposal failed: ${err}`);
+      })
+      .finally(() => {
+        if (this.pendingTaskDisposals.get(taskId) === wrapped) {
+          this.pendingTaskDisposals.delete(taskId);
+        }
+      });
+    this.pendingTaskDisposals.set(taskId, wrapped);
+  }
+
+  /**
    * FN-5256: synchronously await session disposal so callers (e.g. pause-before-park)
    * can rely on the worktree-bound shells being reaped before they return. Mirrors
    * `abortInFlightTaskWork`, but awaits the async `abort()` / `terminateAllSessions()`
@@ -1469,9 +1494,33 @@ export class TaskExecutor {
     this.clearWorkflowRerunWatchdog(taskId);
     this.clearCompletedTaskWatchdog(taskId);
 
-    if (this.activeSessions.has(taskId)) {
+    // FN-5256: claim each surface synchronously BEFORE awaiting any async
+    // abort. Without this, two concurrent disposal calls for the same task
+    // (e.g., task:moved-away followed immediately by task:deleted) both pass
+    // the `has(taskId)` guards and double-call abort/dispose.
+    const claimedSession = this.activeSessions.get(taskId);
+    if (claimedSession) {
       hadActiveSurface = true;
-      const { session } = this.activeSessions.get(taskId)!;
+      this.deleteActiveSession(taskId);
+    }
+    const claimedStepExecutor = this.activeStepExecutors.get(taskId);
+    if (claimedStepExecutor) {
+      hadActiveSurface = true;
+      this.deleteActiveStepExecutor(taskId);
+    }
+    const claimedWorkflowSession = this.activeWorkflowStepSessions.get(taskId);
+    if (claimedWorkflowSession) {
+      hadActiveSurface = true;
+      this.deleteActiveWorkflowStepSession(taskId);
+    }
+    const claimedSubagents = this.activeSubagentSessions.has(taskId);
+    if (claimedSubagents) {
+      hadActiveSurface = true;
+      this.disposeSubagentsForTask(taskId, reason);
+    }
+
+    if (claimedSession) {
+      const { session } = claimedSession;
       const sessionWithAbort = session as AgentSession & { abort?: () => Promise<void> };
       if (typeof sessionWithAbort.abort === "function") {
         await sessionWithAbort.abort().catch((err) => {
@@ -1483,13 +1532,10 @@ export class TaskExecutor {
       } catch (err) {
         executorLog.warn(`Failed to dispose agent session for ${taskId}: ${err}`);
       }
-      this.deleteActiveSession(taskId);
     }
 
-    if (this.activeStepExecutors.has(taskId)) {
-      hadActiveSurface = true;
-      const stepExecutor = this.activeStepExecutors.get(taskId)!;
-      const stepExecutorWithAbort = stepExecutor as StepSessionExecutor & { abortAllSessionBash?: () => void };
+    if (claimedStepExecutor) {
+      const stepExecutorWithAbort = claimedStepExecutor as StepSessionExecutor & { abortAllSessionBash?: () => void };
       if (typeof stepExecutorWithAbort.abortAllSessionBash === "function") {
         try {
           stepExecutorWithAbort.abortAllSessionBash();
@@ -1497,32 +1543,23 @@ export class TaskExecutor {
           executorLog.warn(`Failed to abort step-session bash for ${taskId}: ${err}`);
         }
       }
-      await stepExecutor.terminateAllSessions().catch((err) =>
+      await claimedStepExecutor.terminateAllSessions().catch((err) =>
         executorLog.error(`Failed to terminate step sessions for ${taskId}:`, err),
       );
-      this.deleteActiveStepExecutor(taskId);
     }
 
-    if (this.activeWorkflowStepSessions.has(taskId)) {
-      hadActiveSurface = true;
-      const workflowSession = this.activeWorkflowStepSessions.get(taskId)!;
-      const sessionWithAbort = workflowSession as AgentSession & { abort?: () => Promise<void> };
+    if (claimedWorkflowSession) {
+      const sessionWithAbort = claimedWorkflowSession as AgentSession & { abort?: () => Promise<void> };
       if (typeof sessionWithAbort.abort === "function") {
         await sessionWithAbort.abort().catch((err) => {
           executorLog.warn(`Failed to abort workflow step session for ${taskId}: ${err}`);
         });
       }
       try {
-        workflowSession.dispose();
+        claimedWorkflowSession.dispose();
       } catch (err) {
         executorLog.warn(`Failed to dispose workflow step session for ${taskId}: ${err}`);
       }
-      this.deleteActiveWorkflowStepSession(taskId);
-    }
-
-    if (this.activeSubagentSessions.has(taskId)) {
-      hadActiveSurface = true;
-      this.disposeSubagentsForTask(taskId, reason);
     }
 
     this.loopRecoveryState.delete(taskId);
@@ -1531,74 +1568,6 @@ export class TaskExecutor {
 
     if (hadActiveSurface) {
       executorLog.log(`${taskId}: awaited abort of in-flight work — ${reason}`);
-    }
-  }
-
-  private abortInFlightTaskWork(taskId: string, reason: string, options: { userCanceled?: boolean } = {}): void {
-    let hadActiveSurface = false;
-
-    if (options.userCanceled) {
-      this.userCanceledTaskIds.add(taskId);
-    }
-    this.pausedAborted.add(taskId);
-    this.options.stuckTaskDetector?.untrackTask(taskId);
-    this.clearWorkflowRerunWatchdog(taskId);
-    this.clearCompletedTaskWatchdog(taskId);
-
-    if (this.activeSessions.has(taskId)) {
-      hadActiveSurface = true;
-      const { session } = this.activeSessions.get(taskId)!;
-      const sessionWithAbort = session as AgentSession & { abort?: () => Promise<void> };
-      if (typeof sessionWithAbort.abort === "function") {
-        void sessionWithAbort.abort().catch((err) => {
-          executorLog.warn(`Failed to abort agent session for ${taskId}: ${err}`);
-        });
-      }
-      session.dispose();
-      this.deleteActiveSession(taskId);
-    }
-
-    if (this.activeStepExecutors.has(taskId)) {
-      hadActiveSurface = true;
-      const stepExecutor = this.activeStepExecutors.get(taskId)!;
-      const stepExecutorWithAbort = stepExecutor as StepSessionExecutor & { abortAllSessionBash?: () => void };
-      if (typeof stepExecutorWithAbort.abortAllSessionBash === "function") {
-        try {
-          stepExecutorWithAbort.abortAllSessionBash();
-        } catch (err) {
-          executorLog.warn(`Failed to abort step-session bash for ${taskId}: ${err}`);
-        }
-      }
-      stepExecutor.terminateAllSessions().catch((err) =>
-        executorLog.error(`Failed to terminate step sessions for ${taskId}:`, err),
-      );
-      this.deleteActiveStepExecutor(taskId);
-    }
-
-    if (this.activeWorkflowStepSessions.has(taskId)) {
-      hadActiveSurface = true;
-      const workflowSession = this.activeWorkflowStepSessions.get(taskId)!;
-      const sessionWithAbort = workflowSession as AgentSession & { abort?: () => Promise<void> };
-      if (typeof sessionWithAbort.abort === "function") {
-        void sessionWithAbort.abort().catch((err) => {
-          executorLog.warn(`Failed to abort workflow step session for ${taskId}: ${err}`);
-        });
-      }
-      workflowSession.dispose();
-      this.deleteActiveWorkflowStepSession(taskId);
-    }
-
-    if (this.activeSubagentSessions.has(taskId)) {
-      hadActiveSurface = true;
-      this.disposeSubagentsForTask(taskId, reason);
-    }
-
-    this.loopRecoveryState.delete(taskId);
-    this.spawnedAgents.delete(taskId);
-    this.stuckAborted.delete(taskId);
-
-    if (hadActiveSurface) {
-      executorLog.log(`${taskId}: aborting in-flight work — ${reason}`);
     }
   }
 
@@ -1656,20 +1625,36 @@ export class TaskExecutor {
         this.clearWorkflowRerunWatchdog(task.id);
         executorLog.log(`[event:task:moved] Initiating execute() for ${task.id}`);
         void (async () => {
+          // FN-5256: if the prior session is still being torn down (because the
+          // task was just moved away from in-progress), wait for the worktree-
+          // bound shells to reap before we acquire/create a new worktree. Without
+          // this, a fast bounce (in-progress → todo → in-progress) races the
+          // executor's own conflict cleanup against a still-live shell.
+          const pending = this.pendingTaskDisposals.get(task.id);
+          if (pending) {
+            executorLog.log(`[event:task:moved] Awaiting pending disposal for ${task.id} before dispatch`);
+            await pending;
+          }
           const taskForExecution = await this.resetMergeStateIfNeeded(task, from);
           await this.execute(taskForExecution);
         })().catch((err) =>
           executorLog.error(`Failed to start ${task.id}:`, err),
         );
       } else if (from === "in-progress") {
-        this.abortInFlightTaskWork(task.id, `parent moved from in-progress to ${to}`, {
-          userCanceled: source === "user" && to === "todo",
-        });
+        this.trackTaskDisposal(
+          task.id,
+          this.awaitAbortInFlightTaskWork(task.id, `parent moved from in-progress to ${to}`, {
+            userCanceled: source === "user" && to === "todo",
+          }),
+        );
       }
     });
 
     store.on("task:deleted", (task) => {
-      this.abortInFlightTaskWork(task.id, "task soft-deleted", { userCanceled: true });
+      this.trackTaskDisposal(
+        task.id,
+        this.awaitAbortInFlightTaskWork(task.id, "task soft-deleted", { userCanceled: true }),
+      );
     });
 
     // When a task is paused while executing, terminate the agent session.
