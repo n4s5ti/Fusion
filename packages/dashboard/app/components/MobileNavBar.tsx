@@ -1,6 +1,5 @@
 import "./MobileNavBar.css";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { createPortal } from "react-dom";
 import {
   Activity,
   Bot,
@@ -149,16 +148,6 @@ export function MobileNavBar({
   shellConnectionControl,
 }: MobileNavBarProps) {
   const mode = useViewportMode();
-  // vpdebug: surface MobileNavBar render decision inputs for diagnostic overlay
-  if (typeof window !== "undefined") {
-    (window as unknown as { __mNavDebug?: unknown }).__mNavDebug = {
-      mode,
-      modalOpen,
-      keyboardOpen,
-      footerVisible,
-      view,
-    };
-  }
   const [isMoreOpen, setIsMoreOpen] = useState(false);
   const [isScriptsSubmenuOpen, setIsScriptsSubmenuOpen] = useState(false);
   const [scripts, setScripts] = useState<Record<string, string>>({});
@@ -246,18 +235,9 @@ export function MobileNavBar({
     };
   }, []);
 
-  // We previously hid the bar when keyboardOpen was true to avoid sitting
-  // over the iOS soft keyboard. On Android Chrome, useMobileKeyboard can
-  // get stuck at keyboardOpen=true after a focus-triggered visualViewport
-  // resize whose matching dismiss event never fires — leaving the nav bar
-  // permanently invisible (FN-Android-tablet repro). Render unconditionally
-  // when in mobile mode; on Android the keyboard pushes content up so the
-  // bar isn't covered, and on iOS the worst case (bar overlapping keyboard)
-  // is far less broken than the bar vanishing.
-  if (mode !== "mobile" || modalOpen) {
+  if (mode !== "mobile" || modalOpen || keyboardOpen) {
     return null;
   }
-  void keyboardOpen;
 
   const planningHandler = activePlanningSessionCount > 0 && onResumePlanning ? onResumePlanning : onOpenPlanning;
 
@@ -297,12 +277,7 @@ export function MobileNavBar({
     || view === "stash-recovery"
     || (isPluginViewId(view) && !topLevelPrimaryPluginViews.some((entry) => buildPluginTaskViewId(entry.pluginId, entry.view.viewId) === view));
 
-  // Portal the bar directly into document.body so its `position: fixed`
-  // can't be hijacked by an ancestor's containing block (any ancestor with
-  // transform/filter/will-change/contain creates a fixed-positioning
-  // containing block — and we hit exactly that on Android tablet, leaving
-  // the bar positioned far below the visible window).
-  const content = (
+  return (
     <>
       <nav
         ref={navRef}
@@ -843,6 +818,4 @@ export function MobileNavBar({
       )}
     </>
   );
-  if (typeof document === "undefined") return content;
-  return createPortal(content, document.body);
 }
