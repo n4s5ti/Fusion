@@ -2,7 +2,46 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="viewport" id="viewport-meta" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <script>
+      // Android Chrome (multi-window, split-screen, freeform, certain WebView
+      // configs) can cache device-width at a smaller value than the actual
+      // window, leaving the page rendered into a small upper-left canvas
+      // while position:fixed elements pin to the much larger visual viewport.
+      // window.innerWidth returns the (broken) layout viewport, so re-asserting
+      // width=innerWidth changes nothing. visualViewport.width returns the
+      // actual window — re-assert against that on resize/orientation so Chrome
+      // recomputes the layout at the correct size.
+      (function () {
+        var meta = document.getElementById('viewport-meta');
+        if (!meta || typeof window === 'undefined') return;
+        var apply = function () {
+          var vv = window.visualViewport;
+          if (!vv) return;
+          var w = Math.round(vv.width);
+          var inner = window.innerWidth;
+          // Only override when layout viewport is meaningfully smaller than
+          // the visual viewport (the bug we're fixing). Otherwise keep the
+          // standard `width=device-width` so phones with the keyboard up etc.
+          // behave normally.
+          if (w > inner + 8) {
+            meta.setAttribute('content', 'width=' + w + ', initial-scale=1.0, viewport-fit=cover');
+          } else {
+            meta.setAttribute('content', 'width=device-width, initial-scale=1.0, viewport-fit=cover');
+          }
+        };
+        // Only fire on events that genuinely change the window — NOT on
+        // visualViewport.resize, which also fires on pinch-zoom and would
+        // snap the user's zoom back to 1.0 every gesture.
+        window.addEventListener('orientationchange', apply);
+        apply();
+        // Re-check shortly after load — Chrome's initial reading sometimes
+        // settles a frame or two later in multi-window.
+        setTimeout(apply, 100);
+        setTimeout(apply, 500);
+        setTimeout(apply, 1500);
+      })();
+    </script>
     <script>
       // Append ?vpdebug to the URL to show a fixed overlay with the live
       // viewport / element dimensions. Diagnostic only — remove once the
@@ -22,8 +61,10 @@
             }
           }
         };
+        var tick = 0;
         var update = function () {
           ensureAttached();
+          tick += 1;
           var f = function (el) {
             if (!el) return 'none';
             var r = el.getBoundingClientRect();
@@ -55,8 +96,14 @@
             'pcCls ' + pcCls + '\n' +
             'mq768 ' + window.matchMedia('(max-width: 768px)').matches + '\n' +
             'dialogs ' + dialogs + ' focus ' + focused + '\n' +
-            'sx ' + window.scrollX + ' sy ' + window.scrollY + '\n' +
+            'sx ' + window.scrollX + ' sy ' + window.scrollY + ' tick ' + tick + '\n' +
+            'docCW ' + document.documentElement.clientWidth + ' bodyCW ' + document.body.clientWidth + '\n' +
+            'docSW ' + document.documentElement.scrollWidth + ' bodySW ' + document.body.scrollWidth + '\n' +
             'ua ' + (navigator.userAgent || '').slice(0, 80);
+          try {
+            localStorage.setItem('vpdebug:last', box.textContent);
+            localStorage.setItem('vpdebug:lastAt', String(Date.now()));
+          } catch (e) {}
         };
         var attach = function () {
           if (!document.body) {
