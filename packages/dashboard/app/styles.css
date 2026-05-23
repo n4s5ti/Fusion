@@ -3190,9 +3190,12 @@ input[type="range"]:focus-visible {
 }
 
 @media (min-width: 769px) and (max-width: 1024px) {
+  /* Tablet: 6 columns at 1fr collapse to ~130–170px each, which makes
+     task cards stack one word per line. Use a real minimum column width
+     and let the board scroll horizontally instead. */
   .board {
-    grid-template-columns: repeat(6, minmax(0, 1fr));
-    overflow-x: hidden;
+    grid-template-columns: repeat(6, minmax(260px, 1fr));
+    overflow-x: auto;
   }
 }
 
