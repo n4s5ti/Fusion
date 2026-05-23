@@ -310,7 +310,15 @@ export function evaluateTaskDoneRefusal(
   }
 
   const summary = params.summary?.trim();
-  if (summary) {
+  // Preflight escape hatch: when the agent's preflight finds PROMPT.md is out
+  // of sync with HEAD (work already done on the base), it marks remaining
+  // steps `skipped` and calls fn_task_done with a `PREMISE STALE:` summary.
+  // Skip the summary-text refusals (dissent + scoped-incomplete) for this
+  // sentinel so a natural premise-stale explanation like "...the work is
+  // already done on HEAD" cannot deadlock the executor. The pending-review
+  // and bulk-step-completion guards above/below still apply.
+  const isPremiseStale = !!summary && /^premise stale:/i.test(summary);
+  if (summary && !isPremiseStale) {
     const dissentMatch = DISSENT_PATTERNS.find((pattern) => pattern.test(summary));
     if (dissentMatch) {
       const matchText = summary.match(dissentMatch)?.[0] ?? dissentMatch.source;
