@@ -400,6 +400,28 @@ export async function isBranchAuthoritativeForTask(
   return { ok: true };
 }
 
+/**
+ * Cheap ancestry check: is `commitSha` reachable from `ref`?
+ *
+ * Used to recognize "promoted" commits during contamination audits: when
+ * the engine fast-forwards local `main` with a sibling task's commit, that
+ * commit's `Fusion-Task-Id` trailer still points at the sibling, but the
+ * commit itself is now integrated. Treating it as foreign contamination
+ * for downstream tasks branched from the same main tip is incorrect — the
+ * commit is, by definition, ancestral on the integration target.
+ *
+ * Returns `false` on any git error (missing ref, repo unreadable, etc.)
+ * so the caller falls back to the conservative trailer-only judgement.
+ */
+async function isAncestorOf(repoDir: string, commitSha: string, ref: string): Promise<boolean> {
+  try {
+    await runGit(repoDir, `git merge-base --is-ancestor ${quoteShellArg(commitSha)} ${quoteShellArg(ref)}`);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export async function assertCleanBranchAtBase(
   repoDir: string,
   branchName: string,
@@ -412,15 +434,28 @@ export async function assertCleanBranchAtBase(
 
   const subjectPattern = /^(feat|fix|test|chore|docs|refactor|perf|build)\((FN-\d+)\):/i;
   const trailerPattern = /(?:^|\n)Fusion-Task-Id:\s*(FN-\d+)\s*(?:\n|$)/i;
-  const foreignCommits: BranchCrossContaminationCommit[] = [];
+  const candidateForeign: BranchCrossContaminationCommit[] = [];
   for (const line of output.split("\n").map((entry) => entry.trim()).filter(Boolean)) {
     const [sha, subject, body] = line.split("\u001f");
     const subjectMatch = (subject ?? "").match(subjectPattern);
     const trailerMatch = (body ?? "").match(trailerPattern);
     const attributedTaskId = (trailerMatch?.[1] ?? subjectMatch?.[2] ?? "").toUpperCase();
     if (attributedTaskId && attributedTaskId !== taskId.toUpperCase()) {
-      foreignCommits.push({ sha, subject: subject ?? "", foreignTaskId: attributedTaskId });
+      candidateForeign.push({ sha, subject: subject ?? "", foreignTaskId: attributedTaskId });
     }
+  }
+
+  if (candidateForeign.length === 0) return;
+
+  // FN-5475: a commit attributed to another task that's already reachable
+  // from local `main` was promoted through integration. Treat it as
+  // ancestral, not contamination. This closes the race where a sibling
+  // task's commit briefly sat at local-main's tip while a downstream
+  // worktree was created (cross-task tip absorption).
+  const foreignCommits: BranchCrossContaminationCommit[] = [];
+  for (const commit of candidateForeign) {
+    if (await isAncestorOf(repoDir, commit.sha, "main")) continue;
+    foreignCommits.push(commit);
   }
 
   if (foreignCommits.length > 0) {
