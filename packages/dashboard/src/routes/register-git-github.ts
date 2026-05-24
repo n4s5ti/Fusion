@@ -2362,11 +2362,13 @@ export function registerGitGitHubRoutes(ctx: ApiRoutesContext): void {
         reconcileScheduledStores.add(projectStore);
         setImmediate(() => {
           if (typeof (projectStore as Partial<TaskStore>).listTasks !== "function"
+            || typeof (projectStore as Partial<TaskStore>).listTasksForGithubTrackingReconcile !== "function"
             || typeof (projectStore as Partial<TaskStore>).getSettings !== "function"
             || typeof (projectStore as Partial<TaskStore>).logEntry !== "function") {
             return;
           }
           void githubTrackingReconciler.reconcile(projectStore).catch(() => {});
+          void githubTrackingReconciler.reconcileDeletedAndArchived(projectStore).catch(() => {});
         });
       }
     };

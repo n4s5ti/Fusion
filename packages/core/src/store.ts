@@ -4282,6 +4282,37 @@ export class TaskStore extends EventEmitter<TaskStoreEvents> {
     return sorted.slice(offset, offset + Math.max(0, limit));
   }
 
+  async listTasksForGithubTrackingReconcile(): Promise<Task[]> {
+    const reconcileScanLimit = 200;
+    const selectClause = this.getTaskSelectClause(true);
+
+    // FN-5577: GitHub tracking reconciliation must inspect soft-deleted rows,
+    // so this query intentionally bypasses ACTIVE_TASKS_WHERE.
+    const deletedRows = this.db.prepare(
+      `SELECT ${selectClause} FROM tasks WHERE "deletedAt" IS NOT NULL AND "githubTracking" IS NOT NULL ORDER BY updatedAt ASC LIMIT ?`,
+    ).all(reconcileScanLimit) as unknown as TaskRow[];
+
+    const deletedTasks = deletedRows.map((row) => {
+      const task = this.rowToTask(row);
+      task.timedExecutionMs = this.computeTimedExecutionMs(task.log);
+      task.log = [];
+      return task;
+    });
+
+    let archivedTasks: Task[] = [];
+    try {
+      archivedTasks = this.archiveDb
+        .list()
+        .map((entry) => this.archiveEntryToTask(entry, true))
+        .filter((task) => Boolean(task.githubTracking))
+        .slice(0, reconcileScanLimit);
+    } catch {
+      archivedTasks = [];
+    }
+
+    return [...deletedTasks, ...archivedTasks].slice(0, reconcileScanLimit);
+  }
+
   async listStrandedRefinements(options?: {
     freshnessThresholdMs?: number;
   }): Promise<Array<{
