@@ -110,7 +110,7 @@ describe("HybridExecutor multi-node routing", () => {
     }
   });
 
-  it("enables multi-project on a single node", async () => {
+  it("does NOT auto-enable for local-only multi-project (set FUSION_HYBRID_EXECUTOR=1 to force)", async () => {
     const central = new CentralCore(tempDir);
     await central.init();
     try {
@@ -124,8 +124,12 @@ describe("HybridExecutor multi-node routing", () => {
       await central.updateProject(projectA.id, { status: "active" });
       await central.updateProject(projectB.id, { status: "initializing" });
 
-      await expect(shouldUseHybridExecutor(central)).resolves.toEqual({ enabled: true, reason: "multi-project" });
+      // Gate intentionally OFF: ProjectEngineManager handles local
+      // multi-project; running HybridExecutor here duplicates InProcessRuntime
+      // creation and adds ~7s to cold start.
+      await expect(shouldUseHybridExecutor(central)).resolves.toEqual({ enabled: false, reason: "single-node-local-only" });
 
+      // Force-enabled path still works when explicitly initialized.
       const executor = new HybridExecutor(central);
       await executor.initialize();
       expect(new Set(executor.getProjectIds())).toEqual(new Set([projectA.id, projectB.id]));

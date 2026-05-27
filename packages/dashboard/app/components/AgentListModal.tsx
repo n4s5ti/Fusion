@@ -89,16 +89,30 @@ export function AgentListModal({ isOpen, onClose, addToast, projectId }: AgentLi
     });
   }, [optimisticAgents, filterState]);
 
-  const loadAgents = useCallback(async () => {
+  // Generation counter: every loadAgents call gets a unique id; only the
+  // latest call's response is allowed to write state. Prevents a slow poll
+  // that started before a mutation from resolving AFTER the post-mutation
+  // refetch and overwriting fresh data with stale data.
+  const loadAgentsGenRef = useRef(0);
+
+  // forceFresh: pass `true` for refetches that follow a mutation, so we don't
+  // join an in-flight pre-mutation request (which would return stale data and
+  // hide the just-applied change). Polling uses default (joins in-flight).
+  const loadAgents = useCallback(async (forceFresh = false) => {
+    const gen = ++loadAgentsGenRef.current;
     setIsLoading(true);
     try {
       const filter = filterState !== "all" ? { state: filterState } : undefined;
-      const data = await fetchAgents(filter, projectId);
+      const data = forceFresh
+        ? await fetchAgents(filter, projectId, { forceFresh: true })
+        : await fetchAgents(filter, projectId);
+      // A newer load superseded us — drop this stale response.
+      if (gen !== loadAgentsGenRef.current) return;
       setAgents(data);
     } catch (err) {
       addToast(`Failed to load agents: ${getErrorMessage(err)}`, "error");
     } finally {
-      setIsLoading(false);
+      if (gen === loadAgentsGenRef.current) setIsLoading(false);
     }
   }, [filterState, addToast, projectId]);
 
@@ -129,7 +143,7 @@ export function AgentListModal({ isOpen, onClose, addToast, projectId }: AgentLi
       addToast(`Agent "${newAgentName}" created`, "success");
       setNewAgentName("");
       setIsCreating(false);
-      void loadAgents();
+      void loadAgents(true);
     } catch (err) {
       addToast(`Failed to create agent: ${getErrorMessage(err)}`, "error");
     }
@@ -148,7 +162,7 @@ export function AgentListModal({ isOpen, onClose, addToast, projectId }: AgentLi
     try {
       await updateAgentState(agentId, newState, projectId);
       addToast(`Agent state updated to ${newState}`, "success");
-      await loadAgents();
+      await loadAgents(true);
       setOptimisticStateOverrides((prev) => {
         const next = new Map(prev);
         next.delete(agentId);
@@ -180,7 +194,7 @@ export function AgentListModal({ isOpen, onClose, addToast, projectId }: AgentLi
     try {
       await deleteAgent(agentId, projectId);
       addToast(`Agent "${agentName}" deleted`, "success");
-      void loadAgents();
+      void loadAgents(true);
     } catch (err) {
       addToast(`Failed to delete agent: ${getErrorMessage(err)}`, "error");
     }
@@ -200,7 +214,7 @@ export function AgentListModal({ isOpen, onClose, addToast, projectId }: AgentLi
       await updateAgent(agentId, { role: newRole }, projectId);
       addToast(`Agent role updated to ${AGENT_ROLES.find(r => r.value === newRole)?.label ?? newRole}`, "success");
       setEditingRoleForAgent(null);
-      void loadAgents();
+      void loadAgents(true);
     } catch (err) {
       addToast(`Failed to update role: ${getErrorMessage(err)}`, "error");
     }

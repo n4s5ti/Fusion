@@ -29,13 +29,13 @@ export async function shouldUseHybridExecutor(centralCore: CentralCore): Promise
       return { enabled: true, reason: "multi-node" };
     }
 
-    const projects = await centralCore.listProjects();
-    const liveProjects = projects.filter((project) => project.status === "active" || project.status === "initializing");
-    if (liveProjects.length > 1) {
-      return { enabled: true, reason: "multi-project" };
-    }
-
-    return { enabled: false, reason: "single-project-local-only" };
+    // Local-only single-node: HybridExecutor's value is cross-node routing.
+    // ProjectEngineManager already handles N local projects with one
+    // InProcessRuntime per project; running HybridExecutor in parallel just
+    // creates a second InProcessRuntime per project, duplicating self-healing
+    // recovery and adding ~7s to cold start. Skip until a remote node is
+    // registered (set FUSION_HYBRID_EXECUTOR=1 to force-enable).
+    return { enabled: false, reason: "single-node-local-only" };
   } catch {
     return { enabled: false, reason: "central-unavailable" };
   }

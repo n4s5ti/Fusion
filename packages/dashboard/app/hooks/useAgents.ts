@@ -16,6 +16,12 @@ interface AgentFilter {
   includeEphemeral?: boolean;
 }
 
+// Debounce window for SSE-triggered refreshes. A burst of agent:updated /
+// agent:stateChanged events during multi-agent activity used to fire one
+// forceFresh fetch per event, defeating the dedupe layer. Coalescing inside
+// this window collapses the burst into one network round trip.
+const SSE_REFRESH_DEBOUNCE_MS = 250;
+
 export function useAgents(projectId?: string, options?: UseAgentsOptions) {
   const [agents, setAgents] = useState<Agent[]>(() => {
     const cached = readCache<Agent[]>(SWR_CACHE_KEYS.AGENTS, { maxAgeMs: SWR_DEFAULT_MAX_AGE_MS });
@@ -28,7 +34,27 @@ export function useAgents(projectId?: string, options?: UseAgentsOptions) {
   const [isLoading, setIsLoading] = useState(false);
   const hasCachedHydrationRef = useRef(agents.length > 0 || stats !== null);
 
-  const loadAgents = useCallback(async (filter?: AgentFilter) => {
+  // Generation counters. Each loadAgents/loadStats call gets a monotonically
+  // increasing id; only the latest call's response is allowed to write state.
+  // This neutralizes two races at once:
+  //   (a) poll-vs-mutation: if a slow poll resolves AFTER a forceFresh
+  //       mutation refetch, the poll's setAgents is dropped instead of
+  //       overwriting fresh post-mutation data.
+  //   (b) concurrent forceFresh: if two mutations fire near-simultaneously,
+  //       only the second's response updates state regardless of which HTTP
+  //       response happens to arrive first (TCP/HTTP ordering is not
+  //       guaranteed).
+  // With this in place, callers don't need to remember to pass forceFresh
+  // for correctness — the gen counter handles stale-response suppression
+  // regardless. forceFresh still helps by triggering an actual fresh
+  // network request, useful when mutations have already committed and the
+  // caller wants the post-mutation snapshot now rather than waiting for the
+  // next SSE event.
+  const agentsGenRef = useRef(0);
+  const statsGenRef = useRef(0);
+
+  const loadAgents = useCallback(async (filter?: AgentFilter, opts?: { forceFresh?: boolean }) => {
+    const gen = ++agentsGenRef.current;
     if (!hasCachedHydrationRef.current) {
       setIsLoading(true);
     }
@@ -36,14 +62,17 @@ export function useAgents(projectId?: string, options?: UseAgentsOptions) {
       const filterState = options?.filterState;
       const baseFilter = filterState && filterState !== "all" ? { state: filterState } : undefined;
       const includeEphemeral = options?.showSystemAgents ?? false;
-      const data = await fetchAgents(
-        {
-          ...baseFilter,
-          ...filter,
-          includeEphemeral: filter?.includeEphemeral ?? includeEphemeral,
-        },
-        projectId,
-      );
+      const mergedFilter = {
+        ...baseFilter,
+        ...filter,
+        includeEphemeral: filter?.includeEphemeral ?? includeEphemeral,
+      };
+      const data = opts?.forceFresh
+        ? await fetchAgents(mergedFilter, projectId, { forceFresh: true })
+        : await fetchAgents(mergedFilter, projectId);
+      // A newer call superseded us — drop this response so we don't clobber
+      // fresher state with stale data.
+      if (gen !== agentsGenRef.current) return;
       // Defensive dedupe: a race between the initial fetch and an SSE refresh
       // (or a backend that returned the same agent twice) would otherwise put
       // duplicate ids into every list rendered from this hook, flooding React
@@ -55,13 +84,17 @@ export function useAgents(projectId?: string, options?: UseAgentsOptions) {
     } catch (err) {
       console.error("Failed to load agents:", err);
     } finally {
-      setIsLoading(false);
+      if (gen === agentsGenRef.current) setIsLoading(false);
     }
   }, [projectId, options?.filterState, options?.showSystemAgents]);
 
-  const loadStats = useCallback(async () => {
+  const loadStats = useCallback(async (opts?: { forceFresh?: boolean }) => {
+    const gen = ++statsGenRef.current;
     try {
-      const data = await fetchAgentStats(projectId);
+      const data = opts?.forceFresh
+        ? await fetchAgentStats(projectId, { forceFresh: true })
+        : await fetchAgentStats(projectId);
+      if (gen !== statsGenRef.current) return;
       setStats(data);
       writeCache(SWR_CACHE_KEYS.AGENT_STATS, data, { maxBytes: 500_000 });
       hasCachedHydrationRef.current = true;
@@ -75,15 +108,69 @@ export function useAgents(projectId?: string, options?: UseAgentsOptions) {
     void loadStats();
   }, [loadAgents, loadStats]);
 
-  // SSE subscription for agent events
+  // SSE subscription for agent events. SSE events fire AFTER the backend
+  // commits the mutation, so we want the post-mutation snapshot. Refresh is
+  // debounced to coalesce bursts (e.g. many agent:updated events during a
+  // batch operation) into a single network round trip.
+  //
+  // Trailing-edge guard: a naive leading-edge debounce degrades to one fetch
+  // per ~250ms when sustained event bursts arrive faster than the fetch
+  // completes — events that land during an in-flight fetch each schedule a
+  // fresh timer. To prevent this storm: while a fetch is in-flight, mark
+  // pendingDuringFetch and skip arming new timers. When the fetch settles,
+  // if any events arrived during it, fire ONE more refresh to capture the
+  // latest state. Net guarantee: per burst of N events arriving within a
+  // fetch+debounce window, we issue at most 2 fetches (the initial debounced
+  // fetch and one trailing catch-up).
   useEffect(() => {
     const query = projectId ? `?projectId=${encodeURIComponent(projectId)}` : "";
-    const refresh = () => {
-      void loadAgents();
-      void loadStats();
+
+    let debounceTimer: ReturnType<typeof setTimeout> | null = null;
+    let fetchInProgress = false;
+    let pendingDuringFetch = false;
+    let unmounted = false;
+
+    const fire = async (): Promise<void> => {
+      fetchInProgress = true;
+      pendingDuringFetch = false;
+      try {
+        await Promise.all([
+          loadAgents(undefined, { forceFresh: true }),
+          loadStats({ forceFresh: true }),
+        ]);
+      } finally {
+        fetchInProgress = false;
+        if (!unmounted && pendingDuringFetch) {
+          // Events arrived during the fetch — run one trailing refresh to
+          // capture them. Use a normal debounce so a continued burst still
+          // coalesces.
+          schedule();
+        }
+      }
     };
 
-    return subscribeSse(`/api/events${query}`, {
+    const schedule = (): void => {
+      if (debounceTimer || fetchInProgress) {
+        if (fetchInProgress) pendingDuringFetch = true;
+        return;
+      }
+      debounceTimer = setTimeout(() => {
+        debounceTimer = null;
+        void fire();
+      }, SSE_REFRESH_DEBOUNCE_MS);
+    };
+
+    const refresh = (): void => {
+      if (fetchInProgress) {
+        // Mark a trailing refresh; don't schedule a new timer that would race
+        // the in-flight fetch and (via forceFresh) discard its response.
+        pendingDuringFetch = true;
+        return;
+      }
+      schedule();
+    };
+
+    const unsubscribe = subscribeSse(`/api/events${query}`, {
       events: {
         "agent:created": refresh,
         "agent:updated": refresh,
@@ -94,10 +181,23 @@ export function useAgents(projectId?: string, options?: UseAgentsOptions) {
         "approval:decided": refresh,
       },
     });
+
+    return () => {
+      unmounted = true;
+      if (debounceTimer) clearTimeout(debounceTimer);
+      unsubscribe();
+    };
   }, [projectId, loadAgents, loadStats]);
 
+  // refreshAgents is the canonical post-mutation refetch entrypoint. It
+  // defaults to forceFresh so consumers don't have to remember — anyone
+  // calling refreshAgents() after a save/delete gets a fresh round trip,
+  // never a stale in-flight pre-mutation read.
   const refreshAgents = useCallback(async () => {
-    await Promise.all([loadAgents(), loadStats()]);
+    await Promise.all([
+      loadAgents(undefined, { forceFresh: true }),
+      loadStats({ forceFresh: true }),
+    ]);
   }, [loadAgents, loadStats]);
 
   const showSystemAgents = options?.showSystemAgents ?? false;

@@ -224,7 +224,8 @@ describe("useAgents", () => {
     });
   });
 
-  it("refreshes agents and stats on supported SSE events", async () => {    renderHook(() => useAgents());
+  it("refreshes agents and stats on supported SSE events (debounced — burst collapses to 1 refetch)", async () => {
+    renderHook(() => useAgents());
 
     await waitFor(() => {
       expect(MockEventSource.instances.length).toBeGreaterThan(0);
@@ -234,6 +235,10 @@ describe("useAgents", () => {
     mockFetchAgents.mockClear();
     mockFetchAgentStats.mockClear();
 
+    // Burst of 7 SSE events arriving within the debounce window. The
+    // refresh handler coalesces them into a single fetchAgents/fetchAgentStats
+    // round trip — previously this fired 7× per event, which became a
+    // request storm during multi-agent activity bursts.
     for (const event of ["agent:created", "agent:updated", "agent:deleted", "agent:stateChanged", "approval:requested", "approval:updated", "approval:decided"]) {
       act(() => {
         es._emit(event);
@@ -241,8 +246,8 @@ describe("useAgents", () => {
     }
 
     await waitFor(() => {
-      expect(mockFetchAgents).toHaveBeenCalledTimes(7);
-      expect(mockFetchAgentStats).toHaveBeenCalledTimes(7);
+      expect(mockFetchAgents).toHaveBeenCalledTimes(1);
+      expect(mockFetchAgentStats).toHaveBeenCalledTimes(1);
     });
   });
 

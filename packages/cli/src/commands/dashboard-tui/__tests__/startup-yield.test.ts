@@ -51,12 +51,13 @@ describe("dashboard startup chain", () => {
     expect(yieldFn).toHaveBeenCalledTimes(1);
   });
 
-  it("exports the five startup status labels in order", () => {
+  it("exports the startup status labels in order", () => {
     expect(Object.values(DASHBOARD_STARTUP_STATUS)).toEqual([
       "Initializing task store…",
       "Starting file watcher…",
       "Initializing agent store…",
       "Starting agents…",
+      "Loading extensions…",
       "Starting engine…",
     ]);
   });

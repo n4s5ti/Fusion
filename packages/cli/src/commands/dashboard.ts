@@ -847,9 +847,52 @@ export async function runDashboard(port: number, opts: { paused?: boolean; dev?:
   ensureProcessDiagnostics(runtimeLogger);
 
   store = new TaskStore(cwd);
-  await store.init();
-  if (tui) tui.setLoadingStatus(DASHBOARD_STARTUP_STATUS.startingFileWatcher);
-  await store.watch();
+  const automationStore = new AutomationStore(cwd);
+
+  // CentralCore.init() is independent of store inits — start it early so it
+  // overlaps with plugin loading and extension resolution instead of running
+  // after them.
+  const centralCoreInitPromise = !opts.dev
+    ? (async () => {
+        const core = new CentralCore();
+        try { await core.init(); } catch { /* non-fatal — fallback defaults */ }
+        return core;
+      })()
+    : undefined;
+
+  // Phase timing instrumentation — each step logs its wall-clock duration so
+  // we can see at-a-glance which startup phase is the actual bottleneck.
+  // Cheap enough (microsecond reads, one log per phase) to leave on
+  // permanently; lands in the dashboard log buffer and can be diffed across
+  // restarts to spot regressions.
+  const phaseTime = async <T>(label: string, fn: () => Promise<T> | T): Promise<T> => {
+    const t0 = Date.now();
+    try {
+      return await fn();
+    } finally {
+      logSink.log(`startup phase ${label}: ${Date.now() - t0}ms`, "dashboard");
+    }
+  };
+
+  // TaskStore / AutomationStore / PluginStore / AgentStore all open the SAME
+  // .fusion/fusion.db file and run addColumnIfMissing migrations (a TOCTOU
+  // `hasColumn` → ALTER pattern with no per-process lock). node:sqlite's
+  // DatabaseSync is synchronous, so Promise.all on these gives no real
+  // parallelism anyway — explicit sequencing keeps the schema-migration race
+  // from triggering if any init() body ever introduces an `await` between
+  // hasColumn and ALTER TABLE.
+  await phaseTime("store.init", () => store.init());
+  await phaseTime("automationStore.init", () => automationStore.init());
+  const pluginStore = store.getPluginStore();
+  await phaseTime("pluginStore.init", () => pluginStore.init());
+
+  agentStore = new AgentStore({ rootDir: store.getFusionDir() });
+  if (tui) tui.setLoadingStatus(DASHBOARD_STARTUP_STATUS.initializingAgentStore);
+  await phaseTime("agentStore.init", () => agentStore!.init());
+  // store.watch() is filesystem-watcher setup — no DB schema work, safe to
+  // overlap with anything coming after.
+  await phaseTime("store.watch", () => store.watch());
+  if (tui) tui.setLoadingStatus(DASHBOARD_STARTUP_STATUS.startingAgents);
 
   // Set up database health check for diagnostics
   setDiagnosticDbHealthCheck(() => store.healthCheck());
@@ -1037,9 +1080,7 @@ export async function runDashboard(port: number, opts: { paused?: boolean; dev?:
     handlers.push({ target, event, handler });
   }
 
-  // ── AutomationStore: scheduled task persistence ──────────────────────
-  const automationStore = new AutomationStore(cwd);
-  await automationStore.init();
+  // automationStore already initialized in parallel phase above
 
   // ── AgentStore: agent lifecycle tracking ──────────────────────────
   //
@@ -1047,10 +1088,7 @@ export async function runDashboard(port: number, opts: { paused?: boolean; dev?:
   // and are properly managed throughout their lifecycle (creation, state
   // transitions, termination). Passed to TaskExecutor for agent spawning.
   //
-  if (tui) tui.setLoadingStatus(DASHBOARD_STARTUP_STATUS.initializingAgentStore);
-  agentStore = new AgentStore({ rootDir: store.getFusionDir() });
-  await agentStore.init();
-  if (tui) tui.setLoadingStatus(DASHBOARD_STARTUP_STATUS.startingAgents);
+  // agentStore already initialized in parallel phase above
 
   // ── Reactive TUI Updates ─────────────────────────────────────────────
   //
@@ -1081,8 +1119,7 @@ export async function runDashboard(port: number, opts: { paused?: boolean; dev?:
   // Enables the PluginManager UI to list, install, enable, disable, and
   // configure plugins via the /api/plugins REST endpoints.
   //
-  const pluginStore = store.getPluginStore();
-  await pluginStore.init();
+  // pluginStore already initialized in parallel phase above
 
   // ── PluginLoader: plugin lifecycle management ───────────────────────
   //
@@ -1095,20 +1132,6 @@ export async function runDashboard(port: number, opts: { paused?: boolean; dev?:
     pluginStore,
     taskStore: store,
   });
-
-  try {
-    const installStatus = await ensureBundledDependencyGraphPluginInstalled(pluginStore, pluginLoader);
-    if (installStatus === "installed") {
-      logSink.log("Installed bundled Dependency Graph plugin", "plugins");
-    } else if (installStatus === "missing-bundle") {
-      logSink.log("Bundled Dependency Graph plugin was not found in this build", "plugins");
-    }
-  } catch (err) {
-    logSink.log(
-      `Failed to auto-install bundled Dependency Graph plugin: ${err instanceof Error ? err.message : err}`,
-      "plugins",
-    );
-  }
 
   // Lazy-install hook for bundled runtime plugins (Hermes/OpenClaw/Paperclip).
   // Invoked by dashboard's PUT /api/plugins/:id/settings the first time the
@@ -1140,28 +1163,46 @@ export async function runDashboard(port: number, opts: { paused?: boolean; dev?:
   };
 
   // Auto-load all enabled plugins so runtime UI (NewAgentDialog, AgentDetailView)
-  // can discover installed runtimes like Hermes and OpenClaw.
-  try {
-    const { loaded, errors } = await pluginLoader.loadAllPlugins();
-    logSink.log(`Loaded ${loaded} plugins (${errors} errors)`, "plugins");
-
-    const schemaHooks = pluginLoader.getPluginSchemaInitHooks();
-    if (schemaHooks.length > 0) {
-      try {
-        await store.getDatabase().runPluginSchemaInits(schemaHooks);
-      } catch (err) {
-        logSink.log(
-          `Schema initialization failed: ${err instanceof Error ? err.message : err}`,
-          "plugins",
-        );
+  // can discover installed runtimes like Hermes and OpenClaw. Run as a
+  // background promise so it overlaps with the heavyweight extension
+  // resolution chain below — the two touch disjoint subsystems.
+  const pluginLoadingPromise = (async () => {
+    try {
+      const installStatus = await ensureBundledDependencyGraphPluginInstalled(pluginStore, pluginLoader);
+      if (installStatus === "installed") {
+        logSink.log("Installed bundled Dependency Graph plugin", "plugins");
+      } else if (installStatus === "missing-bundle") {
+        logSink.log("Bundled Dependency Graph plugin was not found in this build", "plugins");
       }
+    } catch (err) {
+      logSink.log(
+        `Failed to auto-install bundled Dependency Graph plugin: ${err instanceof Error ? err.message : err}`,
+        "plugins",
+      );
     }
-  } catch (err) {
-    logSink.log(
-      `Failed to load plugins: ${err instanceof Error ? err.message : err}`,
-      "plugins"
-    );
-  }
+
+    try {
+      const { loaded, errors } = await pluginLoader.loadAllPlugins();
+      logSink.log(`Loaded ${loaded} plugins (${errors} errors)`, "plugins");
+
+      const schemaHooks = pluginLoader.getPluginSchemaInitHooks();
+      if (schemaHooks.length > 0) {
+        try {
+          await store.getDatabase().runPluginSchemaInits(schemaHooks);
+        } catch (err) {
+          logSink.log(
+            `Schema initialization failed: ${err instanceof Error ? err.message : err}`,
+            "plugins",
+          );
+        }
+      }
+    } catch (err) {
+      logSink.log(
+        `Failed to load plugins: ${err instanceof Error ? err.message : err}`,
+        "plugins"
+      );
+    }
+  })();
 
   // ── HeartbeatMonitor + HeartbeatTriggerScheduler ──────────────────────
   //
@@ -1272,7 +1313,11 @@ export async function runDashboard(port: number, opts: { paused?: boolean; dev?:
   const modelRegistry = ModelRegistry.create(mergedAuthStorage, getModelRegistryModelsPath());
   const dashboardAuthStorage = wrapAuthStorageWithApiKeyProviders(mergedAuthStorage, modelRegistry);
 
-  // PackageManager may be used for skills adapter even if extension loading fails
+  // PackageManager may be used for skills adapter even if extension loading fails.
+  // packageManager.resolve() walks installed npm/git/local pi packages and is
+  // the slowest step in this section — show an accurate TUI status so users
+  // don't think "starting agents" is stuck.
+  if (tui) tui.setLoadingStatus(DASHBOARD_STARTUP_STATUS.loadingExtensions);
   let packageManager: DefaultPackageManager | undefined;
   try {
     // Resolve extension paths from pi settings packages (npm, git, local).
@@ -1284,7 +1329,7 @@ export async function runDashboard(port: number, opts: { paused?: boolean; dev?:
       agentDir,
       settingsManager: createReadOnlyProviderSettingsView(cwd, agentDir) as unknown as SettingsManager,
     });
-    const resolvedPaths = await packageManager.resolve();
+    const resolvedPaths = await phaseTime("packageManager.resolve", () => packageManager!.resolve());
     const packageExtensionPaths = resolvedPaths.extensions
       .filter((r) => r.enabled)
       .map((r) => r.path);
@@ -1358,7 +1403,7 @@ export async function runDashboard(port: number, opts: { paused?: boolean; dev?:
     setHostExtensionPaths(selfExtensionPaths);
 
     // Load all enabled extensions: Fusion/Pi filesystem-discovered + package-resolved.
-    const extensionsResult = await discoverAndLoadExtensions(
+    const extensionsResult = await phaseTime("discoverAndLoadExtensions", () => discoverAndLoadExtensions(
       [
         ...selfExtensionPaths,
         ...getEnabledPiExtensionPaths(cwd),
@@ -1369,7 +1414,7 @@ export async function runDashboard(port: number, opts: { paused?: boolean; dev?:
       ],
       cwd,
       join(cwd, ".fusion", "disabled-auto-extension-discovery"),
-    );
+    ));
 
     for (const { path, error } of extensionsResult.errors) {
       logSink.log(`Failed to load ${path}: ${error}`, "extensions");
@@ -1502,12 +1547,7 @@ export async function runDashboard(port: number, opts: { paused?: boolean; dev?:
     //
     const githubClient = new GitHubClient();
 
-    const centralCoreForEngine = new CentralCore();
-    try {
-      await centralCoreForEngine.init();
-    } catch {
-      // Non-fatal — engine uses fallback concurrency defaults
-    }
+    const centralCoreForEngine = await phaseTime("centralCore.init (await)", () => centralCoreInitPromise!);
 
     try {
       registerGithubTrackingHook?.();
@@ -1532,22 +1572,7 @@ export async function runDashboard(port: number, opts: { paused?: boolean; dev?:
     });
 
     let hybridExecutor: HybridExecutor | undefined = undefined;
-    const hybridGate = await shouldUseHybridExecutor(centralCoreForEngine);
-    logSink.log(
-      `hybrid executor gate: enabled=${hybridGate.enabled} reason=${hybridGate.reason}`,
-      "dashboard",
-    );
-    if (hybridGate.enabled) {
-      hybridExecutor = new HybridExecutor(centralCoreForEngine);
-      await hybridExecutor.initialize();
-    }
 
-    // Start background reconciliation to detect and start engines for projects
-    // registered after startup (without requiring dashboard UI access).
-    // This ensures project task execution starts from backend runtime alone.
-    // The onProjectFirstAccessed callback in createServer remains as a fast-path
-    // fallback for immediate engine startup on project access, but it is NOT
-    // required for correctness — reconciliation handles all cases.
     engineManager.startReconciliation();
 
     // Backfill Claude Code skills for all registered projects. No-op when
@@ -1567,43 +1592,78 @@ export async function runDashboard(port: number, opts: { paused?: boolean; dev?:
       }
     })();
 
-    // ── PeerExchangeService: gossip protocol for mesh peer discovery ──────
-    //
-    // Reuse centralCoreForEngine for peer exchange since it handles all mesh ops.
-    //
     peerExchangeService = new PeerExchangeService(centralCoreForEngine);
-    try {
-      peerExchangeService.start();
-      const globalSettings = await store.getGlobalSettingsStore().getSettings();
-      peerExchangeService.updateGlobalSettings(globalSettings);
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      logSink.warn(`Failed to start peer exchange service: ${message}`, "dashboard");
-    }
-
-    // Use the same CentralCore instance for mesh operations
     centralCoreForMesh = centralCoreForEngine;
 
-    // Resolve the cwd project's engine for the dashboard's HTTP layer defaults.
-    // The engine for the cwd project provides onMerge, automationStore, etc.
-    // for requests that arrive without ?projectId=. This is transitional —
-    // Phase 5 removes this fallback entirely.
-    let cwdEngine: ReturnType<typeof engineManager.getEngine>;
-    try {
-      const registered = await ensureCwdProjectRegistered({
+    // Hybrid gate, cwd project registration, and peer exchange settings are
+    // independent — run them in parallel.
+    const [hybridGate, cwdRegistered] = await phaseTime("engine: hybridGate + cwdRegister + peerExchange", () => Promise.all([
+      shouldUseHybridExecutor(centralCoreForEngine),
+      ensureCwdProjectRegistered({
         cwd,
         central: centralCoreForEngine,
         logPrefix: "dashboard",
         autoRegister: true,
-      });
-      if (registered) {
-        // Ensure the cwd project's engine exists before handing HTTP defaults to
-        // createServer; background startAll may still be warming other projects.
-        cwdEngine = await engineManager.ensureEngine(registered.id);
+      }).catch(() => undefined as Awaited<ReturnType<typeof ensureCwdProjectRegistered>> | undefined),
+      (async () => {
+        try {
+          peerExchangeService!.start();
+          const globalSettings = await store.getGlobalSettingsStore().getSettings();
+          peerExchangeService!.updateGlobalSettings(globalSettings);
+        } catch (err) {
+          const message = err instanceof Error ? err.message : String(err);
+          logSink.warn(`Failed to start peer exchange service: ${message}`, "dashboard");
+        }
+      })(),
+    ]));
+
+    logSink.log(
+      `hybrid executor gate: enabled=${hybridGate.enabled} reason=${hybridGate.reason}`,
+      "dashboard",
+    );
+
+    // HybridExecutor init: keep awaited (only runs when hybridGate.enabled,
+    // which now requires multi-node — rare on local-only setups).
+    if (hybridGate.enabled) {
+      try {
+        const he = await phaseTime("engine: HybridExecutor.initialize", async () => {
+          const x = new HybridExecutor(centralCoreForEngine);
+          await x.initialize();
+          return x;
+        });
+        hybridExecutor = he;
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        logSink.warn(`HybridExecutor initialization failed: ${message}`, "engine");
       }
-    } catch {
-      // cwd not registered — no engine defaults for HTTP layer
     }
+
+    // cwd engine warmup: must complete before createServer.
+    //
+    // server.ts derives a stack of subsystem defaults from `options.engine` —
+    // onMerge, automationStore, missionAutopilot, missionExecutionLoop,
+    // heartbeatMonitor, selfHealingManager, routineStore, routineRunner. These
+    // defaults are captured at route-construction time (closure-bound), so we
+    // cannot lazily fill them in after listen(). Unscoped HTTP/webhook traffic
+    // (e.g. GitHub/Stripe routine webhooks, automation routes with scope=
+    // global, mission autopilot recovery) depends on them.
+    //
+    // An earlier iteration race-d this against a 3s deadline; that traded
+    // correctness for startup speed and meant slow cold-starts handed
+    // undefined engine to createServer, silently degrading those endpoints
+    // for the first multi-second window. We now await fully — the
+    // duplicate-runtime issue that previously made this 7s+ is gone (see
+    // hybrid-executor-gate change), so warmup typically runs in ~3-5s with
+    // engineManager.startAll() already in flight in parallel.
+    const cwdEngine = cwdRegistered
+      ? await phaseTime("engine: ensureEngine(cwd)", () =>
+          engineManager.ensureEngine(cwdRegistered.id).catch((err) => {
+            const message = err instanceof Error ? err.message : String(err);
+            logSink.warn(`Failed to warm cwd project engine: ${message}`, "engine");
+            return undefined;
+          }),
+        )
+      : undefined;
 
     // Get the trigger scheduler from any running engine
     for (const engine of engineManager.getAllEngines().values()) {
@@ -1621,6 +1681,10 @@ export async function runDashboard(port: number, opts: { paused?: boolean; dev?:
       await engineManager.stopAll();
       await closeCentralCoreBestEffort(centralCoreForEngine, "dispose cleanup");
     });
+
+    // Ensure plugin loading has completed before pluginLoader is handed off
+    // to createServer — routes derived from getPluginRoutes() rely on it.
+    await phaseTime("pluginLoadingPromise (await)", () => pluginLoadingPromise);
 
     app = createServer(store, {
       engine: cwdEngine,
@@ -1920,6 +1984,10 @@ export async function runDashboard(port: number, opts: { paused?: boolean; dev?:
       const message = err instanceof Error ? err.message : String(err);
       logSink.log(`HeartbeatMonitor initialization failed (continuing without agent monitoring): ${message}`, "engine");
     }
+
+    // Ensure plugin loading has completed before pluginLoader is handed off
+    // to createServer — routes derived from getPluginRoutes() rely on it.
+    await phaseTime("pluginLoadingPromise (await)", () => pluginLoadingPromise);
 
     // Dev mode: no engine, pass individual proxy objects to createServer
     app = createServer(store, {

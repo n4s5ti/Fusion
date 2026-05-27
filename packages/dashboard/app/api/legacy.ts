@@ -90,6 +90,11 @@ import type {
   ResearchProviderOption,
 } from "../research-types";
 import { appendTokenQuery, getAuthToken, withTokenHeader } from "../auth";
+import { dedupe, type DedupeOptions } from "./dedupe";
+
+/** Options accepted by deduped fetchers. Pass `{ forceFresh: true }` after a
+ *  mutation to bypass any in-flight pre-mutation request and force a new one. */
+export type FetchOptions = DedupeOptions;
 
 // Re-export skills types for use by hooks and components
 export type { DiscoveredSkill, CatalogEntry, CatalogFetchResult, ToggleSkillResult, SkillContent, SkillFileEntry };
@@ -607,11 +612,13 @@ export function rejectPlan(id: string, projectId?: string): Promise<Task> {
 }
 
 export function fetchConfig(projectId?: string): Promise<{ maxConcurrent: number; rootDir: string }> {
-  return api<{ maxConcurrent: number; rootDir: string }>(withProjectId("/config", projectId));
+  const path = withProjectId("/config", projectId);
+  return dedupe(path, () => api<{ maxConcurrent: number; rootDir: string }>(path));
 }
 
-export function fetchSettings(projectId?: string): Promise<Settings> {
-  return api<Settings>(withProjectId("/settings", projectId));
+export function fetchSettings(projectId?: string, options?: FetchOptions): Promise<Settings> {
+  const path = withProjectId("/settings", projectId);
+  return dedupe(path, () => api<Settings>(path), options);
 }
 
 export function updateSettings(settings: Partial<Settings>, projectId?: string): Promise<Settings> {
@@ -1040,8 +1047,8 @@ export function testMemoryRetrieval(query: string, projectId?: string): Promise<
 }
 
 /** Fetch global (user-level) settings from ~/.fusion/settings.json */
-export function fetchGlobalSettings(): Promise<GlobalSettings> {
-  return api<GlobalSettings>("/settings/global");
+export function fetchGlobalSettings(options?: FetchOptions): Promise<GlobalSettings> {
+  return dedupe("/settings/global", () => api<GlobalSettings>("/settings/global"), options);
 }
 
 /** Update global (user-level) settings. These persist across all fn projects. */
@@ -2008,14 +2015,14 @@ export async function probeProviderModels(params: ProbeModelsParams): Promise<Pr
 }
 
 /** Fetch authentication status for all OAuth providers */
-export function fetchAuthStatus(): Promise<{
+export function fetchAuthStatus(options?: FetchOptions): Promise<{
   providers: AuthProvider[];
   ghCli?: { available: boolean; authenticated: boolean };
 }> {
-  return api<{
+  return dedupe("/auth/status", () => api<{
     providers: AuthProvider[];
     ghCli?: { available: boolean; authenticated: boolean };
-  }>("/auth/status");
+  }>("/auth/status"), options);
 }
 
 /** Initiate OAuth login for a provider. Returns the auth URL to open in a new tab. */
@@ -4763,7 +4770,8 @@ export function clearActivityLog(projectId?: string): Promise<{ success: boolean
 
 /** Fetch all workflow step definitions */
 export function fetchWorkflowSteps(projectId?: string): Promise<WorkflowStep[]> {
-  return api<WorkflowStep[]>(withProjectId("/workflow-steps", projectId));
+  const path = withProjectId("/workflow-steps", projectId);
+  return dedupe(path, () => api<WorkflowStep[]>(path));
 }
 
 /** Create a new workflow step */
@@ -5153,6 +5161,7 @@ export function proxyApi<T>(path: string, opts?: RequestInit & { nodeId?: string
 export function fetchAgents(
   filter?: { state?: AgentState; role?: AgentCapability; includeEphemeral?: boolean },
   projectId?: string,
+  options?: FetchOptions,
 ): Promise<Agent[]> {
   const params = new URLSearchParams();
   if (filter?.state) params.set("state", filter.state);
@@ -5160,7 +5169,8 @@ export function fetchAgents(
   if (filter?.includeEphemeral === true) params.set("includeEphemeral", "true");
   if (projectId) params.set("projectId", projectId);
   const query = params.size > 0 ? `?${params.toString()}` : "";
-  return api<Agent[]>(`/agents${query}`);
+  const path = `/agents${query}`;
+  return dedupe(path, () => api<Agent[]>(path), options);
 }
 
 /** Fetch a single agent with heartbeat history */
@@ -5524,8 +5534,9 @@ export function fetchAgentRunTimeline(
 }
 
 /** Fetch aggregate agent stats */
-export function fetchAgentStats(projectId?: string): Promise<AgentStats> {
-  return api<AgentStats>(withProjectId("/agents/stats", projectId));
+export function fetchAgentStats(projectId?: string, options?: FetchOptions): Promise<AgentStats> {
+  const path = withProjectId("/agents/stats", projectId);
+  return dedupe(path, () => api<AgentStats>(path), options);
 }
 
 /** Fetch the chain of command for an agent (self → manager → grand-manager → ...) */
@@ -6242,12 +6253,12 @@ export function hasNodeMappingsSupport(project: ProjectInfoWithSource): boolean 
 
 /** Fetch all registered projects from all nodes (local + remote) */
 export function fetchProjectsAcrossNodes(): Promise<ProjectInfoWithSource[]> {
-  return api<ProjectInfoWithSource[]>("/projects/across-nodes");
+  return dedupe("/projects/across-nodes", () => api<ProjectInfoWithSource[]>("/projects/across-nodes"));
 }
 
 /** Fetch all registered nodes */
 export function fetchNodes(): Promise<NodeInfo[]> {
-  return api<NodeInfo[]>("/nodes");
+  return dedupe("/nodes", () => api<NodeInfo[]>("/nodes"));
 }
 
 /** Fetch discovery runtime status and active config. */
@@ -6520,12 +6531,13 @@ export function fetchExecutorStats(projectId?: string): Promise<{
   maxConcurrent: number;
   lastActivityAt?: string;
 }> {
-  return api<{
+  const path = withProjectId("/executor/stats", projectId);
+  return dedupe(path, () => api<{
     globalPause: boolean;
     enginePaused: boolean;
     maxConcurrent: number;
     lastActivityAt?: string;
-  }>(withProjectId("/executor/stats", projectId));
+  }>(path));
 }
 
 export interface SystemStatsSnapshot {
@@ -8539,7 +8551,8 @@ export interface PluginRuntimeInfo {
 
 /** Fetch all UI slot definitions from active plugins */
 export async function fetchPluginUiSlots(projectId?: string): Promise<PluginUiSlotEntry[]> {
-  return api<PluginUiSlotEntry[]>(withProjectId("/plugins/ui-slots", projectId));
+  const path = withProjectId("/plugins/ui-slots", projectId);
+  return dedupe(path, () => api<PluginUiSlotEntry[]>(path));
 }
 
 

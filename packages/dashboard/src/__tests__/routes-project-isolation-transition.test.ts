@@ -66,7 +66,13 @@ describe("project isolation transition route", () => {
     expect((res.body as any).transitionDeferred).toBeUndefined();
   });
 
-  it("falls back to direct update and marks transitionDeferred when no hybrid executor", async () => {
+  it("returns 503 with clear remediation when no hybrid executor is configured (local-only)", async () => {
+    // Previously this route silently set transitionDeferred=true and persisted
+    // the new isolationMode without performing the live runtime transition —
+    // confusing UX and active-task safety check was bypassed. The new
+    // behavior throws 503 immediately so the user gets actionable guidance
+    // (restart the dashboard or force-enable HybridExecutor) and the stored
+    // isolationMode stays consistent with the live runtime.
     const res = await request(
       createApp(),
       "PATCH",
@@ -74,8 +80,8 @@ describe("project isolation transition route", () => {
       JSON.stringify({ isolationMode: "child-process" }),
       { "content-type": "application/json" },
     );
-    expect(res.status).toBe(200);
-    expect((res.body as any).transitionDeferred).toBe(true);
+    expect(res.status).toBe(503);
+    expect((res.body as { error?: string }).error).toBe("isolation_transition_unavailable");
   });
 
   it("returns 409 on active_tasks without force and succeeds with force", async () => {

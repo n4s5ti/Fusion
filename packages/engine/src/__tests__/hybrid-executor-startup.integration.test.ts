@@ -65,11 +65,11 @@ describe("hybrid executor startup integration", () => {
     else process.env.FUSION_HYBRID_EXECUTOR = originalEnv;
   });
 
-  it("disables gate for single local project", async () => {
+  it("disables gate for local-only single-node setup", async () => {
     const central = createCentralCore();
     await expect(shouldUseHybridExecutor(central)).resolves.toEqual({
       enabled: false,
-      reason: "single-project-local-only",
+      reason: "single-node-local-only",
     });
   });
 

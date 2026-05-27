@@ -647,7 +647,20 @@ export const registerProjectRoutes: ApiRouteRegistrar = (ctx) => {
             }
             delete updates.isolationMode;
           } else {
-            transitionDeferred = true;
+            // No HybridExecutor available (local-only single-node setup).
+            // The previous behavior here was to set transitionDeferred=true
+            // and silently persist the new isolationMode while the live
+            // ProjectEngine continued under the old isolation — confusing,
+            // and the active-tasks safety check was also bypassed.
+            // Surface the limitation explicitly so the UI can show a clear
+            // error and the user can either restart the dashboard (which
+            // picks up the new isolationMode on next ProjectEngine start)
+            // or force-enable HybridExecutor via FUSION_HYBRID_EXECUTOR=1.
+            throw new ApiError(503, "isolation_transition_unavailable", {
+              error: "isolation_transition_unavailable",
+              message:
+                "Live isolation mode transition requires HybridExecutor, which is disabled on local-only single-node setups. Restart the dashboard to apply the new isolation mode for this project, or set FUSION_HYBRID_EXECUTOR=1 to enable live transitions.",
+            });
           }
         }
 

@@ -3,6 +3,7 @@ export const DASHBOARD_STARTUP_STATUS = {
   startingFileWatcher: "Starting file watcher…",
   initializingAgentStore: "Initializing agent store…",
   startingAgents: "Starting agents…",
+  loadingExtensions: "Loading extensions…",
   startingEngine: "Starting engine…",
 } as const;
 

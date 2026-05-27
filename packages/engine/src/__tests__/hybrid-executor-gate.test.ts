@@ -48,20 +48,22 @@ describe("shouldUseHybridExecutor", () => {
     expect(decision).toEqual({ enabled: true, reason: "multi-node" });
   });
 
-  it("enables for multi-project active/initializing", async () => {
+  it("does NOT enable for local-only multi-project (ProjectEngineManager handles it)", async () => {
     delete process.env.FUSION_HYBRID_EXECUTOR;
     const decision = await shouldUseHybridExecutor(
       createMockCentralCore({
         listProjects: async () => [{ status: "active" }, { status: "initializing" }],
       }),
     );
-    expect(decision).toEqual({ enabled: true, reason: "multi-project" });
+    // HybridExecutor's value is cross-node routing. Local-only N-project
+    // setups don't need it — running it duplicates InProcessRuntime creation.
+    expect(decision).toEqual({ enabled: false, reason: "single-node-local-only" });
   });
 
-  it("disables for single local project", async () => {
+  it("disables for local-only single-node setup", async () => {
     delete process.env.FUSION_HYBRID_EXECUTOR;
     const decision = await shouldUseHybridExecutor(createMockCentralCore());
-    expect(decision).toEqual({ enabled: false, reason: "single-project-local-only" });
+    expect(decision).toEqual({ enabled: false, reason: "single-node-local-only" });
   });
 
   it("disables when central APIs throw", async () => {
