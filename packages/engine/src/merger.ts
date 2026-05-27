@@ -94,6 +94,8 @@ import { classifyTaskWorktree, getRegisteredWorktreeBranches, RemovalReason, rem
 import { activeSessionRegistry } from "./active-session-registry.js";
 import { AgentLogger } from "./agent-logger.js";
 import { mergerLog } from "./logger.js";
+import { regenerateBareMergeSubject } from "./merger-bare-subject.js";
+export { regenerateBareMergeSubject, BARE_MERGE_SUBJECT_RE } from "./merger-bare-subject.js";
 import { isUsageLimitError, checkSessionError, type UsageLimitPauser } from "./usage-limit-detector.js";
 import { isContextLimitError } from "./context-limit-detector.js";
 import { withRateLimitRetry } from "./rate-limit-retry.js";
@@ -3778,6 +3780,54 @@ async function generateAiMergeSubject(
 }
 
 /**
+ * Capture HEAD's sha, subject, and authored timestamp via git, then persist a
+ * canonical lineage-trailer association. Validates each git output is a
+ * non-empty string before binding to SQLite — `upsertTaskCommitAssociation`
+ * binds `commitSha` to positional parameter 4, and any `undefined` or empty
+ * value would otherwise raise `TypeError: Provided value cannot be bound to
+ * SQLite parameter 4` mid-merge (observed under parallel finalize-attempt
+ * races where one of the three `git` calls aborted before the others).
+ *
+ * Returns silently and logs a warning when validation fails — the association
+ * is a denormalized convenience for lineage lookups, not a correctness
+ * invariant, so a missed write must not block the merge.
+ */
+async function recordCommitAssociationFromHead(
+  store: TaskStore,
+  rootDir: string,
+  taskId: string,
+  lineageId: string,
+): Promise<void> {
+  let sha = "";
+  let subject = "";
+  let authoredAt = "";
+  try {
+    sha = (await execAsync("git rev-parse HEAD", { cwd: rootDir })).stdout.trim();
+    subject = (await execAsync("git log -1 --format=%s HEAD", { cwd: rootDir })).stdout.trim();
+    authoredAt = (await execAsync("git log -1 --format=%aI HEAD", { cwd: rootDir })).stdout.trim();
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    mergerLog.warn(`${taskId}: skipped commit-association write — git inspection failed (${message})`);
+    return;
+  }
+  if (!sha || !subject || !authoredAt) {
+    mergerLog.warn(
+      `${taskId}: skipped commit-association write — empty git output (sha=${sha.length}, subject=${subject.length}, authoredAt=${authoredAt.length})`,
+    );
+    return;
+  }
+  await store.upsertTaskCommitAssociation({
+    taskLineageId: lineageId,
+    taskIdSnapshot: taskId,
+    commitSha: sha,
+    commitSubject: subject,
+    authoredAt,
+    matchedBy: "canonical-lineage-trailer",
+    confidence: "canonical",
+  });
+}
+
+/**
  * Derive a non-AI subject summary from the branch's step commit log. The log
  * is `- subj1\n- subj2\n…` (most recent first). The naive "use lines[0]" choice
  * is wrong in practice: when a quality-gate revision lands as the final commit
@@ -4435,18 +4485,7 @@ export async function commitOrAmendMergeWithFixes(
         { cwd: rootDir, env: mergerCommitEnv() },
       );
       if (store && lineageId) {
-        const sha = (await execAsync("git rev-parse HEAD", { cwd: rootDir })).stdout.trim();
-        const subject = (await execAsync("git log -1 --format=%s HEAD", { cwd: rootDir })).stdout.trim();
-        const authoredAt = (await execAsync("git log -1 --format=%aI HEAD", { cwd: rootDir })).stdout.trim();
-        await store.upsertTaskCommitAssociation({
-          taskLineageId: lineageId,
-          taskIdSnapshot: taskId,
-          commitSha: sha,
-          commitSubject: subject,
-          authoredAt,
-          matchedBy: "canonical-lineage-trailer",
-          confidence: "canonical",
-        });
+        await recordCommitAssociationFromHead(store, rootDir, taskId, lineageId);
       }
       mergerLog.log(`${taskId}: created fresh merge commit after verification fix (no prior commit to amend)`);
       return { ok: true, reason: "committed" };
@@ -4478,18 +4517,7 @@ export async function commitOrAmendMergeWithFixes(
       { cwd: rootDir, env: mergerCommitEnv() },
     );
     if (store && lineageId) {
-      const sha = (await execAsync("git rev-parse HEAD", { cwd: rootDir })).stdout.trim();
-      const subject = (await execAsync("git log -1 --format=%s HEAD", { cwd: rootDir })).stdout.trim();
-      const authoredAt = (await execAsync("git log -1 --format=%aI HEAD", { cwd: rootDir })).stdout.trim();
-      await store.upsertTaskCommitAssociation({
-        taskLineageId: lineageId,
-        taskIdSnapshot: taskId,
-        commitSha: sha,
-        commitSubject: subject,
-        authoredAt,
-        matchedBy: "canonical-lineage-trailer",
-        confidence: "canonical",
-      });
+      await recordCommitAssociationFromHead(store, rootDir, taskId, lineageId);
     }
     mergerLog.log(`${taskId}: amended merge commit with verification fixes (deterministic message)`);
     return { ok: true, reason: "committed" };
@@ -7871,13 +7899,21 @@ export async function aiMergeTask(
   if (aheadInfo?.aheadCount === 0) {
     const classification = await classifyOwnedLandedEvidence(rootDir, task, { mergeTargetBranch: aheadInfo.baseRef });
     if (classification.kind === "owned-commit") {
+      const mergeCommitMessage = await regenerateBareMergeSubject({
+        subject: classification.commit.subject,
+        commitSha: classification.commit.sha,
+        branch,
+        taskId,
+        rootDir,
+        settings,
+      });
       const mergeDetails: MergeDetails = {
         ...(task.mergeDetails || {}),
         commitSha: classification.commit.sha,
         filesChanged: classification.commit.filesChanged,
         insertions: classification.commit.insertions,
         deletions: classification.commit.deletions,
-        mergeCommitMessage: classification.commit.subject,
+        mergeCommitMessage,
         mergeConfirmed: true,
         mergedAt: new Date().toISOString(),
         prNumber: task.prInfo?.number,
@@ -8132,13 +8168,21 @@ export async function aiMergeTask(
 
     if (classification.kind === "owned-commit") {
       const mergedAt = new Date().toISOString();
+      const mergeCommitMessage = await regenerateBareMergeSubject({
+        subject: classification.commit.subject,
+        commitSha: classification.commit.sha,
+        branch,
+        taskId,
+        rootDir,
+        settings,
+      });
       await store.updateTask(taskId, {
         mergeDetails: {
           commitSha: classification.commit.sha,
           filesChanged: classification.commit.filesChanged,
           insertions: classification.commit.insertions,
           deletions: classification.commit.deletions,
-          mergeCommitMessage: classification.commit.subject,
+          mergeCommitMessage,
           mergedAt,
           mergeConfirmed: true,
           prNumber: task.prInfo?.number,
@@ -8152,7 +8196,7 @@ export async function aiMergeTask(
       result.filesChanged = classification.commit.filesChanged;
       result.insertions = classification.commit.insertions;
       result.deletions = classification.commit.deletions;
-      result.mergeCommitMessage = classification.commit.subject;
+      result.mergeCommitMessage = mergeCommitMessage;
       result.mergedAt = mergedAt;
       result.mergeTargetBranch = mergeTarget.branch;
       result.mergeTargetSource = mergeTarget.source;

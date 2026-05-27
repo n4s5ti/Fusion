@@ -48,6 +48,7 @@ import { resolveWorktreesDir } from "./worktree-paths.js";
 import { canonicalFusionBranchName } from "./worktree-names.js";
 import { resolveIntegrationBranch } from "./integration-branch.js";
 import type { OwnedLandedClassification } from "./merger.js";
+import { regenerateBareMergeSubject } from "./merger-bare-subject.js";
 import { recoverForeignOnlyContamination } from "./recovery/foreign-only-contamination.js";
 import {
   buildNtfyClickUrl,
@@ -4198,13 +4199,21 @@ export class SelfHealingManager {
 
         const mergedAt = new Date().toISOString();
         if (classification.kind === "owned-commit") {
+          const mergeCommitMessage = await regenerateBareMergeSubject({
+            subject: classification.commit.subject,
+            commitSha: classification.commit.sha,
+            branch: task.branch ?? "",
+            taskId: task.id,
+            rootDir: this.options.rootDir,
+            settings,
+          });
           const mergeDetails: MergeDetails = {
             ...(task.mergeDetails || {}),
             commitSha: classification.commit.sha,
             filesChanged: classification.commit.filesChanged,
             insertions: classification.commit.insertions,
             deletions: classification.commit.deletions,
-            mergeCommitMessage: classification.commit.subject,
+            mergeCommitMessage,
             mergeConfirmed: true,
             mergedAt,
             mergeTargetBranch: ahead.baseRef,
@@ -4292,6 +4301,14 @@ export class SelfHealingManager {
       for (const task of candidates) {
         const classification = await classifyOwnedLandedEvidenceForSelfHealing(this.options.rootDir, task, mergeTargetBranch);
         if (classification.kind === "owned-commit") {
+          const mergeCommitMessage = await regenerateBareMergeSubject({
+            subject: classification.commit.subject,
+            commitSha: classification.commit.sha,
+            branch: task.branch ?? "",
+            taskId: task.id,
+            rootDir: this.options.rootDir,
+            settings,
+          });
           await this.store.updateTask(task.id, {
             mergeDetails: {
               ...(task.mergeDetails || {}),
@@ -4299,7 +4316,7 @@ export class SelfHealingManager {
               filesChanged: classification.commit.filesChanged,
               insertions: classification.commit.insertions,
               deletions: classification.commit.deletions,
-              mergeCommitMessage: classification.commit.subject,
+              mergeCommitMessage,
             },
           });
           await this.recordIntegrityAudit(task.id, "task:integrity-reconcile-modified-files", {
@@ -5110,13 +5127,21 @@ export class SelfHealingManager {
           const landedCommit = await this.findLandedTaskCommit(task);
 
           if (landedCommit) {
+            const mergeCommitMessage = await regenerateBareMergeSubject({
+              subject: landedCommit.subject,
+              commitSha: landedCommit.sha,
+              branch: task.branch ?? "",
+              taskId: task.id,
+              rootDir: this.options.rootDir,
+              settings,
+            });
             const mergeDetails: MergeDetails = {
               commitSha: landedCommit.sha,
               rebaseBaseSha: landedCommit.rebaseBaseSha,
               filesChanged: landedCommit.filesChanged,
               insertions: landedCommit.insertions,
               deletions: landedCommit.deletions,
-              mergeCommitMessage: landedCommit.subject,
+              mergeCommitMessage,
               mergedAt: new Date().toISOString(),
               mergeConfirmed: true,
               prNumber: getPrimaryPrInfo(task)?.number,
@@ -5520,13 +5545,21 @@ export class SelfHealingManager {
         try {
           const landedCommit = await this.findLandedTaskCommit(task);
           if (landedCommit) {
+            const mergeCommitMessage = await regenerateBareMergeSubject({
+              subject: landedCommit.subject,
+              commitSha: landedCommit.sha,
+              branch: task.branch ?? "",
+              taskId: task.id,
+              rootDir: this.options.rootDir,
+              settings,
+            });
             const mergeDetails: MergeDetails = {
               commitSha: landedCommit.sha,
               rebaseBaseSha: landedCommit.rebaseBaseSha,
               filesChanged: landedCommit.filesChanged,
               insertions: landedCommit.insertions,
               deletions: landedCommit.deletions,
-              mergeCommitMessage: landedCommit.subject,
+              mergeCommitMessage,
               mergedAt: new Date().toISOString(),
               mergeConfirmed: true,
               prNumber: getPrimaryPrInfo(task)?.number,
