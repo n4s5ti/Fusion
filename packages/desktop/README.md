@@ -363,6 +363,23 @@ Desktop packaging is configured in `electron-builder.yml`.
 - Linux desktop artifacts can include detached GPG signature sidecars (`*.AppImage.asc`, `*.deb.asc`, `*.tar.gz.asc`) when Linux signing secrets are configured in CI; full Linux desktop code-signing rollout remains tracked in FN-5605.
 - Linux `.deb` and `.tar.gz` outputs are best-effort and may be absent on some runner images without failing the release.
 
+### macOS code-signing and notarization
+
+The macOS desktop release path signs and notarizes desktop bundles through electron-builder in CI.
+
+- Required CI secrets:
+  - `APPLE_CERTIFICATE_BASE64` (base64-encoded `.p12` Developer ID Application certificate)
+  - `APPLE_CERTIFICATE_PASSWORD`
+  - `APPLE_ID`
+  - `APPLE_TEAM_ID`
+  - `APPLE_APP_PASSWORD` (mapped to electron-builder env var `APPLE_APP_SPECIFIC_PASSWORD`)
+- Signing uses electron-builder `CSC_LINK` / `CSC_KEY_PASSWORD`.
+- Notarization uses electron-builder + `xcrun notarytool` with `APPLE_ID` / `APPLE_APP_SPECIFIC_PASSWORD` / `APPLE_TEAM_ID`.
+- With `mac.notarize: true`, CI verifies stapled notarization for `.dmg` and `.app` outputs.
+- If `APPLE_CERTIFICATE_BASE64` is empty (for example forked PR contexts), the workflow still publishes unsigned `.dmg` / `.zip` via the unsigned step and passes `-c.mac.notarize=false`; signed verification is skipped in that path.
+- Hardened runtime entitlements are pinned in `packages/desktop/build/entitlements.mac.plist`. Any entitlement changes require a follow-up task.
+- Local signing/notarization is opt-in; developers can set the same env vars locally to mirror CI behavior.
+
 ### Linux signing
 
 Every signed Linux desktop release includes `*.asc` detached signature sidecars alongside the binary artifacts.

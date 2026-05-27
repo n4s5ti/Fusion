@@ -106,6 +106,31 @@ describe("electron-builder desktop config", () => {
     expect(linuxArchByTarget.get("deb")).toEqual(["arm64", "x64"]);
     expect(linuxArchByTarget.get("tar.gz")).toEqual(["arm64", "x64"]);
   });
+
+  it("locks mac signing and notarization configuration", async () => {
+    const builderConfig = await readDesktopFile("electron-builder.yml");
+
+    expect(builderConfig).toMatch(/mac:\s*[\s\S]*?hardenedRuntime:\s*true/m);
+    expect(builderConfig).toMatch(/mac:\s*[\s\S]*?gatekeeperAssess:\s*false/m);
+    expect(builderConfig).toMatch(/mac:\s*[\s\S]*?entitlements:\s*build\/entitlements\.mac\.plist/m);
+    expect(builderConfig).toMatch(/mac:\s*[\s\S]*?entitlementsInherit:\s*build\/entitlements\.mac\.plist/m);
+    expect(builderConfig).toMatch(/mac:\s*[\s\S]*?notarize:\s*true/m);
+    expect(builderConfig).not.toContain("mac.identity:");
+    expect(builderConfig).not.toContain("appleId:");
+    expect(builderConfig).not.toContain("teamId:");
+  });
+
+  it("ships the expected hardened-runtime entitlements plist", async () => {
+    const entitlements = await readDesktopFile("build/entitlements.mac.plist");
+
+    expect(entitlements).toContain("<?xml");
+    expect(entitlements).toContain("</plist>");
+    expect(entitlements).toContain("com.apple.security.cs.allow-jit");
+    expect(entitlements).toContain("com.apple.security.cs.allow-unsigned-executable-memory");
+    expect(entitlements).toContain("com.apple.security.cs.allow-dyld-environment-variables");
+    expect(entitlements).toContain("com.apple.security.cs.disable-library-validation");
+    expect(entitlements).toContain("com.apple.security.inherit");
+  });
 });
 
 describe("desktop windows workflow signing guards", () => {

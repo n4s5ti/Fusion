@@ -157,11 +157,12 @@ Paste the result as the `WINDOWS_CERTIFICATE_BASE64` secret.
 
 1. A tag push (`v*`) triggers the release workflow
 2. Each platform job builds the standalone binary
-3. **macOS jobs**: `scripts/sign-macos.sh` runs codesign + notarization
-4. **Windows jobs**: `scripts/sign-windows.ps1` runs Authenticode signing
-5. **Linux desktop jobs**: `scripts/sign-linux.sh` runs `gpg --detach-sign --armor` for each `.AppImage` / `.deb` / `.tar.gz` artifact and verifies each signature with `gpg --verify`
-6. Checksums are generated **after** signing (so they match the signed binaries)
-7. Signed binaries and checksums are uploaded to the GitHub Release
+3. **macOS CLI jobs**: `scripts/sign-macos.sh` runs codesign + notarization for standalone CLI binaries
+4. **macOS desktop jobs**: electron-builder signs `.dmg` / `.zip` outputs using `CSC_LINK` / `CSC_KEY_PASSWORD`, notarizes with `APPLE_ID` / `APPLE_APP_SPECIFIC_PASSWORD` / `APPLE_TEAM_ID`, and validates signatures/stapling in CI
+5. **Windows jobs**: `scripts/sign-windows.ps1` runs Authenticode signing
+6. **Linux desktop jobs**: `scripts/sign-linux.sh` runs `gpg --detach-sign --armor` for each `.AppImage` / `.deb` / `.tar.gz` artifact and verifies each signature with `gpg --verify`
+7. Checksums are generated **after** signing (so they match the signed binaries)
+8. Signed binaries and checksums are uploaded to the GitHub Release
 
 The test-release workflow (`workflow_dispatch`) includes the same signing steps but guards them with secret-availability checks — signing is skipped if secrets are not configured.
 
@@ -220,3 +221,16 @@ Desktop Windows packaging (`.github/workflows/desktop-windows.yml`) now uses the
 - The desktop Windows workflow intentionally falls back to unsigned artifacts when `WINDOWS_CERTIFICATE_BASE64` is empty
 - In that unsigned path, `Verify signed artifacts` is skipped by design
 - Set both `WINDOWS_CERTIFICATE_BASE64` and `WINDOWS_CERTIFICATE_PASSWORD` at the repository level to enable signed desktop EXE output
+
+### Desktop DMG/ZIP signing skipped
+
+- The macOS desktop release jobs intentionally fall back to unsigned artifacts when `APPLE_CERTIFICATE_BASE64` is empty
+- In that unsigned path, packaging runs with `-c.mac.notarize=false` so builds do not block on missing Apple notarization credentials
+- The `Verify signed and notarized macOS artifacts` step is skipped by design for unsigned runs
+
+### Notarization fails for desktop bundle
+
+- Confirm `APPLE_APP_PASSWORD` is configured in GitHub secrets and mapped to `APPLE_APP_SPECIFIC_PASSWORD` in workflow env
+- Confirm `APPLE_TEAM_ID` matches the team that issued the Developer ID certificate
+- Confirm the Developer ID certificate in `APPLE_CERTIFICATE_BASE64` is valid and not expired
+- Confirm hardened runtime entitlements are present via `packages/desktop/build/entitlements.mac.plist`

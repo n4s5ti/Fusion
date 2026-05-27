@@ -69,6 +69,39 @@ describe("desktop release workflow wiring", () => {
   });
 });
 
+describe("desktop macos signing wiring", () => {
+  it("wires signed and unsigned macOS packaging paths with verification", async () => {
+    const release = await readRepoFile(".github/workflows/release.yml");
+    const testRelease = await readRepoFile(".github/workflows/test-release.yml");
+
+    for (const workflow of [release, testRelease]) {
+      expect(workflow).toContain("Package signed macOS desktop DMG/ZIP");
+      expect(workflow).toContain("Package unsigned macOS desktop DMG/ZIP");
+      expect(workflow).toContain("Verify signed and notarized macOS artifacts");
+
+      expect(workflow).toContain("secrets.APPLE_CERTIFICATE_BASE64");
+      expect(workflow).toContain("secrets.APPLE_CERTIFICATE_PASSWORD");
+      expect(workflow).toContain("secrets.APPLE_ID");
+      expect(workflow).toContain("secrets.APPLE_TEAM_ID");
+      expect(workflow).toContain("secrets.APPLE_APP_PASSWORD");
+
+      expect(workflow).toContain("CSC_LINK:");
+      expect(workflow).toContain("CSC_KEY_PASSWORD:");
+      expect(workflow).toContain("APPLE_APP_SPECIFIC_PASSWORD:");
+      expect(workflow).toContain("APPLE_TEAM_ID:");
+
+      expect(workflow).toContain("APPLE_CERTIFICATE_BASE64 != ''");
+      expect(workflow).toContain("APPLE_CERTIFICATE_BASE64 == ''");
+
+      expect(workflow).toContain("codesign --verify");
+      expect(workflow).toContain("spctl --assess");
+      expect(workflow).toContain("xcrun stapler validate");
+
+      expect(workflow).toContain("-c.mac.notarize=false");
+    }
+  });
+});
+
 describe("desktop linux signing wiring", () => {
   it("wires Linux GPG secret-guarded signing and asc uploads in both workflows", async () => {
     const release = await readRepoFile(".github/workflows/release.yml");
