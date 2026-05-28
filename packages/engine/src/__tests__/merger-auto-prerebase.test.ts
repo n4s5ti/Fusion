@@ -49,6 +49,63 @@ describe("decideAutoPrerebase", () => {
     expect(decision.fire).toBe(false);
     expect(decision.reason).toBe("no-divergence");
   });
+
+  it("FN-5627: fires on default threshold (1 commit) when prerebaseDivergenceThreshold is undefined", () => {
+    // Pre-FN-5627 default behavior: undefined threshold meant 'never fire on
+    // commit-count'. This left tasks that branched off older main tips with
+    // no recourse — the merger would build the squash against the stale
+    // base, update-ref would refuse non-FF, and IntegrationBranchConcurrentAdvanceError
+    // surfaced with a misleading same-SHA pair (the exact signature that
+    // stranded FN-5632). New default: threshold=1, fire on any divergence.
+    const settingsNoThreshold = {
+      prerebaseAutoEnabled: true,
+      prerebaseHotFiles: ["AGENTS.md"],
+      // prerebaseDivergenceThreshold intentionally undefined
+    };
+    const decision = decideAutoPrerebase({
+      settings: settingsNoThreshold,
+      baseCommitSha: "abc",
+      commitsBehind: 1,
+      changedFiles: ["x.ts"],
+      worktrunkEnabled: false,
+    });
+    expect(decision.fire).toBe(true);
+    expect(decision.reason).toBe("divergence-threshold");
+    expect(decision.commitsBehind).toBe(1);
+  });
+
+  it("FN-5627: respects explicit prerebaseDivergenceThreshold = 0 as opt-out (never fire on commit-count)", () => {
+    const settingsOptOut = {
+      prerebaseAutoEnabled: true,
+      prerebaseHotFiles: ["AGENTS.md"],
+      prerebaseDivergenceThreshold: 0,
+    };
+    const decision = decideAutoPrerebase({
+      settings: settingsOptOut,
+      baseCommitSha: "abc",
+      commitsBehind: 100,
+      changedFiles: ["x.ts"],
+      worktrunkEnabled: false,
+    });
+    expect(decision.fire).toBe(false);
+    expect(decision.reason).toBe("no-divergence");
+  });
+
+  it("FN-5627: default threshold doesn't fire when branch is up-to-date", () => {
+    const settingsNoThreshold = {
+      prerebaseAutoEnabled: true,
+      prerebaseHotFiles: ["AGENTS.md"],
+    };
+    const decision = decideAutoPrerebase({
+      settings: settingsNoThreshold,
+      baseCommitSha: "abc",
+      commitsBehind: 0,
+      changedFiles: [],
+      worktrunkEnabled: false,
+    });
+    expect(decision.fire).toBe(false);
+    expect(decision.reason).toBe("no-divergence");
+  });
 });
 
 describeIfGit("merger-auto-prerebase git integration", () => {

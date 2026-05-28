@@ -331,12 +331,20 @@ export const MAX_TRANSIENT_MERGE_RECOVERIES = 2;
  *    self-healing sweeps that clean stale `mergeQueue` rows (FN-5353/FN-5363).
  *  - `spurious-concurrent-advance-same-sha`: the merger reported
  *    `Integration branch X advanced concurrently (expected SHA, observed SHA)`
- *    with identical SHA on both sides — the integration ref didn't actually
- *    move. Pre-FN-5627 misclassification in `merger-ref-update-advance.ts`
- *    routed real ref-update-refusal failures (lock contention, hook rejection)
- *    through `IntegrationBranchConcurrentAdvanceError`. The current code
- *    classifies these as `ref-update-refused`, so this class is here to
- *    recover legacy stuck rows from before the fix landed.
+ *    with identical SHA on both sides. This signature shows up in two cases:
+ *    (1) Pre-FN-5627 misclassification in `merger-ref-update-advance.ts`
+ *        routed real ref-update-refusal failures (lock contention, hook
+ *        rejection) through `IntegrationBranchConcurrentAdvanceError`.
+ *    (2) Post-FN-5627: the merger's `advanceIntegrationBranchRef` correctly
+ *        detects `non-fast-forward-advance` when the freshly built squash
+ *        commit does not descend from the current integration ref (typically
+ *        because the task branch was started against an older main tip and
+ *        auto-prerebase was skipped). The error carries the same SHA in both
+ *        the "expected" and "observed" slots because the pre-advance rev-parse
+ *        captured the ref state and update-ref refused without moving it. On
+ *        the next merge attempt, the lifted auto-prerebase default (threshold
+ *        = 1 commit, FN-5627 follow-up to `merger-auto-prerebase.ts`) rebases
+ *        the task branch onto current main, so the retry succeeds.
  */
 export function classifyTransientMergeError(error: string | null | undefined): string | null {
   if (!error) return null;

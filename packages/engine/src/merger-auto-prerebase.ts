@@ -71,8 +71,16 @@ export function decideAutoPrerebase(input: {
     return { fire: true, reason: "hot-file", commitsBehind, hotMatches };
   }
 
-  const threshold = input.settings.prerebaseDivergenceThreshold ?? 0;
-  if (threshold > 0 && commitsBehind > threshold) {
+  // FN-5627 follow-up: default divergence threshold flipped from 0 ("never
+  // fire on commit-count") to 1 ("fire when branch is behind by at least 1
+  // commit"). The legacy default left tasks that branched off an older main
+  // tip with no recourse — the squash would build against the stale base,
+  // `git update-ref` would correctly refuse the non-fast-forward advance,
+  // and the merger would surface `IntegrationBranchConcurrentAdvanceError`
+  // with a misleading same-SHA pair. Users who want the legacy never-fire
+  // behavior can explicitly set `prerebaseDivergenceThreshold = 0`.
+  const threshold = input.settings.prerebaseDivergenceThreshold ?? 1;
+  if (threshold > 0 && commitsBehind >= threshold) {
     return { fire: true, reason: "divergence-threshold", commitsBehind, hotMatches: [] };
   }
 
