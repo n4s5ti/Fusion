@@ -817,16 +817,32 @@ describe("TaskStore", () => {
       try {
         await store.watch();
 
-        const warningCall = warnSpy.mock.calls.find(
-          (call) => typeof call[0] === "string" && call[0].includes("[task-store] fs.watch unavailable; falling back to polling-only updates"),
-        );
-        expect(warningCall).toBeDefined();
+        // fs.watch on a missing path is platform-sensitive: macOS Node throws
+        // ENOENT synchronously (routed to the `watch:fs-watch-setup` warning),
+        // whereas Linux Node returns a watcher that emits an async `error`
+        // event (routed to the `watch:fs-watch-error` warning). Either path
+        // is correct — the contract this test guards is "log the failure and
+        // keep polling alive," not which catch arm caught it. Use vi.waitFor
+        // so we observe the async path on Linux without racing the spy.
+        const findWarning = () =>
+          warnSpy.mock.calls.find((call) => {
+            if (typeof call[0] !== "string") return false;
+            return (
+              call[0].includes("[task-store] fs.watch unavailable; falling back to polling-only updates")
+              || call[0].includes("[task-store] fs.watch emitted an error; polling will continue")
+            );
+          });
 
+        await vi.waitFor(() => {
+          expect(findWarning()).toBeDefined();
+        });
+
+        const warningCall = findWarning()!;
         const [, context] = warningCall as [string, Record<string, unknown>];
         expect(context).toMatchObject({
-          phase: "watch:fs-watch-setup",
           tasksDir: join(rootDir, ".fusion", "missing-tasks-dir"),
         });
+        expect(context.phase).toMatch(/^watch:fs-watch-(setup|error)$/);
         expect(typeof context.error).toBe("string");
         expect(storeAny.pollInterval).not.toBeNull();
         await expect(storeAny.checkForChanges()).resolves.toBeUndefined();
