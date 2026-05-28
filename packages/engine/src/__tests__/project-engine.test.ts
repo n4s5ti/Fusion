@@ -1499,6 +1499,140 @@ describe("ProjectEngine paused in-review auto-merge behavior", () => {
     await engine.stop();
   });
 
+  it("FN-5627: refuses fast-path and parks task when mergeConfirmed commitSha is not ancestor of integration branch", async () => {
+    // Repro for the FN-5625/FN-5623 false-positive done class: the merger
+    // has a TOCTOU between writing `mergeConfirmed: true` and `git update-ref`
+    // succeeding. When the ref-advance fails after the optimistic write, the
+    // task row is poisoned. Without this gate, the auto-merge fast-path
+    // would silently promote the poisoned row to `done`. With the gate, the
+    // fast-path verifies reachability and refuses, parking the task in
+    // in-review with status=failed for manual review.
+    const mockStore = createMockStore({ ...baseSettings, autoMerge: true });
+    mockStore.store.getTask.mockResolvedValueOnce({
+      id: "FN-poisoned",
+      column: "in-review",
+      paused: false,
+      mergeRetries: 0,
+      status: null,
+      branch: "fusion/fn-poisoned",
+      baseBranch: "main",
+      mergeDetails: {
+        mergeConfirmed: true,
+        commitSha: "abc123abc123abc123abc123abc123abc1234567",
+        mergeTargetBranch: "main",
+        mergedAt: "2026-05-28T19:34:17.022Z",
+      },
+    });
+    mocks.currentStore = mockStore.store;
+
+    // Simulate the gate: `git cat-file -e` succeeds (commit exists locally
+    // on the orphan task branch), but `git merge-base --is-ancestor` fails
+    // with exit code 1 (commit is NOT reachable from main).
+    mocks.execFile.mockImplementation((
+      _file: string,
+      args: string[],
+      _options: unknown,
+      callback?: (error: (Error & { code?: number }) | null, result: { stdout: string; stderr: string }) => void,
+    ) => {
+      const cb = (typeof _options === "function" ? _options : callback) as (
+        error: (Error & { code?: number }) | null,
+        result: { stdout: string; stderr: string },
+      ) => void;
+      if (args[0] === "cat-file") {
+        cb(null, { stdout: "", stderr: "" });
+        return {} as never;
+      }
+      if (args[0] === "merge-base" && args[1] === "--is-ancestor") {
+        const err = new Error("Command failed: git merge-base --is-ancestor") as Error & { code?: number };
+        err.code = 1;
+        cb(err, { stdout: "", stderr: "" });
+        return {} as never;
+      }
+      // Default success for any other git call.
+      cb(null, { stdout: "/usr/bin/mock\n", stderr: "" });
+      return {} as never;
+    });
+
+    const engine = createEngine();
+    await engine.start();
+    engine.enqueueMerge("FN-poisoned");
+
+    // Gate refuses the fast-path: the task row is updated with status=failed,
+    // mergeConfirmed is cleared, and the task is parked in in-review.
+    await vi.waitFor(() => {
+      const calls = (mockStore.store.updateTask as ReturnType<typeof vi.fn>).mock.calls as unknown as Array<[string, Record<string, unknown>]>;
+      const refusalCall = calls.find((call) =>
+        call[0] === "FN-poisoned"
+        && call[1]?.status === "failed"
+        && typeof call[1]?.error === "string"
+        && /not reachable/.test(call[1].error as string),
+      );
+      expect(refusalCall).toBeDefined();
+      const updates = refusalCall![1] as { mergeDetails?: { mergeConfirmed?: boolean } };
+      expect(updates.mergeDetails?.mergeConfirmed).toBe(false);
+    });
+
+    // moveTask("done") was NOT called.
+    expect(mockStore.store.moveTask).not.toHaveBeenCalledWith("FN-poisoned", "done");
+    // task:merged was NOT emitted for the poisoned task.
+    const emitCalls = (mockStore.store.emit as ReturnType<typeof vi.fn>).mock.calls as unknown as Array<[string, { task?: { id: string } }]>;
+    const mergedCalls = emitCalls.filter((call) => call[0] === "task:merged");
+    const poisonedEmit = mergedCalls.find((call) => call[1]?.task?.id === "FN-poisoned");
+    expect(poisonedEmit).toBeUndefined();
+
+    await engine.stop();
+  });
+
+  it("FN-5627: fast-path still works when mergeConfirmed has no commitSha (verified-no-op path)", async () => {
+    // Legitimate no-op merges have mergeConfirmed=true with no commitSha
+    // (verified-short-circuit / proven-no-op / already-on-main paths). The
+    // reachability gate must not break those.
+    const mockStore = createMockStore({ ...baseSettings, autoMerge: true });
+    mockStore.store.getTask.mockResolvedValueOnce({
+      id: "FN-noop",
+      column: "in-review",
+      paused: false,
+      mergeRetries: 0,
+      status: null,
+      branch: "fusion/fn-noop",
+      mergeDetails: {
+        mergeConfirmed: true,
+        noOpMerge: true,
+        mergedAt: "2026-05-28T19:34:17.022Z",
+        mergeTargetBranch: "main",
+        // No commitSha — verified no-op.
+      },
+    });
+    mockStore.store.moveTask.mockResolvedValueOnce({
+      id: "FN-noop",
+      column: "done",
+      branch: "fusion/fn-noop",
+      mergeDetails: {
+        mergeConfirmed: true,
+        noOpMerge: true,
+        mergedAt: "2026-05-28T19:34:17.022Z",
+        mergeTargetBranch: "main",
+      },
+    } as any);
+    mocks.currentStore = mockStore.store;
+
+    const engine = createEngine();
+    await engine.start();
+    engine.enqueueMerge("FN-noop");
+
+    await vi.waitFor(() => {
+      expect(mockStore.store.emit).toHaveBeenCalledWith(
+        "task:merged",
+        expect.objectContaining({
+          merged: true,
+          task: expect.objectContaining({ id: "FN-noop", column: "done" }),
+        }),
+      );
+    });
+
+    await engine.stop();
+  });
+
   it("emits task:merged when PR merge strategy returns merged", async () => {
     const mockStore = createMockStore({ ...baseSettings, autoMerge: true });
     mockStore.store.getTask

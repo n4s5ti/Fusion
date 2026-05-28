@@ -544,7 +544,16 @@ export type DatabaseMutationType =
    */
   | "worktree:pool-double-lease-detected"
   | "room:ambiguity:branch"
-  | "room:coordination:branch";
+  | "room:coordination:branch"
+  /**
+   * FN-5627: Auto-merge fast-path refused to promote in-review → done because
+   * `task.mergeDetails.commitSha` is not reachable from the integration branch
+   * tip, indicating the merger persisted `mergeConfirmed: true` before the
+   * ref-advance actually landed (TOCTOU window in merger.ts ~9762 vs ~9845).
+   * Task is parked in in-review with `status: "failed"` for manual review.
+   * Metadata: { taskId, commitSha, integrationBranch, reason, diagnostic }
+   */
+  | "merger:fast-path-blocked-foreign-commit";
 
 // ── Filesystem mutation types ─────────────────────────────────────────────────
 

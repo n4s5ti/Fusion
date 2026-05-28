@@ -257,6 +257,84 @@ describe("advanceIntegrationBranchRef", () => {
     }
   });
 
+  it("FN-5627: classifies update-ref refusal as ref-update-refused (NOT concurrent-advance) when ref did not move", async () => {
+    // Repro for the FN-5625/FN-5623 false-positive done class: an update-ref
+    // failure where the ref did NOT actually move (e.g., lock contention,
+    // hook rejection, packed-refs write race) was previously classified as
+    // `concurrent-advance` purely by string-matching the git error message
+    // ("is at" / "expected" / "cannot lock ref"). That heuristic
+    // misreported "expected X, observed X" with the SAME sha for both
+    // values, and the downstream IntegrationBranchConcurrentAdvanceError
+    // routed through the unsafe "merge already confirmed" recovery path.
+    //
+    // The fix: after update-ref fails, re-read the ref. If observed ==
+    // expected, classify as `ref-update-refused`. Only classify as
+    // `concurrent-advance` when the ref actually moved.
+    const dir = setupRepo("main");
+    const events: Array<{ type: string; metadata?: Record<string, unknown> }> = [];
+    try {
+      const expectedCurrentSha = git(dir, "git rev-parse refs/heads/main");
+      git(dir, "git checkout -b feat");
+      writeFileSync(join(dir, "feature.txt"), "feature\n");
+      git(dir, "git add feature.txt");
+      git(dir, "git commit -m feat");
+      const newSha = git(dir, "git rev-parse HEAD");
+
+      // Simulate update-ref refusal that did NOT move the ref. The cleanest
+      // way to force this is to inject a runGit stub that fails the
+      // update-ref call but leaves the ref untouched (re-read returns the
+      // same expected sha). We monkey-patch the internal test hooks.
+      const { __test__ } = await import("../merger-ref-update-advance.js");
+      const originalRunGit = __test__.runGit;
+      let updateRefSeen = false;
+      __test__.runGit = (async (args: string[], cwd: string) => {
+        if (args[0] === "update-ref") {
+          updateRefSeen = true;
+          // Mimic git's CAS-failure-shaped error message but without
+          // actually moving the ref. This matches the FN-5625 log exactly.
+          throw new Error(
+            `fatal: update_ref failed for ref 'refs/heads/main': cannot lock ref 'refs/heads/main': is at ${expectedCurrentSha} but expected ${expectedCurrentSha}`,
+          );
+        }
+        return originalRunGit(args, cwd);
+      }) as typeof originalRunGit;
+
+      try {
+        const result = await advanceIntegrationBranchRef({
+          rootDir: dir,
+          projectRootDir: dir,
+          integrationBranch: "main",
+          newSha,
+          expectedCurrentSha,
+          taskId: "FN-5627",
+          audit: {
+            git: async (event: any) => events.push(event),
+          } as any,
+        });
+
+        expect(updateRefSeen).toBe(true);
+        expect(result.advanced).toBe(false);
+        if (result.advanced) throw new Error("expected refusal");
+        // The critical assertion: ref-update-refused, NOT concurrent-advance.
+        expect(result.reason).toBe("ref-update-refused");
+        // Observed should equal expected because the ref did not move.
+        expect(result.observedCurrentSha).toBe(expectedCurrentSha);
+        expect(git(dir, "git rev-parse refs/heads/main")).toBe(expectedCurrentSha);
+        // The emitted audit event should also use the correct classification.
+        expect(String(events[0]?.metadata?.error ?? "")).toContain(
+          "ref-update-refused",
+        );
+        expect(String(events[0]?.metadata?.error ?? "")).not.toContain(
+          "concurrent-advance",
+        );
+      } finally {
+        __test__.runGit = originalRunGit;
+      }
+    } finally {
+      removeTmpDirSync(dir);
+    }
+  });
+
   it("throws on missing precondition shas", async () => {
     const dir = setupRepo("main");
     try {

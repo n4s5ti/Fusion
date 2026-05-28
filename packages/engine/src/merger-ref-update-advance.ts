@@ -190,12 +190,36 @@ export async function advanceIntegrationBranchRef(args: {
     return { advanced: true, previousSha: expectedCurrentSha, newSha };
   } catch (error: unknown) {
     const diagnostic = error instanceof Error ? error.message : String(error);
-    const lower = diagnostic.toLowerCase();
-    const isConcurrent = lower.includes("cannot lock ref") || lower.includes("is at") || lower.includes("expected");
-    const reason = isConcurrent ? "concurrent-advance" : "ref-update-refused";
+    // FN-5627: Replace the fragile string heuristic ("is at" / "expected" /
+    // "cannot lock ref") with structured detection. After an update-ref
+    // failure, re-read the ref:
+    //   * If the observed value moved away from expected   → genuine CAS race
+    //     (concurrent-advance).
+    //   * If the observed value still equals expected      → the ref did NOT
+    //     advance and there was no race; update-ref was refused by lock
+    //     contention, a pre/post-ref hook, packed-refs write contention, or
+    //     a permissions/quota error. Classify as `ref-update-refused` so the
+    //     downstream IntegrationBranchConcurrentAdvanceError does NOT fire
+    //     with the misleading "expected X observed X" pair that previously
+    //     routed legitimate ref-update failures into the unsafe "merge
+    //     already confirmed" recovery path (FN-5625 / FN-5623 et al.).
+    let postFailureCurrentSha: string | undefined;
+    try {
+      const { stdout: postStdout } = await testHooks.runGit(
+        ["rev-parse", "--verify", ref],
+        rootDir,
+      );
+      postFailureCurrentSha = postStdout.trim() || undefined;
+    } catch {
+      // Couldn't re-read; preserve original observed value for diagnostics
+      postFailureCurrentSha = observedCurrentSha;
+    }
+    const effectiveObserved = postFailureCurrentSha || observedCurrentSha;
+    const refMoved = !!effectiveObserved && effectiveObserved !== expectedCurrentSha;
+    const reason = refMoved ? "concurrent-advance" : "ref-update-refused";
     await emitRefAdvance({
       succeeded: false,
-      fromSha: observedCurrentSha || expectedCurrentSha,
+      fromSha: effectiveObserved || expectedCurrentSha,
       toSha: newSha,
       error: `${reason}: ${diagnostic}`,
     });
@@ -203,7 +227,7 @@ export async function advanceIntegrationBranchRef(args: {
       advanced: false,
       reason,
       diagnostic,
-      observedCurrentSha,
+      observedCurrentSha: effectiveObserved,
     };
   }
 }

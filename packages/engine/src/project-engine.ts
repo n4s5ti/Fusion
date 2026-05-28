@@ -96,6 +96,69 @@ function isInvalidDoneTransitionError(error: unknown): boolean {
   return message.includes("Invalid transition:") && message.includes("→ 'done'");
 }
 
+/**
+ * FN-5627: Defense-in-depth gate for the auto-merge "merge already confirmed"
+ * fast-path. Verifies the task's recorded `mergeDetails.commitSha` is actually
+ * reachable from the integration branch tip before promoting in-review → done.
+ *
+ * Returns:
+ *  - { reachable: true } when commitSha is an ancestor of integrationBranch.
+ *  - { reachable: false, reason } when it is NOT reachable (the merger poisoned
+ *    the row with mergeConfirmed=true before ref-advance succeeded, OR a self-
+ *    healing path set the flag prematurely). Caller must refuse the fast-path.
+ *  - { reachable: true, skipped: "no-commit-sha" } when commitSha is unset —
+ *    legacy/no-op finalize paths and verified-no-op merges legitimately have
+ *    no commitSha; the fast-path must remain functional for those.
+ */
+async function verifyMergeConfirmedReachability(args: {
+  commitSha: string | undefined;
+  integrationBranch: string | undefined;
+  cwd: string;
+}): Promise<
+  | { reachable: true; skipped?: "no-commit-sha" | "no-integration-branch" }
+  | { reachable: false; reason: "not-ancestor" | "commit-missing" | "git-error"; diagnostic: string }
+> {
+  const { commitSha, integrationBranch, cwd } = args;
+  // No commit sha = legitimate no-op/verified-short-circuit/early-recovery case.
+  if (!commitSha || !commitSha.trim()) {
+    return { reachable: true, skipped: "no-commit-sha" };
+  }
+  // No integration branch resolvable = degrade safely (caller continues fast-path);
+  // this keeps the gate from breaking ancient tasks missing mergeTargetBranch.
+  if (!integrationBranch || !integrationBranch.trim()) {
+    return { reachable: true, skipped: "no-integration-branch" };
+  }
+  // Verify the commit exists locally before testing ancestry — git
+  // merge-base --is-ancestor returns exit 128 for missing commits, which we
+  // want to surface as "commit-missing" rather than "not-ancestor".
+  try {
+    await execFileAsync("git", ["cat-file", "-e", `${commitSha}^{commit}`], {
+      cwd,
+      timeout: 10_000,
+    });
+  } catch (error: unknown) {
+    const diagnostic = error instanceof Error ? error.message : String(error);
+    return { reachable: false, reason: "commit-missing", diagnostic };
+  }
+  try {
+    await execFileAsync(
+      "git",
+      ["merge-base", "--is-ancestor", commitSha, `refs/heads/${integrationBranch}`],
+      { cwd, timeout: 10_000 },
+    );
+    return { reachable: true };
+  } catch (error: unknown) {
+    // Exit code 1 = not an ancestor. Other non-zero = git error.
+    const err = error as { code?: number; message?: string };
+    const code = typeof err.code === "number" ? err.code : undefined;
+    const diagnostic = err.message ?? String(error);
+    if (code === 1) {
+      return { reachable: false, reason: "not-ancestor", diagnostic };
+    }
+    return { reachable: false, reason: "git-error", diagnostic };
+  }
+}
+
 function buildVerificationFailureSignature(error: VerificationError): string {
   const commandResult = error.verificationResult.testResult ?? error.verificationResult.buildResult;
   const lane = commandResult?.command?.trim()
@@ -1377,6 +1440,72 @@ export class ProjectEngine {
             // in-review by auto-recovery after a successful merge) — just
             // complete the task without re-running the merge process.
             if (task.mergeDetails?.mergeConfirmed) {
+              // FN-5627: Reachability defense-in-depth. The merger has a TOCTOU
+              // window where `mergeConfirmed: true` can be persisted to the task
+              // row before `git update-ref refs/heads/<integration>` actually
+              // advances the integration branch. If ref-advance then fails for any
+              // reason (lock contention, hook rejection, misclassified errors via
+              // merger-ref-update-advance.ts string heuristic), the task row is
+              // poisoned. Without this gate, the next auto-merge tick would
+              // silently promote the poisoned row to `done` — exactly the
+              // false-positive completion class that lost FN-5612/5613/5614/5616/
+              // 5623/5625 work on 2026-05-27/28.
+              const integrationBranchForGate =
+                task.mergeDetails.mergeTargetBranch || task.baseBranch || "main";
+              const reachability = await verifyMergeConfirmedReachability({
+                commitSha: task.mergeDetails.commitSha,
+                integrationBranch: integrationBranchForGate,
+                cwd,
+              });
+              if (!reachability.reachable) {
+                const sha = task.mergeDetails.commitSha || "";
+                const shortSha = sha ? sha.slice(0, 8) : "<no-sha>";
+                const errorMsg =
+                  `Merge confirmed flag set but commit ${shortSha} is not reachable from ` +
+                  `${integrationBranchForGate} (${reachability.reason}). ` +
+                  `Task parked in in-review pending manual review.`;
+                runtimeLog.warn(
+                  `Auto-merge: ${taskId} fast-path REFUSED — ${reachability.reason}: ${reachability.diagnostic}`,
+                );
+                await store.logEntry(
+                  taskId,
+                  `[FN-5627] Auto-merge fast-path refused — ${errorMsg}`,
+                );
+                await store.updateTask(taskId, {
+                  mergeDetails: {
+                    ...task.mergeDetails,
+                    mergeConfirmed: false,
+                  },
+                  status: "failed",
+                  error: errorMsg,
+                });
+                try {
+                  const auditor = createRunAuditor(store, {
+                    runId: generateSyntheticRunId("merger-fast-path-refused", taskId),
+                    agentId: "merger",
+                    taskId,
+                    phase: "auto-merge-fast-path-gate",
+                  });
+                  await auditor.database({
+                    type: "merger:fast-path-blocked-foreign-commit",
+                    target: taskId,
+                    metadata: {
+                      taskId,
+                      commitSha: sha,
+                      integrationBranch: integrationBranchForGate,
+                      reason: reachability.reason,
+                      diagnostic: reachability.diagnostic,
+                    },
+                  });
+                } catch (auditErr) {
+                  runtimeLog.warn(
+                    `Auto-merge: ${taskId} fast-path audit emit failed: ${
+                      auditErr instanceof Error ? auditErr.message : String(auditErr)
+                    }`,
+                  );
+                }
+                continue;
+              }
               const blockerReason = getTaskHardMergeBlocker(task as Task);
               if (blockerReason) {
                 await store.updateTask(taskId, {

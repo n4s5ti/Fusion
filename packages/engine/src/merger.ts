@@ -9748,6 +9748,19 @@ export async function aiMergeTask(
     const recordedInsertions = mergeWasEmpty ? 0 : insertions;
     const recordedDeletions = mergeWasEmpty ? 0 : deletions;
 
+    // FN-5627: TOCTOU fix. In reuseTaskWorktreeMerge mode, the integration
+    // branch ref is advanced via `git update-ref` LATER in this function
+    // (see "5c. Advance integration branch ref after squash" below). If we
+    // persist `mergeConfirmed: true` here and the ref-advance then fails for
+    // any reason (lock contention, hook rejection, misclassified non-CAS
+    // errors via merger-ref-update-advance.ts), the task row becomes
+    // poisoned: the project-engine fast-path would silently promote
+    // in-review → done on the next tick, classifying never-landed work as
+    // complete. Defer `mergeConfirmed` to the post-ref-advance promotion
+    // block below for the reuse path. Other paths (legacy in-place merge,
+    // verified no-op fast-paths, owned-commit recovery) advance the ref
+    // BEFORE this point and can safely set the flag here.
+    const mergeConfirmedAtThisPoint = !reuseTaskWorktreeMerge;
     const mergeDetails: MergeDetails = {
       commitSha: recordedSha,
       rebaseBaseSha: !mergeWasEmpty && rebaseMergeBaseSha ? rebaseMergeBaseSha : undefined,
@@ -9760,7 +9773,7 @@ export async function aiMergeTask(
       landedFilesCaptureFallback,
       mergeCommitMessage: aiMergeSummary || commitLog,
       mergedAt: new Date().toISOString(),
-      mergeConfirmed: true,
+      mergeConfirmed: mergeConfirmedAtThisPoint,
       mergeTargetBranch: mergeTarget.branch,
       mergeTargetSource: mergeTarget.source,
       resolutionStrategy: result.resolutionStrategy,
@@ -9873,6 +9886,29 @@ export async function aiMergeTask(
         mergerLog.log(
           `${taskId}: ${integrationBranch} advanced to ${worktreeHeadSha.slice(0, 8)} via update-ref; your checked-out worktree at ${projectRootDir} is now behind`,
         );
+
+        // FN-5627: Promote `mergeConfirmed` to true ONLY after the ref-advance
+        // succeeds. This closes the TOCTOU window where the optimistic write
+        // above poisoned the task row when the ref-advance subsequently failed.
+        try {
+          const currentTask = await store.getTask(taskId).catch(() => null);
+          const currentMergeDetails = currentTask?.mergeDetails;
+          if (currentMergeDetails && !currentMergeDetails.mergeConfirmed) {
+            await store.updateTask(taskId, {
+              mergeDetails: { ...currentMergeDetails, mergeConfirmed: true },
+            });
+          }
+        } catch (promoteErr: unknown) {
+          // Non-fatal: log + continue. The ref already advanced; the worst
+          // case is the next merge tick re-attempts and the work is now
+          // genuinely landed so the reachability gate in project-engine
+          // will succeed.
+          mergerLog.warn(
+            `${taskId}: failed to promote mergeConfirmed post-ref-advance: ${
+              promoteErr instanceof Error ? promoteErr.message : String(promoteErr)
+            }`,
+          );
+        }
 
         // Auto-sync other worktrees still on the integration branch so their
         // index + working tree catch up to the new tip. When `off`, the legacy
