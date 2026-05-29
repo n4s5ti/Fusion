@@ -45,6 +45,39 @@ describe("TaskStore", () => {
   });
 
 
+  describe("moveTask — autoMerge snapshot on in-review", () => {
+    it("snapshots global autoMerge=true when task override is undefined", async () => {
+      await store.updateSettings({ autoMerge: true });
+      const task = await store.createTask({ description: "snapshot true" });
+      await store.moveTask(task.id, "todo");
+      await store.moveTask(task.id, "in-progress");
+
+      const moved = await store.moveTask(task.id, "in-review");
+      expect(moved.autoMerge).toBe(true);
+    });
+
+    it("snapshots global autoMerge=false when task override is undefined", async () => {
+      await store.updateSettings({ autoMerge: false });
+      const task = await store.createTask({ description: "snapshot false" });
+      await store.moveTask(task.id, "todo");
+      await store.moveTask(task.id, "in-progress");
+
+      const moved = await store.moveTask(task.id, "in-review");
+      expect(moved.autoMerge).toBe(false);
+    });
+
+    it("preserves explicit task autoMerge override when entering in-review", async () => {
+      await store.updateSettings({ autoMerge: false });
+      const task = await store.createTask({ description: "explicit override" });
+      await store.updateTask(task.id, { autoMerge: true });
+      await store.moveTask(task.id, "todo");
+      await store.moveTask(task.id, "in-progress");
+
+      const moved = await store.moveTask(task.id, "in-review");
+      expect(moved.autoMerge).toBe(true);
+    });
+  });
+
   describe("moveTask — resets steps when moving back to todo/triage", () => {
     async function setMixedStepStatuses(taskId: string): Promise<void> {
       await store.updateStep(taskId, 0, "done");

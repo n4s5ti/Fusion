@@ -338,6 +338,24 @@ describe("TaskStore", () => {
     });
   });
 
+  describe("autoMerge field persistence", () => {
+    it("persists true/false and clears with null via updateTask", async () => {
+      const task = await harness.store().createTask({ description: "autoMerge persistence" });
+
+      const enabled = await harness.store().updateTask(task.id, { autoMerge: true });
+      expect(enabled.autoMerge).toBe(true);
+
+      const disabled = await harness.store().updateTask(task.id, { autoMerge: false });
+      expect(disabled.autoMerge).toBe(false);
+
+      const cleared = await harness.store().updateTask(task.id, { autoMerge: null });
+      expect(cleared.autoMerge).toBeUndefined();
+
+      const detail = await harness.store().getTask(task.id);
+      expect(detail.autoMerge).toBeUndefined();
+    });
+  });
+
   describe("nodeId persistence", () => {
     it("creates a task with nodeId when provided", async () => {
       const task = await harness.store().createTask({

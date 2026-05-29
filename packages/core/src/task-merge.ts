@@ -1,4 +1,4 @@
-import type { Task, WorkflowStepResult } from "./types.js";
+import type { Settings, Task, WorkflowStepResult } from "./types.js";
 
 export interface MergeTargetResolution {
   branch: string;
@@ -27,6 +27,19 @@ const FUSION_SIBLING_BRANCH_RE = /^fusion\/fn-/i;
 
 function isFusionSiblingBranch(branch: string): boolean {
   return FUSION_SIBLING_BRANCH_RE.test(branch);
+}
+
+/**
+ * Resolves a task's effective auto-merge behavior.
+ * Explicit per-task values (`true`/`false`) take precedence over the global
+ * setting; when `task.autoMerge` is `undefined`, falls back to
+ * `settings.autoMerge`.
+ */
+export function resolveEffectiveAutoMerge(
+  task: Pick<Task, "autoMerge">,
+  settings: Pick<Settings, "autoMerge">,
+): boolean {
+  return task.autoMerge ?? settings.autoMerge;
 }
 
 export function resolveTaskMergeTarget(

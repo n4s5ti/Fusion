@@ -1710,6 +1710,13 @@ export interface Task {
   /** Configured merge target/base branch for this task (task intent).
    *  Defaults to the project default branch when omitted. */
   baseBranch?: string;
+  /** Per-task auto-merge override.
+   *  `undefined` means no explicit per-task value: follow `settings.autoMerge`
+   *  and snapshot that global setting when the task enters `in-review`.
+   *  `true`/`false` are explicit user overrides and take precedence.
+   *  Distinct from GitHub PR metadata (`PrInfo.autoMergeOnGreen` /
+   *  `PrInfo.autoMergeStrategy`), which must not be conflated with this field. */
+  autoMerge?: boolean;
   /** Actual git working branch name used for this task's worktree. May differ from
    *  the conventional `fn/{task-id}` when conflict recovery generated a
    *  unique suffixed name (e.g., `fn/fn-042-2`). */

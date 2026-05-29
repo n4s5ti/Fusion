@@ -294,6 +294,7 @@ export {
   getTaskHardMergeBlocker,
   getTaskCompletionBlocker,
   isTaskReadyForMerge,
+  resolveEffectiveAutoMerge,
   resolveTaskMergeTarget,
   type MergeTargetResolution,
   type MergeTargetResolverOptions,

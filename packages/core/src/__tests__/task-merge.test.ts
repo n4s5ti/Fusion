@@ -8,6 +8,7 @@ import {
   getTaskHardMergeBlocker,
   getTaskMergeBlocker,
   isTaskReadyForMerge,
+  resolveEffectiveAutoMerge,
   resolveTaskMergeTarget,
 } from "../task-merge.js";
 
@@ -24,6 +25,24 @@ const baseCompletionTask = {
   dependencies: [] as string[],
   blockedBy: undefined as string | undefined,
 };
+
+describe("resolveEffectiveAutoMerge", () => {
+  it("prefers explicit true over global false", () => {
+    expect(resolveEffectiveAutoMerge({ autoMerge: true }, { autoMerge: false })).toBe(true);
+  });
+
+  it("prefers explicit false over global true", () => {
+    expect(resolveEffectiveAutoMerge({ autoMerge: false }, { autoMerge: true })).toBe(false);
+  });
+
+  it("falls back to global true when task value is undefined", () => {
+    expect(resolveEffectiveAutoMerge({ autoMerge: undefined }, { autoMerge: true })).toBe(true);
+  });
+
+  it("falls back to global false when task value is undefined", () => {
+    expect(resolveEffectiveAutoMerge({ autoMerge: undefined }, { autoMerge: false })).toBe(false);
+  });
+});
 
 describe("resolveTaskMergeTarget", () => {
   it("prefers task baseBranch when present", () => {

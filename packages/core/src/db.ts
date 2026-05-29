@@ -149,7 +149,7 @@ export function probeFts5(db: DatabaseSync): boolean {
 
 // ── Schema Definition ────────────────────────────────────────────────
 
-const SCHEMA_VERSION = 93;
+const SCHEMA_VERSION = 94;
 
 function normalizeTaskComments(
   steeringComments: SteeringComment[] | undefined,
@@ -291,6 +291,7 @@ CREATE TABLE IF NOT EXISTS tasks (
   mergeDetails TEXT,
   breakIntoSubtasks INTEGER DEFAULT 0,
   noCommitsExpected INTEGER DEFAULT 0,
+  autoMerge INTEGER,
   enabledWorkflowSteps TEXT DEFAULT '[]',
   modifiedFiles TEXT DEFAULT '[]',
   missionId TEXT,
@@ -3648,6 +3649,12 @@ export class Database {
           CREATE UNIQUE INDEX IF NOT EXISTS uxGoalCitationsDedup
             ON goal_citations(goalId, surface, sourceRef)
         `);
+      });
+    }
+
+    if (version < 94) {
+      this.applyMigration(94, () => {
+        this.addColumnIfMissing("tasks", "autoMerge", "INTEGER");
       });
     }
 
