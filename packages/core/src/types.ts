@@ -1307,6 +1307,57 @@ export interface TaskDocumentWithTask extends TaskDocument {
   taskColumn?: string;
 }
 
+/**
+ * Goal-citation Slice 2 success-signal surfaces where goal IDs are extracted.
+ */
+export type GoalCitationSurface = "agent_log" | "task_document";
+
+/**
+ * A unique extracted goal ID and the index of its first appearance in source text.
+ */
+export interface GoalCitationMatch {
+  goalId: string;
+  index: number;
+}
+
+/**
+ * Input payload for recording a single observed goal citation in the Slice 2 success-signal trail.
+ * `snippet` must be a bounded source-text substring (≤200 chars), never the full source body.
+ */
+export interface GoalCitationInput {
+  goalId: string;
+  agentId: string;
+  taskId?: string;
+  surface: GoalCitationSurface;
+  sourceRef: string;
+  snippet: string;
+  timestamp?: string;
+}
+
+/**
+ * Persisted goal-citation audit row used to measure Slice 2 anchoring success signal.
+ * `snippet` is always a bounded substring (≤200 chars), not full source content.
+ */
+export interface GoalCitation extends Required<Pick<GoalCitationInput, "goalId" | "agentId" | "surface" | "sourceRef" | "snippet">> {
+  id: number;
+  taskId?: string;
+  timestamp: string;
+}
+
+/**
+ * Filter contract for querying goal-citation success-signal rows across scanned surfaces.
+ * Snippet payloads remain bounded substrings (≤200 chars) of original text.
+ */
+export interface GoalCitationFilter {
+  goalId?: string;
+  agentId?: string;
+  taskId?: string;
+  surface?: GoalCitationSurface;
+  startTime?: string;
+  endTime?: string;
+  limit?: number;
+}
+
 export const DOCUMENT_KEY_RE = /^[a-zA-Z0-9_-]{1,64}$/;
 
 /** Shared GitHub owner/repo slug validation for repo override inputs. */

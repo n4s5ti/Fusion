@@ -149,7 +149,7 @@ export function probeFts5(db: DatabaseSync): boolean {
 
 // ── Schema Definition ────────────────────────────────────────────────
 
-const SCHEMA_VERSION = 92;
+const SCHEMA_VERSION = 93;
 
 function normalizeTaskComments(
   steeringComments: SteeringComment[] | undefined,
@@ -771,6 +771,22 @@ CREATE TABLE IF NOT EXISTS goals (
   updatedAt TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idxGoalsStatus ON goals(status);
+
+CREATE TABLE IF NOT EXISTS goal_citations (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  goalId TEXT NOT NULL,
+  agentId TEXT NOT NULL,
+  taskId TEXT,
+  surface TEXT NOT NULL,
+  sourceRef TEXT NOT NULL,
+  snippet TEXT NOT NULL,
+  timestamp TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idxGoalCitationsGoalId ON goal_citations(goalId);
+CREATE INDEX IF NOT EXISTS idxGoalCitationsAgentId ON goal_citations(agentId);
+CREATE INDEX IF NOT EXISTS idxGoalCitationsTimestamp ON goal_citations(timestamp);
+CREATE UNIQUE INDEX IF NOT EXISTS uxGoalCitationsDedup
+  ON goal_citations(goalId, surface, sourceRef);
 
 -- Milestones table (phases within a mission)
 CREATE TABLE IF NOT EXISTS milestones (
@@ -3598,6 +3614,39 @@ export class Database {
         this.db.exec(`
           CREATE INDEX IF NOT EXISTS idxGoalsStatus
             ON goals(status)
+        `);
+      });
+    }
+
+    if (version < 93) {
+      this.applyMigration(93, () => {
+        this.db.exec(`
+          CREATE TABLE IF NOT EXISTS goal_citations (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            goalId TEXT NOT NULL,
+            agentId TEXT NOT NULL,
+            taskId TEXT,
+            surface TEXT NOT NULL,
+            sourceRef TEXT NOT NULL,
+            snippet TEXT NOT NULL,
+            timestamp TEXT NOT NULL
+          )
+        `);
+        this.db.exec(`
+          CREATE INDEX IF NOT EXISTS idxGoalCitationsGoalId
+            ON goal_citations(goalId)
+        `);
+        this.db.exec(`
+          CREATE INDEX IF NOT EXISTS idxGoalCitationsAgentId
+            ON goal_citations(agentId)
+        `);
+        this.db.exec(`
+          CREATE INDEX IF NOT EXISTS idxGoalCitationsTimestamp
+            ON goal_citations(timestamp)
+        `);
+        this.db.exec(`
+          CREATE UNIQUE INDEX IF NOT EXISTS uxGoalCitationsDedup
+            ON goal_citations(goalId, surface, sourceRef)
         `);
       });
     }

@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import { mkdir, readdir, readFile, writeFile, rename, unlink } from "node:fs/promises";
 import { join } from "node:path";
 import { existsSync, watch, type FSWatcher } from "node:fs";
-import type { Task, TaskDetail, TaskCreateInput, TaskAttachment, AgentLogEntry, BoardConfig, Column, CheckoutClaimPrecondition, MergeResult, Settings, GlobalSettings, ProjectSettings, ActivityLogEntry, ActivityEventType, TaskDocument, TaskDocumentRevision, TaskDocumentCreateInput, TaskDocumentWithTask, InboxTask, TaskLogEntry, RunMutationContext, RunAuditEvent, RunAuditEventInput, RunAuditEventFilter, ArchivedTaskEntry, ArchiveAgentLogMode, TaskPriority, SourceType, WorkflowStepTemplate, Agent, AutostashOrphanRecord, TaskCommitAssociation, TaskCommitAssociationMatchSource, TaskCommitAssociationConfidence, GithubIssueAction, MergeQueueEntry, MergeQueueEnqueueOptions, MergeQueueAcquireOptions, MergeQueueReleaseOutcome, HandoffToReviewOptions } from "./types.js";
+import type { Task, TaskDetail, TaskCreateInput, TaskAttachment, AgentLogEntry, BoardConfig, Column, CheckoutClaimPrecondition, MergeResult, Settings, GlobalSettings, ProjectSettings, ActivityLogEntry, ActivityEventType, TaskDocument, TaskDocumentRevision, TaskDocumentCreateInput, TaskDocumentWithTask, InboxTask, TaskLogEntry, RunMutationContext, RunAuditEvent, RunAuditEventInput, RunAuditEventFilter, ArchivedTaskEntry, ArchiveAgentLogMode, TaskPriority, SourceType, WorkflowStepTemplate, Agent, AutostashOrphanRecord, TaskCommitAssociation, TaskCommitAssociationMatchSource, TaskCommitAssociationConfidence, GithubIssueAction, MergeQueueEntry, MergeQueueEnqueueOptions, MergeQueueAcquireOptions, MergeQueueReleaseOutcome, HandoffToReviewOptions, GoalCitation, GoalCitationFilter, GoalCitationInput, GoalCitationSurface } from "./types.js";
 import { createActivityLogSnapshot, createRunAuditSnapshot, createTaskMetadataSnapshot, toTaskMetadataRecord, validateSnapshotEnvelope, type ActivityLogSnapshot, type RunAuditSnapshot, type TaskMetadataSnapshot } from "./shared-mesh-state.js";
 import { VALID_TRANSITIONS, DEFAULT_SETTINGS, isGlobalOnlySettingsKey, WORKFLOW_STEP_TEMPLATES, validateDocumentKey } from "./types.js";
 import { DEFAULT_PROJECT_SETTINGS } from "./settings-schema.js";
@@ -14,6 +14,7 @@ import { GlobalSettingsStore } from "./global-settings.js";
 import { Database, toJson, toJsonNullable, fromJson } from "./db.js";
 import { ArchiveDatabase } from "./archive-db.js";
 import { detectLegacyData, migrateFromLegacy } from "./db-migrate.js";
+import { buildSnippet, extractGoalCitations } from "./goal-citation-extractor.js";
 import { MissionStore } from "./mission-store.js";
 import { PluginStore } from "./plugin-store.js";
 import { InsightStore } from "./insight-store.js";
@@ -250,6 +251,17 @@ interface TaskDocumentRevisionRow {
   author: string;
   metadata: string | null;
   createdAt: string;
+}
+
+interface GoalCitationRow {
+  id: number;
+  goalId: string;
+  agentId: string;
+  taskId: string | null;
+  surface: GoalCitationSurface;
+  sourceRef: string;
+  snippet: string;
+  timestamp: string;
 }
 
 /** Database row shape for the runAuditEvents table. */
@@ -1736,6 +1748,120 @@ export class TaskStore extends EventEmitter<TaskStoreEvents> {
       metadata: fromJson<Record<string, unknown>>(row.metadata),
       createdAt: row.createdAt,
     };
+  }
+
+  private rowToGoalCitation(row: GoalCitationRow): GoalCitation {
+    return {
+      id: row.id,
+      goalId: row.goalId,
+      agentId: row.agentId,
+      ...(row.taskId ? { taskId: row.taskId } : {}),
+      surface: row.surface,
+      sourceRef: row.sourceRef,
+      snippet: row.snippet,
+      timestamp: row.timestamp,
+    };
+  }
+
+  recordGoalCitations(inputs: GoalCitationInput[]): GoalCitation[] {
+    if (inputs.length === 0) {
+      return [];
+    }
+
+    const now = new Date().toISOString();
+    const stmt = this.db.prepare(`
+      INSERT OR IGNORE INTO goal_citations (goalId, agentId, taskId, surface, sourceRef, snippet, timestamp)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+      RETURNING *
+    `);
+
+    const inserted: GoalCitation[] = [];
+    this.db.transaction(() => {
+      for (const input of inputs) {
+        const row = stmt.get(
+          input.goalId,
+          input.agentId,
+          input.taskId ?? null,
+          input.surface,
+          input.sourceRef,
+          input.snippet,
+          input.timestamp ?? now,
+        ) as GoalCitationRow | undefined;
+        if (row) {
+          inserted.push(this.rowToGoalCitation(row));
+        }
+      }
+      if (inserted.length > 0) {
+        this.db.bumpLastModified();
+      }
+    });
+
+    return inserted;
+  }
+
+  listGoalCitations(filter: GoalCitationFilter = {}): GoalCitation[] {
+    const clauses: string[] = [];
+    const params: Array<string | number> = [];
+
+    if (filter.goalId) {
+      clauses.push("goalId = ?");
+      params.push(filter.goalId);
+    }
+    if (filter.agentId) {
+      clauses.push("agentId = ?");
+      params.push(filter.agentId);
+    }
+    if (filter.taskId) {
+      clauses.push("taskId = ?");
+      params.push(filter.taskId);
+    }
+    if (filter.surface) {
+      clauses.push("surface = ?");
+      params.push(filter.surface);
+    }
+    if (filter.startTime) {
+      clauses.push("timestamp >= ?");
+      params.push(filter.startTime);
+    }
+    if (filter.endTime) {
+      clauses.push("timestamp <= ?");
+      params.push(filter.endTime);
+    }
+
+    const where = clauses.length > 0 ? `WHERE ${clauses.join(" AND ")}` : "";
+    const limit = Math.max(1, Math.min(filter.limit ?? 200, 1000));
+
+    const rows = this.db
+      .prepare(
+        `SELECT * FROM goal_citations ${where} ORDER BY timestamp DESC, id DESC LIMIT ?`,
+      )
+      .all(...params, limit) as GoalCitationRow[];
+
+    return rows.map((row) => this.rowToGoalCitation(row));
+  }
+
+  private scanAndRecordCitations(
+    text: string,
+    surface: GoalCitationSurface,
+    sourceRef: string,
+    agentId: string,
+    taskId?: string,
+    timestamp?: string,
+  ): GoalCitationInput[] {
+    const matches = extractGoalCitations(text);
+    if (matches.length === 0) {
+      return [];
+    }
+
+    return matches.map((match) => ({
+      goalId: match.goalId,
+      agentId,
+      ...(taskId ? { taskId } : {}),
+      surface,
+      sourceRef,
+      snippet: buildSnippet(text, match.index),
+      ...(timestamp ? { timestamp } : {}),
+    }));
   }
 
   private getTaskSelectClause(slim: boolean, tableAlias?: string): string {
@@ -8137,8 +8263,42 @@ export class TaskStore extends EventEmitter<TaskStoreEvents> {
             INSERT INTO agentLogEntries (taskId, timestamp, text, type, detail, agent)
             VALUES (?, ?, ?, ?, ?, ?)
           `);
+          const citationInputs: GoalCitationInput[] = [];
           for (const entry of validEntries) {
-            stmt.run(entry.taskId, entry.timestamp, entry.text, entry.type, entry.detail, entry.agent);
+            const insertResult = stmt.run(
+              entry.taskId,
+              entry.timestamp,
+              entry.text,
+              entry.type,
+              entry.detail,
+              entry.agent,
+            ) as { lastInsertRowid?: number | bigint };
+            const insertedId = insertResult.lastInsertRowid;
+            if (insertedId === undefined || insertedId === null) {
+              continue;
+            }
+            const sourceRef = `agentLog:${String(insertedId)}`;
+            try {
+              citationInputs.push(
+                ...this.scanAndRecordCitations(
+                  entry.text,
+                  "agent_log",
+                  sourceRef,
+                  entry.agent ?? "unknown",
+                  entry.taskId,
+                  entry.timestamp,
+                ),
+              );
+            } catch (err) {
+              console.warn("[fusion] Failed to scan goal citations from agent_log:", err);
+            }
+          }
+          if (citationInputs.length > 0) {
+            try {
+              this.recordGoalCitations(citationInputs);
+            } catch (err) {
+              console.warn("[fusion] Failed to record goal citations from agent_log batch:", err);
+            }
           }
           this.db.bumpLastModified();
         }
@@ -8194,15 +8354,41 @@ export class TaskStore extends EventEmitter<TaskStoreEvents> {
     `);
 
     this.db.transaction(() => {
+      const citationInputs: GoalCitationInput[] = [];
       for (const entry of normalizedEntries) {
-        stmt.run(
+        const insertResult = stmt.run(
           entry.taskId,
           timestamp,
           entry.text,
           entry.type,
           entry.detail ?? null,
           entry.agent ?? null,
-        );
+        ) as { lastInsertRowid?: number | bigint };
+        const insertedId = insertResult.lastInsertRowid;
+        if (insertedId === undefined || insertedId === null) {
+          continue;
+        }
+        try {
+          citationInputs.push(
+            ...this.scanAndRecordCitations(
+              entry.text,
+              "agent_log",
+              `agentLog:${String(insertedId)}`,
+              entry.agent ?? "unknown",
+              entry.taskId,
+              timestamp,
+            ),
+          );
+        } catch (err) {
+          console.warn("[fusion] Failed to scan goal citations from agent log batch:", err);
+        }
+      }
+      if (citationInputs.length > 0) {
+        try {
+          this.recordGoalCitations(citationInputs);
+        } catch (err) {
+          console.warn("[fusion] Failed to record goal citations from appendAgentLogBatch:", err);
+        }
       }
       this.db.bumpLastModified();
     });
@@ -8711,6 +8897,22 @@ export class TaskStore extends EventEmitter<TaskStoreEvents> {
     this.db.bumpLastModified();
     const task = await this.getTask(taskId);
     this.emit("task:updated", task);
+
+    try {
+      const citationInputs = this.scanAndRecordCitations(
+        input.content,
+        "task_document",
+        `document:${taskId}:${input.key}:rev${document.revision}`,
+        input.author ?? "user",
+        taskId,
+        document.updatedAt,
+      );
+      if (citationInputs.length > 0) {
+        this.recordGoalCitations(citationInputs);
+      }
+    } catch (err) {
+      console.warn("[fusion] Failed to scan/record goal citations from task document:", err);
+    }
 
     return document;
   }

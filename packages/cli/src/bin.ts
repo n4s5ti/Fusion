@@ -127,7 +127,7 @@ async function loadCommandHandlers() {
   const { runBackupCreate, runBackupList, runBackupRestore, runBackupCleanup } = await import("./commands/backup.js");
   const { runMemoryBackupCreate, runMemoryBackupList, runMemoryBackupRestore } = await import("./commands/memory-backup.js");
   const { runMissionCreate, runMissionList, runMissionShow, runMissionDelete, runMissionActivateSlice } = await import("./commands/mission.js");
-  const { runGoalsList, runGoalsCreate, runGoalsArchive } = await import("./commands/goals.js");
+  const { runGoalsList, runGoalsCreate, runGoalsArchive, runGoalsCitations } = await import("./commands/goals.js");
   const { runProjectList, runProjectAdd, runProjectRemove, runProjectShow, runProjectInfo, runProjectSetDefault, runProjectDetect } = await import("./commands/project.js");
   const { runNodeList, runNodeConnect, runNodeDisconnect, runNodeShow, runNodeHealth, runMeshStatus } = await import("./commands/node.js");
   const { runInit } = await import("./commands/init.js");
@@ -196,6 +196,7 @@ async function loadCommandHandlers() {
     runGoalsList,
     runGoalsCreate,
     runGoalsArchive,
+    runGoalsCitations,
     runProjectList,
     runProjectAdd,
     runProjectRemove,
@@ -316,6 +317,7 @@ PR:
   fn goals list [--status STATE]      List goals (default: active)
   fn goals create [title] [desc]      Create a new goal
   fn goals archive <id>               Archive a goal
+  fn goals citations [flags]          List recorded goal-ID citations across agent logs and task documents (Slice 2 success signal)
   fn project list | ls [--json]       List all registered projects
   fn project add [name] [path] [opts]  Register a new project
   fn project remove | rm <name> [--force]
@@ -603,6 +605,7 @@ async function main() {
     runGoalsList,
     runGoalsCreate,
     runGoalsArchive,
+    runGoalsCitations,
     runProjectList,
     runProjectAdd,
     runProjectRemove,
@@ -1367,9 +1370,21 @@ async function main() {
             await runGoalsArchive(id, projectName);
             break;
           }
+          case "citations": {
+            const goalId = getFlagValue(args, "--goal");
+            const agentId = getFlagValue(args, "--agent");
+            const surface = getFlagValue(args, "--surface") as "agent_log" | "task_document" | undefined;
+            const since = getFlagValue(args, "--since");
+            const until = getFlagValue(args, "--until");
+            const limitValue = getFlagValue(args, "--limit");
+            const limit = limitValue ? Number(limitValue) : undefined;
+            const json = args.includes("--json");
+            await runGoalsCitations(projectName, { goalId, agentId, surface, since, until, limit, json });
+            break;
+          }
           default:
             console.error(`Unknown subcommand: goals ${subcommand || ""}`);
-            console.log("Try: fn goals list | create | archive");
+            console.log("Try: fn goals list | create | archive | citations");
             process.exit(1);
         }
         break;

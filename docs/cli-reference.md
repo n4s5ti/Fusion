@@ -626,19 +626,21 @@ Subcommands: `create`, `list|ls`, `show|info`, `delete`, `activate-slice`.
 
 ## `fn goals`
 
-Goal management operations (Slice 1 author-facing surface only; no agent anchoring yet).
+Goal management operations, including Slice 2 citation-audit queries.
 
 ```bash
 fn goals list [--status active|archived|all]
 fn goals create "Improve reliability" "Reduce flaky tests and retries"
 fn goals archive G-001
+fn goals citations [--goal <id>] [--agent <id>] [--surface <agent_log|task_document>] [--since <iso>] [--until <iso>] [--limit <n>] [--json]
 ```
 
-Subcommands: `list|ls`, `create`, `archive`.
+Subcommands: `list|ls`, `create`, `archive`, `citations`.
 
 Notes:
 - `fn goals list` defaults to `active` goals.
 - Active goals have a hard cap of 5. Create operations fail cleanly once the cap is reached.
+- `fn goals citations` lists recorded goal-ID citations across `agent_log` and `task_document` and supports machine-readable output with `--json`.
 
 ---
 

@@ -1,10 +1,21 @@
 import { createInterface } from "node:readline/promises";
+import type { GoalCitationSurface } from "@fusion/core";
 import { getStore } from "../project-resolver.js";
 
 type GoalStatusFilter = "active" | "archived" | "all";
 
 interface RunGoalsListOptions {
   status?: GoalStatusFilter;
+}
+
+interface RunGoalsCitationsOptions {
+  goalId?: string;
+  agentId?: string;
+  surface?: GoalCitationSurface;
+  since?: string;
+  until?: string;
+  limit?: number;
+  json?: boolean;
 }
 
 const ACTIVE_SOFT_WARNING_THRESHOLD = 3;
@@ -113,6 +124,38 @@ export async function runGoalsCreate(
     }
     throw error;
   }
+}
+
+export async function runGoalsCitations(
+  projectName: string | undefined,
+  opts: RunGoalsCitationsOptions,
+): Promise<void> {
+  const store = await getStore({ project: projectName });
+
+  const rows = store.listGoalCitations({
+    goalId: opts.goalId,
+    agentId: opts.agentId,
+    surface: opts.surface,
+    startTime: opts.since,
+    endTime: opts.until,
+    limit: opts.limit ?? 50,
+  });
+
+  if (opts.json) {
+    console.log(JSON.stringify(rows, null, 2));
+    return;
+  }
+
+  if (rows.length === 0) {
+    console.log("No goal citations match the filter.");
+    return;
+  }
+
+  for (const row of rows) {
+    console.log(`${row.timestamp}  ${row.goalId}  ${row.agentId}  ${row.surface}  ${row.sourceRef}`);
+    console.log(`  ${row.snippet}`);
+  }
+  console.log(`\n${rows.length} citation(s).`);
 }
 
 export async function runGoalsArchive(idArg: string | undefined, projectName?: string): Promise<void> {

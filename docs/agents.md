@@ -1504,6 +1504,21 @@ Universal baseline: available by default across executor, step-session, reviewer
 - Read-only (no JS rendering, no auth flows, no POST/cookie workflows)
 - Use the `agent-browser` skill when JS rendering or interactive navigation is required
 
+## Goal-citation audit trail (Slice 2 success signal)
+
+Agents now emit a durable goal-citation signal whenever reasoning text includes a goal ID.
+
+- Scanned surfaces: `agent_log` and `task_document`.
+- Regex contract: `GOAL_ID_PATTERN = /\bG-[0-9A-Z]+(?:-[0-9A-Z]+)*\b/g` (uppercase `G-...` only).
+- Snippets are bounded windows (`GOAL_CITATION_SNIPPET_MAX = 200`) around the first match per goal ID, with whitespace collapsed.
+- Query via CLI:
+  - `fn goals citations --since <iso> --until <iso>`
+  - `fn goals citations --goal G-XXXX --since <iso>`
+- Example row:
+  - `2026-05-29T08:10:00.000Z  G-1ABC-2-XYZ9  agent-ops  agent_log  agentLog:4821`
+  - `    ...anchoring this plan to G-1ABC-2-XYZ9 before execution...`
+- Programmatic consumers can query the same signal through `TaskStore.listGoalCitations(...)`.
+
 ## Agent coordination tools summary
 
 Seven coordination tools support spawning, provisioning, discovery, delegation, and direct-report config.

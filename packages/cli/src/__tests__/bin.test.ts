@@ -59,6 +59,7 @@ const commandMocks = vi.hoisted(() => ({
   runGoalsList: vi.fn(),
   runGoalsCreate: vi.fn(),
   runGoalsArchive: vi.fn(),
+  runGoalsCitations: vi.fn(),
 
   runProjectList: vi.fn(),
   runProjectAdd: vi.fn(),
@@ -177,6 +178,7 @@ vi.mock("../commands/goals.js", () => ({
   runGoalsList: commandMocks.runGoalsList,
   runGoalsCreate: commandMocks.runGoalsCreate,
   runGoalsArchive: commandMocks.runGoalsArchive,
+  runGoalsCitations: commandMocks.runGoalsCitations,
 }));
 
 vi.mock("../commands/project.js", () => ({
