@@ -151,6 +151,7 @@ export interface TaskMetadataEvidence extends TaskEvidenceEntryBase {
     verificationFailureCount: number;
     mergeConflictBounceCount: number;
     mergeAuditBounceCount: number;
+    mergeTransientRetryCount: number;
   };
 }
 

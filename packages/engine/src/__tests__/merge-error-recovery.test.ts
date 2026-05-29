@@ -54,6 +54,7 @@ type MockTask = {
   mergeDetails?: { mergeConfirmed?: boolean; commitSha?: string; mergedAt?: string } | null;
   verificationFailureCount?: number;
   mergeConflictBounceCount?: number;
+  mergeTransientRetryCount?: number;
   branch?: string;
   worktree?: string;
   sourceType?: string;
@@ -591,7 +592,56 @@ describe("ProjectEngine merge error recovery", () => {
     );
   });
 
+  it("re-enqueues direct merge on transient non-conflict errors", async () => {
+    vi.useFakeTimers();
+    const setTimeoutSpy = vi.spyOn(globalThis, "setTimeout");
+    const store = makeStore();
+    vi.mocked(aiMergeTask).mockRejectedValueOnce(new Error("This operation was aborted"));
+
+    const engine = createEngine(store);
+    const privateEngine = engine as unknown as { internalEnqueueMerge: (taskId: string) => void };
+    const enqueueSpy = vi.spyOn(privateEngine, "internalEnqueueMerge");
+    await runMergeCycle(engine);
+
+    expect(store.updateTask).toHaveBeenCalledWith(TASK_ID, {
+      mergeTransientRetryCount: 1,
+      status: null,
+    });
+    expect(store.updateTask).not.toHaveBeenCalledWith(
+      TASK_ID,
+      expect.objectContaining({ status: "failed" }),
+    );
+    expect(setTimeoutSpy).toHaveBeenCalledWith(expect.any(Function), 5000);
+
+    await vi.advanceTimersByTimeAsync(5000);
+    expect(enqueueSpy).toHaveBeenCalledWith(TASK_ID);
+    vi.useRealTimers();
+  });
+
+  it("parks direct merge when transient retry cap is exhausted", async () => {
+    const store = makeStore({
+      tasks: [makeTask({ mergeTransientRetryCount: 3 }), makeTask({ mergeTransientRetryCount: 3 })],
+    });
+    vi.mocked(aiMergeTask).mockRejectedValueOnce(new Error("socket hang up"));
+
+    const engine = createEngine(store);
+    await runMergeCycle(engine);
+
+    expect(store.updateTask).toHaveBeenCalledWith(TASK_ID, {
+      status: "failed",
+      mergeRetries: 3,
+      error: "socket hang up",
+    });
+    expect(store.logEntry).toHaveBeenCalledWith(
+      TASK_ID,
+      expect.stringContaining("transient retries exhausted"),
+      "MergeTransientRetryExhausted",
+    );
+  });
+
   it("stores terminal merge metadata for non-conflict direct merge errors", async () => {
+    vi.useFakeTimers();
+    const setTimeoutSpy = vi.spyOn(globalThis, "setTimeout");
     const store = makeStore();
     vi.mocked(aiMergeTask).mockRejectedValueOnce(new Error("remote branch missing"));
 
@@ -603,7 +653,13 @@ describe("ProjectEngine merge error recovery", () => {
       mergeRetries: 3,
       error: "remote branch missing",
     });
+    expect(store.updateTask).not.toHaveBeenCalledWith(
+      TASK_ID,
+      expect.objectContaining({ mergeTransientRetryCount: expect.any(Number) }),
+    );
+    expect(setTimeoutSpy).not.toHaveBeenCalledWith(expect.any(Function), 5000);
     expect(hasErrorLog(errorSpy, "after non-conflict error")).toBe(false);
+    vi.useRealTimers();
   });
 
   it("parks merge-confirmed tasks in stable failed state when finalization is blocked by incomplete steps", async () => {
@@ -696,6 +752,37 @@ describe("ProjectEngine merge error recovery", () => {
       true,
     );
     expect(hasErrorLog(errorSpy, "sqlite locked")).toBe(true);
+  });
+
+  it("re-enqueues pull-request merge on transient strategy errors", async () => {
+    vi.useFakeTimers();
+    const setTimeoutSpy = vi.spyOn(globalThis, "setTimeout");
+    const processPullRequestMerge = vi.fn(async () => {
+      throw new Error("socket hang up");
+    });
+    const store = makeStore();
+
+    const engine = createEngine(store, {
+      getMergeStrategy: () => "pull-request",
+      processPullRequestMerge,
+    });
+    const privateEngine = engine as unknown as { internalEnqueueMerge: (taskId: string) => void };
+    const enqueueSpy = vi.spyOn(privateEngine, "internalEnqueueMerge");
+
+    await runMergeCycle(engine);
+
+    expect(store.updateTask).toHaveBeenCalledWith(TASK_ID, {
+      mergeTransientRetryCount: 1,
+      status: null,
+    });
+    expect(store.updateTask).not.toHaveBeenCalledWith(
+      TASK_ID,
+      expect.objectContaining({ status: "failed" }),
+    );
+    expect(setTimeoutSpy).toHaveBeenCalledWith(expect.any(Function), 5000);
+    await vi.advanceTimersByTimeAsync(5000);
+    expect(enqueueSpy).toHaveBeenCalledWith(TASK_ID);
+    vi.useRealTimers();
   });
 
   it("logs when non-direct merge strategy recovery update fails", async () => {

@@ -1893,6 +1893,13 @@ export interface Task {
    *  `MAX_MERGE_AUDIT_BOUNCES`, the task is parked with `status="failed"` and a
    *  recovery follow-up task is created. */
   mergeAuditBounceCount?: number;
+  /** Number of transient auto-merge retries consumed after provider/network abort
+   *  errors (for example AbortError, socket hang up, server_error payloads).
+   *  Distinct from `mergeRetries` (in-cycle conflict retries) and
+   *  `mergeConflictBounceCount` (in-review→in-progress conflict bounces).
+   *  Bounded by `MAX_AUTO_MERGE_TRANSIENT_RETRIES`; once exhausted, the task is
+   *  parked with `status="failed"` instead of re-enqueued. */
+  mergeTransientRetryCount?: number;
   /** Number of branch-conflict recovery attempts consumed by executor branch
    *  conflict auto-recovery loops. Incremented once per recovery retry attempt. */
   branchConflictRecoveryCount?: number;

@@ -149,7 +149,7 @@ export function probeFts5(db: DatabaseSync): boolean {
 
 // ── Schema Definition ────────────────────────────────────────────────
 
-const SCHEMA_VERSION = 94;
+const SCHEMA_VERSION = 95;
 
 function normalizeTaskComments(
   steeringComments: SteeringComment[] | undefined,
@@ -247,6 +247,7 @@ CREATE TABLE IF NOT EXISTS tasks (
   completionHandoffLimboRecoveryCount INTEGER DEFAULT 0,
   mergeConflictBounceCount INTEGER DEFAULT 0,
   mergeAuditBounceCount INTEGER DEFAULT 0,
+  mergeTransientRetryCount INTEGER DEFAULT 0,
   nextRecoveryAt TEXT,
   error TEXT,
   summary TEXT,
@@ -3357,6 +3358,12 @@ export class Database {
 
     if (version < 75) {
       this.applyMigration(75, () => {
+        this.addColumnIfMissing("tasks", "mergeTransientRetryCount", "INTEGER DEFAULT 0");
+      });
+    }
+
+    if (version < 76) {
+      this.applyMigration(76, () => {
         this.db.exec(`
           CREATE TABLE IF NOT EXISTS experiment_sessions (
             id TEXT PRIMARY KEY,
@@ -3399,44 +3406,44 @@ export class Database {
       });
     }
 
-    if (version < 76) {
-      this.applyMigration(76, () => {
+    if (version < 77) {
+      this.applyMigration(77, () => {
         this.addColumnIfMissing("workflow_steps", "gateMode", "TEXT NOT NULL DEFAULT 'advisory'");
         // FN-4368: advisory-by-default for all legacy workflow_steps rows; users opt in to 'gate' via UI.
         this.db.exec("UPDATE workflow_steps SET gateMode = 'advisory'");
       });
     }
 
-    if (version < 77) {
-      this.applyMigration(77, () => {
+    if (version < 78) {
+      this.applyMigration(78, () => {
         this.addColumnIfMissing("tasks", "tokenBudgetSoftAlertedAt", "TEXT");
         this.addColumnIfMissing("tasks", "tokenBudgetHardAlertedAt", "TEXT");
         this.addColumnIfMissing("tasks", "tokenBudgetOverride", "TEXT");
       });
     }
 
-    if (version < 78) {
-      this.applyMigration(78, () => {
+    if (version < 79) {
+      this.applyMigration(79, () => {
         this.addColumnIfMissing("tasks", "branchConflictRecoveryCount", "INTEGER DEFAULT 0");
         this.addColumnIfMissing("tasks", "reviewerContextRetryCount", "INTEGER DEFAULT 0");
         this.addColumnIfMissing("tasks", "reviewerFallbackRetryCount", "INTEGER DEFAULT 0");
       });
     }
 
-    if (version < 79) {
-      this.applyMigration(79, () => {
-        this.addColumnIfMissing("tasks", "overlapBlockedBy", "TEXT");
-      });
-    }
-
     if (version < 80) {
       this.applyMigration(80, () => {
-        this.addColumnIfMissing("milestones", "acceptanceCriteria", "TEXT");
+        this.addColumnIfMissing("tasks", "overlapBlockedBy", "TEXT");
       });
     }
 
     if (version < 81) {
       this.applyMigration(81, () => {
+        this.addColumnIfMissing("milestones", "acceptanceCriteria", "TEXT");
+      });
+    }
+
+    if (version < 82) {
+      this.applyMigration(82, () => {
         this.addColumnIfMissing("tasks", "firstExecutionAt", "TEXT");
         this.addColumnIfMissing("tasks", "cumulativeActiveMs", "INTEGER");
         if (this.hasColumn("tasks", "executionStartedAt")) {
@@ -3452,14 +3459,14 @@ export class Database {
       });
     }
 
-    if (version < 82) {
-      this.applyMigration(82, () => {
+    if (version < 83) {
+      this.applyMigration(83, () => {
         this.addColumnIfMissing("tasks", "worktreeSessionRetryCount", "INTEGER DEFAULT 0");
       });
     }
 
-    if (version < 83) {
-      this.applyMigration(83, () => {
+    if (version < 84) {
+      this.applyMigration(84, () => {
         if (!this.hasTable("secrets")) {
           this.db.exec(`
             CREATE TABLE secrets (
@@ -3484,8 +3491,8 @@ export class Database {
       });
     }
 
-    if (version < 84) {
-      this.applyMigration(84, () => {
+    if (version < 85) {
+      this.applyMigration(85, () => {
         if (!this.hasColumn("tasks", "title")) {
           console.log("[title-id-drift] db.ts migration normalized 0 active titles");
           return;
@@ -3514,27 +3521,27 @@ export class Database {
       });
     }
 
-    if (version < 85) {
-      this.applyMigration(85, () => {
-        this.addColumnIfMissing("tasks", "completionHandoffLimboRecoveryCount", "INTEGER DEFAULT 0");
-      });
-    }
-
     if (version < 86) {
       this.applyMigration(86, () => {
-        this.addColumnIfMissing("tasks", "prInfos", "TEXT");
+        this.addColumnIfMissing("tasks", "completionHandoffLimboRecoveryCount", "INTEGER DEFAULT 0");
       });
     }
 
     if (version < 87) {
       this.applyMigration(87, () => {
-        this.addColumnIfMissing("tasks", "deletedAt", "TEXT");
-        this.db.exec("CREATE INDEX IF NOT EXISTS idx_tasks_deletedAt ON tasks(deletedAt)");
+        this.addColumnIfMissing("tasks", "prInfos", "TEXT");
       });
     }
 
     if (version < 88) {
       this.applyMigration(88, () => {
+        this.addColumnIfMissing("tasks", "deletedAt", "TEXT");
+        this.db.exec("CREATE INDEX IF NOT EXISTS idx_tasks_deletedAt ON tasks(deletedAt)");
+      });
+    }
+
+    if (version < 89) {
+      this.applyMigration(89, () => {
         this.addColumnIfMissing("tasks", "allowResurrection", "INTEGER DEFAULT 0");
         try {
           const taskColumns = this.getTableColumns("tasks");
@@ -3563,8 +3570,8 @@ export class Database {
       });
     }
 
-    if (version < 89) {
-      this.applyMigration(89, () => {
+    if (version < 90) {
+      this.applyMigration(90, () => {
         this.db.exec(`
           CREATE TABLE IF NOT EXISTS mergeQueue (
             taskId TEXT PRIMARY KEY REFERENCES tasks(id) ON DELETE CASCADE,
@@ -3588,20 +3595,20 @@ export class Database {
       });
     }
 
-    if (version < 90) {
-      this.applyMigration(90, () => {
-        this.addColumnIfMissing("tasks", "scopeAutoWiden", "TEXT DEFAULT '[]'");
-      });
-    }
-
     if (version < 91) {
       this.applyMigration(91, () => {
-        this.addColumnIfMissing("missions", "baseBranch", "TEXT");
+        this.addColumnIfMissing("tasks", "scopeAutoWiden", "TEXT DEFAULT '[]'");
       });
     }
 
     if (version < 92) {
       this.applyMigration(92, () => {
+        this.addColumnIfMissing("missions", "baseBranch", "TEXT");
+      });
+    }
+
+    if (version < 93) {
+      this.applyMigration(93, () => {
         this.db.exec(`
           CREATE TABLE IF NOT EXISTS goals (
             id TEXT PRIMARY KEY,
@@ -3619,8 +3626,8 @@ export class Database {
       });
     }
 
-    if (version < 93) {
-      this.applyMigration(93, () => {
+    if (version < 94) {
+      this.applyMigration(94, () => {
         this.db.exec(`
           CREATE TABLE IF NOT EXISTS goal_citations (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -3652,8 +3659,8 @@ export class Database {
       });
     }
 
-    if (version < 94) {
-      this.applyMigration(94, () => {
+    if (version < 95) {
+      this.applyMigration(95, () => {
         this.addColumnIfMissing("tasks", "autoMerge", "INTEGER");
       });
     }

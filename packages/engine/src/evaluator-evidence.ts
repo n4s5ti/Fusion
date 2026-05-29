@@ -238,6 +238,7 @@ export async function collectTaskEvaluationEvidence(params: {
         verificationFailureCount: task.verificationFailureCount ?? 0,
         mergeConflictBounceCount: task.mergeConflictBounceCount ?? 0,
         mergeAuditBounceCount: task.mergeAuditBounceCount ?? 0,
+        mergeTransientRetryCount: task.mergeTransientRetryCount ?? 0,
       },
     }],
     commits: commitEvidence,

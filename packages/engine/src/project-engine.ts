@@ -39,6 +39,7 @@ import {
   createAutomatedFollowup,
   extractFailingTestFiles,
 } from "./verification-followup-dedup.js";
+import { isTransientError } from "./transient-error-detector.js";
 import { TunnelProcessManager } from "./remote-access/tunnel-process-manager.js";
 import type {
   ExternalTunnelInfo,
@@ -284,6 +285,10 @@ export class ProjectEngine {
   private shuttingDown = false;
 
   private static readonly MAX_AUTO_MERGE_RETRIES = 3;
+  /** FN-5697/FN-5674: cap transient provider/network abort retries in auto-merge.
+   *  Examples: "This operation was aborted", "socket hang up", `server_error`.
+   *  After this cap, the task is parked failed for human visibility. */
+  private static readonly MAX_AUTO_MERGE_TRANSIENT_RETRIES = 3;
   /** Cap on outer in-review→in-progress bounces caused by deterministic
    *  verification failures during auto-merge. After this many failed merges
    *  for the same task, we stop bouncing it back, mark it failed, and create
@@ -2254,6 +2259,16 @@ export class ProjectEngine {
               // re-attempt; the catch-block-top logEntry already recorded the
               // failure on the task log.
               try {
+                if (await this.maybeRetryTransientMerge(store, taskId, taskOnErr, errorMsg)) {
+                  continue;
+                }
+                if (this.isTransientMergeRetryExhausted(taskOnErr, errorMsg)) {
+                  await store.logEntry(
+                    taskId,
+                    `Auto-merge transient retries exhausted (${ProjectEngine.MAX_AUTO_MERGE_TRANSIENT_RETRIES}/${ProjectEngine.MAX_AUTO_MERGE_TRANSIENT_RETRIES}); parking task as failed: ${errorMsg}`,
+                    "MergeTransientRetryExhausted",
+                  );
+                }
                 await store.updateTask(taskId, {
                   status: "failed",
                   mergeRetries: ProjectEngine.MAX_AUTO_MERGE_RETRIES,
@@ -2274,6 +2289,16 @@ export class ProjectEngine {
             // Non-direct merge strategy (e.g. pull-request) errored — park as
             // failed so the cooldown sweep stops re-attempting silently.
             try {
+              if (await this.maybeRetryTransientMerge(store, taskId, taskOnErr, errorMsg)) {
+                continue;
+              }
+              if (this.isTransientMergeRetryExhausted(taskOnErr, errorMsg)) {
+                await store.logEntry(
+                  taskId,
+                  `Auto-merge transient retries exhausted (${ProjectEngine.MAX_AUTO_MERGE_TRANSIENT_RETRIES}/${ProjectEngine.MAX_AUTO_MERGE_TRANSIENT_RETRIES}); parking task as failed: ${errorMsg}`,
+                  "MergeTransientRetryExhausted",
+                );
+              }
               await store.updateTask(taskId, {
                 status: "failed",
                 mergeRetries: ProjectEngine.MAX_AUTO_MERGE_RETRIES,
@@ -2310,6 +2335,49 @@ export class ProjectEngine {
     } finally {
       this.mergeRunning = false;
     }
+  }
+
+  private isTransientMergeRetryExhausted(task: Task | null, errorMsg: string): boolean {
+    if (!task || !isTransientError(errorMsg)) {
+      return false;
+    }
+    const current = task.mergeTransientRetryCount ?? 0;
+    return current >= ProjectEngine.MAX_AUTO_MERGE_TRANSIENT_RETRIES;
+  }
+
+  private async maybeRetryTransientMerge(
+    store: TaskStore,
+    taskId: string,
+    taskOnErr: Task | null,
+    errorMsg: string,
+  ): Promise<boolean> {
+    if (!taskOnErr || !isTransientError(errorMsg)) {
+      return false;
+    }
+
+    const currentRetries = taskOnErr.mergeTransientRetryCount ?? 0;
+    if (currentRetries >= ProjectEngine.MAX_AUTO_MERGE_TRANSIENT_RETRIES) {
+      return false;
+    }
+
+    const nextRetryCount = currentRetries + 1;
+    const delayMs = 5000 * Math.pow(2, currentRetries);
+    await store.updateTask(taskId, {
+      mergeTransientRetryCount: nextRetryCount,
+      status: null,
+    });
+    await store.logEntry(
+      taskId,
+      `Auto-merge transient retry ${nextRetryCount}/${ProjectEngine.MAX_AUTO_MERGE_TRANSIENT_RETRIES} scheduled in ${delayMs / 1000}s: ${errorMsg}`,
+      "MergeTransientRetry",
+    );
+    runtimeLog.log(
+      `Auto-merge transient retry ${nextRetryCount}/${ProjectEngine.MAX_AUTO_MERGE_TRANSIENT_RETRIES} for ${taskId} in ${delayMs / 1000}s`,
+    );
+    setTimeout(() => {
+      if (!this.shuttingDown) this.internalEnqueueMerge(taskId);
+    }, delayMs);
+    return true;
   }
 
   private wireAutoMerge(store: TaskStore, _cwd: string): void {
