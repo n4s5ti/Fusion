@@ -332,7 +332,7 @@ export function createMissionRouter(
   router.post(
     "/",
     catchTypedHandler(async (req, res) => {
-      const { title, description, autoAdvance, autopilotEnabled, baseBranch, branchStrategy } = req.body;
+      const { title, description, autoAdvance, baseBranch, branchStrategy } = req.body;
 
       const validatedTitle = validateTitle(title);
       const validatedDescription = validateDescription(description);
@@ -350,15 +350,8 @@ export function createMissionRouter(
       if (autoAdvance !== undefined) {
         updates.autoAdvance = validateBoolean(autoAdvance, "autoAdvance");
       }
-      if (autopilotEnabled !== undefined) {
-        updates.autopilotEnabled = validateBoolean(autopilotEnabled, "autopilotEnabled");
-      }
-
       if (Object.keys(updates).length > 0) {
         const updatedMission = missionStore.updateMission(mission.id, updates);
-        if (missionAutopilot && updatedMission.autopilotEnabled) {
-          missionAutopilot.watchMission(updatedMission.id);
-        }
         res.status(201).json(updatedMission);
         return;
       }

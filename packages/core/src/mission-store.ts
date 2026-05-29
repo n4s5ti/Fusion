@@ -567,7 +567,8 @@ export class MissionStore extends EventEmitter<MissionStoreEvents> {
 
   /**
    * Create a new mission.
-   * The mission starts in "planning" status with "not_started" interview state.
+   * Missions are always created stopped (status `planning`, autopilot disabled).
+   * Autopilot is only enabled via an explicit start/update after creation.
    *
    * @param input - Mission creation input
    * @returns The created mission
@@ -586,7 +587,7 @@ export class MissionStore extends EventEmitter<MissionStoreEvents> {
       branchStrategy: input.branchStrategy,
       autoMerge: input.autoMerge,
       autoAdvance: false,
-      autopilotEnabled: input.autopilotEnabled ?? false,
+      autopilotEnabled: false,
       autopilotState: "inactive",
       createdAt: now,
       updatedAt: now,

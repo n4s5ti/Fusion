@@ -793,7 +793,7 @@ describe("Mission API", () => {
       expect(missionStore.updateMission).toHaveBeenCalledWith(res.body.id, { autoAdvance: true });
     });
 
-    it("watches mission immediately when created with autopilotEnabled true", async () => {
+    it("creates missions stopped even when autopilotEnabled is passed", async () => {
       const missionAutopilot = createMockMissionAutopilot();
       const { app } = buildApp({ missionAutopilot });
 
@@ -806,8 +806,10 @@ describe("Mission API", () => {
       );
 
       expect(res.status).toBe(201);
-      expect(missionAutopilot.watchMission).toHaveBeenCalledTimes(1);
-      expect(missionAutopilot.watchMission).toHaveBeenCalledWith(res.body.id);
+      expect(res.body.status).toBe("planning");
+      expect(res.body.autopilotEnabled).toBe(false);
+      expect(res.body.autoAdvance).toBe(false);
+      expect(missionAutopilot.watchMission).not.toHaveBeenCalled();
     });
   });
 

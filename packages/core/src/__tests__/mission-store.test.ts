@@ -68,6 +68,24 @@ describe("MissionStore", () => {
       expect(mission.updatedAt).toBeTruthy();
     });
 
+    it("ignores autopilotEnabled on create and persists stopped defaults", () => {
+      const mission = store.createMission({
+        title: "Stopped by default",
+        autopilotEnabled: true,
+      });
+
+      expect(mission.autopilotEnabled).toBe(false);
+      expect(mission.autoAdvance).toBe(false);
+      expect(mission.status).toBe("planning");
+      expect(mission.autopilotState).toBe("inactive");
+
+      const persisted = store.getMission(mission.id);
+      expect(persisted?.autopilotEnabled).toBe(false);
+      expect(persisted?.autoAdvance).toBe(false);
+      expect(persisted?.status).toBe("planning");
+      expect(persisted?.autopilotState).toBe("inactive");
+    });
+
     it("gets a mission by id", () => {
       const created = store.createMission({ title: "Get Test" });
       const retrieved = store.getMission(created.id);

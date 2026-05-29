@@ -377,7 +377,7 @@ describe("MissionFactory Parity: Core MissionStore", () => {
   });
 
   describe("Parity Matrix: Autopilot Configuration", () => {
-    it("autopilotEnabled persists across restart", async () => {
+    it("missions created with autopilotEnabled start disabled across restart", async () => {
       const missionStore = taskStore.getMissionStore();
 
       const mission = missionStore.createMission({
@@ -387,7 +387,7 @@ describe("MissionFactory Parity: Core MissionStore", () => {
 
       // Verify initial state
       let retrieved = missionStore.getMission(mission.id);
-      expect(retrieved!.autopilotEnabled).toBe(true);
+      expect(retrieved!.autopilotEnabled).toBe(false);
 
       // Restart
       taskStore.close();
@@ -397,7 +397,7 @@ describe("MissionFactory Parity: Core MissionStore", () => {
 
       // Verify persistence
       retrieved = missionStore2.getMission(mission.id);
-      expect(retrieved!.autopilotEnabled).toBe(true);
+      expect(retrieved!.autopilotEnabled).toBe(false);
     });
 
     it("autopilotEnabled can be toggled", async () => {

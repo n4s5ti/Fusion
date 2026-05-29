@@ -176,6 +176,8 @@ Manual activation is available through `fn mission activate-slice <slice-id>`.
 
 ## Mission Autopilot
 
+Missions are always created stopped (`status: "planning"`, `autopilotEnabled: false`, `autoAdvance: false`).
+Autopilot must be enabled explicitly after creation (for example via start/update actions).
 When `autopilotEnabled` is on, Fusion can watch completion events and progress missions automatically.
 
 State machine:
@@ -187,7 +189,7 @@ State machine:
 
 Typical flow:
 
-1. Mission is watched (missions created/updated with `autopilotEnabled: true` are watched immediately)
+1. Mission is watched (missions updated with `autopilotEnabled: true` or explicitly started are watched)
 2. Task completion updates feature status
 3. If a slice is complete, autopilot activates next pending slice
 4. When milestones are all complete, mission transitions to complete
