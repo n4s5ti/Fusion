@@ -378,17 +378,43 @@ async function resolveAuditCommitSha(taskId: string, scopedStore: DoneTaskAggreg
   return undefined;
 }
 
-async function resolveDoneTaskMergeSha(task: DoneTaskAggregationTask, scopedStore: DoneTaskAggregationStore): Promise<string | undefined> {
+export async function isAtOrBelowTaskBase(sha: string, baseCommitSha: string, rootDir: string): Promise<boolean> {
+  if (sha === baseCommitSha) return true;
+  try {
+    await runGitCommand(["merge-base", "--is-ancestor", sha, baseCommitSha], rootDir, 5000);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function resolveDoneTaskMergeSha(
+  task: DoneTaskAggregationTask & { baseCommitSha?: string | null },
+  scopedStore: DoneTaskAggregationStore,
+  options?: { includeBaseCommitSha?: boolean },
+): Promise<string | undefined> {
+  const rootDir = scopedStore.getRootDir();
+  const baseCommitSha = task.baseCommitSha?.trim();
+  const includeBaseCommitSha = options?.includeBaseCommitSha === true;
+
   const existing = task.mergeDetails?.commitSha?.trim();
-  if (existing) return existing;
+  if (existing) {
+    if (!includeBaseCommitSha && baseCommitSha && existing === baseCommitSha) return undefined;
+    return existing;
+  }
 
   const auditSha = await resolveAuditCommitSha(task.id, scopedStore);
-  if (auditSha) return auditSha;
+  if (auditSha) {
+    if (!includeBaseCommitSha && baseCommitSha && auditSha === baseCommitSha) return undefined;
+    return auditSha;
+  }
 
   if (!task.lineageId) return undefined;
   const associations = await scopedStore.getTaskCommitAssociationsByLineageId(task.lineageId);
   for (const association of associations) {
-    if (association.commitSha && (await isReachableFromHead(association.commitSha, scopedStore.getRootDir()))) {
+    if (!association.commitSha) continue;
+    if (!includeBaseCommitSha && baseCommitSha && association.commitSha === baseCommitSha) continue;
+    if (await isReachableFromHead(association.commitSha, rootDir)) {
       return association.commitSha;
     }
   }
@@ -670,7 +696,19 @@ export function registerSessionDiffRoutes(router: Router, deps: SessionDiffRoute
       }
 
       if (task.column === "done") {
+        const mergeShaForBaseBoundary = await resolveDoneTaskMergeSha(task, scopedStore, { includeBaseCommitSha: true });
         const resolvedMergeSha = await resolveDoneTaskMergeSha(task, scopedStore);
+        if (mergeShaForBaseBoundary && task.baseCommitSha) {
+          // FN-5666: `git diff A..B` is exclusive of A, and baseCommitSha is the
+          // task fork point, so when resolved SHA is at/below base the task has
+          // no owned changes to display.
+          const atOrBelowBase = await isAtOrBelowTaskBase(mergeShaForBaseBoundary, task.baseCommitSha, scopedStore.getRootDir());
+          if (atOrBelowBase) {
+            res.json({ files: [], stats: { filesChanged: 0, additions: 0, deletions: 0 } });
+            return;
+          }
+        }
+
         const doneTaskForDiff = resolvedMergeSha
           ? {
               ...task,
@@ -931,7 +969,18 @@ export function registerSessionDiffRoutes(router: Router, deps: SessionDiffRoute
       }
 
       if (task.column === "done") {
+        const mergeShaForBaseBoundary = await resolveDoneTaskMergeSha(task, scopedStore, { includeBaseCommitSha: true });
         const resolvedMergeSha = await resolveDoneTaskMergeSha(task, scopedStore);
+        if (mergeShaForBaseBoundary && task.baseCommitSha) {
+          // FN-5666: baseCommitSha is the branch fork point and must remain
+          // exclusive in per-task display diffs.
+          const atOrBelowBase = await isAtOrBelowTaskBase(mergeShaForBaseBoundary, task.baseCommitSha, scopedStore.getRootDir());
+          if (atOrBelowBase) {
+            res.json([]);
+            return;
+          }
+        }
+
         const doneTaskForDiff = resolvedMergeSha
           ? {
               ...task,

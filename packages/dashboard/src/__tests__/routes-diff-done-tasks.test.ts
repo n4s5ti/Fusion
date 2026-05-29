@@ -138,6 +138,12 @@ async function getDoneDiff(store: RealGitStore, taskId = "FN-4524") {
   return get(app, `/api/tasks/${taskId}/diff`);
 }
 
+async function getDoneFileDiffs(store: RealGitStore, taskId = "FN-4524") {
+  const app = createServer(store as any);
+  const { get } = await import("../test-request.js");
+  return get(app, `/api/tasks/${taskId}/file-diffs`);
+}
+
 describe("FN-4524 done-task diff stats", () => {
   it("matches shortstat and excludes interleaved foreign commit files", async () => {
     const rootDir = mkdtempSync(join(tmpdir(), "fn-4524-done-lineage-"));
@@ -562,7 +568,8 @@ describe("FN-4524 done-task diff stats", () => {
     }
   });
 
-  it("matches shortstat when hunks include ++/-- content lines", async () => {    const rootDir = mkdtempSync(join(tmpdir(), "fn-4524-done-plusminus-"));
+  it("matches shortstat when hunks include ++/-- content lines", async () => {
+    const rootDir = mkdtempSync(join(tmpdir(), "fn-4524-done-plusminus-"));
 
     try {
       git(rootDir, "init", "-b", "main");
@@ -576,7 +583,6 @@ describe("FN-4524 done-task diff stats", () => {
 
       git(rootDir, "checkout", "main");
       git(rootDir, "merge", "task-branch", "--no-ff", "-m", "merge plusminus");
-      const mergeCommit = git(rootDir, "rev-parse", "HEAD");
       const expected = shortstatForLineage(rootDir, [patchCommit]);
 
       const lineageId = "lin-fn-4524-d";
@@ -605,5 +611,212 @@ describe("FN-4524 done-task diff stats", () => {
     } finally {
       rmSync(rootDir, { recursive: true, force: true });
     }
+  });
+
+  describe("FN-5666 baseCommitSha exclusivity", () => {
+    it("returns empty done-task diff and file-diffs when merge sha equals baseCommitSha", async () => {
+      const rootDir = mkdtempSync(join(tmpdir(), "fn-5666-no-op-merge-sha-"));
+
+      try {
+        git(rootDir, "init", "-b", "main");
+        git(rootDir, "config", "user.email", "fusion@example.com");
+        git(rootDir, "config", "user.name", "Fusion");
+
+        writeFileSync(join(rootDir, "a.ts"), "export const a = 1;\n");
+        writeFileSync(join(rootDir, "b.ts"), "export const b = 1;\n");
+        writeFileSync(join(rootDir, "c.ts"), "export const c = 1;\n");
+        writeFileSync(join(rootDir, "d.ts"), "export const d = 1;\n");
+        writeFileSync(join(rootDir, "e.ts"), "export const e = 1;\n");
+        git(rootDir, "add", "a.ts", "b.ts", "c.ts", "d.ts", "e.ts");
+        git(rootDir, "commit", "-m", "fat base commit");
+        const baseCommit = git(rootDir, "rev-parse", "HEAD");
+
+        const store = new RealGitStore(rootDir);
+        store.addTask({
+          id: "FN-4524",
+          title: "fn-5666 no-op",
+          description: "fn-5666 no-op",
+          column: "done",
+          dependencies: [],
+          steps: [],
+          currentStep: 0,
+          log: [],
+          createdAt: "2026-05-29T00:00:00.000Z",
+          updatedAt: "2026-05-29T00:00:00.000Z",
+          columnMovedAt: "2026-05-29T00:00:00.000Z",
+          branch: "main",
+          baseCommitSha: baseCommit,
+          mergeDetails: { commitSha: baseCommit },
+        } as Task);
+
+        const diffResponse = await getDoneDiff(store);
+        expect(diffResponse.status).toBe(200);
+        expect(diffResponse.body.files).toEqual([]);
+        expect(diffResponse.body.stats).toEqual({ filesChanged: 0, additions: 0, deletions: 0 });
+
+        const fileDiffResponse = await getDoneFileDiffs(store);
+        expect(fileDiffResponse.status).toBe(200);
+        expect(fileDiffResponse.body).toEqual([]);
+      } finally {
+        rmSync(rootDir, { recursive: true, force: true });
+      }
+    });
+
+    it("returns empty done-task diffs when lineage association points at baseCommitSha", async () => {
+      const rootDir = mkdtempSync(join(tmpdir(), "fn-5666-no-op-lineage-"));
+
+      try {
+        git(rootDir, "init", "-b", "main");
+        git(rootDir, "config", "user.email", "fusion@example.com");
+        git(rootDir, "config", "user.name", "Fusion");
+
+        writeFileSync(join(rootDir, "fat-a.ts"), "export const fatA = 1;\n");
+        writeFileSync(join(rootDir, "fat-b.ts"), "export const fatB = 1;\n");
+        writeFileSync(join(rootDir, "fat-c.ts"), "export const fatC = 1;\n");
+        writeFileSync(join(rootDir, "fat-d.ts"), "export const fatD = 1;\n");
+        writeFileSync(join(rootDir, "fat-e.ts"), "export const fatE = 1;\n");
+        git(rootDir, "add", "fat-a.ts", "fat-b.ts", "fat-c.ts", "fat-d.ts", "fat-e.ts");
+        git(rootDir, "commit", "-m", "fat base commit");
+        const baseCommit = git(rootDir, "rev-parse", "HEAD");
+
+        const lineageId = "lin-fn-5666-no-op";
+        const store = new RealGitStore(rootDir);
+        store.addTask({
+          id: "FN-4524",
+          title: "fn-5666 lineage no-op",
+          description: "fn-5666 lineage no-op",
+          column: "done",
+          dependencies: [],
+          steps: [],
+          currentStep: 0,
+          log: [],
+          createdAt: "2026-05-29T00:00:00.000Z",
+          updatedAt: "2026-05-29T00:00:00.000Z",
+          columnMovedAt: "2026-05-29T00:00:00.000Z",
+          lineageId,
+          baseCommitSha: baseCommit,
+          branch: "main",
+          mergeDetails: {},
+        } as Task);
+        store.setAssociations(lineageId, [mkAssoc(lineageId, baseCommit, "2026-05-29T00:00:01.000Z")]);
+
+        const diffResponse = await getDoneDiff(store);
+        expect(diffResponse.status).toBe(200);
+        expect(diffResponse.body.files).toEqual([]);
+        expect(diffResponse.body.stats).toEqual({ filesChanged: 0, additions: 0, deletions: 0 });
+
+        const fileDiffResponse = await getDoneFileDiffs(store);
+        expect(fileDiffResponse.status).toBe(200);
+        expect(fileDiffResponse.body).toEqual([]);
+      } finally {
+        rmSync(rootDir, { recursive: true, force: true });
+      }
+    });
+
+    it("still reports files introduced after baseCommitSha", async () => {
+      const rootDir = mkdtempSync(join(tmpdir(), "fn-5666-normal-range-"));
+
+      try {
+        git(rootDir, "init", "-b", "main");
+        git(rootDir, "config", "user.email", "fusion@example.com");
+        git(rootDir, "config", "user.name", "Fusion");
+
+        const baseCommit = commitFile(rootDir, "base.ts", "export const base = 1;\n", "base");
+        const landedCommit = (() => {
+          writeFileSync(join(rootDir, "one.ts"), "export const one = 1;\n");
+          writeFileSync(join(rootDir, "two.ts"), "export const two = 2;\n");
+          writeFileSync(join(rootDir, "three.ts"), "export const three = 3;\n");
+          git(rootDir, "add", "one.ts", "two.ts", "three.ts");
+          git(rootDir, "commit", "-m", "landed commit");
+          return git(rootDir, "rev-parse", "HEAD");
+        })();
+
+        const expectedPaths = git(rootDir, "diff", "--name-only", `${baseCommit}..${landedCommit}`)
+          .split("\n")
+          .map((line) => line.trim())
+          .filter(Boolean)
+          .sort();
+
+        const store = new RealGitStore(rootDir);
+        store.addTask({
+          id: "FN-4524",
+          title: "fn-5666 normal case",
+          description: "fn-5666 normal case",
+          column: "done",
+          dependencies: [],
+          steps: [],
+          currentStep: 0,
+          log: [],
+          createdAt: "2026-05-29T00:00:00.000Z",
+          updatedAt: "2026-05-29T00:00:00.000Z",
+          columnMovedAt: "2026-05-29T00:00:00.000Z",
+          branch: "main",
+          baseCommitSha: baseCommit,
+          mergeDetails: { commitSha: landedCommit },
+        } as Task);
+
+        const diffResponse = await getDoneDiff(store);
+        expect(diffResponse.status).toBe(200);
+        expect(diffResponse.body.stats.filesChanged).toBe(3);
+        expect(diffResponse.body.files.map((f: { path: string }) => f.path).sort()).toEqual(expectedPaths);
+      } finally {
+        rmSync(rootDir, { recursive: true, force: true });
+      }
+    });
+
+    it("keeps rebaseBaseSha..commitSha done-task ranges intact", async () => {
+      const rootDir = mkdtempSync(join(tmpdir(), "fn-5666-rebase-range-"));
+
+      try {
+        git(rootDir, "init", "-b", "main");
+        git(rootDir, "config", "user.email", "fusion@example.com");
+        git(rootDir, "config", "user.name", "Fusion");
+
+        const baseCommit = commitFile(rootDir, "base.ts", "export const base = 1;\n", "base");
+        const landedCommit = (() => {
+          writeFileSync(join(rootDir, "rebased-one.ts"), "export const rebasedOne = 1;\n");
+          writeFileSync(join(rootDir, "rebased-two.ts"), "export const rebasedTwo = 2;\n");
+          writeFileSync(join(rootDir, "rebased-three.ts"), "export const rebasedThree = 3;\n");
+          git(rootDir, "add", "rebased-one.ts", "rebased-two.ts", "rebased-three.ts");
+          git(rootDir, "commit", "-m", "rebased landed commit");
+          return git(rootDir, "rev-parse", "HEAD");
+        })();
+
+        const expectedPaths = git(rootDir, "diff", "--name-only", `${baseCommit}..${landedCommit}`)
+          .split("\n")
+          .map((line) => line.trim())
+          .filter(Boolean)
+          .sort();
+
+        const store = new RealGitStore(rootDir);
+        store.addTask({
+          id: "FN-4524",
+          title: "fn-5666 rebase case",
+          description: "fn-5666 rebase case",
+          column: "done",
+          dependencies: [],
+          steps: [],
+          currentStep: 0,
+          log: [],
+          createdAt: "2026-05-29T00:00:00.000Z",
+          updatedAt: "2026-05-29T00:00:00.000Z",
+          columnMovedAt: "2026-05-29T00:00:00.000Z",
+          branch: "main",
+          baseCommitSha: baseCommit,
+          mergeDetails: { commitSha: landedCommit, rebaseBaseSha: baseCommit },
+        } as Task);
+
+        const diffResponse = await getDoneDiff(store);
+        expect(diffResponse.status).toBe(200);
+        expect(diffResponse.body.stats.filesChanged).toBe(3);
+        expect(diffResponse.body.files.map((f: { path: string }) => f.path).sort()).toEqual(expectedPaths);
+
+        const fileDiffResponse = await getDoneFileDiffs(store);
+        expect(fileDiffResponse.status).toBe(200);
+        expect(fileDiffResponse.body.map((f: { path: string }) => f.path).sort()).toEqual(expectedPaths);
+      } finally {
+        rmSync(rootDir, { recursive: true, force: true });
+      }
+    });
   });
 });
