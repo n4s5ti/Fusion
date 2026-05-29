@@ -599,9 +599,32 @@ export async function runAiMerge(
 
   // Branch must exist to merge it.
   if (!(await gitOk(["rev-parse", "--verify", `refs/heads/${branch}`], projectRootDir))) {
-    await audit.git({ type: "merge:ai-no-branch", target: branch, metadata: { taskId } });
-    const done = await finalizeTask(store, taskId, noOpResult(task, branch, "no-branch"));
-    return done;
+    // A missing branch is benign in two cases — the task was never executed
+    // (nothing to merge), or it already merged and the branch was cleaned up
+    // (a re-processed task). But if the task WAS executed (a baseCommitSha was
+    // recorded when it got a worktree) and was NEVER merged (no recorded
+    // landing), the branch should still exist — its work appears lost. Fail
+    // loudly rather than silently marking the task done.
+    const wasExecuted = !!task.baseCommitSha;
+    const alreadyMerged = task.mergeDetails?.mergeConfirmed === true || !!task.mergeDetails?.commitSha;
+    if (wasExecuted && !alreadyMerged) {
+      await audit.git({
+        type: "merge:ai-no-branch",
+        target: branch,
+        metadata: { taskId, kind: "executed-branch-missing", baseCommitSha: task.baseCommitSha },
+      });
+      throw new Error(
+        `AI merge for ${taskId}: branch "${branch}" is missing, but the task was executed `
+        + `(baseCommitSha ${String(task.baseCommitSha).slice(0, 8)}) and has no recorded merge — its work appears lost. `
+        + `Not finalizing; investigate.`,
+      );
+    }
+    await audit.git({
+      type: "merge:ai-no-branch",
+      target: branch,
+      metadata: { taskId, kind: alreadyMerged ? "already-merged" : "never-executed" },
+    });
+    return await finalizeTask(store, taskId, noOpResult(task, branch, alreadyMerged ? "already-merged" : "no-branch"));
   }
 
   // The target branch must exist as a LOCAL ref to merge into it — surface a
