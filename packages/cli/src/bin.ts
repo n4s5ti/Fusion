@@ -36,7 +36,7 @@ function configurePiPackage(): void {
 
   try {
     const require = createRequire(import.meta.url);
-    const piPackagePath = require.resolve("@mariozechner/pi-coding-agent/package.json");
+    const piPackagePath = require.resolve("@earendil-works/pi-coding-agent/package.json");
     const piPackageDir = dirname(piPackagePath);
     packageJson = JSON.parse(readFileSync(piPackagePath, "utf-8")) as Record<string, unknown>;
 

@@ -229,7 +229,7 @@ export interface AuthStorageLike {
 
 /**
  * Extended session interface for workflow step refinement.
- * The AgentSession from @mariozechner/pi-coding-agent has on() and prompt() methods
+ * The AgentSession from @earendil-works/pi-coding-agent has on() and prompt() methods
  * but the local AgentSession type is minimal.
  */
 interface RefineAgentSession {
@@ -303,7 +303,7 @@ async function discoverDashboardPiExtensions(cwd: string): Promise<PiExtensionSe
   const byPath = new Map(settings.extensions.map((entry) => [entry.id, entry]));
 
   try {
-    const { DefaultPackageManager } = await import("@mariozechner/pi-coding-agent");
+    const { DefaultPackageManager } = await import("@earendil-works/pi-coding-agent");
     const [agentDir, legacyGlobalSettings, fusionGlobalSettings, projectSettings] = await Promise.all([
       getPiPackageManagerAgentDir(),
       readJsonObject(join(getLegacyPiAgentDir(), "settings.json")),
@@ -1237,7 +1237,7 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
 
   router.get("/pi-settings", async (_req, res) => {
     try {
-      const { SettingsManager, getAgentDir } = await import("@mariozechner/pi-coding-agent");
+      const { SettingsManager, getAgentDir } = await import("@earendil-works/pi-coding-agent");
       const agentDir = getAgentDir();
       const settingsManager = SettingsManager.create(process.cwd(), agentDir);
       const packages = settingsManager.getPackages();
@@ -1275,7 +1275,7 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
         throw badRequest("At least one setting field must be provided (packages, extensions, skills, prompts, or themes)");
       }
 
-      const { SettingsManager, getAgentDir } = await import("@mariozechner/pi-coding-agent");
+      const { SettingsManager, getAgentDir } = await import("@earendil-works/pi-coding-agent");
       const agentDir = getAgentDir();
       const settingsManager = SettingsManager.create(process.cwd(), agentDir);
 
@@ -1332,7 +1332,7 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
         throw badRequest("source must be a non-empty string");
       }
 
-      const { SettingsManager, DefaultPackageManager, getAgentDir } = await import("@mariozechner/pi-coding-agent");
+      const { SettingsManager, DefaultPackageManager, getAgentDir } = await import("@earendil-works/pi-coding-agent");
       const agentDir = getAgentDir();
       const cwd = process.cwd();
       const settingsManager = SettingsManager.create(process.cwd(), agentDir);
@@ -1363,7 +1363,7 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
   router.post("/pi-settings/reinstall-fusion", async (_req, res) => {
     try {
       const source = "npm:@runfusion/fusion";
-      const { SettingsManager, DefaultPackageManager, getAgentDir } = await import("@mariozechner/pi-coding-agent");
+      const { SettingsManager, DefaultPackageManager, getAgentDir } = await import("@earendil-works/pi-coding-agent");
       const agentDir = getAgentDir();
       const cwd = process.cwd();
       const settingsManager = SettingsManager.create(process.cwd(), agentDir);

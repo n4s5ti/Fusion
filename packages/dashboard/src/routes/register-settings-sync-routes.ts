@@ -376,7 +376,7 @@ export const registerSettingsSyncRoutes: ApiRouteRegistrar = (ctx) => {
       const timestamp = new Date().toISOString();
 
       // Import AuthStorage
-      const { AuthStorage } = await import("@mariozechner/pi-coding-agent");
+      const { AuthStorage } = await import("@earendil-works/pi-coding-agent");
       const authStorage = AuthStorage.create(getFusionAuthPath());
 
       if (direction === "push") {

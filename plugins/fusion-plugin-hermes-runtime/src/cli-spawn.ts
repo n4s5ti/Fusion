@@ -2,7 +2,7 @@
  * Hermes CLI spawn module.
  *
  * Drives the local `hermes` binary as a subprocess instead of using the
- * @mariozechner/pi-ai SDK. Session continuity is maintained by capturing
+ * @earendil-works/pi-ai SDK. Session continuity is maintained by capturing
  * the `session_id:` line from stdout and passing `--resume <id>` on
  * subsequent invocations.
  *

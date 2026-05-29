@@ -225,7 +225,7 @@ vi.mock("node:fs/promises", async (importOriginal) => {
     rm: vi.fn().mockResolvedValue(undefined),
   };
 });
-vi.mock("@mariozechner/pi-ai", () => ({
+vi.mock("@earendil-works/pi-ai", () => ({
   Type: {
     Object: (props: Record<string, unknown>) => ({ type: "object", properties: props }),
     String: (opts?: unknown) => ({ type: "string", ...((opts as object) ?? {}) }),
@@ -237,7 +237,7 @@ vi.mock("@mariozechner/pi-ai", () => ({
     Literal: (value: unknown) => ({ const: value }),
   },
 }));
-vi.mock("@mariozechner/pi-coding-agent", () => {
+vi.mock("@earendil-works/pi-coding-agent", () => {
   const mockSessionManager = {};
   return {
     SessionManager: {

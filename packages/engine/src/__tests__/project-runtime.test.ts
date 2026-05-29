@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
-vi.mock("@mariozechner/pi-ai", () => ({
+vi.mock("@earendil-works/pi-ai", () => ({
   Type: {
     Object: (props: Record<string, unknown>) => ({ type: "object", properties: props }),
     String: (opts?: unknown) => ({ type: "string", ...((opts as object) ?? {}) }),

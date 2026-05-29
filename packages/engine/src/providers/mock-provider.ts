@@ -4,7 +4,7 @@ import * as fusionCore from "@fusion/core";
 import type { MockSessionPurpose } from "@fusion/core";
 import type { AgentRuntime, AgentRuntimeOptions, AgentSessionResult } from "../agent-runtime.js";
 import type { SessionPurpose } from "../runtime-resolution.js";
-import type { AgentSession, ToolDefinition } from "@mariozechner/pi-coding-agent";
+import type { AgentSession, ToolDefinition } from "@earendil-works/pi-coding-agent";
 
 function resolveProjectRootFromWorktree(cwd: string): string | undefined {
   try {

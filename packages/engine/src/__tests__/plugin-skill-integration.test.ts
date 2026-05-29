@@ -3,7 +3,7 @@ import type { AgentStore } from "@fusion/core";
 import type { PluginRunner } from "../plugin-runner.js";
 import { buildSessionSkillContext } from "../session-skill-context.js";
 import { createSkillsOverrideFromSelection, resolveSessionSkills } from "../skill-resolver.js";
-import type { Skill } from "@mariozechner/pi-coding-agent";
+import type { Skill } from "@earendil-works/pi-coding-agent";
 
 describe("plugin skill integration", () => {
   const projectRootDir = "/test/project";

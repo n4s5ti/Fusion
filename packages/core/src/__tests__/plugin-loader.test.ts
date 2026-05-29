@@ -12,7 +12,7 @@ vi.mock("../plugin-security-scan.js", () => ({
   scanPluginSecurity: (...args: unknown[]) => scanPluginSecurityMock(...args),
 }));
 
-vi.mock("@mariozechner/pi-ai", () => ({
+vi.mock("@earendil-works/pi-ai", () => ({
   AssistantMessageEventStream: class AssistantMessageEventStream {
     push() {}
     end() {}

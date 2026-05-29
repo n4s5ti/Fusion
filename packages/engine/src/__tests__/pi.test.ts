@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { describeModel, compactSessionContext, COMPACTION_FALLBACK_INSTRUCTIONS, createFnAgent, getProjectRootFromWorktree, promptWithFallback, type AgentOptions } from "../pi.js";
-import { createAgentSession, type AgentSession } from "@mariozechner/pi-coding-agent";
+import { createAgentSession, type AgentSession } from "@earendil-works/pi-coding-agent";
 import { piLog } from "../logger.js";
 
 // Mock skill resolver functions - define inside factory to avoid hoisting issues
@@ -19,7 +19,7 @@ vi.mock("../skill-resolver.js", () => {
 });
 
 // Mock pi-coding-agent imports
-vi.mock("@mariozechner/pi-coding-agent", () => ({
+vi.mock("@earendil-works/pi-coding-agent", () => ({
   AuthStorage: {
     create: vi.fn(() => ({
       getCredentials: vi.fn().mockResolvedValue({}),

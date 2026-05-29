@@ -13,7 +13,7 @@ import { findWorktreeUser, aiMergeTask } from "../merger.js";
 import { WorktreePool } from "../worktree-pool.js";
 import { generateWorktreeName, slugify } from "../worktree-names.js";
 import type { Task, TaskDetail } from "@fusion/core";
-import { SessionManager } from "@mariozechner/pi-coding-agent";
+import { SessionManager } from "@earendil-works/pi-coding-agent";
 import { StepSessionExecutor } from "../step-session-executor.js";
 import { executorLog } from "../logger.js";
 import { withRateLimitRetry } from "../rate-limit-retry.js";

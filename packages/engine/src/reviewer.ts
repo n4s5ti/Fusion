@@ -289,12 +289,12 @@ export interface ReviewOptions {
    * is paused, or the engine globally pauses. Without this hook, reviewer
    * sessions outlive their parent task on a stop signal.
    */
-  onSessionCreated?: (session: import("@mariozechner/pi-coding-agent").AgentSession) => void;
+  onSessionCreated?: (session: import("@earendil-works/pi-coding-agent").AgentSession) => void;
   /**
    * Fired in a `finally` block after the reviewer is fully done (or aborted).
    * Pair with `onSessionCreated` to deregister from the subagent map.
    */
-  onSessionEnded?: (session: import("@mariozechner/pi-coding-agent").AgentSession) => void;
+  onSessionEnded?: (session: import("@earendil-works/pi-coding-agent").AgentSession) => void;
 }
 
 /**
@@ -471,10 +471,10 @@ export async function reviewStep(
     }
   }
 
-  const activeSessions = new Set<import("@mariozechner/pi-coding-agent").AgentSession>();
+  const activeSessions = new Set<import("@earendil-works/pi-coding-agent").AgentSession>();
   let reviewText = "";
 
-  const endSession = (session: import("@mariozechner/pi-coding-agent").AgentSession) => {
+  const endSession = (session: import("@earendil-works/pi-coding-agent").AgentSession) => {
     if (!activeSessions.delete(session)) {
       return;
     }
@@ -501,7 +501,7 @@ export async function reviewStep(
 
   const createReviewerSession = async (
     overrides?: { forceProvider?: string; forceModelId?: string },
-  ): Promise<import("@mariozechner/pi-coding-agent").AgentSession> => {
+  ): Promise<import("@earendil-works/pi-coding-agent").AgentSession> => {
     const runAuditor = options.store
       ? createRunAuditor(options.store, {
         runId: generateSyntheticRunId("reviewer", options.taskId ?? "review"),
@@ -576,7 +576,7 @@ export async function reviewStep(
   };
 
   const runReviewPrompt = async (
-    session: import("@mariozechner/pi-coding-agent").AgentSession,
+    session: import("@earendil-works/pi-coding-agent").AgentSession,
     prompt: string,
   ): Promise<void> => {
     await promptWithFallback(session, prompt);
@@ -588,7 +588,7 @@ export async function reviewStep(
     sessionOptions?: { forceProvider?: string; forceModelId?: string },
   ): Promise<{ verdict: ReviewVerdict; summary: string; review: string }> => {
     reviewText = "";
-    let session: import("@mariozechner/pi-coding-agent").AgentSession;
+    let session: import("@earendil-works/pi-coding-agent").AgentSession;
     try {
       session = await createReviewerSession(sessionOptions);
     } catch (err) {

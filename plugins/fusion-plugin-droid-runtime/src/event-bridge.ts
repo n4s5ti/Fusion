@@ -1,5 +1,5 @@
 import type { ClaudeApiEvent, TrackedContentBlock } from "./types.js";
-import { calculateCost } from "@mariozechner/pi-ai";
+import { calculateCost } from "@earendil-works/pi-ai";
 import type {
   Api,
   AssistantMessage,
@@ -8,7 +8,7 @@ import type {
   TextContent,
   ThinkingContent,
   ToolCall,
-} from "@mariozechner/pi-ai";
+} from "@earendil-works/pi-ai";
 import {
   mapDroidToolNameToPi,
   translateDroidArgsToPi,

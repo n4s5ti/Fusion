@@ -21,8 +21,8 @@
 import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 import { isAbsolute, join } from "node:path";
-import { Type, type Static } from "@mariozechner/pi-ai";
-import type { ToolDefinition } from "@mariozechner/pi-coding-agent";
+import { Type, type Static } from "@earendil-works/pi-ai";
+import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { executorLog } from "./logger.js";
 
 // ---------------------------------------------------------------------------

@@ -1,7 +1,7 @@
 import type { Settings } from "@fusion/core";
 import { isResearchExperimentalEnabled } from "@fusion/core";
 import type { PluginRunner } from "./plugin-runner.js";
-import type { ToolDefinition } from "@mariozechner/pi-coding-agent";
+import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
 
 export function isResearchToolSurfaceEnabled(settings: Partial<Settings> | undefined): boolean {
   return isResearchExperimentalEnabled(settings);

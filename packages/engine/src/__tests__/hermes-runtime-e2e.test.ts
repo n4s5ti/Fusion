@@ -36,7 +36,7 @@ vi.mock("../logger.js", () => ({
   },
 }));
 
-vi.mock("@mariozechner/pi-ai", () => ({
+vi.mock("@earendil-works/pi-ai", () => ({
   getModel: mockGetModel,
   streamSimple: mockStreamSimple,
 }));

@@ -1,5 +1,5 @@
 import type { AgentRole, TaskStore } from "@fusion/core";
-import type { AgentSession } from "@mariozechner/pi-coding-agent";
+import type { AgentSession } from "@earendil-works/pi-coding-agent";
 import { createLogger } from "./logger.js";
 
 const log = createLogger("session-token-usage");

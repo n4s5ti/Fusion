@@ -16,8 +16,8 @@ import { DASHBOARD_USER_ID, canAgentTakeImplementationTaskForExplicitRouting, da
 import { ResearchOrchestrator } from "./research-orchestrator.js";
 import { ResearchProviderRegistry } from "./research/provider-registry.js";
 import { ResearchStepRunner } from "./research-step-runner.js";
-import type { ToolDefinition } from "@mariozechner/pi-coding-agent";
-import { Type, type Static } from "@mariozechner/pi-ai";
+import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
+import { Type, type Static } from "@earendil-works/pi-ai";
 import type { AgentReflectionService } from "./agent-reflection.js";
 import { createLogger } from "./logger.js";
 import { fetchWebContent, WebFetchError } from "./web-fetch.js";

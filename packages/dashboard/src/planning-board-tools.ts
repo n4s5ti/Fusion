@@ -1,5 +1,5 @@
 import type { TaskStore } from "@fusion/core";
-import type { ToolDefinition } from "@mariozechner/pi-coding-agent";
+import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
 
 export function createPlanningBoardTools(store: TaskStore): ToolDefinition[] {
   const taskGetParams = {

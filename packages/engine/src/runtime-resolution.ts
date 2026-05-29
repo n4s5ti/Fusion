@@ -10,7 +10,7 @@
 import type { AgentRuntime, AgentRuntimeOptions, AgentSessionResult } from "./agent-runtime.js";
 import type { PluginRunner } from "./plugin-runner.js";
 import * as fusionCore from "@fusion/core";
-import type { AgentSession } from "@mariozechner/pi-coding-agent";
+import type { AgentSession } from "@earendil-works/pi-coding-agent";
 import { createLogger } from "./logger.js";
 import { createFnAgent, promptWithFallback, describeModel } from "./pi.js";
 

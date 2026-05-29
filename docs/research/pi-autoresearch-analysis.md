@@ -46,9 +46,9 @@ Fusion references used:
 
 - Type: pure ESM package (`"type": "module"`)
 - Runtime dependencies are mostly pi ecosystem peer deps:
-  - `@mariozechner/pi-ai`
-  - `@mariozechner/pi-coding-agent`
-  - `@mariozechner/pi-tui`
+  - `@earendil-works/pi-ai`
+  - `@earendil-works/pi-coding-agent`
+  - `@earendil-works/pi-tui`
   - `@sinclair/typebox`
 - Script: `node --experimental-strip-types --test tests/*.test.mjs`
 
@@ -343,7 +343,7 @@ Adoptable from upstream ideas (not necessarily direct package imports):
 - TypeBox schema patterns for tool parameters.
 
 Should be replaced with Fusion-native equivalents:
-- pi-specific UI/event APIs (`@mariozechner/*`) — not portable.
+- pi-specific UI/event APIs (`@earendil-works/*`) — not portable.
 - Direct TUI widget code — translate to dashboard React + CLI outputs.
 
 ## 9. Risks, Unknowns, and Recommendations

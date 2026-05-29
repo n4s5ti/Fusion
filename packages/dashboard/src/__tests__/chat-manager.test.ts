@@ -47,7 +47,7 @@ const { mockSessionManagerCreate, mockSessionManagerOpen } = vi.hoisted(() => {
   };
 });
 
-vi.mock("@mariozechner/pi-coding-agent", () => ({
+vi.mock("@earendil-works/pi-coding-agent", () => ({
   SessionManager: {
     create: mockSessionManagerCreate,
     open: mockSessionManagerOpen,

@@ -11,7 +11,7 @@
 
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
-import type { ResourceDiagnostic, Skill } from "@mariozechner/pi-coding-agent";
+import type { ResourceDiagnostic, Skill } from "@earendil-works/pi-coding-agent";
 import { getProjectRootFromWorktree } from "@fusion/core";
 import { piLog } from "./logger.js";
 

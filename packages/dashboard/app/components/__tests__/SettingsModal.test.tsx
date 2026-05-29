@@ -378,6 +378,7 @@ describe("SettingsModal", () => {
     await waitForSettingsModalReady();
 
     await userEvent.click(screen.getByRole("button", { name: /^Merge$/ }));
+    await userEvent.selectOptions(screen.getByLabelText("AI merge"), "deterministic");
     expect(screen.getByLabelText("Direct merge commit routing")).toHaveValue("auto");
 
     await userEvent.selectOptions(screen.getByLabelText("Auto-completion mode"), "pull-request");
@@ -399,6 +400,7 @@ describe("SettingsModal", () => {
     renderModal({ initialSection: "merge" });
     await waitForSettingsModalReady();
 
+    await userEvent.selectOptions(screen.getByLabelText("AI merge"), "deterministic");
     expect(screen.getByLabelText("Integration worktree")).toHaveValue("reuse-task-worktree");
   });
 
@@ -412,6 +414,7 @@ describe("SettingsModal", () => {
     renderModal({ initialSection: "merge" });
     await waitForSettingsModalReady();
 
+    await userEvent.selectOptions(screen.getByLabelText("AI merge"), "deterministic");
     await userEvent.selectOptions(screen.getByLabelText("Integration worktree"), "cwd-main");
     await userEvent.click(screen.getByRole("button", { name: "Save" }));
 
@@ -446,6 +449,7 @@ describe("SettingsModal", () => {
     renderModal({ initialSection: "merge" });
     await waitForSettingsModalReady();
 
+    await userEvent.selectOptions(screen.getByLabelText("AI merge"), "deterministic");
     await userEvent.selectOptions(screen.getByLabelText("Integration worktree"), "cwd-main");
 
     const warning = screen.getByTestId("merge-integration-worktree-warning");
@@ -461,15 +465,17 @@ describe("SettingsModal", () => {
       ...defaultSettings,
       merger: { mode: "legacy" },
       mergeIntegrationWorktree: "cwd-main",
+      merger: { mode: "deterministic" },
     });
     mockFetchSettingsByScope.mockResolvedValueOnce({
-      global: { ...defaultSettings, merger: { mode: "legacy" }, mergeIntegrationWorktree: "cwd-main" },
+      global: { ...defaultSettings, mergeIntegrationWorktree: "cwd-main", merger: { mode: "deterministic" } },
       project: {},
     });
 
     renderModal({ initialSection: "merge" });
     await waitForSettingsModalReady();
 
+    await userEvent.selectOptions(screen.getByLabelText("AI merge"), "deterministic");
     expect(screen.getByTestId("merge-integration-worktree-warning")).toBeInTheDocument();
 
     await userEvent.selectOptions(screen.getByLabelText("Integration worktree"), "reuse-task-worktree");

@@ -100,7 +100,7 @@ import { isUsageLimitError, checkSessionError, type UsageLimitPauser } from "./u
 import { isContextLimitError } from "./context-limit-detector.js";
 import { withRateLimitRetry } from "./rate-limit-retry.js";
 import { resolveAgentInstructions, buildSystemPromptWithInstructions } from "./agent-instructions.js";
-import type { ToolDefinition } from "@mariozechner/pi-coding-agent";
+import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { createRunAuditor, generateSyntheticRunId, type EngineRunContext, type RunAuditor } from "./run-audit.js";
 import { createWebFetchTool } from "./agent-tools.js";

@@ -531,7 +531,7 @@ export const registerMeshRoutes: ApiRouteRegistrar = (ctx) => {
           if (!sharedState.authMaterial) return;
           validateSnapshotEnvelope(sharedState.authMaterial);
           const applied = central.applyAuthMaterialSnapshot(sharedState.authMaterial as Parameters<typeof central.applyAuthMaterialSnapshot>[0]);
-          const { AuthStorage } = await import("@mariozechner/pi-coding-agent");
+          const { AuthStorage } = await import("@earendil-works/pi-coding-agent");
           const { getFusionAuthPath } = await import("../auth-paths.js");
           const authStorage = AuthStorage.create(getFusionAuthPath());
           for (const [providerId, credential] of Object.entries(applied.providerAuth)) {

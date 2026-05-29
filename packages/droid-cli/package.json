@@ -22,8 +22,8 @@
     "directory": "packages/droid-cli"
   },
   "peerDependencies": {
-    "@mariozechner/pi-ai": "*",
-    "@mariozechner/pi-coding-agent": "*"
+    "@earendil-works/pi-ai": "*",
+    "@earendil-works/pi-coding-agent": "*"
   },
   "dependencies": {
     "@fusion-plugin-examples/droid-runtime": "workspace:*"

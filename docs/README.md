@@ -116,7 +116,7 @@ For a full walkthrough (installation, onboarding, first task, and daily workflow
 
 - GitHub repository: https://github.com/Runfusion/Fusion
 - npm package: https://www.npmjs.com/package/@runfusion/fusion
-- pi agent framework: https://github.com/badlogic/pi-mono
+- pi agent framework: https://github.com/earendil-works/pi
 
 ## Suggested Reading Paths
 

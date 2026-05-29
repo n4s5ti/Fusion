@@ -41,7 +41,7 @@ import {
   shouldUseHybridExecutor,
   setHostExtensionPaths,
 } from "@fusion/engine";
-import { AuthStorage, DefaultPackageManager, ModelRegistry, SettingsManager, discoverAndLoadExtensions, createExtensionRuntime } from "@mariozechner/pi-coding-agent";
+import { AuthStorage, DefaultPackageManager, ModelRegistry, SettingsManager, discoverAndLoadExtensions, createExtensionRuntime } from "@earendil-works/pi-coding-agent";
 import {
   getMergeStrategy,
   getTaskBranchName,

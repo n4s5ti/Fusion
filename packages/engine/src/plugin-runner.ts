@@ -29,8 +29,8 @@ import type {
   PluginSetupCheckResult,
   ExecutorRuntimeTaskContext,
 } from "@fusion/core";
-import type { ToolDefinition } from "@mariozechner/pi-coding-agent";
-import { Type } from "@mariozechner/pi-ai";
+import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
+import { Type } from "@earendil-works/pi-ai";
 import { isAbsolute } from "node:path";
 import { createLogger, executorLog } from "./logger.js";
 

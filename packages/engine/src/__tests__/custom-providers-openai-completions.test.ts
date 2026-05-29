@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { AuthStorage, ModelRegistry } from "@mariozechner/pi-coding-agent";
-import { completeSimple } from "@mariozechner/pi-ai";
+import { AuthStorage, ModelRegistry } from "@earendil-works/pi-coding-agent";
+import { completeSimple } from "@earendil-works/pi-ai";
 import { customProviderRegistryKey, type CustomProvider } from "@fusion/core";
 
 describe("custom providers openai-completions regression", () => {

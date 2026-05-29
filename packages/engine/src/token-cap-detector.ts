@@ -9,7 +9,7 @@
  * before — compacting only on overflow errors via the existing error handler.
  */
 
-import type { AgentSession } from "@mariozechner/pi-coding-agent";
+import type { AgentSession } from "@earendil-works/pi-coding-agent";
 import { executorLog } from "./logger.js";
 
 /** Result of a token cap check-and-compact operation. */

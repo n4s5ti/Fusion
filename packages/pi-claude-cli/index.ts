@@ -5,8 +5,8 @@
  * subprocess using stream-json NDJSON protocol.
  */
 
-import { getModels } from "@mariozechner/pi-ai";
-import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import { getModels } from "@earendil-works/pi-ai";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { streamViaCli } from "./src/provider.js";
 import {
   validateCliPresenceAsync,
@@ -156,7 +156,7 @@ export default function (pi: ExtensionAPI) {
       maxTokens: model.maxTokens,
     }));
 
-    // Newer models released after the pinned @mariozechner/pi-ai catalog
+    // Newer models released after the pinned @earendil-works/pi-ai catalog
     // was generated. Dedupe by id so this list is harmless once the upstream
     // catalog catches up.
     // https://platform.claude.com/docs/en/about-claude/models/overview

@@ -22,7 +22,7 @@ const mockPackageManager = {
   addSourceToSettings: vi.fn().mockReturnValue(true),
 };
 
-vi.mock("@mariozechner/pi-coding-agent", () => ({
+vi.mock("@earendil-works/pi-coding-agent", () => ({
   SettingsManager: {
     create: vi.fn(() => mockSettingsManager),
   },
@@ -272,7 +272,7 @@ describe("Pi settings routes", () => {
     });
 
     it("returns 500 when install throws", async () => {
-      const { DefaultPackageManager } = await import("@mariozechner/pi-coding-agent");
+      const { DefaultPackageManager } = await import("@earendil-works/pi-coding-agent");
       vi.mocked(DefaultPackageManager).mockImplementationOnce(() => ({
         install: vi.fn().mockRejectedValue(new Error("Install failed")),
         addSourceToSettings: vi.fn().mockReturnValue(true),
@@ -287,7 +287,7 @@ describe("Pi settings routes", () => {
     });
 
     it("returns success when addSourceToSettings returns false (already configured)", async () => {
-      const { DefaultPackageManager } = await import("@mariozechner/pi-coding-agent");
+      const { DefaultPackageManager } = await import("@earendil-works/pi-coding-agent");
       vi.mocked(DefaultPackageManager).mockImplementationOnce(() => ({
         install: vi.fn().mockResolvedValue(undefined),
         addSourceToSettings: vi.fn().mockReturnValue(false),

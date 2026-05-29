@@ -16,7 +16,7 @@ import { promisify } from "node:util";
 const execAsync = promisify(exec);
 import { existsSync } from "node:fs";
 import { rm } from "node:fs/promises";
-import type { AgentSession } from "@mariozechner/pi-coding-agent";
+import type { AgentSession } from "@earendil-works/pi-coding-agent";
 import type { AgentStore, MessageStore, PermanentAgentGatingContext, TaskDetail, Settings, TaskStore } from "@fusion/core";
 import { resolvePersistAgentThinkingLog } from "@fusion/core";
 

@@ -751,9 +751,9 @@ vi.mock("@fusion/engine", async (importOriginal) => {
   });
 });
 
-// ── Mock @mariozechner/pi-coding-agent ──────────────────────────────
+// ── Mock @earendil-works/pi-coding-agent ──────────────────────────────
 
-vi.mock("@mariozechner/pi-coding-agent", () => ({
+vi.mock("@earendil-works/pi-coding-agent", () => ({
   AuthStorage: {
     create: vi.fn(() => mockAuthStorage),
   },
@@ -3092,7 +3092,7 @@ describe("runDashboard — merge stream sink routing", () => {
     const { TaskStore, AutomationStore, AgentStore, PluginStore, PluginLoader, CentralCore } = await import("@fusion/core");
     const { aiMergeTask } = await import("@fusion/engine");
     const { createServer } = await import("@fusion/dashboard");
-    const { AuthStorage, DefaultPackageManager, ModelRegistry, discoverAndLoadExtensions, createExtensionRuntime } = await import("@mariozechner/pi-coding-agent");
+    const { AuthStorage, DefaultPackageManager, ModelRegistry, discoverAndLoadExtensions, createExtensionRuntime } = await import("@earendil-works/pi-coding-agent");
 
     (TaskStore as unknown as ReturnType<typeof vi.fn>).mockImplementation(() => makeMockStore());
     (AutomationStore as unknown as ReturnType<typeof vi.fn>).mockImplementation(() => ({

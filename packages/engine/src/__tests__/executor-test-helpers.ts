@@ -249,7 +249,7 @@ vi.mock("../verification-utils.js", async () => {
     runVerificationCommand: vi.fn(),
   };
 });
-vi.mock("@mariozechner/pi-coding-agent", () => {
+vi.mock("@earendil-works/pi-coding-agent", () => {
   const mockSessionManager = {};
   return {
     SessionManager: {
@@ -269,7 +269,7 @@ vi.mock("@mariozechner/pi-coding-agent", () => {
 });
 
 import { createFnAgent } from "../pi.js";
-import { SessionManager } from "@mariozechner/pi-coding-agent";
+import { SessionManager } from "@earendil-works/pi-coding-agent";
 import { generateWorktreeName } from "../worktree-names.js";
 import { findWorktreeUser } from "../merger.js";
 import { StepSessionExecutor } from "../step-session-executor.js";

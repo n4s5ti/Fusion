@@ -14,7 +14,7 @@
  * - `describeModel()`: Get model description from session
  */
 
-import type { AgentSession, SessionManager, ToolDefinition } from "@mariozechner/pi-coding-agent";
+import type { AgentSession, SessionManager, ToolDefinition } from "@earendil-works/pi-coding-agent";
 import type { PermanentAgentGatingContext } from "@fusion/core";
 import type { SkillSelectionContext } from "./skill-resolver.js";
 import type { FallbackModelUsedPayload } from "./pi.js";

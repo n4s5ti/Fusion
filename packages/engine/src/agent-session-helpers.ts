@@ -10,7 +10,7 @@
 import type { AgentRuntimeOptions } from "./agent-runtime.js";
 import type { SkillSelectionContext } from "./skill-resolver.js";
 import type { PluginRunner } from "./plugin-runner.js";
-import type { AgentSession } from "@mariozechner/pi-coding-agent";
+import type { AgentSession } from "@earendil-works/pi-coding-agent";
 import {
   isTestModeActive,
   resolveExecutionSettingsModel,

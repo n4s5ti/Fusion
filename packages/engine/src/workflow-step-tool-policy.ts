@@ -1,4 +1,4 @@
-import type { ToolDefinition } from "@mariozechner/pi-coding-agent";
+import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { TASK_AGENT_MUTATION_TOOLS } from "./gating-classifications.js";
 
 export const READONLY_ALLOWLIST = [

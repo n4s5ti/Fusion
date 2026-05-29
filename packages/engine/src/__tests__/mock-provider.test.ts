@@ -18,7 +18,7 @@ vi.mock("node:https", () => ({
 
 import * as http from "node:http";
 import * as https from "node:https";
-import type { ToolDefinition } from "@mariozechner/pi-coding-agent";
+import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { accumulateSessionTokenUsage } from "../session-token-usage.js";
 import {
   MOCK_PROVIDER_ID,
@@ -233,7 +233,7 @@ describe("MockAgentRuntime", () => {
     }
 
     const source = await readFile(new URL("../providers/mock-provider.ts", import.meta.url), "utf8");
-    for (const forbidden of ["node:http", "node:https", "undici", "node-fetch", "@mariozechner/pi-ai"]) {
+    for (const forbidden of ["node:http", "node:https", "undici", "node-fetch", "@earendil-works/pi-ai"]) {
       expect(source).not.toContain(forbidden);
     }
     expect(MOCK_PROVIDER_ID).toBe("mock");

@@ -29,7 +29,7 @@ import { summarizeTitle } from "@fusion/core";
 import { EventEmitter } from "node:events";
 import { existsSync } from "node:fs";
 import { join, resolve, relative } from "node:path";
-import { SessionManager } from "@mariozechner/pi-coding-agent";
+import { SessionManager } from "@earendil-works/pi-coding-agent";
 import { SessionEventBuffer } from "./sse-buffer.js";
 
 import {

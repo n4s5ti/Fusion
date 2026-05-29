@@ -70,7 +70,7 @@ vi.mock("@fusion/core", () => {
 const mockAuthStorageSet = vi.fn();
 const mockAuthStorageGetOAuthProviders = vi.fn().mockReturnValue([]);
 
-vi.mock("@mariozechner/pi-coding-agent", () => {
+vi.mock("@earendil-works/pi-coding-agent", () => {
   return {
     AuthStorage: {
       create: vi.fn(() => ({

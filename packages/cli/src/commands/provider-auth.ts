@@ -2,15 +2,15 @@ import type {
   AuthStorage,
   ModelRegistry,
   AuthCredential,
-} from "@mariozechner/pi-coding-agent";
+} from "@earendil-works/pi-coding-agent";
 import {
   choosePreferredStoredCredential,
   readStoredCredentialsFromAuthFile,
   shouldHydrateStoredCredential,
   type StoredAuthCredential,
 } from "@fusion/core";
-import { getOAuthProvider } from "@mariozechner/pi-ai/oauth";
-import type { OAuthCredentials } from "@mariozechner/pi-ai/oauth";
+import { getOAuthProvider } from "@earendil-works/pi-ai/oauth";
+import type { OAuthCredentials } from "@earendil-works/pi-ai/oauth";
 
 export type LoginCallbacks = Parameters<AuthStorage["login"]>[1] & {
   onManualCodeInput?: () => Promise<string>;

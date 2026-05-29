@@ -33,7 +33,7 @@ import {
   SettingsManager,
   type AgentSession,
   type ToolDefinition,
-} from "@mariozechner/pi-coding-agent";
+} from "@earendil-works/pi-coding-agent";
 import { customProviderRegistryKey, getEnabledPiExtensionPaths, getFusionAgentDir, getLegacyPiAgentDir, getProjectRootFromWorktree, reconcileClaudeCliPaths, reconcileDroidCliPaths, resolvePiExtensionProjectRoot } from "@fusion/core";
 import type {
   AgentPermissionPolicyActionCategory,

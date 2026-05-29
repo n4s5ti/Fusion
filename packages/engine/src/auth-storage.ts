@@ -9,10 +9,10 @@ import {
   shouldHydrateStoredCredential,
   type StoredAuthCredential,
 } from "@fusion/core";
-import { AuthStorage } from "@mariozechner/pi-coding-agent";
-import type { AuthCredential } from "@mariozechner/pi-coding-agent";
-import { getOAuthProvider } from "@mariozechner/pi-ai/oauth";
-import type { OAuthCredentials } from "@mariozechner/pi-ai/oauth";
+import { AuthStorage } from "@earendil-works/pi-coding-agent";
+import type { AuthCredential } from "@earendil-works/pi-coding-agent";
+import { getOAuthProvider } from "@earendil-works/pi-ai/oauth";
+import type { OAuthCredentials } from "@earendil-works/pi-ai/oauth";
 
 type StoredCredential = StoredAuthCredential;
 

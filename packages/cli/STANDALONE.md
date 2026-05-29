@@ -12,7 +12,7 @@ npm install -g @runfusion/fusion
 
 Fusion uses [pi](https://github.com/badlogic/pi-mono) for AI agent sessions and reuses your existing pi authentication. You can also authenticate directly through the dashboard UI.
 
-If you don't have pi set up yet: `npm i -g @mariozechner/pi-coding-agent && pi` then `/login`.
+If you don't have pi set up yet: `npm i -g @earendil-works/pi-coding-agent && pi` then `/login`.
 
 ## Usage
 

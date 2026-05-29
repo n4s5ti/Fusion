@@ -158,7 +158,7 @@ export const registerSettingsSyncInboundRoutes: ApiRouteRegistrar = (ctx) => {
       }
 
       // Import AuthStorage and write credentials
-      const { AuthStorage } = await import("@mariozechner/pi-coding-agent");
+      const { AuthStorage } = await import("@earendil-works/pi-coding-agent");
       const authStorage = AuthStorage.create(getFusionAuthPath());
 
       const applyResult = central.applyAuthMaterialSnapshot(authMaterial);

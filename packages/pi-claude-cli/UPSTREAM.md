@@ -15,7 +15,7 @@ are retained.
 `pi-claude-cli` is a load-bearing runtime extension for Fusion's "Route AI
 through Claude CLI" feature. Vendoring lets us:
 
-1. Bump its peer dependency on `@mariozechner/pi-coding-agent` in lockstep
+1. Bump its peer dependency on `@earendil-works/pi-coding-agent` in lockstep
    with Fusion's own version (upstream tracked `^0.52.0`; Fusion needs
    `^0.62.0`).
 2. Fix bugs without waiting for upstream release cadence.

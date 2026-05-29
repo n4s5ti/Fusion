@@ -80,7 +80,7 @@ vi.mock("../custom-providers.js", () => ({
   readCustomProviders: readCustomProvidersMock,
 }));
 
-vi.mock("@mariozechner/pi-coding-agent", () => ({
+vi.mock("@earendil-works/pi-coding-agent", () => ({
   AuthStorage: {
     create: () => ({
       setFallbackResolver: setFallbackResolverMock,

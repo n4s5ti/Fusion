@@ -31,7 +31,7 @@ import {
 } from "./verification-utils.js";
 import { canonicalFusionBranchName, generateWorktreeName } from "./worktree-names.js";
 import { resolveTaskWorktreePath, resolveWorktreesDir } from "./worktree-paths.js";
-import { Type, type Static } from "@mariozechner/pi-ai";
+import { Type, type Static } from "@earendil-works/pi-ai";
 import { describeModel, promptWithFallback, compactSessionContext } from "./pi.js";
 import { accumulateSessionTokenUsage } from "./session-token-usage.js";
 import {
@@ -43,7 +43,7 @@ import { buildSessionSkillContext } from "./session-skill-context.js";
 import { reviewStep, type ReviewVerdict } from "./reviewer.js";
 import { resolveSandboxBackend } from "./sandbox/index.js";
 import type { SandboxBackend } from "./sandbox/types.js";
-import { ModelRegistry, SessionManager, type ToolDefinition, type AgentSession } from "@mariozechner/pi-coding-agent";
+import { ModelRegistry, SessionManager, type ToolDefinition, type AgentSession } from "@earendil-works/pi-coding-agent";
 import { PRIORITY_EXECUTE, type AgentSemaphore } from "./concurrency.js";
 import { RemovalReason, classifyTaskWorktree, describeRegisteredWorktrees, getRegisteredWorktreePaths, isGitRepository, isInsideWorktreesDir, isRegisteredGitWorktree, removeWorktree, type WorktreePool } from "./worktree-pool.js";
 import { attemptBranchAutocorrect } from "./branch-autocorrect.js";
