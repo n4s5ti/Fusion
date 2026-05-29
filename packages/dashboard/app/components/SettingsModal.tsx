@@ -3583,7 +3583,7 @@ export function SettingsModal({
                 AI merge commit summaries
               </label>
               <small>
-                When enabled, merge commit messages will include an AI-generated summary of the changes instead of just listing step commit subjects. Uses the title summarization model.
+                When enabled, merge commit messages include an AI-generated subject plus body summary (narrative + bullets + diff-stat) instead of just listing step commit subjects. Uses the title summarization model.
               </small>
             </div>
 

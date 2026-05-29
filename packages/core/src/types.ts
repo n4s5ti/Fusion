@@ -3378,8 +3378,9 @@ export interface ProjectSettings {
    *  Default: false. */
   autoSummarizeTitles?: boolean;
   /** When true, merge commit messages include an AI-generated summary of the
-   *  changes instead of just listing step commit subjects. Uses the title
-   *  summarizer model. Default: false. */
+   *  changes instead of just listing step commit subjects. Body composition
+   *  includes a narrative line, bullet summary, and `git diff --stat` when
+   *  available. Uses the title summarizer model. Default: true. */
   useAiMergeCommitSummary?: boolean;
   /** AI model provider for title summarization (when autoSummarizeTitles is enabled).
    *  Must be set together with `titleSummarizerModelId`. Falls back to planningProvider,

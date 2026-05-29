@@ -74,6 +74,11 @@ describe("settings defaults invariants", () => {
     expect("githubCloseSourceIssueOnDone" in DEFAULT_GLOBAL_SETTINGS).toBe(false);
   });
 
+  it("defaults AI merge commit summaries to enabled", () => {
+    // FN-5642/FN-5644 intentionally default this on for subject + body summary coverage.
+    expect(DEFAULT_PROJECT_SETTINGS.useAiMergeCommitSummary).toBe(true);
+  });
+
   describe("recycleWorktrees default", () => {
     it("keeps recycleWorktrees explicitly false in project defaults", () => {
       expect(DEFAULT_PROJECT_SETTINGS.recycleWorktrees).toBe(false);

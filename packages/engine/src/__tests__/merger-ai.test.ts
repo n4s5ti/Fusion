@@ -8,6 +8,7 @@ import {
   landSquash,
   parseReviewVerdict,
   buildMergeSystemPrompt,
+  buildMergePrompt,
   buildReviewSystemPrompt,
   REVIEW_VERDICT_MARKER,
   AiMergeBlockedError,
@@ -116,9 +117,11 @@ describe("parseReviewVerdict", () => {
     expect(buildMergeSystemPrompt().toLowerCase()).toContain("conflict");
   });
 
-  it("merge system prompt enforces new-breakage verification + uses the editable merger prompt", () => {
+  it("merge system prompt enforces new-breakage verification + commit body summary guidance", () => {
     expect(buildMergeSystemPrompt().toLowerCase()).toContain("type-check");
     expect(buildMergeSystemPrompt()).toMatch(/new failure/i);
+    expect(buildMergeSystemPrompt()).toMatch(/bullet list of key changes/i);
+    expect(buildMergeSystemPrompt()).toMatch(/Files changed:/i);
     // A custom 'merger' role prompt is incorporated as the base, while the hard
     // rules (verification + trailers) are still appended.
     const cfg = {
@@ -128,6 +131,23 @@ describe("parseReviewVerdict", () => {
     const p = buildMergeSystemPrompt(cfg);
     expect(p).toContain("CUSTOM MERGER PERSONA");
     expect(p).toContain("Verify before committing");
+  });
+
+  it("merge prompt requires subject, body summary, and diff-stat in commit message", () => {
+    const prompt = buildMergePrompt({
+      taskId: "FN-1",
+      branch: "fusion/fn-1",
+      integrationBranch: "main",
+      tipSha: "0123456789abcdef0123456789abcdef01234567",
+      taskTitle: "Do the thing",
+      includeTaskId: true,
+      trailers: ["Fusion-Task-Id: FN-1"],
+    });
+    expect(prompt).toMatch(/Build a merge body from the staged squash diff/i);
+    expect(prompt).toMatch(/bullet list of key changes/i);
+    expect(prompt).toMatch(/Files changed:/i);
+    expect(prompt).toMatch(/git diff --stat/i);
+    expect(prompt).toMatch(/git commit -m "FN-1: <concise imperative summary of the squashed changes>" -m/i);
   });
 });
 
