@@ -78,7 +78,7 @@ describe("reliability interactions: FN-5325 scheduler overlap priority inversion
     (scheduler as any).running = true;
     await scheduler.schedule();
 
-    expect(store.logEntry).toHaveBeenCalledWith("FN-2", "queued — deferred for higher-priority queued task FN-1 (overlap)");
+    expect(store.logEntry).toHaveBeenCalledWith("FN-2", "queued — blocked by active file-scope lease FN-1 (column=in-progress)");
   });
 
   it("preserves FN-4969 fanout ordering and only defers when overlap exists", async () => {

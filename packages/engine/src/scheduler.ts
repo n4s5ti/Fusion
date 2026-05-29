@@ -126,6 +126,34 @@ export interface QueuedOverlapCandidate {
   scope: string[];
 }
 
+export function getUnmetSchedulingDependencies(task: Task, tasks: Task[]): string[] {
+  return task.dependencies.filter((depId) => {
+    const dep = tasks.find((candidate) => candidate.id === depId);
+    return dep && dep.column !== "done" && dep.column !== "in-review" && dep.column !== "archived";
+  });
+}
+
+export function isRunnableQueuedOverlapCandidate(
+  task: Task,
+  tasks: Task[],
+  now = Date.now(),
+  activeScopes?: Map<string, string[]>,
+  scope: string[] = [],
+): boolean {
+  if (task.column !== "todo" || task.status !== "queued") return false;
+  if (task.paused || task.userPaused) return false;
+  if (task.nextRecoveryAt && new Date(task.nextRecoveryAt).getTime() > now) return false;
+  if (getUnmetSchedulingDependencies(task, tasks).length > 0) return false;
+  if (!activeScopes || activeScopes.size === 0) return true;
+
+  if (scope.length === 0) return true;
+  for (const activeScope of activeScopes.values()) {
+    if (!activeScope.length) continue;
+    if (pathsOverlap(scope, activeScope)) return false;
+  }
+  return true;
+}
+
 export function findHigherPriorityQueuedOverlap(
   candidate: QueuedOverlapCandidate,
   queuedScopes: QueuedOverlapCandidate[],
@@ -1097,29 +1125,30 @@ export class Scheduler {
        * subsequent todo tasks in the same pass also see them.
        */
       const activeScopes = new Map<string, string[]>();
+      const activeScopeColumns = new Map<string, Task["column"]>();
+      const setActiveScopeLease = (taskId: string, scope: string[], column: Task["column"]): void => {
+        activeScopes.set(taskId, scope);
+        activeScopeColumns.set(taskId, column);
+      };
       const inversionEmitted = new Set<string>();
       const queuedHigherPriorityScopes: QueuedOverlapCandidate[] = [];
+      const queuedHigherPriorityTaskById = new Map<string, Task>();
+      const overlapIgnorePaths = settings.overlapIgnorePaths ?? [];
+      const filteredScopeByTaskId = new Map<string, string[]>();
+      const getFilteredFileScope = async (taskId: string): Promise<string[]> => {
+        const cached = filteredScopeByTaskId.get(taskId);
+        if (cached) return cached;
+        const scope = await this.store.parseFileScopeFromPrompt(taskId);
+        const filteredScope = filterPathsByIgnoreList(scope, overlapIgnorePaths);
+        filteredScopeByTaskId.set(taskId, filteredScope);
+        return filteredScope;
+      };
       if (settings.groupOverlappingFiles) {
-        const overlapIgnorePaths = settings.overlapIgnorePaths ?? [];
         // In-progress tasks
         for (const t of inProgress) {
-          const scope = await this.store.parseFileScopeFromPrompt(t.id);
-          const filteredScope = filterPathsByIgnoreList(scope, overlapIgnorePaths);
-          if (filteredScope.length > 0) activeScopes.set(t.id, filteredScope);
+          const filteredScope = await getFilteredFileScope(t.id);
+          if (filteredScope.length > 0) setActiveScopeLease(t.id, filteredScope, "in-progress");
         }
-        for (const t of todo) {
-          if (t.status !== "queued" || t.paused || t.userPaused) continue;
-          const scope = await this.store.parseFileScopeFromPrompt(t.id);
-          const filteredScope = filterPathsByIgnoreList(scope, overlapIgnorePaths);
-          if (filteredScope.length === 0) continue;
-          queuedHigherPriorityScopes.push({
-            id: t.id,
-            priority: t.priority,
-            createdAt: t.createdAt,
-            scope: filteredScope,
-          });
-        }
-
         // Only live in-review tasks with a worktree belong in activeScopes.
         // Paused in-review tasks (e.g., failed-merge tasks awaiting human triage) cannot
         // make progress, so they must not contribute to overlap blockers; including them
@@ -1133,9 +1162,21 @@ export class Scheduler {
           (t) => t.column === "in-review" && Boolean(t.worktree) && !t.paused && t.status !== "failed",
         );
         for (const t of inReviewWithWorktree) {
-          const scope = await this.store.parseFileScopeFromPrompt(t.id);
-          const filteredScope = filterPathsByIgnoreList(scope, overlapIgnorePaths);
-          if (filteredScope.length > 0) activeScopes.set(t.id, filteredScope);
+          const filteredScope = await getFilteredFileScope(t.id);
+          if (filteredScope.length > 0) setActiveScopeLease(t.id, filteredScope, "in-review");
+        }
+
+        for (const t of todo) {
+          const filteredScope = await getFilteredFileScope(t.id);
+          if (filteredScope.length === 0) continue;
+          if (!isRunnableQueuedOverlapCandidate(t, tasks, now, activeScopes, filteredScope)) continue;
+          queuedHigherPriorityScopes.push({
+            id: t.id,
+            priority: t.priority,
+            createdAt: t.createdAt,
+            scope: filteredScope,
+          });
+          queuedHigherPriorityTaskById.set(t.id, t);
         }
       }
 
@@ -1162,10 +1203,7 @@ export class Scheduler {
         }
 
         // Check all deps are satisfied (done, in-review, or archived)
-        const unmetDeps = task.dependencies.filter((depId) => {
-          const dep = tasks.find((t) => t.id === depId);
-          return dep && dep.column !== "done" && dep.column !== "in-review" && dep.column !== "archived";
-        });
+        const unmetDeps = getUnmetSchedulingDependencies(task, tasks);
 
         if (unmetDeps.length > 0) {
           await this.store.updateTask(task.id, {
@@ -1212,11 +1250,7 @@ export class Scheduler {
 
         // Check file scope overlap when enabled
         if (settings.groupOverlappingFiles) {
-          const overlapIgnorePaths = settings.overlapIgnorePaths ?? [];
-          const taskScope = filterPathsByIgnoreList(
-            await this.store.parseFileScopeFromPrompt(task.id),
-            overlapIgnorePaths,
-          );
+          const taskScope = await getFilteredFileScope(task.id);
           if (taskScope.length > 0) {
             const activeScopeEntries = Array.from(activeScopes.entries()).sort(([aId], [bId]) => aId.localeCompare(bId));
             const overlapBlockerId = task.overlapBlockedBy || task.blockedBy;
@@ -1236,6 +1270,12 @@ export class Scheduler {
               ? overlapBlockerId
               : activeScopeEntries.find(([, ipScope]) => this.pathsOverlap(taskScope, ipScope))?.[0] ?? null;
 
+            const runnableQueuedHigherPriorityScopes = queuedHigherPriorityScopes.filter((queuedCandidate) => {
+              const queuedTask = queuedHigherPriorityTaskById.get(queuedCandidate.id);
+              if (!queuedTask) return false;
+              return isRunnableQueuedOverlapCandidate(queuedTask, tasks, now, activeScopes, queuedCandidate.scope);
+            });
+
             const higherPriorityQueuedOverlap = findHigherPriorityQueuedOverlap(
               {
                 id: task.id,
@@ -1243,7 +1283,7 @@ export class Scheduler {
                 createdAt: task.createdAt,
                 scope: taskScope,
               },
-              queuedHigherPriorityScopes,
+              runnableQueuedHigherPriorityScopes,
               this.pathsOverlap.bind(this),
             );
 
@@ -1263,7 +1303,7 @@ export class Scheduler {
               await this.rollbackRunningAgentsForQueuedTodoTask(task.id);
               await this.logDispatchQueuedReason(
                 task.id,
-                `queued — deferred for higher-priority queued task ${higherPriorityQueuedOverlap.id} (overlap)`,
+                `queued — deferred for higher-priority runnable queued task ${higherPriorityQueuedOverlap.id} (overlap)`,
               );
               continue;
             }
@@ -1305,7 +1345,7 @@ export class Scheduler {
                       blockerId: overlapBlockerTask.id,
                       blockerPriority: overlapBlockerTask.priority ?? null,
                       blockerCreatedAt: overlapBlockerTask.createdAt ?? null,
-                      blockerColumn: overlapBlockerTask.column,
+                      blockerColumn: activeScopeColumns.get(overlappingTaskId) ?? overlapBlockerTask.column,
                       source: "scheduler.overlap-priority-inversion",
                     },
                   });
@@ -1317,7 +1357,11 @@ export class Scheduler {
               }
 
               await this.rollbackRunningAgentsForQueuedTodoTask(task.id);
-              await this.logDispatchQueuedReason(task.id, `queued — file scope overlap with ${overlappingTaskId}`);
+              const activeLeaseColumn = activeScopeColumns.get(overlappingTaskId) ?? overlapBlockerTask?.column ?? "unknown";
+              await this.logDispatchQueuedReason(
+                task.id,
+                `queued — blocked by active file-scope lease ${overlappingTaskId} (column=${activeLeaseColumn})`,
+              );
               continue;
             }
 
@@ -1591,11 +1635,8 @@ export class Scheduler {
 
         // Track newly started task's file scope for overlap with remaining todo tasks
         if (settings.groupOverlappingFiles) {
-          const scope = filterPathsByIgnoreList(
-            await this.store.parseFileScopeFromPrompt(task.id),
-            settings.overlapIgnorePaths,
-          );
-          if (scope.length > 0) activeScopes.set(task.id, scope);
+          const scope = await getFilteredFileScope(task.id);
+          if (scope.length > 0) setActiveScopeLease(task.id, scope, "in-progress");
         }
       }
 

@@ -3731,7 +3731,7 @@ export class SelfHealingManager {
           const dep = taskById.get(depId);
           // listTasks excludes soft-deleted rows, so missing dependency IDs are
           // treated as resolved here by design.
-          return dep && dep.column !== "done" && dep.column !== "in-review" && dep.column !== "archived";
+          return dep && !dep.deletedAt && dep.column !== "done" && dep.column !== "in-review" && dep.column !== "archived";
         });
         const overlapBlocker = task.overlapBlockedBy ? taskById.get(task.overlapBlockedBy) : undefined;
         const hasActiveOverlapBlocker = Boolean(
@@ -3762,6 +3762,9 @@ export class SelfHealingManager {
               reasonCode = "missing-blocker";
               reason = `blocker ${blockerId} missing`;
             }
+          } else if (blocker.deletedAt) {
+            reasonCode = "soft-deleted-blocker";
+            reason = `blocker ${blockerId} soft-deleted at ${blocker.deletedAt}`;
           } else if (blocker.column === "done") {
             reasonCode = "blocker-done";
             reason = `blocker ${blockerId} is done`;
