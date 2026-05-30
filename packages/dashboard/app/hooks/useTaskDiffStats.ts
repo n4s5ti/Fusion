@@ -19,6 +19,12 @@ interface UseTaskDiffStatsOptions {
   worktree?: string;
   /** Version identifier that changes when steps update. Forces cache invalidation when changed. */
   stepVersion?: number | string;
+  /**
+   * Done-task merge enrichment signature (e.g. landedFiles length + filesChanged).
+   * For done cards this invalidates cache/refetches when mergeDetails enrichment lands,
+   * analogous to stepVersion invalidation for active columns.
+   */
+  mergeSignature?: number | string;
   /** Poll interval in ms for active columns (in-progress, in-review). Forces re-fetch bypassing cache. */
   pollIntervalMs?: number;
 }
@@ -83,6 +89,7 @@ export function __test_clearDiffStatsCache(): void {
  * @param commitSha - Merge commit SHA (undefined = no merge yet)
  * @param projectId - Optional project identifier
  * @param options.enabled - When false, no fetch is made and returns empty/stable state
+ * @param options.mergeSignature - Done-mode invalidation signal derived from mergeDetails enrichment
  */
 export function useTaskDiffStats(
   taskId: string,
@@ -95,6 +102,7 @@ export function useTaskDiffStats(
   const worktree = options.worktree;
   const stepVersion = options.stepVersion;
   const pollIntervalMs = options.pollIntervalMs;
+  const mergeSignature = options.mergeSignature;
   const [stats, setStats] = useState<DiffStats | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -117,13 +125,15 @@ export function useTaskDiffStats(
 
     const activeWorktree = shouldFetchActiveTask ? worktree : undefined;
     const stepVersionStr = stepVersion !== undefined ? String(stepVersion) : undefined;
+    const mergeSignatureStr = mergeSignature !== undefined ? String(mergeSignature) : undefined;
     const mode: "done" | "active" = shouldFetchDoneTask ? "done" : "active";
     let cancelled = false;
 
     async function load(forceRefresh = false) {
       // Check cache first - return immediately without loading flicker (unless force refresh)
       if (!forceRefresh) {
-        const cached = getCachedStats(taskId, projectId, activeWorktree, stepVersionStr, mode);
+        const cacheVersion = mode === "done" ? mergeSignatureStr : stepVersionStr;
+        const cached = getCachedStats(taskId, projectId, activeWorktree, cacheVersion, mode);
         if (cached) {
           if (!cancelled) {
             setStats(cached);
@@ -139,7 +149,8 @@ export function useTaskDiffStats(
         if (!cancelled) {
           setStats(data.stats);
           // Store in cache
-          setCachedStats(taskId, projectId, activeWorktree, stepVersionStr, mode, data.stats);
+          const cacheVersion = mode === "done" ? mergeSignatureStr : stepVersionStr;
+          setCachedStats(taskId, projectId, activeWorktree, cacheVersion, mode, data.stats);
         }
       } catch {
         if (!cancelled) {
@@ -170,7 +181,7 @@ export function useTaskDiffStats(
         clearInterval(timer);
       }
     };
-  }, [taskId, column, commitSha, projectId, enabled, worktree, stepVersion, pollIntervalMs]);
+  }, [taskId, column, commitSha, projectId, enabled, worktree, stepVersion, mergeSignature, pollIntervalMs]);
 
   return { stats, loading };
 }

@@ -3261,6 +3261,70 @@ describe("TaskCard", () => {
     expect(filesChangedButton).toBeNull();
   });
 
+  it("backfills done-card files-changed chip when mergeDetails enrichment arrives without remount", () => {
+    useTaskDiffStatsMock.mockImplementation((...args: any[]) => {
+      const options = args[4] as { mergeSignature?: string } | undefined;
+      if (options?.mergeSignature === "3:3") {
+        return { stats: { filesChanged: 3, additions: 9, deletions: 2 }, loading: false };
+      }
+      return { stats: null, loading: false };
+    });
+
+    const baseTask = makeTask({
+      column: "done",
+      mergeDetails: {
+        commitSha: "abc123",
+        insertions: 10,
+        deletions: 2,
+        mergedAt: "2026-04-25T15:00:00.000Z",
+        mergeConfirmed: true,
+      },
+    });
+
+    const { rerender } = render(
+      <TaskCard
+        task={baseTask}
+        onOpenDetail={noop}
+        addToast={noop}
+        onOpenDetailWithTab={vi.fn()}
+      />,
+    );
+
+    expect(screen.queryByRole("button", { name: /files changed/i })).toBeNull();
+    expect(useTaskDiffStatsMock).toHaveBeenLastCalledWith(
+      "FN-001",
+      "done",
+      "abc123",
+      undefined,
+      expect.objectContaining({ mergeSignature: ":" }),
+    );
+
+    rerender(
+      <TaskCard
+        task={{
+          ...baseTask,
+          mergeDetails: {
+            ...baseTask.mergeDetails,
+            filesChanged: 3,
+            landedFiles: ["a.ts", "b.ts", "c.ts"],
+          },
+        }}
+        onOpenDetail={noop}
+        addToast={noop}
+        onOpenDetailWithTab={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByRole("button", { name: "3 files changed" })).toBeDefined();
+    expect(useTaskDiffStatsMock).toHaveBeenLastCalledWith(
+      "FN-001",
+      "done",
+      "abc123",
+      undefined,
+      expect.objectContaining({ mergeSignature: "3:3" }),
+    );
+  });
+
   it("prefers landedFiles fallback files-changed label for done tasks when lineage stats are unavailable", () => {
     const onOpenDetailWithTab = vi.fn();
     useTaskDiffStatsMock.mockReturnValue({ stats: null, loading: false });

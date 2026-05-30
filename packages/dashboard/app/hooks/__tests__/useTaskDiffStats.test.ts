@@ -467,6 +467,98 @@ describe("useTaskDiffStats", () => {
     });
   });
 
+  describe("mergeSignature", () => {
+    beforeEach(() => {
+      __test_clearDiffStatsCache();
+      mockFetchTaskDiff.mockClear();
+    });
+
+    it("re-fetches for done tasks when mergeSignature changes without remount", async () => {
+      mockFetchTaskDiff
+        .mockResolvedValueOnce({
+          files: [],
+          stats: { filesChanged: 0, additions: 0, deletions: 0 },
+        })
+        .mockResolvedValueOnce({
+          files: [{ path: "src/new.ts", status: "modified", additions: 4, deletions: 1, patch: "" }],
+          stats: { filesChanged: 1, additions: 4, deletions: 1 },
+        });
+
+      const { result, rerender } = renderHook(
+        ({ mergeSignature }) => useTaskDiffStats(
+          "FN-MERGE-SIG",
+          "done",
+          "abc1234",
+          undefined,
+          { mergeSignature },
+        ),
+        { initialProps: { mergeSignature: ":" as string } },
+      );
+
+      await waitFor(() => expect(result.current.loading).toBe(false));
+      expect(result.current.stats).toEqual({ filesChanged: 0, additions: 0, deletions: 0 });
+      expect(mockFetchTaskDiff).toHaveBeenCalledTimes(1);
+
+      rerender({ mergeSignature: "1:1" as string });
+
+      await waitFor(() => expect(result.current.loading).toBe(false));
+      expect(result.current.stats).toEqual({ filesChanged: 1, additions: 4, deletions: 1 });
+      expect(mockFetchTaskDiff).toHaveBeenCalledTimes(2);
+    });
+
+    it("uses mergeSignature as done-mode cache key while active-mode behavior stays on stepVersion", async () => {
+      mockFetchTaskDiff
+        .mockResolvedValueOnce({
+          files: [],
+          stats: { filesChanged: 0, additions: 0, deletions: 0 },
+        })
+        .mockResolvedValueOnce({
+          files: [],
+          stats: { filesChanged: 2, additions: 8, deletions: 3 },
+        })
+        .mockResolvedValueOnce({
+          files: [],
+          stats: { filesChanged: 5, additions: 20, deletions: 4 },
+        });
+
+      const { result: doneFirst } = renderHook(() =>
+        useTaskDiffStats("FN-MERGE-CACHE", "done", "abc1234", undefined, { mergeSignature: ":" }),
+      );
+      await waitFor(() => expect(doneFirst.current.loading).toBe(false));
+      expect(doneFirst.current.stats).toEqual({ filesChanged: 0, additions: 0, deletions: 0 });
+
+      const { result: doneSecond } = renderHook(() =>
+        useTaskDiffStats("FN-MERGE-CACHE", "done", "abc1234", undefined, { mergeSignature: "2:2" }),
+      );
+      await waitFor(() => expect(doneSecond.current.loading).toBe(false));
+      expect(doneSecond.current.stats).toEqual({ filesChanged: 2, additions: 8, deletions: 3 });
+
+      const { result: activeWithMergeSigOnly } = renderHook(() =>
+        useTaskDiffStats("FN-MERGE-CACHE", "in-progress", undefined, undefined, {
+          worktree: "/repo/.worktrees/fn-merge-cache",
+          mergeSignature: "ignored-for-active",
+          stepVersion: "v1",
+        }),
+      );
+      await waitFor(() => expect(activeWithMergeSigOnly.current.loading).toBe(false));
+      expect(activeWithMergeSigOnly.current.stats).toEqual({ filesChanged: 5, additions: 20, deletions: 4 });
+      expect(mockFetchTaskDiff).toHaveBeenCalledTimes(3);
+
+      mockFetchTaskDiff.mockClear();
+      const { result: activeCacheHitDifferentMergeSig } = renderHook(() =>
+        useTaskDiffStats("FN-MERGE-CACHE", "in-progress", undefined, undefined, {
+          worktree: "/repo/.worktrees/fn-merge-cache",
+          mergeSignature: "different-but-ignored",
+          stepVersion: "v1",
+        }),
+      );
+
+      expect(activeCacheHitDifferentMergeSig.current.loading).toBe(false);
+      expect(activeCacheHitDifferentMergeSig.current.stats).toEqual({ filesChanged: 5, additions: 20, deletions: 4 });
+      expect(mockFetchTaskDiff).not.toHaveBeenCalled();
+    });
+  });
+
   describe("stepVersion", () => {
     beforeEach(() => {
       __test_clearDiffStatsCache();

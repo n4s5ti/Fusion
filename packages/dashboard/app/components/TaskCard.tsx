@@ -1020,6 +1020,15 @@ function TaskCardComponent({
     () => task.steps.map((s) => `${s.name}:${s.status}`).join("|"),
     [task.steps],
   );
+  const mergeSignature = useMemo(() => {
+    if (task.column !== "done") {
+      return undefined;
+    }
+
+    const landedFilesCount = task.mergeDetails?.landedFiles?.length ?? "";
+    const filesChanged = task.mergeDetails?.filesChanged ?? "";
+    return `${landedFilesCount}:${filesChanged}`;
+  }, [task.column, task.mergeDetails?.landedFiles?.length, task.mergeDetails?.filesChanged]);
 
   // Viewport-gated diff stats fetching - only fetch when card is visible
   const { stats: diffStats, loading: diffLoading } = useTaskDiffStats(
@@ -1031,6 +1040,7 @@ function TaskCardComponent({
       enabled: isInViewport,
       worktree: task.worktree,
       stepVersion: isActiveColumn ? stepVersion : undefined,
+      mergeSignature,
       pollIntervalMs: isActiveColumn ? 30_000 : undefined,
     },
   );
