@@ -646,6 +646,13 @@ export interface TaskStoreEvents {
  * references *before* deleting the parent — otherwise the dependents
  * would be permanently blocked by a nonexistent id.
  */
+
+export type TaskDependencyMutation =
+  | { operation: "add"; dependency: string }
+  | { operation: "remove"; dependency: string }
+  | { operation: "replace"; from: string; to: string }
+  | { operation: "set"; dependencies: string[] };
+
 export class TaskHasDependentsError extends Error {
   readonly taskId: string;
   readonly dependentIds: string[];
@@ -5573,6 +5580,173 @@ export class TaskStore extends EventEmitter<TaskStoreEvents> {
     }
   }
 
+
+  async updateTaskDependencies(
+    id: string,
+    mutation: TaskDependencyMutation,
+    runContext?: RunMutationContext,
+  ): Promise<Task> {
+    return this.withTaskLock(id, async () => {
+      const dir = this.taskDir(id);
+      const task = await this.readTaskJson(dir);
+      const previousDependencies = [...(task.dependencies ?? [])];
+      const normalizedCurrent = previousDependencies.map((dependency) => dependency.trim()).filter(Boolean);
+      let nextDependencies: string[];
+      let action: string;
+
+      const assertNotSelf = (dependencyId: string) => {
+        if (dependencyId === id) {
+          throw new Error(`Task ${id} cannot depend on itself`);
+        }
+      };
+      const assertTaskExists = (dependencyId: string) => {
+        if (!this.readTaskFromDb(dependencyId)) {
+          throw new Error(`Dependency task ${dependencyId} not found`);
+        }
+      };
+      const assertUnique = (dependencies: readonly string[]) => {
+        const seen = new Set<string>();
+        for (const dependencyId of dependencies) {
+          if (seen.has(dependencyId)) {
+            throw new Error(`Task ${id} already depends on ${dependencyId}`);
+          }
+          seen.add(dependencyId);
+        }
+      };
+      const normalizeDependency = (dependencyId: string, label = "dependency") => {
+        const normalized = dependencyId.trim();
+        if (!normalized) {
+          throw new Error(`${label} is required`);
+        }
+        assertNotSelf(normalized);
+        assertTaskExists(normalized);
+        return normalized;
+      };
+
+      switch (mutation.operation) {
+        case "add": {
+          const dependency = normalizeDependency(mutation.dependency);
+          if (normalizedCurrent.includes(dependency)) {
+            throw new Error(`Task ${id} already depends on ${dependency}`);
+          }
+          nextDependencies = [...normalizedCurrent, dependency];
+          action = `Added dependency ${dependency}`;
+          break;
+        }
+        case "remove": {
+          const dependency = mutation.dependency.trim();
+          if (!dependency) {
+            throw new Error("dependency is required");
+          }
+          if (!normalizedCurrent.includes(dependency)) {
+            throw new Error(`Task ${id} does not depend on ${dependency}`);
+          }
+          nextDependencies = normalizedCurrent.filter((candidate) => candidate !== dependency);
+          action = `Removed dependency ${dependency}`;
+          break;
+        }
+        case "replace": {
+          const from = mutation.from.trim();
+          if (!from) {
+            throw new Error("from dependency is required");
+          }
+          const to = normalizeDependency(mutation.to, "replacement dependency");
+          if (!normalizedCurrent.includes(from)) {
+            throw new Error(`Task ${id} does not depend on ${from}`);
+          }
+          if (from !== to && normalizedCurrent.includes(to)) {
+            throw new Error(`Task ${id} already depends on ${to}`);
+          }
+          nextDependencies = normalizedCurrent.map((dependency) => dependency === from ? to : dependency);
+          action = `Replaced dependency ${from} with ${to}`;
+          break;
+        }
+        case "set": {
+          nextDependencies = mutation.dependencies.map((dependency) => normalizeDependency(dependency));
+          assertUnique(nextDependencies);
+          action = nextDependencies.length > 0
+            ? `Set dependencies to ${nextDependencies.join(", ")}`
+            : "Cleared dependencies";
+          break;
+        }
+      }
+
+      const selfDefeatingDep = detectSelfDefeatingDependency(task.title, nextDependencies);
+      if (selfDefeatingDep) {
+        throw new SelfDefeatingDependencyError(
+          task.title?.trim() ?? "",
+          selfDefeatingDep.matchedVerb,
+          selfDefeatingDep.operandTaskId,
+        );
+      }
+
+      await this.assertNoDependencyCycle(
+        id,
+        nextDependencies,
+        "updateTask",
+        new Map([[id, nextDependencies]]),
+      );
+
+      const previousDependencySet = new Set(normalizedCurrent);
+      const hasNewDependencies = nextDependencies.some((dependencyId) => !previousDependencySet.has(dependencyId));
+
+      task.dependencies = nextDependencies;
+      const unresolvedDependency = nextDependencies.find((dependencyId) => {
+        const dependency = this.readTaskFromDb(dependencyId);
+        return dependency?.column !== "done" && dependency?.column !== "archived";
+      });
+      if (unresolvedDependency) {
+        const currentBlocker = task.blockedBy ? this.readTaskFromDb(task.blockedBy) : undefined;
+        const currentBlockerResolved = currentBlocker?.column === "done" || currentBlocker?.column === "archived";
+        if (!task.blockedBy || !nextDependencies.includes(task.blockedBy) || !currentBlocker || currentBlockerResolved) {
+          task.blockedBy = unresolvedDependency;
+        }
+      } else {
+        task.blockedBy = undefined;
+      }
+      task.updatedAt = new Date().toISOString();
+      task.log ??= [];
+      let movedToTriage = false;
+      if (hasNewDependencies && task.column === "todo") {
+        task.column = "triage";
+        movedToTriage = true;
+        task.status = undefined;
+        task.columnMovedAt = task.updatedAt;
+        task.log.push({
+          timestamp: task.updatedAt,
+          action: "Moved to triage for re-specification — new dependency added",
+          ...(runContext ? { runContext } : {}),
+        });
+      }
+      task.log.push({
+        timestamp: task.updatedAt,
+        action,
+        ...(runContext ? { runContext } : {}),
+      });
+
+      const auditEvent: RunAuditEventInput = {
+        taskId: id,
+        agentId: runContext?.agentId ?? "manual",
+        runId: runContext?.runId ?? "manual",
+        domain: "database",
+        mutationType: "task:dependencies:update",
+        target: id,
+        metadata: {
+          mutation,
+          previousDependencies,
+          dependencies: nextDependencies,
+          blockedBy: task.blockedBy ?? null,
+        },
+      };
+      await this.atomicWriteTaskJsonWithAudit(dir, task, auditEvent);
+      if (movedToTriage) {
+        this.emit("task:moved", { task, from: "todo" as Column, to: "triage" as Column, source: "engine" });
+      }
+      this.emit("task:updated", task);
+      return task;
+    });
+  }
+
   async updateTask(
     id: string,
     updates: { title?: string; description?: string; priority?: TaskPriority | null; prompt?: string; worktree?: string | null; status?: string | null; dependencies?: string[]; steps?: import("./types.js").TaskStep[]; currentStep?: number; blockedBy?: string | null; overlapBlockedBy?: string | null; assignedAgentId?: string | null; pausedByAgentId?: string | null; pausedReason?: string | null; tokenBudgetSoftAlertedAt?: string | null; worktrunkFallbackAlertedAt?: string | null; worktrunkFailure?: import("./types.js").Task["worktrunkFailure"] | null; tokenBudgetHardAlertedAt?: string | null; tokenBudgetOverride?: import("./types.js").TaskTokenBudgetOverride | null; dispatchStormCount?: number | null; lastDispatchAt?: string | null; assigneeUserId?: string | null; scopeOverride?: boolean | null; scopeOverrideReason?: string | null; scopeAutoWiden?: string[] | null; nodeId?: string | null; effectiveNodeId?: string | null; effectiveNodeSource?: string | null; checkedOutBy?: string | null; checkedOutAt?: string | null; checkoutNodeId?: string | null; checkoutRunId?: string | null; checkoutLeaseRenewedAt?: string | null; checkoutLeaseEpoch?: number | null; paused?: boolean; baseBranch?: string | null; autoMerge?: boolean | null; branch?: string | null; executionStartBranch?: string | null; baseCommitSha?: string | null; size?: "S" | "M" | "L"; reviewLevel?: number; executionMode?: import("./types.js").ExecutionMode | null; mergeRetries?: number; workflowStepRetries?: number; stuckKillCount?: number | null; resumeLimboCount?: number | null; resumeLimboTipSha?: string | null; resumeLimboStepSignature?: string | null; postReviewFixCount?: number | null; recoveryRetryCount?: number | null; taskDoneRetryCount?: number | null; worktreeSessionRetryCount?: number | null; completionHandoffLimboRecoveryCount?: number | null; verificationFailureCount?: number | null; mergeConflictBounceCount?: number | null; mergeAuditBounceCount?: number | null; mergeTransientRetryCount?: number | null; branchConflictRecoveryCount?: number | null; reviewerContextRetryCount?: number | null; reviewerFallbackRetryCount?: number | null; nextRecoveryAt?: string | null; enabledWorkflowSteps?: string[]; noCommitsExpected?: boolean | null; modelProvider?: string | null; modelId?: string | null; validatorModelProvider?: string | null; validatorModelId?: string | null; planningModelProvider?: string | null; planningModelId?: string | null; thinkingLevel?: string | null; error?: string | null; summary?: string | null; sessionFile?: string | null; firstExecutionAt?: string | null; cumulativeActiveMs?: number | null; executionStartedAt?: string | null; executionCompletedAt?: string | null; review?: import("./types.js").TaskReview | null; reviewState?: import("./types.js").TaskReviewState | null; workflowStepResults?: import("./types.js").WorkflowStepResult[] | null; mergeDetails?: import("./types.js").MergeDetails | null; sourceIssue?: import("./types.js").TaskSourceIssue | null; sourceMetadataPatch?: Record<string, unknown> | null; githubTracking?: import("./types.js").TaskGithubTracking | null; tokenUsage?: import("./types.js").TaskTokenUsage | null; modifiedFiles?: string[] | null; missionId?: string | null; sliceId?: string | null },
@@ -5651,9 +5825,10 @@ export class TaskStore extends EventEmitter<TaskStoreEvents> {
       // Detect new dependencies being added to a todo task → auto-move to triage
       let movedToTriage = false;
       if (updates.dependencies !== undefined) {
-        const oldDeps = new Set(task.dependencies);
-        const hasNewDeps = updates.dependencies.some((d) => !oldDeps.has(d));
-        task.dependencies = updates.dependencies;
+        const oldDeps = new Set((task.dependencies ?? []).map((dependency) => dependency.trim()).filter(Boolean));
+        const normalizedDependencies = updates.dependencies.map((dependency) => dependency.trim()).filter(Boolean);
+        const hasNewDeps = normalizedDependencies.some((d) => !oldDeps.has(d));
+        task.dependencies = normalizedDependencies;
 
         if (hasNewDeps && task.column === "todo") {
           task.column = "triage";
