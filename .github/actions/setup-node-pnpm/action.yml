@@ -34,6 +34,10 @@ runs:
     # runner.arch is essential: pnpm only installs the current platform's optional
     # native deps (e.g. @rollup/rollup-linux-arm64-gnu), so an x64 cache restored on
     # an arm64 runner (same runner.os) would be missing native binaries and break builds.
+    # github.job scopes the key per job: jobs sharing an OS/arch (e.g. the windows-x64
+    # CLI build and the Windows desktop build) would otherwise race on the same key and
+    # one would fail the post-job cache save ("unable to reserve cache ... another job
+    # may be creating this cache"). Per-job keys trade a little reuse for reliability.
     # Intentionally no restore-keys fallback: partial restores can create inconsistent trees.
     - name: Cache node_modules
       id: node-modules-cache
@@ -44,7 +48,7 @@ runs:
           node_modules
           **/node_modules
           !**/.cache
-        key: node-modules-${{ runner.os }}-${{ runner.arch }}-node${{ inputs.node-version }}-${{ hashFiles('pnpm-lock.yaml') }}
+        key: node-modules-${{ github.job }}-${{ runner.os }}-${{ runner.arch }}-node${{ inputs.node-version }}-${{ hashFiles('pnpm-lock.yaml') }}
 
     - name: Install dependencies
       if: ${{ inputs.skip-install != 'true' && steps.node-modules-cache.outputs.cache-hit != 'true' }}
