@@ -204,6 +204,16 @@ Delete a mission and all its milestones, slices, and features. Cannot be undone.
 |-----------|------|----------|-------------|
 | `id` | string | ✓ | Mission ID to delete (e.g., M-001) |
 
+### fn_mission_update
+
+Update an existing mission's title or description. Partial patches leave untouched fields intact.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `id` | string | ✓ | Mission ID to update (e.g., M-001) |
+| `title` | string | — | Updated mission title |
+| `description` | string | — | Updated mission description |
+
 ### fn_milestone_add
 
 Add a milestone to a mission. Milestones represent phases of work.

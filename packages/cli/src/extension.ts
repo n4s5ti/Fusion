@@ -2709,6 +2709,75 @@ export default function kbExtension(pi: ExtensionAPI) {
     },
   });
 
+  // ── fn_mission_update ───────────────────────────────────────────
+
+  pi.registerTool({
+    name: "fn_mission_update",
+    label: "fn: Update Mission",
+    description:
+      "Update an existing mission's title or description. " +
+      "Partial patches leave untouched fields intact.",
+    promptSnippet: "Update an existing mission",
+    promptGuidelines: [
+      "Use to revise mission framing without re-creating the mission",
+      "Mission hierarchy and ordering are preserved",
+      "Provide only the fields you want to change",
+    ],
+    parameters: Type.Object({
+      id: Type.String({ description: "Mission ID to update (e.g., M-001)" }),
+      title: Type.Optional(Type.String({ description: "Updated mission title" })),
+      description: Type.Optional(Type.String({ description: "Updated mission description" })),
+    }),
+
+    async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+      const store = await getStore(ctx.cwd);
+      const missionStore = store.getMissionStore();
+
+      const existingMission = missionStore.getMission(params.id);
+      if (!existingMission) {
+        return {
+          content: [{ type: "text", text: `Mission ${params.id} not found` }],
+          isError: true,
+          details: { error: "Mission not found" },
+        };
+      }
+
+      const updates: { title?: string; description?: string } = {};
+
+      if ("title" in params) {
+        updates.title = params.title?.trim();
+      }
+      if ("description" in params) {
+        updates.description = params.description?.trim();
+      }
+
+      if (Object.keys(updates).length === 0) {
+        return {
+          content: [
+            {
+              type: "text",
+              text: "No fields to update (provide at least one of: title, description)",
+            },
+          ],
+          isError: true,
+          details: { error: "No fields to update" },
+        };
+      }
+
+      const mission = missionStore.updateMission(params.id, updates);
+
+      return {
+        content: [{ type: "text", text: `Updated ${mission.id}: "${mission.title}"` }],
+        details: {
+          missionId: mission.id,
+          title: mission.title,
+          description: mission.description,
+          status: mission.status,
+        },
+      };
+    },
+  });
+
   // ── fn_milestone_add ────────────────────────────────────────────
 
   pi.registerTool({

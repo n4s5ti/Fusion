@@ -216,6 +216,7 @@ describe.skipIf(!SHOULD_RUN_LEGACY_EXTENSION_INTEGRATION)("fn pi extension (lega
         "fn_mission_list",
         "fn_mission_show",
         "fn_mission_delete",
+        "fn_mission_update",
         "fn_milestone_add",
         "fn_slice_add",
         "fn_feature_add",
@@ -1781,6 +1782,76 @@ describe.skipIf(!SHOULD_RUN_LEGACY_EXTENSION_INTEGRATION)("fn pi extension (lega
       const result = await updateTool.execute(
         "fu6",
         { id: feature.details.featureId },
+        undefined,
+        undefined,
+        makeCtx(tmpDir),
+      );
+
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toContain("No fields to update");
+    });
+  });
+
+  describe("fn_mission_update", () => {
+    it("updates mission description and persists", async () => {
+      const missionTool = api.tools.get("fn_mission_create")!;
+      const updateTool = api.tools.get("fn_mission_update")!;
+
+      const mission = await missionTool.execute(
+        "m1",
+        { title: "Mission", description: "Original description" },
+        undefined,
+        undefined,
+        makeCtx(tmpDir),
+      );
+
+      const result = await updateTool.execute(
+        "mu1",
+        { id: mission.details.missionId, description: "  Updated description  " },
+        undefined,
+        undefined,
+        makeCtx(tmpDir),
+      );
+
+      expect(result.content[0].text).toContain("Updated");
+      expect(result.details.missionId).toBe(mission.details.missionId);
+      expect(result.details.description).toBe("Updated description");
+
+      const store = new TaskStore(tmpDir);
+      await store.init();
+      const persisted = store.getMissionStore().getMission(mission.details.missionId);
+      expect(persisted?.description).toBe("Updated description");
+    });
+
+    it("returns error when mission not found", async () => {
+      const updateTool = api.tools.get("fn_mission_update")!;
+      const result = await updateTool.execute(
+        "mu2",
+        { id: "M-999", title: "Updated" },
+        undefined,
+        undefined,
+        makeCtx(tmpDir),
+      );
+
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toContain("Mission M-999 not found");
+    });
+
+    it("returns error when no fields supplied", async () => {
+      const missionTool = api.tools.get("fn_mission_create")!;
+      const updateTool = api.tools.get("fn_mission_update")!;
+
+      const mission = await missionTool.execute(
+        "m1",
+        { title: "Mission", description: "Original description" },
+        undefined,
+        undefined,
+        makeCtx(tmpDir),
+      );
+
+      const result = await updateTool.execute(
+        "mu3",
+        { id: mission.details.missionId },
         undefined,
         undefined,
         makeCtx(tmpDir),

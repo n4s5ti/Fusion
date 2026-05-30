@@ -77,6 +77,7 @@ The canonical per-parameter tool reference lives in `packages/cli/skill/fusion/r
 | `fn_mission_list` | List missions and their current status. |
 | `fn_mission_show` | Show mission details with milestone/slice/feature hierarchy, including milestone/feature acceptance criteria and slice verification when present. |
 | `fn_mission_delete` | Delete a mission and its hierarchy. |
+| `fn_mission_update` | Update mission title/description using partial patches. |
 | `fn_milestone_add` | Add a milestone to a mission. |
 | `fn_milestone_update` | Update milestone fields using partial patches. |
 | `fn_slice_add` | Add a slice to a milestone. |
@@ -84,6 +85,18 @@ The canonical per-parameter tool reference lives in `packages/cli/skill/fusion/r
 | `fn_feature_add` | Add a feature to a slice with optional acceptance criteria. |
 | `fn_feature_update` | Update feature fields using partial patches. |
 | `fn_feature_link_task` | Link a feature to a task for implementation. |
+
+### fn_mission_update
+
+Updates an existing mission's `title` or `description`. Partial patches leave untouched fields intact — fields omitted from the call are not modified.
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `id` | string | ✓ | Mission ID to update (e.g., `M-001`) |
+| `title` | string | — | Updated mission title |
+| `description` | string | — | Updated mission description |
+
+Use this to reconcile mission narrative/state text without recreating the mission.
 
 ### fn_milestone_update
 

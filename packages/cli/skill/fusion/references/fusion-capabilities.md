@@ -49,6 +49,7 @@ All skill/extension tool invocations in this catalog use the public `fn_*` names
 | `fn_goal_show` | Show full details for a single goal by ID. |
 | `fn_mission_show` | Show mission details with full hierarchy: milestones → slices → features. |
 | `fn_mission_delete` | Delete a mission and all its milestones, slices, and features. Cannot be undone. |
+| `fn_mission_update` | Update an existing mission's title or description. Partial patches leave untouched fields intact. |
 | `fn_milestone_add` | Add a milestone to a mission. Milestones represent phases of work. |
 | `fn_slice_add` | Add a slice to a milestone. Slices are work units that can be activated for implementation. |
 | `fn_feature_add` | Add a feature to a slice. Features are deliverables that can be linked to tasks. |
