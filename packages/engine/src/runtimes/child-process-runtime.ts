@@ -22,11 +22,13 @@ import {
   TASK_CREATED,
   TASK_MOVED,
   TASK_UPDATED,
+  TASK_DELETED,
   ERROR_EVENT,
   HEALTH_CHANGED,
   type TaskCreatedPayload,
   type TaskMovedPayload,
   type TaskUpdatedPayload,
+  type TaskDeletedPayload,
   type ErrorEventPayload,
   type HealthChangedPayload,
 } from "../ipc/ipc-protocol.js";
@@ -294,6 +296,10 @@ export class ChildProcessRuntime
 
     this.ipcHost.on(TASK_UPDATED, (payload: TaskUpdatedPayload) => {
       this.emit("task:updated", payload.task);
+    });
+
+    this.ipcHost.on(TASK_DELETED, (payload: TaskDeletedPayload) => {
+      this.emit("task:deleted", payload.task, payload.meta);
     });
 
     // Forward error events

@@ -1,6 +1,8 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import { EventEmitter } from "node:events";
+import { InProcessRuntime } from "../runtimes/in-process-runtime.js";
 
 describe("InProcessRuntime onStart duplicate guard", () => {
   it("contains a taskAgentMap guard before creating task-worker agents", () => {
@@ -20,5 +22,35 @@ describe("InProcessRuntime onStart duplicate guard", () => {
   it("rehydrates autopilot mission watches during startup recovery", () => {
     const source = readFileSync(join(process.cwd(), "src/runtimes/in-process-runtime.ts"), "utf-8");
     expect(source).toContain("activeMissionAutopilot.recoverMissions(activeMissionStore)");
+  });
+
+  it("forwards task:deleted events with and without githubIssueAction metadata", () => {
+    const runtime = new InProcessRuntime(
+      {
+        projectId: "proj-test",
+        workingDirectory: process.cwd(),
+        isolationMode: "in-process",
+        maxConcurrent: 1,
+        maxWorktrees: 1,
+      },
+      {
+        getGlobalConcurrencyState: vi.fn(),
+        recordTaskCompletion: vi.fn(),
+      } as any,
+    );
+
+    const taskStore = new EventEmitter();
+    const emitSpy = vi.spyOn(runtime, "emit");
+    (runtime as any).taskStore = taskStore;
+    (runtime as any).setupEventForwarding();
+
+    const task = { id: "FN-1", title: "task" };
+    const meta = { githubIssueAction: "auto" };
+
+    taskStore.emit("task:deleted", task, meta);
+    taskStore.emit("task:deleted", task);
+
+    expect(emitSpy).toHaveBeenCalledWith("task:deleted", task, meta);
+    expect(emitSpy).toHaveBeenCalledWith("task:deleted", task, undefined);
   });
 });

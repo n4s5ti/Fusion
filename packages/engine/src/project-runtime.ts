@@ -1,5 +1,5 @@
 import type { EventEmitter } from "node:events";
-import type { TaskStore, Task, IsolationMode, ProjectSettings } from "@fusion/core";
+import type { TaskStore, Task, IsolationMode, ProjectSettings, GithubIssueAction } from "@fusion/core";
 import type { Scheduler } from "./scheduler.js";
 
 /**
@@ -67,6 +67,8 @@ export interface ProjectRuntimeEvents {
   "task:moved": [data: { task: Task; from: string; to: string }];
   /** Emitted when a task is updated */
   "task:updated": [task: Task];
+  /** Emitted when a task is deleted */
+  "task:deleted": [task: Task, meta?: { githubIssueAction?: GithubIssueAction }];
   /** Emitted when a cross-node assignment event is observed */
   "task:assigned": [data: { taskId: string; agentId: string; assignedAt: string; source?: string }];
   /** Emitted when an error occurs in the runtime */

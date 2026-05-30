@@ -10,6 +10,7 @@ import type {
   PluginLoader,
   MessageStore,
   RoutineStore,
+  GithubIssueAction,
 } from "@fusion/core";
 import { ChatStore, createCentralDatabase, isEphemeralAgent } from "@fusion/core";
 import { Scheduler } from "../scheduler.js";
@@ -1284,7 +1285,8 @@ export class InProcessRuntime
   }
 
   /**
-   * Set up event forwarding from TaskStore to runtime listeners.
+   * Set up event forwarding from TaskStore to runtime listeners
+   * for task:created, task:moved, task:updated, and task:deleted.
    */
   private setupEventForwarding(): void {
     // Forward task:created events
@@ -1303,6 +1305,12 @@ export class InProcessRuntime
     this.taskStore.on("task:updated", (task: Task) => {
       this.recordActivity();
       this.emit("task:updated", task);
+    });
+
+    // Forward task:deleted events
+    this.taskStore.on("task:deleted", (task: Task, meta?: { githubIssueAction?: GithubIssueAction }) => {
+      this.recordActivity();
+      this.emit("task:deleted", task, meta);
     });
 
     runtimeLog.log("Event forwarding setup complete");

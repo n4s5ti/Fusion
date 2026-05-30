@@ -18,6 +18,10 @@ import {
   STOP_RUNTIME,
   GET_STATUS,
   GET_METRICS,
+  TASK_CREATED,
+  TASK_MOVED,
+  TASK_UPDATED,
+  TASK_DELETED,
   ERROR_EVENT,
   type StartRuntimePayload,
 } from "../ipc/ipc-protocol.js";
@@ -76,15 +80,19 @@ ipcWorker.onCommand(START_RUNTIME, async (payload: unknown) => {
 
   // Forward runtime events to host
   runtime.on("task:created", (task) => {
-    ipcWorker.sendEvent("TASK_CREATED", { task });
+    ipcWorker.sendEvent(TASK_CREATED, { task });
   });
 
   runtime.on("task:moved", (data) => {
-    ipcWorker.sendEvent("TASK_MOVED", data);
+    ipcWorker.sendEvent(TASK_MOVED, data);
   });
 
   runtime.on("task:updated", (task) => {
-    ipcWorker.sendEvent("TASK_UPDATED", { task });
+    ipcWorker.sendEvent(TASK_UPDATED, { task });
+  });
+
+  runtime.on("task:deleted", (task, meta) => {
+    ipcWorker.sendEvent(TASK_DELETED, { task, meta });
   });
 
   runtime.on("error", (error) => {

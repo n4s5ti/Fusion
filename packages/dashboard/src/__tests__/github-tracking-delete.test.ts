@@ -133,6 +133,35 @@ describe("github tracking delete flow", () => {
     expect(mockSetIssueState).toHaveBeenCalledWith("octocat", "hello-world", 7, "closed", "not_planned");
   });
 
+  it("uses task:deleted githubIssueAction=auto metadata to close linked issue", async () => {
+    const handleTaskDeletedSpy = vi.spyOn(stateService as any, "handleTaskDeleted");
+    const task = await store.createTask({
+      description: "delete tracked task with default auto metadata",
+      githubTracking: { enabled: true },
+    });
+
+    await store.linkGithubIssue(task.id, {
+      owner: "octocat",
+      repo: "hello-world",
+      number: 70,
+      url: "https://github.com/octocat/hello-world/issues/70",
+      createdAt: new Date().toISOString(),
+    });
+
+    const closeAction = waitForGithubIssueAction(
+      store,
+      (payload) => payload.taskId === task.id && payload.action === "close" && payload.outcome === "success",
+      { timeoutMessage: `Timed out waiting for auto close action for deleted task ${task.id}` },
+    );
+
+    await store.deleteTask(task.id, { githubIssueAction: "auto" });
+    await closeAction;
+
+    expect(handleTaskDeletedSpy).toHaveBeenCalled();
+    expect(handleTaskDeletedSpy).toHaveBeenCalledWith(store, expect.objectContaining({ id: task.id }), { githubIssueAction: "auto" });
+    expect(mockSetIssueState).toHaveBeenCalledWith("octocat", "hello-world", 70, "closed", "not_planned");
+  });
+
   it("does not call GitHub when deleting a task with tracking disabled", async () => {
     const task = await store.createTask({
       description: "delete untracked task",

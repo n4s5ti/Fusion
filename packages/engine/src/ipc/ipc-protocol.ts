@@ -11,7 +11,7 @@
  */
 
 import type { RuntimeStatus, ProjectRuntimeConfig } from "../project-runtime.js";
-import type { Task } from "@fusion/core";
+import type { GithubIssueAction, Task } from "@fusion/core";
 
 // ── Base Message Types ────────────────────────────────────────────────────
 
@@ -121,6 +121,8 @@ export const TASK_CREATED = "TASK_CREATED" as const;
 export const TASK_MOVED = "TASK_MOVED" as const;
 /** Event type: Task updated */
 export const TASK_UPDATED = "TASK_UPDATED" as const;
+/** Event type: Task deleted */
+export const TASK_DELETED = "TASK_DELETED" as const;
 /** Event type: Runtime error */
 export const ERROR_EVENT = "ERROR_EVENT" as const;
 /** Event type: Health status changed */
@@ -133,6 +135,7 @@ export type IpcEventType =
   | typeof TASK_CREATED
   | typeof TASK_MOVED
   | typeof TASK_UPDATED
+  | typeof TASK_DELETED
   | typeof ERROR_EVENT
   | typeof HEALTH_CHANGED;
 
@@ -157,6 +160,14 @@ export interface TaskMovedPayload {
  */
 export interface TaskUpdatedPayload {
   task: Task;
+}
+
+/**
+ * Payload for TASK_DELETED event.
+ */
+export interface TaskDeletedPayload {
+  task: Task;
+  meta?: { githubIssueAction?: GithubIssueAction };
 }
 
 /**
@@ -209,6 +220,7 @@ export function isIpcEvent(message: IpcMessage): boolean {
     TASK_CREATED,
     TASK_MOVED,
     TASK_UPDATED,
+    TASK_DELETED,
     ERROR_EVENT,
     HEALTH_CHANGED,
   ];
