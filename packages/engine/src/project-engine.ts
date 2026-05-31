@@ -1848,9 +1848,14 @@ export class ProjectEngine {
               // FN-5633: "ai" mode (default) uses the standalone AI merge path
               // (clean-room worktree + AI merge + AI reviewer); "deterministic"
               // keeps the legacy aiMergeTask pipeline.
-              const mergerMode = normalizeMergerMode((await store.getSettings().catch(() => ({}) as Settings)).merger?.mode);
+              const settings = await store.getSettings().catch(() => ({}) as Settings);
+              const mergerMode = normalizeMergerMode(settings.merger?.mode);
+              const mergeOptionsWithSettings = {
+                ...mergerOptions,
+                allowDirtyLocalCheckoutSync: settings.merger?.allowDirtyLocalCheckoutSync === true,
+              };
               return mergerMode === "ai"
-                ? runAiMerge(store, cwd, taskId, mergerOptions)
+                ? runAiMerge(store, cwd, taskId, mergeOptionsWithSettings)
                 : aiMergeTask(store, cwd, taskId, mergerOptions);
             };
 

@@ -444,6 +444,7 @@ export function SettingsModal({
     mergeStrategy: "direct",
     mergeIntegrationWorktree: "reuse-task-worktree",
     mergeAdvanceAutoSync: "stash-and-ff",
+    merger: { mode: "ai", maxReviewPasses: 3, allowDirtyLocalCheckoutSync: false },
     recycleWorktrees: false,
     executorAllowSiblingBranchRename: false,
     worktreeNaming: "random",
@@ -4628,6 +4629,31 @@ export function SettingsModal({
                     }
                   />
                   <small>AI corrective rounds before landing the best result (advisory concern) or hard-failing (unfixable correctness concern). Default 3. The reviewer uses your project&apos;s reviewer/validator model.</small>
+                </div>
+                <div className="form-group">
+                  <label htmlFor="mergerAllowDirtyLocalCheckoutSync" className="checkbox-label">
+                    <input
+                      id="mergerAllowDirtyLocalCheckoutSync"
+                      type="checkbox"
+                      checked={form.merger?.allowDirtyLocalCheckoutSync === true}
+                      onChange={(e) =>
+                        setForm((f) => ({
+                          ...f,
+                          merger: { ...(f.merger ?? {}), allowDirtyLocalCheckoutSync: e.target.checked },
+                        }))
+                      }
+                    />
+                    Allow AI merge to sync a dirty checked-out integration branch
+                  </label>
+                  <details className="settings-option-details">
+                    <summary>More details</summary>
+                    <small>
+                      Dangerous compatibility escape hatch. Leave off unless you explicitly want the legacy
+                      stash → fast-forward → restore behavior when your checked-out integration branch has
+                      unrelated local edits. When off, AI merge blocks before advancing the branch so dirty
+                      project-root edits cannot contaminate a completed merge.
+                    </small>
+                  </details>
                 </div>
               </>
             )}

@@ -5925,6 +5925,12 @@ export interface MergerOptions {
   agentStore?: import("@fusion/core").AgentStore;
   /** Plugin runner for runtime selection. When provided, enables plugin runtime lookup. */
   pluginRunner?: import("./plugin-runner.js").PluginRunner;
+  /**
+   * Escape hatch for trusted callers that want the AI merge path to stash/pop
+   * dirty edits in the checked-out integration worktree instead of failing
+   * closed. Defaults false because project-root dirt contaminates later merges.
+   */
+  allowDirtyLocalCheckoutSync?: boolean;
 }
 
 function quoteArg(value: string): string {

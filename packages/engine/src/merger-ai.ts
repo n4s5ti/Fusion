@@ -21,9 +21,11 @@
  *      common path.
  *   4. CAS fast-forward of `refs/heads/<integration>` to the squash (retry on a
  *      concurrent advance by rebuilding on the new tip).
- *   5. Sync the user's local checkout to the new tip — fast-forward if clean,
- *      stash → ff → restore if dirty (best-effort, never destroys uncommitted
- *      work) — then finalize (delete branch, task → done, remove temp worktree).
+ *   5. Sync the user's local checkout to the new tip only when it is clean by
+ *      default. Dirty checked-out integration worktrees fail closed before the
+ *      branch ref advances, preventing unrelated local changes from poisoning
+ *      subsequent merge runs. An explicit escape hatch can opt into the legacy
+ *      stash → ff → restore path.
  *
  * Pure helpers (prompt builders, verdict parser) are exported for unit testing;
  * the orchestrator accepts injectable agent functions for the same reason.
@@ -527,6 +529,7 @@ export type LocalSyncOutcome =
   | "stash-ff-restore"
   | "stash-ff-airesolved"
   | "stash-ff-conflict"
+  | "blocked-dirty-checkout"
   | "skipped-dirty-unstashable"
   | "skipped-other-branch";
 
@@ -551,10 +554,10 @@ async function hasUnresolvedConflicts(cwd: string): Promise<boolean> {
  *      checkout — `git merge --ff-only <squash>` (it moves both the branch ref
  *      and the working tree). The user's real dirty state is read accurately
  *      BEFORE the fast-forward (while HEAD === tipSha, so `git status` isn't
- *      polluted by the ref move). Dirty edits are stashed, fast-forwarded, then
- *      restored — and if the restore conflicts, the AI merger reconciles them.
- *      If the checkout HEAD has already moved off tipSha, that's a concurrent
- *      advance → rebuild.
+ *      polluted by the ref move). By default a dirty checked-out integration
+ *      worktree is a hard blocker; callers must explicitly opt into stash/pop
+ *      reconciliation. If the checkout HEAD has already moved off tipSha,
+ *      that's a concurrent advance → rebuild.
  *
  *   B. The checkout is on a different branch (or the target isn't checked out
  *      here). We advance the ref atomically via `update-ref` (CAS) and leave the
@@ -572,8 +575,15 @@ export async function landSquash(input: {
   taskId: string;
   audit: RunAuditor;
   resolveConflicts?: (cwd: string, prompt: string) => Promise<void>;
+  /**
+   * Explicit escape hatch for callers that truly want Fusion to stash/pop real
+   * local edits in the checked-out integration worktree. The default is false:
+   * automation must not land a task while also manufacturing uncommitted local
+   * state in the project root, because that poisons subsequent merge runs.
+   */
+  allowDirtyLocalCheckoutSync?: boolean;
 }): Promise<LandResult> {
-  const { projectRootDir, mergeRoot, integrationBranch, tipSha, squashSha, taskId, audit, resolveConflicts } = input;
+  const { projectRootDir, mergeRoot, integrationBranch, tipSha, squashSha, taskId, audit, resolveConflicts, allowDirtyLocalCheckoutSync = false } = input;
   const emit = (outcome: LocalSyncOutcome, extra: Record<string, unknown> = {}) =>
     audit.git({ type: "merge:ai-local-sync", target: integrationBranch, metadata: { taskId, outcome, squashSha, ...extra } }).catch(() => undefined);
 
@@ -603,6 +613,13 @@ export async function landSquash(input: {
     return { outcome: "concurrent", localSync: "skipped-other-branch" };
   }
   const dirty = (await git(["status", "--porcelain"], projectRootDir)).length > 0;
+  if (dirty && !allowDirtyLocalCheckoutSync) {
+    await emit("blocked-dirty-checkout", { reason: "dirty-integration-checkout" });
+    throw new Error(
+      `AI merge for ${taskId}: dirty integration checkout on ${integrationBranch}; refusing to land onto a dirty project root. `
+      + `Commit, stash, or clean local changes before retrying.`,
+    );
+  }
   const stashed = dirty
     ? await gitOk(["stash", "push", "--include-untracked", "-m", `fusion-ai-merge-sync-${taskId}`], projectRootDir)
     : false;
@@ -804,6 +821,7 @@ export async function runAiMerge(
       const landed = await landSquash({
         projectRootDir, mergeRoot, integrationBranch, tipSha, squashSha, taskId, audit,
         resolveConflicts: stashResolveAgent,
+        allowDirtyLocalCheckoutSync: options.allowDirtyLocalCheckoutSync === true,
       });
       if (landed.outcome === "concurrent") {
         if (advanceRetries < MAX_CONCURRENT_ADVANCE_RETRIES) {

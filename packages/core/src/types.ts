@@ -367,6 +367,12 @@ export interface MergerSettings {
    *  hard-failing (blocking). Default: 3. The reviewer uses the project's
    *  validator/reviewer model lane — there is no merge-specific model setting. */
   maxReviewPasses?: number;
+  /** Dangerous compatibility escape hatch for the AI merge landing path.
+   *  When false (default), Fusion refuses to land an AI merge if the checked-out
+   *  integration worktree is dirty. When true, restores the legacy stash →
+   *  fast-forward → restore behavior for operators who explicitly accept that
+   *  unrelated local edits can be reintroduced after landing. */
+  allowDirtyLocalCheckoutSync?: boolean;
 }
 
 export const AUTO_RECOVERY_MODES = ["off", "deterministic-only", "programmatic", "ai-assisted"] as const;

@@ -409,18 +409,34 @@ describe("landSquash (advance + local-checkout sync)", () => {
     expect(git(dir, "rev-parse --abbrev-ref HEAD")).toBe("somewhere-else");
   });
 
-  it("stashes dirty edits, fast-forwards, and restores them", async () => {
+  it("refuses to land onto a dirty checked-out integration branch by default", async () => {
+    const { dir } = initRepoWithBranch({ branch: "fusion/fn-1" });
+    const { tipSha, squashSha } = makeDescendantSquash(dir, () => writeFileSync(join(dir, "landed.txt"), "landed\n"));
+    writeFileSync(join(dir, "mydraft.txt"), "local draft\n");
+
+    const audit = auditStub();
+    await expect(landSquash({ projectRootDir: dir, mergeRoot: dir, integrationBranch: "main", tipSha, squashSha, taskId: "FN-1", audit })).rejects.toThrow(/dirty integration checkout/i);
+    expect(audit.git).toHaveBeenCalledWith(expect.objectContaining({
+      type: "merge:ai-local-sync",
+      metadata: expect.objectContaining({ outcome: "blocked-dirty-checkout", reason: "dirty-integration-checkout" }),
+    }));
+    expect(git(dir, "rev-parse main")).toBe(tipSha);
+    expect(existsSync(join(dir, "landed.txt"))).toBe(false);
+    expect(readFileSync(join(dir, "mydraft.txt"), "utf-8")).toContain("local draft");
+  });
+
+  it("stashes dirty edits, fast-forwards, and restores them when explicitly allowed", async () => {
     const { dir } = initRepoWithBranch({ branch: "fusion/fn-1" });
     const { tipSha, squashSha } = makeDescendantSquash(dir, () => writeFileSync(join(dir, "landed.txt"), "landed\n"));
     writeFileSync(join(dir, "mydraft.txt"), "local draft\n"); // dirty, non-conflicting
 
-    const res = await landSquash({ projectRootDir: dir, mergeRoot: dir, integrationBranch: "main", tipSha, squashSha, taskId: "FN-1", audit: auditStub() });
+    const res = await landSquash({ projectRootDir: dir, mergeRoot: dir, integrationBranch: "main", tipSha, squashSha, taskId: "FN-1", audit: auditStub(), allowDirtyLocalCheckoutSync: true });
     expect(res.localSync).toBe("stash-ff-restore");
     expect(existsSync(join(dir, "landed.txt"))).toBe(true);
     expect(readFileSync(join(dir, "mydraft.txt"), "utf-8")).toContain("local draft");
   });
 
-  it("invokes the AI resolver when restoring the stash conflicts, then lands resolved", async () => {
+  it("invokes the AI resolver when restoring the stash conflicts, then lands resolved when explicitly allowed", async () => {
     const { dir } = initRepoWithBranch({ branch: "fusion/fn-1" });
     const { tipSha, squashSha } = makeDescendantSquash(dir, () => writeFileSync(join(dir, "base.txt"), "base\nlanded-upstream\n"));
     writeFileSync(join(dir, "base.txt"), "base\nmy-local-edit\n"); // dirty edit on the same line → restore conflict
@@ -430,7 +446,7 @@ describe("landSquash (advance + local-checkout sync)", () => {
       execSync("git add -A", { cwd, stdio: "pipe" });
     });
 
-    const res = await landSquash({ projectRootDir: dir, mergeRoot: dir, integrationBranch: "main", tipSha, squashSha, taskId: "FN-1", audit: auditStub(), resolveConflicts: resolver });
+    const res = await landSquash({ projectRootDir: dir, mergeRoot: dir, integrationBranch: "main", tipSha, squashSha, taskId: "FN-1", audit: auditStub(), resolveConflicts: resolver, allowDirtyLocalCheckoutSync: true });
     expect(resolver).toHaveBeenCalled();
     expect(res.localSync).toBe("stash-ff-airesolved");
     expect(git(dir, "rev-parse main")).toBe(squashSha);
