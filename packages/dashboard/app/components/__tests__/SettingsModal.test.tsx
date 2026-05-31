@@ -1538,7 +1538,17 @@ describe("SettingsModal", () => {
 
       expect(within(headerActions as HTMLElement).getByRole("link", { name: "Star Fusion on GitHub" })).toBeInTheDocument();
       expect(within(headerActions as HTMLElement).getByRole("link", { name: "Join our Discord" })).toBeInTheDocument();
-      expect(within(headerActions as HTMLElement).getByRole("link", { name: "Help and discussions" })).toBeInTheDocument();
+      expect(within(headerActions as HTMLElement).queryByRole("link", { name: "Help and discussions" })).not.toBeInTheDocument();
+
+      const footerVersion = document.querySelector(".settings-modal-footer-version");
+      expect(footerVersion).toBeInTheDocument();
+
+      const helpLink = within(footerVersion as HTMLElement).getByRole("link", { name: "Help and discussions" });
+      expect(helpLink).toBeInTheDocument();
+      expect(helpLink).toHaveAttribute("href", "https://github.com/Runfusion/Fusion/discussions");
+      expect(helpLink).toHaveAttribute("target", "_blank");
+      expect(helpLink).toHaveAttribute("rel", expect.stringContaining("noopener"));
+      expect(helpLink).toHaveAttribute("rel", expect.stringContaining("noreferrer"));
     });
 
     it("renders Discord link with hardened external attributes", async () => {

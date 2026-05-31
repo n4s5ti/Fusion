@@ -2,7 +2,7 @@
    Extracted from styles.css as part of the Sweep-3 CSS extraction effort.
    Imported by SettingsModal.tsx (and MemoryView.tsx for shared classes). */
 
-/* === Settings Modal header action buttons (Star on GitHub, Help) === */
+/* === Settings Modal header action buttons (Star on GitHub, Discord) === */
 .settings-header-actions {
   --settings-header-action-height: calc(var(--space-md) * 2 + var(--space-xs) / 2);
 
@@ -16,14 +16,13 @@
 /* Keep the GitHub Star and Help buttons at matching heights regardless of
    their differing icon sizes (provider icon 16px vs. HelpCircle 13px). */
 .settings-header-actions > .settings-github-star-btn,
-.settings-header-actions > .settings-header-discord-btn,
-.settings-header-actions > .settings-header-help-btn {
+.settings-header-actions > .settings-header-discord-btn {
   height: var(--settings-header-action-height);
   box-sizing: border-box;
 }
 
 .settings-header-discord-btn,
-.settings-header-help-btn {
+.settings-footer-help-btn {
   display: inline-flex;
   align-items: center;
 }
@@ -162,6 +161,7 @@
 .settings-modal-footer-version {
   display: flex;
   align-items: center;
+  gap: var(--space-xs);
   margin-right: var(--space-sm);
   min-width: 0;
 }
@@ -182,6 +182,10 @@
   .settings-update-check {
     flex-wrap: wrap;
     row-gap: var(--space-xs);
+  }
+
+  .settings-footer-help-btn {
+    flex-shrink: 0;
   }
 }
 

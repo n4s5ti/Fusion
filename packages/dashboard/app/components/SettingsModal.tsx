@@ -7462,17 +7462,6 @@ export function SettingsModal({
               <MessageCircle size={13} aria-hidden="true" />
               Discord
             </a>
-            <a
-              href="https://github.com/Runfusion/Fusion/discussions"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="btn btn-sm settings-header-help-btn"
-              aria-label="Help and discussions"
-              title="Help and discussions"
-            >
-              <HelpCircle size={13} aria-hidden="true" />
-              Help
-            </a>
           </div>
           <button className="modal-close" onClick={onClose} aria-label="Close">
             &times;
@@ -7539,6 +7528,17 @@ export function SettingsModal({
         )}
         <div className="modal-actions">
           <div className="settings-modal-footer-version">
+            <a
+              href="https://github.com/Runfusion/Fusion/discussions"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="btn btn-sm settings-footer-help-btn"
+              aria-label="Help and discussions"
+              title="Help and discussions"
+            >
+              <HelpCircle size={13} aria-hidden="true" />
+              Help
+            </a>
             <div className="settings-update-check">
               {appVersion && (
                 <button
