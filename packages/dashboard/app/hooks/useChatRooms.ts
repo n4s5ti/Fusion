@@ -86,6 +86,39 @@ function createOptimisticRoomMessage(roomId: string, content: string, attachment
   };
 }
 
+function reconcileOptimisticUserMessage(
+  previous: ChatRoomMessage[],
+  delivered: ChatRoomMessage,
+  optimisticId?: string,
+): ChatRoomMessage[] {
+  if (previous.some((candidate) => candidate.id === delivered.id)) {
+    return previous;
+  }
+
+  const optimisticIndexById = optimisticId
+    ? previous.findIndex((candidate) => candidate.id === optimisticId)
+    : -1;
+  if (optimisticIndexById >= 0) {
+    const next = [...previous];
+    next[optimisticIndexById] = delivered;
+    return next;
+  }
+
+  if (delivered.role === "user") {
+    const optimisticIndexByContent = previous.findIndex((candidate) =>
+      candidate.role === "user"
+      && candidate.id.startsWith("temp-")
+      && candidate.content.trim() === delivered.content.trim());
+    if (optimisticIndexByContent >= 0) {
+      const next = [...previous];
+      next[optimisticIndexByContent] = delivered;
+      return next;
+    }
+  }
+
+  return [...previous, delivered];
+}
+
 export function useChatRooms(
   projectId?: string,
   addToast?: (msg: string, type?: "success" | "error" | "warning") => void,
@@ -332,8 +365,7 @@ export function useChatRooms(
 
       if (activeRoomRef.current?.id === roomId) {
         setMessages((previous) => {
-          const next = previous.map((message) =>
-            message.id === optimisticMessage.id ? postResult.message : message);
+          const next = reconcileOptimisticUserMessage(previous, postResult.message, optimisticMessage.id);
           // Snapshot mirrors server `order: desc` shape.
           writeCache(messagesCacheKey(roomId), next, { maxBytes: 500_000 });
           return next;
@@ -349,8 +381,10 @@ export function useChatRooms(
       setMessages(latestMessages.messages);
       timer.mark("hydrate");
     } catch (error) {
+      let recoveredMessages: ChatRoomMessage[] | null = null;
       try {
         const latestMessages = await fetchChatRoomMessages(roomId, { limit: 100, order: "desc" }, projectId);
+        recoveredMessages = latestMessages.messages;
         // Snapshot mirrors server `order: desc` shape.
         writeCache(messagesCacheKey(roomId), latestMessages.messages, { maxBytes: 500_000 });
         if (activeRoomRef.current?.id === roomId) {
@@ -368,7 +402,10 @@ export function useChatRooms(
         }
       }
 
-      if (userMessageDelivered) {
+      const messageDeliveredAfterRecovery = recoveredMessages?.some((candidate) =>
+        candidate.role === "user" && candidate.content.trim() === optimisticMessage.content.trim());
+
+      if (userMessageDelivered || messageDeliveredAfterRecovery) {
         const message = error instanceof Error && error.message.trim()
           ? error.message
           : "Message delivered, but failed to refresh room replies";
@@ -488,25 +525,10 @@ export function useChatRooms(
 
           if (activeRoomRef.current?.id !== message.roomId) return;
           setMessages((previous) => {
-            if (previous.some((candidate) => candidate.id === message.id)) {
+            const next = reconcileOptimisticUserMessage(previous, message);
+            if (next === previous) {
               return previous;
             }
-
-            if (message.role === "user") {
-              const optimisticIndex = previous.findIndex((candidate) =>
-                candidate.role === "user"
-                && candidate.id.startsWith("temp-")
-                && candidate.content.trim() === message.content.trim());
-              if (optimisticIndex >= 0) {
-                const next = [...previous];
-                next[optimisticIndex] = message;
-                // Snapshot mirrors server `order: desc` shape.
-                writeCache(messagesCacheKey(message.roomId), next, { maxBytes: 500_000 });
-                return next;
-              }
-            }
-
-            const next = [...previous, message];
             // Snapshot mirrors server `order: desc` shape.
             writeCache(messagesCacheKey(message.roomId), next, { maxBytes: 500_000 });
             return next;

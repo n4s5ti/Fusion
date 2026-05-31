@@ -1070,6 +1070,7 @@ export function ChatView({ projectId, addToast, experimentalFeatures }: ChatView
   const pendingAttachmentsRef = useRef<PendingAttachment[]>([]);
   const mentionCursorPosRef = useRef(0);
   const copyFeedbackTimeoutsRef = useRef<Map<string, number>>(new Map());
+  const roomSendInFlightRef = useRef(false);
   const mode = useViewportMode();
   const isMobile = mode === "mobile";
 
@@ -1901,6 +1902,11 @@ export function ChatView({ projectId, addToast, experimentalFeatures }: ChatView
         return;
       }
 
+      if (roomSendInFlightRef.current) {
+        return;
+      }
+
+      roomSendInFlightRef.current = true;
       const previousInput = messageInput;
       clearComposerState();
 
@@ -1920,6 +1926,8 @@ export function ChatView({ projectId, addToast, experimentalFeatures }: ChatView
           ? error.message
           : "Failed to send room message";
         addToast(message, "error");
+      } finally {
+        roomSendInFlightRef.current = false;
       }
       return;
     }

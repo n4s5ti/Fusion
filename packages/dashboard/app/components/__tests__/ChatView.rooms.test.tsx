@@ -370,6 +370,33 @@ describe("ChatView — rooms (FN-3805..FN-3811 contract)", () => {
     expect(addToast).not.toHaveBeenCalledWith(expect.stringMatching(/attach/i), "warning");
   });
 
+  it("blocks concurrent room send dispatches while send is in flight", async () => {
+    let resolveSend: () => void;
+    const sendPromise = new Promise<void>((resolve) => {
+      resolveSend = resolve;
+    });
+    const sendRoomMessage = vi.fn().mockReturnValue(sendPromise);
+    setup({}, { sendRoomMessage, activeRoom: roomA });
+
+    render(<ChatView projectId="proj-123" addToast={vi.fn()} experimentalFeatures={{ chatRooms: true }} />);
+
+    const textarea = screen.getByTestId("chat-input") as HTMLTextAreaElement;
+    await userEvent.type(textarea, "single send");
+
+    fireEvent.keyDown(textarea, { key: "Enter" });
+    fireEvent.keyDown(textarea, { key: "Enter" });
+
+    await waitFor(() => {
+      expect(sendRoomMessage).toHaveBeenCalledTimes(1);
+      expect(sendRoomMessage).toHaveBeenCalledWith("single send", { files: [] });
+    });
+
+    resolveSend!();
+    await act(async () => {
+      await sendPromise;
+    });
+  });
+
   it("FN-5360 keeps room composer cleared when delivery succeeded but reply generation failed", async () => {
     const addToast = vi.fn();
     const sendRoomMessage = vi

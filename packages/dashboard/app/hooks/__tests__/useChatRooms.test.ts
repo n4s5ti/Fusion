@@ -295,6 +295,44 @@ describe("useChatRooms", () => {
     expect(result.current.messages.map((message) => message.id)).toEqual(["msg-user", "msg-assistant"]);
   });
 
+  it("deduplicates user message across optimistic add, SSE echo, and post resolution interleaving", async () => {
+    const active = room("room-1", "one", "2026-05-09T01:00:00.000Z");
+    mockFetchChatRooms.mockResolvedValueOnce({ rooms: [active] });
+    const { result } = renderHook(() => useChatRooms("proj-1"));
+    await waitFor(() => expect(result.current.rooms.length).toBe(1));
+
+    mockFetchChatRoomMembers.mockResolvedValueOnce({ members: [] });
+    mockFetchChatRoomMessages.mockResolvedValueOnce({ messages: [] });
+    act(() => result.current.selectRoom("room-1"));
+    await waitFor(() => expect(result.current.activeRoom?.id).toBe("room-1"));
+
+    let resolvePost: ((value: { message: ChatRoomMessage }) => void) | undefined;
+    const postPromise = new Promise<{ message: ChatRoomMessage }>((resolve) => {
+      resolvePost = resolve;
+    });
+    mockPostChatRoomMessage.mockReturnValueOnce(postPromise);
+    mockFetchChatRoomMessages.mockResolvedValueOnce({ messages: [roomMessage("msg-user", "room-1", "hello")] });
+
+    let sendPromise!: Promise<void>;
+    await act(async () => {
+      sendPromise = result.current.sendRoomMessage("hello");
+    });
+
+    act(() => {
+      capturedEvents["chat:room:message:added"]?.({ data: JSON.stringify(roomMessage("msg-user", "room-1", "hello")) } as MessageEvent);
+    });
+
+    resolvePost?.({ message: roomMessage("msg-user", "room-1", "hello") });
+
+    await act(async () => {
+      await sendPromise;
+    });
+
+    const matchingMessages = result.current.messages.filter((message) => message.role === "user" && message.content === "hello");
+    expect(matchingMessages).toHaveLength(1);
+    expect(matchingMessages[0]?.id).toBe("msg-user");
+  });
+
   it("uploads files before posting room message", async () => {
     const active = room("room-1", "one", "2026-05-09T01:00:00.000Z");
     mockFetchChatRooms.mockResolvedValueOnce({ rooms: [active] });
@@ -351,7 +389,7 @@ describe("useChatRooms", () => {
     expect(mockPostChatRoomMessage).not.toHaveBeenCalledWith("room-1", expect.objectContaining({ content: "hello" }), "proj-1");
   });
 
-  it("rejects with original error when post fails before delivery", async () => {
+  it("rejects with original error when post fails and recovery transcript has no persisted user message", async () => {
     const active = room("room-1", "one", "2026-05-09T01:00:00.000Z");
     mockFetchChatRooms.mockResolvedValueOnce({ rooms: [active] });
     const { result } = renderHook(() => useChatRooms("proj-1"));
@@ -363,7 +401,9 @@ describe("useChatRooms", () => {
     await waitFor(() => expect(result.current.activeRoom?.id).toBe("room-1"));
 
     mockPostChatRoomMessage.mockRejectedValueOnce(new Error("POST failed"));
-    mockFetchChatRoomMessages.mockRejectedValueOnce(new Error("refresh failed"));
+    mockFetchChatRoomMessages.mockResolvedValueOnce({
+      messages: [{ ...roomMessage("msg-assistant", "room-1", "Room reply"), role: "assistant", senderAgentId: "agent-1" }],
+    });
 
     let postError: unknown;
     await act(async () => {
@@ -437,7 +477,7 @@ describe("useChatRooms", () => {
     );
   });
 
-  it("refreshes persisted room messages even when room reply generation fails", async () => {    const active = room("room-1", "one", "2026-05-09T01:00:00.000Z");
+  it("classifies post rejection as delivered when recovery transcript includes persisted user message", async () => {    const active = room("room-1", "one", "2026-05-09T01:00:00.000Z");
     mockFetchChatRooms.mockResolvedValueOnce({ rooms: [active] });
     const { result } = renderHook(() => useChatRooms("proj-1"));
     await waitFor(() => expect(result.current.rooms.length).toBe(1));
@@ -452,7 +492,7 @@ describe("useChatRooms", () => {
     mockFetchChatRoomMessages.mockResolvedValueOnce({ messages: [persistedUserMessage] });
 
     const sendPromise = act(async () => {
-      await expect(result.current.sendRoomMessage("hello")).rejects.toThrow("No active room responders available for room room-1");
+      await expect(result.current.sendRoomMessage("hello")).rejects.toBeInstanceOf(RoomMessageDeliveredButReplyFailedError);
     });
     await sendPromise;
     await waitFor(() => {
