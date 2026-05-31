@@ -179,7 +179,12 @@ Fusion keeps a canonical per-feature assertion invariant in `MissionStore`:
 
 Assertion text source priority is: `acceptanceCriteria` → `feature.description` → fallback text (`"Verify implementation of: {feature.title}"`).
 
-**Operator repair note (FN-5696):** Some databases created before the feature-create-path fix could show feature `acceptanceCriteria`/`description` in the UI but still have zero `mission_feature_assertions` links, which caused validator auto-pass short-circuits. Run `node scripts/backfill-fn-5696-feature-assertions.mjs` to preview repairs, then `node scripts/backfill-fn-5696-feature-assertions.mjs --apply` to write links. Use `--mission=<missionId>` for scoped repair (for example the confirmed Goals mission `M-MP32KU9Y-0001-2ADN`).
+**Operator repair note (FN-5696):** Some databases created before the feature-create-path fix could show feature `acceptanceCriteria`/`description` in the UI but still have zero `mission_feature_assertions` links, which caused validator auto-pass short-circuits. Use the built-in backfill operator surfaces instead of ad-hoc scripts:
+
+- Agent/tool: `fn_mission_backfill_assertions` with `{ missionId?, dryRun? }` (dry-run default)
+- API: `POST /api/missions/:missionId/backfill-assertions` with body `{ dryRun?: boolean }`
+
+Run dry-run first, then apply (`dryRun=false`) when the report looks correct. Scope by mission id for targeted repair (for example Goals mission `M-MP32KU9Y-0001-2ADN`).
 - **Verification fields**: Milestone and slice verification criteria from the interview are stored in dedicated `verification` fields rather than concatenated into descriptions
 - **Milestone acceptanceCriteria derivation**: explicit `milestone.acceptanceCriteria` from interview output is authoritative. When omitted/blank, Fusion derives a deterministic bulleted summary from child features after creation: prefer `feature.acceptanceCriteria`, fall back to `feature.description`, skip empty contributors, and leave milestone acceptance empty when nothing contributes
 - **Partial plans handled**: Auto-generation is robust to partial plans (missing slices/features or empty criteria) without throwing errors

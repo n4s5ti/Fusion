@@ -2674,6 +2674,49 @@ export default function kbExtension(pi: ExtensionAPI) {
     },
   });
 
+  // ── fn_mission_backfill_assertions ─────────────────────────────
+
+  pi.registerTool({
+    name: "fn_mission_backfill_assertions",
+    label: "fn: Backfill Mission Assertions",
+    description:
+      "Backfill mission assertions by deriving and linking one store-managed assertion for each feature without linked assertions. Supports dry-run mode.",
+    promptSnippet: "Backfill mission assertions for unlinked features",
+    promptGuidelines: [
+      "Use dryRun=true first to inspect proposed repairs before applying",
+      "Scopes to a single mission when missionId is provided; otherwise scans all missions",
+      "Creates one store-managed assertion per unlinked feature and links it",
+    ],
+    parameters: Type.Object({
+      missionId: Type.Optional(Type.String({ description: "Mission ID to scope backfill to (e.g., M-001)" })),
+      dryRun: Type.Optional(Type.Boolean({ description: "When true, preview repairs without writing changes (default: true)" })),
+    }),
+
+    async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+      const store = await getStore(ctx.cwd);
+      const missionStore = store.getMissionStore();
+      const report = missionStore.backfillFeatureAssertions({
+        missionId: params.missionId,
+        dryRun: params.dryRun ?? true,
+      });
+
+      const scopeLabel = params.missionId ? `mission ${params.missionId}` : "all missions";
+      const modeLabel = (params.dryRun ?? true) ? "dry-run" : "apply";
+      const lines = [
+        `Backfill ${modeLabel} complete for ${scopeLabel}.`,
+        `Scanned: ${report.scanned}`,
+        `Already linked: ${report.alreadyLinked}`,
+        `Repaired: ${report.repaired.length}`,
+        `Skipped errors: ${report.skippedErrors.length}`,
+      ];
+
+      return {
+        content: [{ type: "text", text: lines.join("\n") }],
+        details: report,
+      };
+    },
+  });
+
   // ── fn_mission_delete ───────────────────────────────────────────
 
   pi.registerTool({

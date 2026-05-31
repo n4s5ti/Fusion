@@ -237,4 +237,70 @@ describe("FN-5715 reliability: mission validation trigger gap", () => {
     expect(noAssertionEvents).toHaveLength(1);
     loop.stop();
   });
+
+  it("routes through validator after assertion backfill instead of no-assertion auto-pass", async () => {
+    const feature = makeFeature({ status: "done", acceptanceCriteria: "must pass", loopState: "implementing" });
+    const currentFeature = { ...feature };
+    const linkedAssertions: Array<{ id: string }> = [];
+
+    const missionStore = {
+      listMissions: vi.fn(() => [{ id: "M-001", status: "active" }]),
+      getMissionWithHierarchy: vi.fn(() => ({
+        id: "M-001",
+        status: "active",
+        milestones: [{ status: "active", slices: [{ status: "active", features: [feature] }] }],
+      })),
+      getFeatureByTaskId: vi.fn(() => currentFeature),
+      getFeature: vi.fn(() => currentFeature),
+      updateFeatureStatus: vi.fn((_featureId: string, status: "done") => ({ ...currentFeature, status })),
+      updateFeature: vi.fn((_featureId: string, patch: Partial<MissionFeature>) => {
+        Object.assign(currentFeature, patch);
+        return { ...currentFeature };
+      }),
+      listAssertionsForFeature: vi.fn(() => linkedAssertions),
+      startValidatorRun: vi.fn(() => ({ id: "VR-001", featureId: "F-001" })),
+      completeValidatorRun: vi.fn(),
+      getSlice: vi.fn(() => ({ id: "SL-001", milestoneId: "MS-001", status: "active" })),
+      getMilestone: vi.fn(() => ({ id: "MS-001", missionId: "M-001" })),
+      logMissionEvent: vi.fn(),
+      transitionLoopState: vi.fn(),
+      setFeatureCurrentTaskRunId: vi.fn(),
+      getFailuresForRun: vi.fn(() => []),
+    };
+    const taskStore = {
+      getTask: vi.fn(async () => ({ id: "FN-001", column: "done", status: "done" })),
+      on: vi.fn(),
+      off: vi.fn(),
+    };
+
+    const loop = new MissionExecutionLoop({ missionStore: missionStore as any, taskStore: taskStore as any, rootDir: process.cwd() });
+    vi.spyOn(loop as any, "runValidation").mockResolvedValue({ status: "pass", summary: "ok" });
+    loop.start();
+
+    await loop.recoverActiveMissions();
+
+    const noAssertionEventsBefore = missionStore.logMissionEvent.mock.calls.filter(
+      ([, type, , payload]) => type === "warning" && payload?.code === "validation_auto_passed_no_assertions",
+    );
+    expect(noAssertionEventsBefore).toHaveLength(1);
+    expect(missionStore.startValidatorRun).not.toHaveBeenCalled();
+
+    linkedAssertions.push({ id: "CA-001" });
+    currentFeature.loopState = "implementing";
+    currentFeature.lastValidatorStatus = undefined;
+
+    await loop.processTaskOutcome("FN-001");
+
+    expect(missionStore.startValidatorRun).toHaveBeenCalledWith("F-001", "task_completion");
+    const noAssertionEventsAfter = missionStore.logMissionEvent.mock.calls.filter(
+      ([, type, , payload]) => type === "warning" && payload?.code === "validation_auto_passed_no_assertions",
+    );
+    expect(noAssertionEventsAfter).toHaveLength(1);
+    expect(missionStore.updateFeature).toHaveBeenCalledWith(
+      "F-001",
+      expect.objectContaining({ loopState: "passed", lastValidatorStatus: "passed" }),
+    );
+
+    loop.stop();
+  });
 });

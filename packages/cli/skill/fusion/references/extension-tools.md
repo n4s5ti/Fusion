@@ -196,6 +196,15 @@ Show mission details with full hierarchy: milestones → slices → features.
 |-----------|------|----------|-------------|
 | `id` | string | ✓ | Mission ID (e.g., M-001) |
 
+### fn_mission_backfill_assertions
+
+Backfill mission assertions by deriving and linking one store-managed assertion for each feature without linked assertions. Supports dry-run mode.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `missionId` | string | — | Mission ID to scope backfill to (e.g., M-001) |
+| `dryRun` | boolean | — | When true, preview repairs without writing changes (default: true) |
+
 ### fn_mission_delete
 
 Delete a mission and all its milestones, slices, and features. Cannot be undone.

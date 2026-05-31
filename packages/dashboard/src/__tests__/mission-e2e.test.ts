@@ -511,6 +511,71 @@ function createMockMissionStore() {
         .filter((feature): feature is MissionFeature => Boolean(feature))
     ),
 
+    backfillFeatureAssertions: vi.fn((options?: { missionId?: string; dryRun?: boolean }) => {
+      const dryRun = options?.dryRun ?? true;
+      const missionId = options?.missionId;
+      const report = {
+        scanned: 0,
+        alreadyLinked: 0,
+        repaired: [] as Array<{ featureId: string; milestoneId: string; assertionId: string; textSource: "acceptanceCriteria" | "description" | "title" | "fallback" }>,
+        skippedErrors: [] as Array<{ featureId: string; message: string }>,
+      };
+
+      for (const feature of features.values()) {
+        const parentSlice = slices.get(feature.sliceId);
+        const parentMilestone = parentSlice ? milestones.get(parentSlice.milestoneId) : undefined;
+        if (!parentSlice || !parentMilestone) {
+          report.skippedErrors.push({ featureId: feature.id, message: "Missing parent slice/milestone" });
+          continue;
+        }
+        if (missionId && parentMilestone.missionId !== missionId) {
+          continue;
+        }
+
+        report.scanned += 1;
+        const linked = assertionLinks.filter((link) => link.featureId === feature.id);
+        if (linked.length > 0) {
+          report.alreadyLinked += 1;
+          continue;
+        }
+
+        const syntheticAssertionId = generateAssertionId();
+        report.repaired.push({
+          featureId: feature.id,
+          milestoneId: parentMilestone.id,
+          assertionId: syntheticAssertionId,
+          textSource: feature.acceptanceCriteria
+            ? "acceptanceCriteria"
+            : feature.description
+              ? "description"
+              : feature.title.trim().length > 0
+                ? "title"
+                : "fallback",
+        });
+
+        if (!dryRun) {
+          const existingAssertions = Array.from(assertions.values()).filter((a) => a.milestoneId === parentMilestone.id);
+          const orderIndex = existingAssertions.length > 0
+            ? Math.max(...existingAssertions.map((a) => a.orderIndex)) + 1
+            : 0;
+          assertions.set(syntheticAssertionId, {
+            id: syntheticAssertionId,
+            milestoneId: parentMilestone.id,
+            sourceFeatureId: feature.id,
+            title: `Feature assertion: ${feature.title}`,
+            assertion: feature.acceptanceCriteria ?? `Feature ${feature.id} completion`,
+            status: "pending",
+            orderIndex,
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+          });
+          assertionLinks.push({ featureId: feature.id, assertionId: syntheticAssertionId });
+        }
+      }
+
+      return report;
+    }),
+
     getValidatorRunsByFeature: vi.fn((featureId: string) =>
       Array.from(validatorRuns.values())
         .filter((run) => run.featureId === featureId)
@@ -2190,6 +2255,68 @@ describe("Mission API", () => {
       const invalid = await get(app, "/api/missions/invalid-id/status");
       expect(invalid.status).toBe(400);
       expect(invalid.body.error).toContain("Invalid mission ID format");
+    });
+  });
+
+  describe("Mission assertion backfill endpoint", () => {
+    it("POST /api/missions/:missionId/backfill-assertions supports dry-run and apply", async () => {
+      const { app, missionStore } = buildApp();
+      const mission = missionStore.createMission({ title: "Mission" });
+      const milestone = missionStore.addMilestone(mission.id, { title: "Milestone" });
+      const slice = missionStore.addSlice(milestone.id, { title: "Slice" });
+      const feature = missionStore.addFeature(slice.id, { title: "Feature", acceptanceCriteria: "must pass" });
+
+      const dryRun = await request(
+        app,
+        "POST",
+        `/api/missions/${mission.id}/backfill-assertions`,
+        JSON.stringify({ dryRun: true }),
+        { "content-type": "application/json" },
+      );
+      expect(dryRun.status).toBe(200);
+      expect(dryRun.body.scanned).toBe(1);
+      expect(dryRun.body.repaired).toHaveLength(1);
+      expect(missionStore.listAssertionsForFeature(feature.id)).toHaveLength(0);
+
+      const apply = await request(
+        app,
+        "POST",
+        `/api/missions/${mission.id}/backfill-assertions`,
+        JSON.stringify({ dryRun: false }),
+        { "content-type": "application/json" },
+      );
+      expect(apply.status).toBe(200);
+      expect(apply.body.scanned).toBe(1);
+      expect(apply.body.repaired).toHaveLength(1);
+      expect(missionStore.listAssertionsForFeature(feature.id)).toHaveLength(1);
+    });
+
+    it("defaults to dry-run and validates mission and payload", async () => {
+      const { app, missionStore } = buildApp();
+      const mission = missionStore.createMission({ title: "Mission" });
+
+      const defaultDryRun = await request(app, "POST", `/api/missions/${mission.id}/backfill-assertions`);
+      expect(defaultDryRun.status).toBe(200);
+      expect(missionStore.backfillFeatureAssertions).toHaveBeenCalledWith({ missionId: mission.id, dryRun: true });
+
+      const invalidBody = await request(
+        app,
+        "POST",
+        `/api/missions/${mission.id}/backfill-assertions`,
+        JSON.stringify({ dryRun: "nope" }),
+        { "content-type": "application/json" },
+      );
+      expect(invalidBody.status).toBe(500);
+      expect(invalidBody.body.error).toContain("dryRun must be a boolean");
+
+      const missing = await request(
+        app,
+        "POST",
+        "/api/missions/M-NOT-FOUND/backfill-assertions",
+        JSON.stringify({ dryRun: true }),
+        { "content-type": "application/json" },
+      );
+      expect(missing.status).toBe(404);
     });
   });
 

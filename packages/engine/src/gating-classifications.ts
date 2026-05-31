@@ -30,6 +30,7 @@ const PERMANENT_TASK_AGENT_ONLY_TOOLS = [
   "fn_mission_create",
   "fn_mission_delete",
   "fn_mission_update",
+  "fn_mission_backfill_assertions",
   "fn_milestone_add",
   "fn_slice_add",
   "fn_feature_add",

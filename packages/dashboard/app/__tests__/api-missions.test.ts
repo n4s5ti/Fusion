@@ -346,6 +346,50 @@ describe("Mission mutation coverage with 204 responses", () => {
   });
 });
 
+describe("Mission assertion backfill API", () => {
+  const originalFetch = globalThis.fetch;
+
+  afterEach(() => {
+    globalThis.fetch = originalFetch;
+  });
+
+  it("POSTs to mission backfill route with dry-run by default", async () => {
+    globalThis.fetch = vi.fn().mockReturnValue(
+      mockFetchResponse(true, { scanned: 2, alreadyLinked: 1, repaired: [], skippedErrors: [] })
+    );
+
+    const { backfillMissionAssertions } = await import("../api");
+    const result = await backfillMissionAssertions("M-LZ7DN0-A2B5");
+
+    expect(result.scanned).toBe(2);
+    expect(globalThis.fetch).toHaveBeenCalledWith(
+      expect.stringContaining("/api/missions/M-LZ7DN0-A2B5/backfill-assertions"),
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({ dryRun: true }),
+      }),
+    );
+  });
+
+  it("supports apply mode and projectId query param", async () => {
+    globalThis.fetch = vi.fn().mockReturnValue(
+      mockFetchResponse(true, { scanned: 1, alreadyLinked: 0, repaired: [{ featureId: "F-1", milestoneId: "MS-1", assertionId: "CA-1", textSource: "acceptanceCriteria" }], skippedErrors: [] })
+    );
+
+    const { backfillMissionAssertions } = await import("../api");
+    const result = await backfillMissionAssertions("M-LZ7DN0-A2B5", { dryRun: false }, "project-a");
+
+    expect(result.repaired).toHaveLength(1);
+    expect(globalThis.fetch).toHaveBeenCalledWith(
+      expect.stringContaining("/api/missions/M-LZ7DN0-A2B5/backfill-assertions?projectId=project-a"),
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({ dryRun: false }),
+      }),
+    );
+  });
+});
+
 describe("resilient SSE reconnect", () => {
   const OriginalEventSource = globalThis.EventSource;
   const originalFetch = globalThis.fetch;

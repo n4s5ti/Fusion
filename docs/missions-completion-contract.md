@@ -72,7 +72,12 @@ A feature can show acceptance text while links are missing (legacy pre-repair da
 - authored/informational text surfaces, from
 - linked assertion enforcement surfaces.
 
-Operators should use the FN-5696 repair workflow to restore the expected store-managed linkage.
+Operators should use the mission assertion backfill operator path to restore expected store-managed linkage for FN-5696 legacy rows:
+
+- Agent/tool: `fn_mission_backfill_assertions` with `{ missionId?, dryRun? }` (defaults to dry-run).
+- API: `POST /api/missions/:missionId/backfill-assertions` with body `{ dryRun?: boolean }` (defaults to `true`).
+- Run dry-run first, then apply (`dryRun=false`) once repaired rows look correct.
+- This remediation is additive: it derives/links one store-managed assertion per unlinked feature so runtime enforcement uses validator-linked assertions rather than the zero-assertion auto-pass branch.
 
 ## Slice Status and Mission Autopilot Advance Derivation
 

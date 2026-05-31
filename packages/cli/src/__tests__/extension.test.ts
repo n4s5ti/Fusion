@@ -215,6 +215,7 @@ describe.skipIf(!SHOULD_RUN_LEGACY_EXTENSION_INTEGRATION)("fn pi extension (lega
         "fn_mission_create",
         "fn_mission_list",
         "fn_mission_show",
+        "fn_mission_backfill_assertions",
         "fn_mission_delete",
         "fn_mission_update",
         "fn_milestone_add",
@@ -1212,6 +1213,46 @@ describe.skipIf(!SHOULD_RUN_LEGACY_EXTENSION_INTEGRATION)("fn pi extension (lega
 
       expect(result.isError).toBe(true);
       expect(result.content[0].text).toContain("not found");
+    });
+  });
+
+  describe("fn_mission_backfill_assertions", () => {
+    it("supports dry-run and apply execution", async () => {
+      const missionTool = api.tools.get("fn_mission_create")!;
+      const backfillTool = api.tools.get("fn_mission_backfill_assertions")!;
+      const mission = await missionTool.execute("m1", { title: "Backfill Mission" }, undefined, undefined, makeCtx(tmpDir));
+
+      const store = new TaskStore(tmpDir);
+      await store.init();
+      const missionStore = store.getMissionStore();
+      const milestone = missionStore.addMilestone(mission.details.missionId, { title: "Milestone" });
+      const slice = missionStore.addSlice(milestone.id, { title: "Slice" });
+      const feature = missionStore.addFeature(slice.id, {
+        title: "Feature needing assertion",
+        acceptanceCriteria: "must be true",
+      });
+      expect(missionStore.listAssertionsForFeature(feature.id)).toHaveLength(0);
+
+      const dryRun = await backfillTool.execute(
+        "bf-1",
+        { missionId: mission.details.missionId, dryRun: true },
+        undefined,
+        undefined,
+        makeCtx(tmpDir),
+      );
+      expect(dryRun.details.repaired.length).toBe(1);
+      expect(missionStore.listAssertionsForFeature(feature.id)).toHaveLength(0);
+
+      const apply = await backfillTool.execute(
+        "bf-2",
+        { missionId: mission.details.missionId, dryRun: false },
+        undefined,
+        undefined,
+        makeCtx(tmpDir),
+      );
+      expect(apply.details.repaired.length).toBe(1);
+      expect(missionStore.listAssertionsForFeature(feature.id)).toHaveLength(1);
+      expect(apply.content[0].text).toContain("Backfill apply complete");
     });
   });
 

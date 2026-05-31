@@ -900,6 +900,35 @@ export function createMissionRouter(
   );
 
   /**
+   * POST /api/missions/:missionId/backfill-assertions
+   * Backfill store-managed assertions for mission features that have none.
+   * Defaults to dry-run mode.
+   */
+  router.post(
+    "/:missionId/backfill-assertions",
+    catchTypedHandler(async (req, res) => {
+      const { missionId } = req.params;
+      const { dryRun } = req.body ?? {};
+
+      if (!validateMissionId(missionId)) {
+        throw badRequest("Invalid mission ID format");
+      }
+
+      if (!missionStore.getMission(missionId)) {
+        throw notFound("Mission not found");
+      }
+
+      const resolvedDryRun = dryRun === undefined ? true : validateBoolean(dryRun, "dryRun");
+      const report = missionStore.backfillFeatureAssertions({
+        missionId,
+        dryRun: resolvedDryRun,
+      });
+
+      res.json(report);
+    })
+  );
+
+  /**
    * PATCH /api/missions/:missionId
    * Update mission fields
    */

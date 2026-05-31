@@ -6944,6 +6944,40 @@ export function fetchMissionStatus(missionId: string, projectId?: string): Promi
   return api<{ status: string }>(withProjectId(`/missions/${encodeURIComponent(missionId)}/status`, projectId));
 }
 
+export interface MissionAssertionBackfillRepairRow {
+  featureId: string;
+  milestoneId: string;
+  assertionId: string;
+  textSource: "acceptanceCriteria" | "description" | "title" | "fallback";
+}
+
+export interface MissionAssertionBackfillErrorRow {
+  featureId: string;
+  message: string;
+}
+
+export interface MissionAssertionBackfillReport {
+  scanned: number;
+  alreadyLinked: number;
+  repaired: MissionAssertionBackfillRepairRow[];
+  skippedErrors: MissionAssertionBackfillErrorRow[];
+}
+
+/** Backfill store-managed mission assertions for unlinked features. Defaults to dry-run. */
+export function backfillMissionAssertions(
+  missionId: string,
+  options?: { dryRun?: boolean },
+  projectId?: string,
+): Promise<MissionAssertionBackfillReport> {
+  return api<MissionAssertionBackfillReport>(
+    withProjectId(`/missions/${encodeURIComponent(missionId)}/backfill-assertions`, projectId),
+    {
+      method: "POST",
+      body: JSON.stringify({ dryRun: options?.dryRun ?? true }),
+    },
+  );
+}
+
 /** Query options for paginated mission event logs. */
 export interface MissionEventQueryOptions {
   limit?: number;
