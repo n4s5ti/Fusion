@@ -440,14 +440,11 @@ describe("SelfHealingManager", () => {
       const result = await manager.checkStuckBudget("FN-001", "loop");
 
       expect(result).toBe(false);
-      expect(store.updateTask).toHaveBeenCalledWith("FN-001", expect.objectContaining({
-        stuckKillCount: 7,
-        paused: false,
-        userPaused: false,
-        pausedReason: null,
-        status: "queued",
-      }));
-      expect(store.moveTask).toHaveBeenCalledWith("FN-001", "todo", { preserveProgress: true });
+      expect(store.updateTask).toHaveBeenCalledWith("FN-001", { stuckKillCount: 7 });
+      expect(store.moveTask).toHaveBeenCalledWith("FN-001", "todo", {
+        preserveProgress: true,
+        preserveStatus: true,
+      });
       expect(store.updateTask).toHaveBeenLastCalledWith("FN-001", expect.objectContaining({
         stuckKillCount: 7,
         paused: false,
@@ -462,7 +459,7 @@ describe("SelfHealingManager", () => {
       );
     });
 
-    it("leaves incomplete stuck-loop exhaustion unpaused when todo parking fails", async () => {
+    it("falls back to executor requeue when todo parking fails", async () => {
       (store.getTask as ReturnType<typeof vi.fn>).mockResolvedValue({
         id: "FN-001",
         column: "in-progress",
@@ -478,19 +475,22 @@ describe("SelfHealingManager", () => {
 
       const result = await manager.checkStuckBudget("FN-001", "loop");
 
-      expect(result).toBe(false);
-      expect(store.updateTask).toHaveBeenCalledWith("FN-001", expect.objectContaining({
-        stuckKillCount: 7,
+      expect(result).toBe(true);
+      expect(store.updateTask).toHaveBeenCalledWith("FN-001", { stuckKillCount: 7 });
+      expect(store.moveTask).toHaveBeenCalledWith("FN-001", "todo", {
+        preserveProgress: true,
+        preserveStatus: true,
+      });
+      expect(store.updateTask).not.toHaveBeenCalledWith("FN-001", expect.objectContaining({
         paused: false,
         userPaused: false,
         pausedReason: null,
         status: "queued",
       }));
-      expect(store.moveTask).toHaveBeenCalledWith("FN-001", "todo", { preserveProgress: true });
       expect(store.handoffToReview).not.toHaveBeenCalled();
       expect(store.logEntry).toHaveBeenCalledWith(
         "FN-001",
-        "STUCK_LOOP_EXHAUSTED: incomplete task exhausted stuck kill budget (7/6), last reason=loop. Failed to move task to todo (database is busy); task remains unpaused for scheduler retry.",
+        "STUCK_LOOP_EXHAUSTED: incomplete task exhausted stuck kill budget (7/6), last reason=loop. Failed to move task to todo (database is busy); falling back to executor stuck-kill requeue.",
       );
     });
 
