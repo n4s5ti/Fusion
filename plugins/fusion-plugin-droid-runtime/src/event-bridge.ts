@@ -60,6 +60,29 @@ function mapStopReason(
   }
 }
 
+function normalizeStreamingDelta(previousText: string, nextDelta: string): string {
+  if (!previousText || !nextDelta) {
+    return nextDelta;
+  }
+
+  const previousChar = previousText.slice(-1);
+  const nextChar = nextDelta[0] ?? "";
+
+  if (/\s/.test(previousChar) || /\s/.test(nextChar)) {
+    return nextDelta;
+  }
+
+  // Claude sometimes splits adjacent sentences across separate deltas or text
+  // blocks without preserving the separating space. Only repair the specific
+  // "sentence punctuation + uppercase/quoted sentence start" case so code,
+  // domains, and lowercase continuations remain untouched.
+  if (/[.!?]/.test(previousChar) && /[A-Z0-9"'([]/.test(nextChar)) {
+    return ` ${nextDelta}`;
+  }
+
+  return nextDelta;
+}
+
 /**
  * Create an event bridge that translates Claude API streaming events
  * into pi's AssistantMessageEventStream events.
@@ -97,6 +120,19 @@ export function createEventBridge(
   };
 
   let started = false;
+
+  function getPreviousContentText(contentIndex: number, type: "text" | "thinking"): string {
+    for (let i = contentIndex - 1; i >= 0; i--) {
+      const contentBlock = output.content[i];
+      if (type === "text" && contentBlock?.type === "text") {
+        return contentBlock.text;
+      }
+      if (type === "thinking" && contentBlock?.type === "thinking") {
+        return contentBlock.thinking;
+      }
+    }
+    return "";
+  }
 
   function handleEvent(event: ClaudeApiEvent): void {
     // Emit start event on first message — tells pi to begin incremental rendering
@@ -226,14 +262,23 @@ export function createEventBridge(
 
       const block = blocks[idx];
       if (block.type === "text") {
-        block.text += event.delta!.text;
+        // Downstream consumers concatenate these deltas verbatim:
+        // provider API events -> event-bridge text_delta/thinking_delta ->
+        // engine pi.ts options.onText/onThinking(delta) -> chat streaming +
+        // agent-logger.onText buffer. Normalizing here fixes dropped sentence
+        // spaces once for both chat and agent logs.
+        const delta = normalizeStreamingDelta(
+          block.text || getPreviousContentText(idx, "text"),
+          event.delta!.text,
+        );
+        block.text += delta;
         const contentBlock = output.content[idx] as TextContent;
         contentBlock.text = block.text;
 
         stream.push({
           type: "text_delta",
           contentIndex: idx,
-          delta: event.delta!.text,
+          delta,
           partial: output,
         });
       }
@@ -246,14 +291,18 @@ export function createEventBridge(
 
       const block = blocks[idx];
       if (block.type === "thinking") {
-        block.text += event.delta!.thinking;
+        const delta = normalizeStreamingDelta(
+          block.text || getPreviousContentText(idx, "thinking"),
+          event.delta!.thinking,
+        );
+        block.text += delta;
         const contentBlock = output.content[idx] as ThinkingContent;
         contentBlock.thinking = block.text;
 
         stream.push({
           type: "thinking_delta",
           contentIndex: idx,
-          delta: event.delta!.thinking,
+          delta,
           partial: output,
         });
       }
