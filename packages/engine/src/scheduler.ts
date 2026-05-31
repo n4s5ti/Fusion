@@ -167,10 +167,63 @@ export function isCoordinationOnlyTask(task: Task, scope: string[]): boolean {
   return isCoordinationSafeScope(scope);
 }
 
-export function getUnmetSchedulingDependencies(task: Task, tasks: Task[]): string[] {
+function isLegacyDependencySatisfied(dep: Task | undefined): boolean {
+  return !!dep && (dep.column === "done" || dep.column === "in-review" || dep.column === "archived");
+}
+
+function isMarkerDependencySatisfied(dep: Task | undefined, markerAccepted: boolean): boolean {
+  if (!dep) return false;
+  if (dep.column === "done" || dep.column === "archived") return true;
+  return markerAccepted;
+}
+
+export function computeShadowLeaseParityState(mergeRequestState: string | null): {
+  shadowExecutorLeaseApplied: boolean;
+  shadowMergeLockApplied: boolean;
+  shadowLeaseApplied: boolean;
+} {
+  const shadowExecutorLeaseApplied = false;
+  const shadowMergeLockApplied = mergeRequestState !== null
+    && mergeRequestState !== "succeeded"
+    && mergeRequestState !== "cancelled"
+    && mergeRequestState !== "exhausted"
+    && mergeRequestState !== "manual-required";
+  return {
+    shadowExecutorLeaseApplied,
+    shadowMergeLockApplied,
+    shadowLeaseApplied: shadowExecutorLeaseApplied || shadowMergeLockApplied,
+  };
+}
+
+export interface SchedulingDependencyParityDiff {
+  taskId: string;
+  dependencyId: string;
+  legacySatisfied: boolean;
+  markerSatisfied: boolean;
+}
+
+export function getUnmetSchedulingDependencies(
+  task: Task,
+  tasks: Task[],
+  options?: {
+    markerAcceptedByTaskId?: Map<string, boolean>;
+    onParityDiff?: (diff: SchedulingDependencyParityDiff) => void;
+  },
+): string[] {
   return task.dependencies.filter((depId) => {
     const dep = tasks.find((candidate) => candidate.id === depId);
-    return dep && dep.column !== "done" && dep.column !== "in-review" && dep.column !== "archived";
+    if (!dep) return false;
+    const legacySatisfied = isLegacyDependencySatisfied(dep);
+    const markerSatisfied = isMarkerDependencySatisfied(dep, options?.markerAcceptedByTaskId?.get(depId) === true);
+    if (options?.onParityDiff && legacySatisfied !== markerSatisfied) {
+      options.onParityDiff({
+        taskId: task.id,
+        dependencyId: depId,
+        legacySatisfied,
+        markerSatisfied,
+      });
+    }
+    return !legacySatisfied;
   });
 }
 
@@ -534,16 +587,26 @@ export class Scheduler {
           if (!settings.globalPause && !settings.enginePaused) {
             const todoTasks = await this.store.listTasks({ column: "todo", slim: true });
             const allTasks = await this.store.listTasks({ slim: true, includeArchived: true });
-            const taskById = new Map(allTasks.map((candidate) => [candidate.id, candidate]));
             for (const dependent of todoTasks) {
               const mentionsCompletedTask = dependent.dependencies.includes(task.id);
               const currentlyBlockedByCompletedTask = dependent.blockedBy === task.id;
               if (!mentionsCompletedTask && !currentlyBlockedByCompletedTask) continue;
 
-              const unresolvedDeps = dependent.dependencies.filter((depId) => {
-                const dep = taskById.get(depId);
-                return dep && dep.column !== "done" && dep.column !== "in-review" && dep.column !== "archived";
-              });
+              const markerAcceptedByTaskId = settings.mergeRequestContractShadowEnabled === true
+                ? new Map(dependent.dependencies.map((depId) => [depId, this.store.getCompletionHandoffAcceptedMarker(depId) !== null]))
+                : undefined;
+              const unresolvedDeps = getUnmetSchedulingDependencies(
+                dependent,
+                [dependent, ...allTasks],
+                markerAcceptedByTaskId
+                  ? {
+                    markerAcceptedByTaskId,
+                    onParityDiff: (diff) => {
+                      this.emitDependencyParityDiff(diff);
+                    },
+                  }
+                  : undefined,
+              );
 
               try {
                 if (unresolvedDeps.length > 0) {
@@ -655,17 +718,27 @@ export class Scheduler {
           const inProgressTasks = await this.store.listTasks({ column: "in-progress", slim: true });
           const dependents = [...todoTasks, ...inProgressTasks];
           const allTasks = await this.store.listTasks({ slim: true, includeArchived: true });
-          const taskById = new Map(allTasks.map((candidate) => [candidate.id, candidate]));
 
           for (const dependent of dependents) {
             const mentionsDeletedTask = dependent.dependencies.includes(task.id);
             const currentlyBlockedByDeletedTask = dependent.blockedBy === task.id;
             if (!mentionsDeletedTask && !currentlyBlockedByDeletedTask) continue;
 
-            const unresolvedDeps = dependent.dependencies.filter((depId) => {
-              const dep = taskById.get(depId);
-              return dep && dep.column !== "done" && dep.column !== "in-review" && dep.column !== "archived";
-            });
+            const markerAcceptedByTaskId = settings.mergeRequestContractShadowEnabled === true
+              ? new Map(dependent.dependencies.map((depId) => [depId, this.store.getCompletionHandoffAcceptedMarker(depId) !== null]))
+              : undefined;
+            const unresolvedDeps = getUnmetSchedulingDependencies(
+              dependent,
+              [dependent, ...allTasks],
+              markerAcceptedByTaskId
+                ? {
+                  markerAcceptedByTaskId,
+                  onParityDiff: (diff) => {
+                    this.emitDependencyParityDiff(diff);
+                  },
+                }
+                : undefined,
+            );
 
             try {
               if (unresolvedDeps.length > 0) {
@@ -798,6 +871,22 @@ export class Scheduler {
     this.wasDispatchQueuedReasonLogged.add(key);
     await this.store.logEntry(taskId, reason);
     return true;
+  }
+
+  private emitDependencyParityDiff(diff: SchedulingDependencyParityDiff): void {
+    void this.store.recordRunAuditEvent?.({
+      taskId: diff.taskId,
+      agentId: "scheduler",
+      runId: generateSyntheticRunId("scheduler", diff.taskId),
+      domain: "database",
+      mutationType: "merge:dependency-parity-diff",
+      target: diff.dependencyId,
+      metadata: {
+        depId: diff.dependencyId,
+        legacyResult: diff.legacySatisfied,
+        markerResult: diff.markerSatisfied,
+      },
+    });
   }
 
   private async emitDispatchQueuedConcurrencyAudit(task: Task, diagnostic: ConcurrencyGateDiagnostic): Promise<void> {
@@ -1206,7 +1295,33 @@ export class Scheduler {
         for (const t of inReviewWithWorktree) {
           const filteredScope = await getFilteredFileScope(t.id);
           if (isCoordinationOnlyTask(t, filteredScope)) continue;
-          if (filteredScope.length > 0) setActiveScopeLease(t.id, filteredScope, "in-review");
+          if (filteredScope.length === 0) continue;
+          setActiveScopeLease(t.id, filteredScope, "in-review");
+
+          if (settings.mergeRequestContractShadowEnabled === true) {
+            const mergeRequestRecord = this.store.getMergeRequestRecord(t.id);
+            const { shadowExecutorLeaseApplied, shadowMergeLockApplied, shadowLeaseApplied } =
+              computeShadowLeaseParityState(mergeRequestRecord?.state ?? null);
+            if (shadowLeaseApplied !== true) {
+              void this.store.recordRunAuditEvent?.({
+                taskId: t.id,
+                agentId: "scheduler",
+                runId: generateSyntheticRunId("scheduler", t.id),
+                domain: "database",
+                mutationType: "merge:lease-parity-diff",
+                target: t.id,
+                metadata: {
+                  taskId: t.id,
+                  legacyLeaseColumn: "in-review",
+                  legacyLeaseApplied: true,
+                  shadowLeaseApplied,
+                  shadowExecutorLeaseApplied,
+                  shadowMergeLockApplied,
+                  mergeRequestState: mergeRequestRecord?.state ?? null,
+                },
+              });
+            }
+          }
         }
 
         for (const t of todo) {
@@ -1226,6 +1341,14 @@ export class Scheduler {
 
       // Resolve dependency order among todo tasks
       const ordered = resolveDependencyOrder(todo);
+      const mergeShadowEnabled = settings.mergeRequestContractShadowEnabled === true;
+      const markerAcceptedByTaskId = new Map<string, boolean>();
+      if (mergeShadowEnabled) {
+        const dependencyIds = new Set(todo.flatMap((candidate) => candidate.dependencies));
+        for (const depId of dependencyIds) {
+          markerAcceptedByTaskId.set(depId, this.store.getCompletionHandoffAcceptedMarker(depId) !== null);
+        }
+      }
       let started = 0;
       let loggedMissingAgentStoreThisPass = false;
 
@@ -1247,7 +1370,14 @@ export class Scheduler {
         }
 
         // Check all deps are satisfied (done, in-review, or archived)
-        const unmetDeps = getUnmetSchedulingDependencies(task, tasks);
+        const unmetDeps = getUnmetSchedulingDependencies(task, tasks, mergeShadowEnabled
+          ? {
+            markerAcceptedByTaskId,
+            onParityDiff: (diff) => {
+              this.emitDependencyParityDiff(diff);
+            },
+          }
+          : undefined);
 
         if (unmetDeps.length > 0) {
           await this.store.updateTask(task.id, {

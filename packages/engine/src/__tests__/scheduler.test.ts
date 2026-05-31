@@ -8,6 +8,7 @@ import {
   findHigherPriorityQueuedOverlap,
   isCoordinationOnlyTask,
   isRunnableQueuedOverlapCandidate,
+  getUnmetSchedulingDependencies,
 } from "../scheduler.js";
 import { AgentSemaphore } from "../concurrency.js";
 import type { TaskStore, Task, TaskDetail } from "@fusion/core";
@@ -325,6 +326,69 @@ describe("isCoordinationOnlyTask", () => {
       noCommitsExpected: true,
     });
     expect(isCoordinationOnlyTask(task, ["docs/task-management.md", "packages/engine/src/scheduler.ts"])).toBe(false);
+  });
+});
+
+describe("getUnmetSchedulingDependencies", () => {
+  it("keeps legacy in-review satisfaction authoritative while emitting parity diff", () => {
+    const task = createMockTask({ id: "FN-T", dependencies: ["FN-DEP"] });
+    const dep = createMockTask({ id: "FN-DEP", column: "in-review" });
+    const diffs: Array<{ dependencyId: string; legacySatisfied: boolean; markerSatisfied: boolean }> = [];
+
+    const unmet = getUnmetSchedulingDependencies(task, [task, dep], {
+      markerAcceptedByTaskId: new Map([["FN-DEP", false]]),
+      onParityDiff: (diff) => {
+        diffs.push({
+          dependencyId: diff.dependencyId,
+          legacySatisfied: diff.legacySatisfied,
+          markerSatisfied: diff.markerSatisfied,
+        });
+      },
+    });
+
+    expect(unmet).toEqual([]);
+    expect(diffs).toEqual([
+      {
+        dependencyId: "FN-DEP",
+        legacySatisfied: true,
+        markerSatisfied: false,
+      },
+    ]);
+  });
+
+  it("does not emit parity diff when legacy and marker paths agree dependency is satisfied", () => {
+    const task = createMockTask({ id: "FN-T", dependencies: ["FN-DEP"] });
+    const dep = createMockTask({ id: "FN-DEP", column: "done" });
+    const onParityDiff = vi.fn();
+
+    const unmet = getUnmetSchedulingDependencies(task, [task, dep], {
+      markerAcceptedByTaskId: new Map([["FN-DEP", false]]),
+      onParityDiff,
+    });
+
+    expect(unmet).toEqual([]);
+    expect(onParityDiff).not.toHaveBeenCalled();
+  });
+
+  it("does not emit parity diff when legacy and marker paths agree dependency is unmet", () => {
+    const task = createMockTask({ id: "FN-T", dependencies: ["FN-DEP"] });
+    const dep = createMockTask({ id: "FN-DEP", column: "in-progress" });
+    const onParityDiff = vi.fn();
+
+    const unmet = getUnmetSchedulingDependencies(task, [task, dep], {
+      markerAcceptedByTaskId: new Map([["FN-DEP", false]]),
+      onParityDiff,
+    });
+
+    expect(unmet).toEqual(["FN-DEP"]);
+    expect(onParityDiff).not.toHaveBeenCalled();
+  });
+
+  it("preserves legacy behavior when parity options are omitted", () => {
+    const task = createMockTask({ id: "FN-T", dependencies: ["FN-DEP"] });
+    const dep = createMockTask({ id: "FN-DEP", column: "in-review" });
+
+    expect(getUnmetSchedulingDependencies(task, [task, dep])).toEqual([]);
   });
 });
 

@@ -1300,6 +1300,43 @@ export class ProjectEngine {
     return undefined;
   }
 
+  private getShadowMergeRequestCandidateId(): string | null {
+    const store = this.runtime.getTaskStore() as TaskStore & {
+      getMergeRequestRecord?: (taskId: string) => { state: string } | null;
+    };
+    if (typeof store.getMergeRequestRecord !== "function") {
+      return null;
+    }
+
+    for (const queuedTaskId of this.mergeQueue) {
+      const record = store.getMergeRequestRecord(queuedTaskId);
+      if (!record) continue;
+      if (record.state === "manual-required") continue;
+      if (record.state === "queued" || record.state === "retrying" || record.state === "running") {
+        return queuedTaskId;
+      }
+    }
+    return null;
+  }
+
+  private emitMergeRequestShadowDequeueParity(legacyTaskId: string, shadowTaskId: string | null): void {
+    const agree = shadowTaskId === legacyTaskId;
+    const store = this.runtime.getTaskStore();
+    void store.recordRunAuditEvent?.({
+      taskId: legacyTaskId,
+      agentId: "merger",
+      runId: generateSyntheticRunId("merger-shadow-dequeue", legacyTaskId),
+      domain: "database",
+      mutationType: "merge:request-dequeued-shadow",
+      target: legacyTaskId,
+      metadata: {
+        legacyTaskId,
+        shadowTaskId,
+        agree,
+      },
+    });
+  }
+
   private internalEnqueueMerge(taskId: string): boolean {
     if (this.shuttingDown) return false;
     if (this.mergeActive.has(taskId)) {
@@ -1405,8 +1442,13 @@ export class ProjectEngine {
       const cwd = this.config.workingDirectory;
 
       while (this.mergeQueue.length > 0 && !this.shuttingDown) {
+        const shadowCandidateTaskId = this.getShadowMergeRequestCandidateId();
         const taskId = await this.pickNextMergeTaskId(store);
         if (!taskId) break;
+        const shadowSettings = await store.getSettings();
+        if (shadowSettings.mergeRequestContractShadowEnabled === true) {
+          this.emitMergeRequestShadowDequeueParity(taskId, shadowCandidateTaskId);
+        }
         // pickNextMergeTaskId awaits store.getTask; re-check shutdown so we
         // don't start a merge whose queue entry was cleared by stop().
         if (this.shuttingDown) break;
