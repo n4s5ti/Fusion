@@ -2155,7 +2155,9 @@ describe("MissionStore", () => {
       const triaged = await msWithTs.triageFeature(feature.id);
       const task = await ts.getTask(triaged.taskId!);
 
-      expect(task?.branch).toBe("release/shared");
+      expect(task?.branch).toMatch(/^release\/shared\//);
+      expect(task?.branch).not.toBe("release/shared");
+      expect(task?.branchContext?.groupId).toBe(`mission:${mission.id}`);
       expect(task?.branchContext?.assignmentMode).toBe("shared");
     });
 
@@ -2175,7 +2177,9 @@ describe("MissionStore", () => {
       });
       const task = await ts.getTask(triaged.taskId!);
 
-      expect(task?.branch).toBe("hotfix/shared");
+      expect(task?.branch).toMatch(/^hotfix\/shared\//);
+      expect(task?.branch).not.toBe("hotfix/shared");
+      expect(task?.branchContext?.groupId).toBe(`mission:${mission.id}`);
       expect(task?.branchContext?.assignmentMode).toBe("shared");
     });
 
@@ -2399,9 +2403,41 @@ describe("MissionStore", () => {
       });
       const task = await ts.getTask(triaged[0].taskId!);
 
-      expect(task?.branch).toBe("feature/manual");
+      expect(task?.branch).toMatch(/^feature\/manual\//);
+      expect(task?.branch).not.toBe("feature/manual");
       expect(task?.baseBranch).toBe("release");
+      expect(task?.branchContext?.groupId).toBe(`mission:${mission.id}`);
       expect(task?.branchContext?.assignmentMode).toBe("shared");
+    });
+
+    it("triageSlice shared mode creates distinct per-task branches with one shared merge target", async () => {
+      const { TaskStore } = await import("../store.js");
+      const ts = new TaskStore(tmpDir, join(tmpDir, ".fusion-global-settings"), { inMemoryDb: true });
+      const msWithTs = ts.getMissionStore();
+
+      const mission = msWithTs.createMission({
+        title: "Mission",
+        branchStrategy: { mode: "existing", branchName: "feature/shared" },
+      });
+      const milestone = msWithTs.addMilestone(mission.id, { title: "Milestone" });
+      const slice = msWithTs.addSlice(milestone.id, { title: "Slice" });
+      msWithTs.addFeature(slice.id, { title: "Feature 1" });
+      msWithTs.addFeature(slice.id, { title: "Feature 2" });
+
+      const triaged = await msWithTs.triageSlice(slice.id);
+      const firstTask = await ts.getTask(triaged[0].taskId!);
+      const secondTask = await ts.getTask(triaged[1].taskId!);
+
+      expect(firstTask?.branch).toMatch(/^feature\/shared\//);
+      expect(secondTask?.branch).toMatch(/^feature\/shared\//);
+      expect(firstTask?.branch).not.toBe("feature/shared");
+      expect(secondTask?.branch).not.toBe("feature/shared");
+      expect(firstTask?.branch).not.toBe(secondTask?.branch);
+      expect(firstTask?.branchContext?.groupId).toBe(`mission:${mission.id}`);
+      expect(secondTask?.branchContext?.groupId).toBe(`mission:${mission.id}`);
+
+      const branchGroup = ts.getBranchGroupBySource("mission", mission.id);
+      expect(branchGroup?.branchName).toBe("feature/shared");
     });
 
     it("triageSlice does not inject baseBranch when mission has none", async () => {

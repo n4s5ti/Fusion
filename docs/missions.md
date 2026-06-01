@@ -40,10 +40,10 @@ Missions can also persist a `branchStrategy` used whenever triage is triggered w
 
 Supported modes:
 
-- `project-default` (or absent): shared branch behavior; no per-task derivation
-- `auto-per-task`: sets `branchAssignment.mode = "per-task-derived"` (task branches auto-derived from task details)
-- `existing`: shared branch using `branchSelection.mode = "existing"` with `branchName`
-- `custom-new`: shared branch using `branchSelection.mode = "custom-new"` with `branchName`
+- `project-default` (or absent): shared mode; each triaged feature gets a distinct per-task working branch (for example `<shared-branch>/<feature-id>`) while the shared branch remains the mission group merge target
+- `auto-per-task`: sets `branchAssignment.mode = "per-task-derived"` (distinct per-task working branches with no shared mission group merge target)
+- `existing`: shared mode using `branchSelection.mode = "existing"` with `branchName` as the shared merge-target branch
+- `custom-new`: shared mode using `branchSelection.mode = "custom-new"` with `branchName` as the shared merge-target branch
 
 The Mission Manager create/edit form exposes this as **Branch strategy** plus a conditional **Branch name** field for `existing` and `custom-new`.
 

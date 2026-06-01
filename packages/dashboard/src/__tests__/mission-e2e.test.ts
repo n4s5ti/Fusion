@@ -11,6 +11,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import express from "express";
 import { createMissionRouter } from "../mission-routes.js";
 import { request, get } from "../test-request.js";
+import { resolveEntryPointBranchAssignment } from "@fusion/core";
 import type { TaskStore } from "@fusion/core";
 import type {
   Mission,
@@ -42,6 +43,7 @@ import * as projectStoreResolver from "../project-store-resolver.js";
 function createMockMissionStore(options?: {
   ensureBranchGroupForSource?: (sourceType: "planning" | "mission", sourceId: string, init: { branchName: string; autoMerge?: boolean }) => unknown;
   settingsAutoMerge?: boolean;
+  persistTask?: (task: { id: string; branch?: string; baseBranch?: string }) => void;
 }) {
   const missions: Map<string, Mission> = new Map();
   const milestones: Map<string, Milestone> = new Map();
@@ -657,6 +659,16 @@ function createMockMissionStore(options?: {
       }
 
       const taskId = "FN-" + String(features.size + 1).padStart(3, "0");
+      const assignment = resolveEntryPointBranchAssignment({
+        assignmentMode: branchOptions?.assignmentMode ?? "shared",
+        resolvedBranch: branchOptions?.branch,
+        taskSegment: feature.id,
+      });
+      options?.persistTask?.({
+        id: taskId,
+        branch: assignment.workingBranch,
+        baseBranch: branchOptions?.baseBranch,
+      });
       const updated = { ...feature, taskId, status: "triaged" as const, updatedAt: new Date().toISOString() };
       features.set(featureId, updated);
       return updated;
@@ -701,6 +713,7 @@ function createMockMissionStore(options?: {
 }
 
 function createMockStore(): TaskStore {
+  const tasks = new Map<string, { id: string; branch?: string; baseBranch?: string }>();
   const branchGroups = new Map<string, {
     id: string;
     sourceType: "planning" | "mission";
@@ -732,14 +745,15 @@ function createMockStore(): TaskStore {
     getMissionStore: vi.fn().mockReturnValue(createMockMissionStore({
       ensureBranchGroupForSource,
       settingsAutoMerge: false,
+      persistTask: (task) => {
+        tasks.set(task.id, task);
+      },
     })),
     ensureBranchGroupForSource,
     getBranchGroupBySource,
     getRootDir: vi.fn().mockReturnValue("/fake/root"),
     getSettings: vi.fn().mockResolvedValue({ promptOverrides: {}, autoMerge: false }),
-    getTask: vi.fn(async (id: string) => {
-      throw new Error(`Task ${id} not found`);
-    }),
+    getTask: vi.fn(async (id: string) => tasks.get(id)),
     pauseTask: vi.fn(),
   } as unknown as TaskStore;
 }
@@ -4013,8 +4027,11 @@ describe("Mission API", () => {
         expect.objectContaining({ branchName: "feature/mission-shared", autoMerge: true }),
       );
       expect(taskStore.getBranchGroupBySource("mission", mission.id)).toEqual(
-        expect.objectContaining({ autoMerge: true }),
+        expect.objectContaining({ autoMerge: true, branchName: "feature/mission-shared" }),
       );
+      const triagedTask = await taskStore.getTask(res.body.taskId);
+      expect(triagedTask?.branch).toMatch(/^feature\/mission-shared\//);
+      expect(triagedTask?.branch).not.toBe("feature/mission-shared");
     });
   });
 
@@ -4054,6 +4071,44 @@ describe("Mission API", () => {
       );
 
       expect(res.status).toBe(404);
+    });
+
+    it("persists distinct per-task branches while keeping one shared merge target", async () => {
+      const { app, missionStore, store } = buildApp();
+      const ms = missionStore as ReturnType<typeof createMockMissionStore>;
+      const taskStore = store as unknown as TaskStore;
+
+      const mission = ms.createMission({ title: "Test Mission", autoMerge: true });
+      const milestone = ms.addMilestone(mission.id, { title: "Milestone" });
+      const slice = ms.addSlice(milestone.id, { title: "Slice" });
+      ms.addFeature(slice.id, { title: "Feature 1" });
+      ms.addFeature(slice.id, { title: "Feature 2" });
+
+      const res = await request(
+        app,
+        "POST",
+        `/api/missions/slices/${slice.id}/triage-all`,
+        JSON.stringify({
+          branchSelection: { mode: "existing", branchName: "feature/mission-existing", baseBranch: "main" },
+          branchAssignment: { mode: "shared" },
+        }),
+        { "content-type": "application/json" },
+      );
+
+      expect(res.status).toBe(200);
+      expect(taskStore.getBranchGroupBySource("mission", mission.id)).toEqual(
+        expect.objectContaining({ branchName: "feature/mission-existing" }),
+      );
+
+      const [taskA, taskB] = await Promise.all([
+        taskStore.getTask(res.body.triaged[0].taskId),
+        taskStore.getTask(res.body.triaged[1].taskId),
+      ]);
+      expect(taskA?.branch).toMatch(/^feature\/mission-existing\//);
+      expect(taskB?.branch).toMatch(/^feature\/mission-existing\//);
+      expect(taskA?.branch).not.toBe("feature/mission-existing");
+      expect(taskB?.branch).not.toBe("feature/mission-existing");
+      expect(taskA?.branch).not.toBe(taskB?.branch);
     });
 
     it("forwards branch selection and assignment mode when triaging all slice features", async () => {

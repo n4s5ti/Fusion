@@ -55,6 +55,7 @@ import {
   type MissionHierarchySnapshot,
 } from "./shared-mesh-state.js";
 import { reconcileDeterministicDuplicate, runDeterministicDuplicateGuard } from "./duplicate-guard.js";
+import { resolveEntryPointBranchAssignment } from "./branch-assignment.js";
 // ── Constants ────────────────────────────────────────────────────────
 
 /**
@@ -3526,6 +3527,7 @@ export class MissionStore extends EventEmitter<MissionStoreEvents> {
       if (guard.action === "duplicate" && guard.existing) {
         linkedTaskId = guard.existing.id;
       } else {
+        let sharedBranchBaseForMission: string | undefined;
         if (missionId && resolvedAssignmentMode === "shared") {
           const settings = await this.taskStore.getSettings();
           const settingsDefaultBranch =
@@ -3533,16 +3535,24 @@ export class MissionStore extends EventEmitter<MissionStoreEvents> {
               ? settings.defaultBranch
               : "main";
           const settingsAutoMerge = typeof settings.autoMerge === "boolean" ? settings.autoMerge : false;
+          sharedBranchBaseForMission = resolvedBranch ?? resolvedBaseBranch ?? settingsDefaultBranch;
           this.taskStore.ensureBranchGroupForSource("mission", missionId, {
-            branchName: resolvedBranch ?? resolvedBaseBranch ?? settingsDefaultBranch,
+            branchName: sharedBranchBaseForMission,
             autoMerge: mission?.autoMerge ?? settingsAutoMerge,
           });
         }
 
+        const taskSegment = feature.id;
+        const branchAssignment = resolveEntryPointBranchAssignment({
+          assignmentMode: resolvedAssignmentMode,
+          resolvedBranch: resolvedAssignmentMode === "shared" ? sharedBranchBaseForMission ?? resolvedBranch : resolvedBranch,
+          taskSegment,
+        });
+
         const createdTask = await this.taskStore.createTask({
           title: taskTitle || feature.title,
           description,
-          branch: resolvedBranch,
+          branch: branchAssignment.workingBranch,
           baseBranch: resolvedBaseBranch,
           ...(missionId
             ? {
@@ -3617,14 +3627,11 @@ export class MissionStore extends EventEmitter<MissionStoreEvents> {
 
     const triaged: MissionFeature[] = [];
     for (const feature of definedFeatures) {
-      const strategyBranch = resolvedAssignmentMode === "per-task-derived"
-        ? (resolvedBranch ? `${resolvedBranch}/${feature.id.toLowerCase()}` : undefined)
-        : resolvedBranch;
+      const strategyBranch = resolvedBranch;
       const updated = await this.triageFeature(feature.id, undefined, undefined, {
         branch: strategyBranch,
         baseBranch: resolvedBaseBranch,
         assignmentMode: resolvedAssignmentMode,
-        ...branchOptions,
       });
       triaged.push(updated);
     }
