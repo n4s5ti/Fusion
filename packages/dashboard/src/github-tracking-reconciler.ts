@@ -9,7 +9,7 @@ export class GitHubTrackingReconciler {
   async reconcile(store: TaskStore): Promise<{ scanned: number; closed: number; skipped: number; errors: number }> {
     const listedTasks = await store.listTasks({ slim: true, includeArchived: false });
     const tasks = (Array.isArray(listedTasks) ? listedTasks : [])
-      .filter((task) => task.status === "done")
+      .filter((task) => task.column === "done")
       .slice(0, RECONCILE_SCAN_LIMIT);
 
     const projectSettings = ((await store.getSettings()) ?? {}) as Pick<ProjectSettings, "githubAuthMode" | "githubAuthToken">;
@@ -62,7 +62,7 @@ export class GitHubTrackingReconciler {
   async reconcileSourceIssues(store: TaskStore): Promise<{ scanned: number; closed: number; skipped: number; errors: number }> {
     const listedTasks = await store.listTasks({ slim: false, includeArchived: false });
     const tasks = (Array.isArray(listedTasks) ? listedTasks : [])
-      .filter((task) => task.status === "done" && task.sourceIssue?.provider === "github")
+      .filter((task) => task.column === "done" && task.sourceIssue?.provider === "github")
       .slice(0, RECONCILE_SCAN_LIMIT);
 
     const projectSettings = ((await store.getSettings()) ?? {}) as Pick<ProjectSettings, "githubCloseSourceIssueOnDone" | "githubAuthMode" | "githubAuthToken">;
@@ -120,9 +120,14 @@ export class GitHubTrackingReconciler {
     return { scanned: tasks.length, closed, skipped, errors };
   }
 
-  async reconcileDeletedAndArchived(store: TaskStore): Promise<{ scanned: number; closed: number; skipped: number; errors: number }> {
-    const listedTasks = await store.listTasksForGithubTrackingReconcile();
-    const tasks = (Array.isArray(listedTasks) ? listedTasks : []).slice(0, RECONCILE_SCAN_LIMIT);
+  async reconcileDeletedAndArchived(
+    store: TaskStore,
+    options?: { offset?: number; limit?: number },
+  ): Promise<{ scanned: number; closed: number; skipped: number; errors: number; hasMore: boolean }> {
+    // Pagination is authoritative in TaskStore.listTasksForGithubTrackingReconcile.
+    const listedTasks = await store.listTasksForGithubTrackingReconcile(options);
+    const tasks = Array.isArray(listedTasks?.tasks) ? listedTasks.tasks : [];
+    const hasMore = listedTasks?.hasMore === true;
 
     const projectSettings = ((await store.getSettings()) ?? {}) as Pick<ProjectSettings, "githubAuthMode" | "githubAuthToken">;
     const globalSettings = (await store.getGlobalSettingsStore?.()?.getSettings?.() ?? {}) as Pick<GlobalSettings, never>;
@@ -131,7 +136,7 @@ export class GitHubTrackingReconciler {
       for (const task of tasks) {
         await store.logEntry(task.id, "Skipped GitHub tracking issue reconciliation (deleted/archived pass)", resolution.message);
       }
-      return { scanned: tasks.length, closed: 0, skipped: tasks.length, errors: 0 };
+      return { scanned: tasks.length, closed: 0, skipped: tasks.length, errors: 0, hasMore };
     }
 
     const client = resolution.auth.mode === "token"
@@ -176,7 +181,7 @@ export class GitHubTrackingReconciler {
       }
     });
 
-    return { scanned: tasks.length, closed, skipped, errors };
+    return { scanned: tasks.length, closed, skipped, errors, hasMore };
   }
 }
 

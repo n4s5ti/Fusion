@@ -64,7 +64,7 @@ describe("TaskStore.listTasksForGithubTrackingReconcile", () => {
     const softDeletedWithoutTracking = await store.createTask({ description: "soft deleted no tracking" });
     await store.deleteTask(softDeletedWithoutTracking.id);
 
-    const tasks = await store.listTasksForGithubTrackingReconcile();
+    const { tasks, hasMore } = await store.listTasksForGithubTrackingReconcile();
     const byId = new Map(tasks.map((task) => [task.id, task]));
 
     expect(byId.has(softDeleted.id)).toBe(true);
@@ -76,13 +76,52 @@ describe("TaskStore.listTasksForGithubTrackingReconcile", () => {
 
     expect(byId.has(activeTracked.id)).toBe(false);
     expect(byId.has(softDeletedWithoutTracking.id)).toBe(false);
+    expect(hasMore).toBe(false);
   });
 
   it("returns empty results when nothing matches", async () => {
     const task = await store.createTask({ description: "no tracking" });
     await store.moveTask(task.id, "todo");
 
-    const tasks = await store.listTasksForGithubTrackingReconcile();
-    expect(tasks).toEqual([]);
+    const result = await store.listTasksForGithubTrackingReconcile();
+    expect(result).toEqual({ tasks: [], hasMore: false });
+  });
+
+  it("paginates across soft-deleted and archived tracked entries", async () => {
+    for (let i = 0; i < 3; i += 1) {
+      const task = await store.createTask({ description: `deleted ${i}` });
+      await store.updateGithubTracking(task.id, { enabled: true });
+      await store.deleteTask(task.id);
+    }
+
+    for (let i = 0; i < 3; i += 1) {
+      const task = await store.createTask({ description: `archived ${i}` });
+      await store.updateGithubTracking(task.id, { enabled: true });
+      await store.moveTask(task.id, "todo");
+      await store.moveTask(task.id, "in-progress");
+      await store.moveTask(task.id, "in-review");
+      await store.moveTask(task.id, "done");
+      await store.archiveTask(task.id);
+    }
+
+    const page1 = await store.listTasksForGithubTrackingReconcile({ offset: 0, limit: 2 });
+    const page2 = await store.listTasksForGithubTrackingReconcile({ offset: 2, limit: 2 });
+    const page3 = await store.listTasksForGithubTrackingReconcile({ offset: 4, limit: 2 });
+
+    expect(page1.tasks).toHaveLength(2);
+    expect(page2.tasks).toHaveLength(2);
+    expect(page3.tasks).toHaveLength(2);
+
+    const seen = new Set([...page1.tasks, ...page2.tasks, ...page3.tasks].map((task) => task.id));
+    expect(seen.size).toBe(6);
+    expect(page1.hasMore).toBe(true);
+    expect(page2.hasMore).toBe(true);
+    expect(page3.hasMore).toBe(false);
+
+    const activeTracked = await store.createTask({ description: "active tracked no reconcile" });
+    await store.updateGithubTracking(activeTracked.id, { enabled: true });
+
+    const finalPage = await store.listTasksForGithubTrackingReconcile({ offset: 0, limit: 20 });
+    expect(finalPage.tasks.some((task) => task.id === activeTracked.id)).toBe(false);
   });
 });

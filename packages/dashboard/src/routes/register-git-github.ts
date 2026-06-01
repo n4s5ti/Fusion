@@ -41,7 +41,7 @@ import { GitHubClient, type PrReviewSnapshot, parseBadgeUrl } from "../github.js
 import { GitHubIssueCommentService } from "../github-issue-comment.js";
 import { GitHubTrackingCommentService } from "../github-tracking-comments.js";
 import { GitHubTrackingStateService } from "../github-tracking-state.js";
-import { GitHubTrackingReconciler } from "../github-tracking-reconciler.js";
+import { GitHubTrackingReconciler, RECONCILE_SCAN_LIMIT } from "../github-tracking-reconciler.js";
 import { GitHubSourceIssueCloseService } from "../github-source-issue-close.js";
 import { githubRateLimiter } from "../github-poll.js";
 import * as projectStoreResolver from "../project-store-resolver.js";
@@ -61,6 +61,7 @@ const PR_ROUTE_MAX_BUFFER_BYTES = 10 * 1024 * 1024;
 const PR_PREFLIGHT_TIMEOUT_MS = 15_000;
 const PR_OPTIONS_TIMEOUT_MS = 10_000;
 const SAFE_GIT_REF_PATTERN = /^[A-Za-z0-9._/-]+$/;
+export const GITHUB_TRACKING_RECONCILE_INTERVAL_MS = 15 * 60 * 1000;
 
 function getCommandErrorMessage(error: unknown): string {
   if (error instanceof Error) {
@@ -2353,7 +2354,44 @@ export function registerGitGitHubRoutes(ctx: ApiRoutesContext): void {
     const githubTrackingStateService = new GitHubTrackingStateService(store);
     const githubTrackingReconciler = new GitHubTrackingReconciler();
     const reconcileScheduledStores = new WeakSet<TaskStore>();
+    const reconcileSweepOffsetByStore = new WeakMap<TaskStore, number>();
+    const reconcileSweepInFlightByStore = new WeakMap<TaskStore, boolean>();
     githubTrackingStateService.start();
+
+    const runReconcileSweep = async (projectStore: TaskStore, options?: { startup?: boolean }) => {
+      if (typeof (projectStore as Partial<TaskStore>).listTasks !== "function"
+        || typeof (projectStore as Partial<TaskStore>).listTasksForGithubTrackingReconcile !== "function"
+        || typeof (projectStore as Partial<TaskStore>).getSettings !== "function"
+        || typeof (projectStore as Partial<TaskStore>).logEntry !== "function") {
+        return;
+      }
+
+      if (reconcileSweepInFlightByStore.get(projectStore) === true) {
+        return;
+      }
+      reconcileSweepInFlightByStore.set(projectStore, true);
+
+      try {
+        const offset = options?.startup ? 0 : reconcileSweepOffsetByStore.get(projectStore) ?? 0;
+        const deletedArchivedResult = await githubTrackingReconciler.reconcileDeletedAndArchived(projectStore, {
+          offset,
+          limit: RECONCILE_SCAN_LIMIT,
+        });
+
+        if (deletedArchivedResult.hasMore) {
+          reconcileSweepOffsetByStore.set(projectStore, offset + RECONCILE_SCAN_LIMIT);
+        } else {
+          reconcileSweepOffsetByStore.set(projectStore, 0);
+        }
+
+        await githubTrackingReconciler.reconcile(projectStore);
+        await githubTrackingReconciler.reconcileSourceIssues(projectStore);
+      } catch {
+        // best-effort sweep
+      } finally {
+        reconcileSweepInFlightByStore.set(projectStore, false);
+      }
+    };
 
     const attachedStateStores = new Set<TaskStore>();
     const attachStateStore = (projectStore: TaskStore) => {
@@ -2367,15 +2405,7 @@ export function registerGitGitHubRoutes(ctx: ApiRoutesContext): void {
       if (!reconcileScheduledStores.has(projectStore)) {
         reconcileScheduledStores.add(projectStore);
         setImmediate(() => {
-          if (typeof (projectStore as Partial<TaskStore>).listTasks !== "function"
-            || typeof (projectStore as Partial<TaskStore>).listTasksForGithubTrackingReconcile !== "function"
-            || typeof (projectStore as Partial<TaskStore>).getSettings !== "function"
-            || typeof (projectStore as Partial<TaskStore>).logEntry !== "function") {
-            return;
-          }
-          void githubTrackingReconciler.reconcile(projectStore).catch(() => {});
-          void githubTrackingReconciler.reconcileDeletedAndArchived(projectStore).catch(() => {});
-          void githubTrackingReconciler.reconcileSourceIssues(projectStore).catch(() => {});
+          void runReconcileSweep(projectStore, { startup: true });
         });
       }
     };
@@ -2415,7 +2445,14 @@ export function registerGitGitHubRoutes(ctx: ApiRoutesContext): void {
       attachStateStore(projectStore);
     });
 
+    const periodicReconcileInterval = setInterval(() => {
+      for (const projectStore of attachedStateStores) {
+        void runReconcileSweep(projectStore);
+      }
+    }, GITHUB_TRACKING_RECONCILE_INTERVAL_MS);
+
     ctx.registerDispose(() => {
+      clearInterval(periodicReconcileInterval);
       unsubscribeProjectStoreRegistration();
       for (const projectStore of attachedStateStores) {
         githubTrackingStateService.detach(projectStore);

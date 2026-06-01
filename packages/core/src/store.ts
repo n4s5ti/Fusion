@@ -4653,15 +4653,23 @@ export class TaskStore extends EventEmitter<TaskStoreEvents> {
     return sorted.slice(offset, offset + Math.max(0, limit));
   }
 
-  async listTasksForGithubTrackingReconcile(): Promise<Task[]> {
+  async listTasksForGithubTrackingReconcile(options?: { offset?: number; limit?: number }): Promise<{ tasks: Task[]; hasMore: boolean }> {
     const reconcileScanLimit = 200;
+    const offset = Math.max(0, options?.offset ?? 0);
+    const limit = Math.max(0, options?.limit ?? reconcileScanLimit);
     const selectClause = this.getTaskSelectClause(true);
 
     // FN-5577: GitHub tracking reconciliation must inspect soft-deleted rows,
     // so this query intentionally bypasses ACTIVE_TASKS_WHERE.
+    const deletedTotal = this.db.prepare(
+      "SELECT COUNT(*) as count FROM tasks WHERE \"deletedAt\" IS NOT NULL AND \"githubTracking\" IS NOT NULL",
+    ).get() as { count: number } | undefined;
+    const deletedCount = Number(deletedTotal?.count ?? 0);
+
+    const deletedOffset = Math.min(offset, deletedCount);
     const deletedRows = this.db.prepare(
-      `SELECT ${selectClause} FROM tasks WHERE "deletedAt" IS NOT NULL AND "githubTracking" IS NOT NULL ORDER BY updatedAt ASC LIMIT ?`,
-    ).all(reconcileScanLimit) as unknown as TaskRow[];
+      `SELECT ${selectClause} FROM tasks WHERE "deletedAt" IS NOT NULL AND "githubTracking" IS NOT NULL ORDER BY updatedAt ASC LIMIT ? OFFSET ?`,
+    ).all(limit, deletedOffset) as unknown as TaskRow[];
 
     const deletedTasks = deletedRows.map((row) => {
       const task = this.rowToTask(row);
@@ -4671,17 +4679,27 @@ export class TaskStore extends EventEmitter<TaskStoreEvents> {
     });
 
     let archivedTasks: Task[] = [];
+    let archivedCount = 0;
     try {
-      archivedTasks = this.archiveDb
+      const archivedCandidates = this.archiveDb
         .list()
         .map((entry) => this.archiveEntryToTask(entry, true))
-        .filter((task) => Boolean(task.githubTracking))
-        .slice(0, reconcileScanLimit);
+        .filter((task) => Boolean(task.githubTracking));
+
+      archivedCount = archivedCandidates.length;
+      const archivedOffset = Math.max(0, offset - deletedCount);
+      const remainingLimit = Math.max(0, limit - deletedTasks.length);
+      archivedTasks = remainingLimit > 0
+        ? archivedCandidates.slice(archivedOffset, archivedOffset + remainingLimit)
+        : [];
     } catch {
       archivedTasks = [];
+      archivedCount = 0;
     }
 
-    return [...deletedTasks, ...archivedTasks].slice(0, reconcileScanLimit);
+    const totalCount = deletedCount + archivedCount;
+    const hasMore = offset + limit < totalCount;
+    return { tasks: [...deletedTasks, ...archivedTasks], hasMore };
   }
 
   async listStrandedRefinements(options?: {
