@@ -239,6 +239,7 @@ Features:
 - Commit and diff browsing
 - Push/pull/fetch actions
 - Pull with rebase option (split-button chooses between `git pull` and `git pull --rebase`)
+- One-click **Sync** action in Remotes (`git pull --rebase` followed by push; it stops and surfaces an error instead of pushing when the pull conflicts or fails)
 - Remote editing controls
 - Stash inspection (view stat + patch) before apply/pop/drop actions
 - Remotes tab keeps "Recent commits on {remote}" in sync immediately after successful push/pull actions

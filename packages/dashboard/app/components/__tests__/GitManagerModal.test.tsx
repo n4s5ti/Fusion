@@ -1531,6 +1531,106 @@ describe("GitManagerModal", () => {
     });
   });
 
+  it("syncs with origin by running pull --rebase before push", async () => {
+    const user = userEvent.setup();
+
+    render(
+      <GitManagerModal isOpen={true} onClose={vi.fn()} tasks={mockTasks} addToast={mockAddToast} />
+    );
+    fireEvent.click(screen.getByRole("tab", { name: /remotes/i }));
+
+    const syncButton = await screen.findByTestId("remotes-sync-origin-btn");
+    await user.click(syncButton);
+
+    await waitFor(() => {
+      expect(pullBranch).toHaveBeenCalledWith({ rebase: true }, undefined);
+      expect(pushBranch).toHaveBeenCalledWith(undefined);
+    });
+
+    expect((pullBranch as any).mock.invocationCallOrder[0]).toBeLessThan(
+      (pushBranch as any).mock.invocationCallOrder[0]
+    );
+    expect(mockAddToast).toHaveBeenCalledWith(
+      "Synced with origin (pull --rebase + push)",
+      "success"
+    );
+    expectLatestCallStartsWith(fetchGitStatus as any, undefined, { extended: true });
+  });
+
+  it("does not push when sync pull reports a conflict", async () => {
+    const user = userEvent.setup();
+    (pullBranch as any).mockResolvedValue({
+      success: false,
+      message: "Rebase stopped on conflict",
+      conflict: true,
+    });
+
+    render(
+      <GitManagerModal isOpen={true} onClose={vi.fn()} tasks={mockTasks} addToast={mockAddToast} />
+    );
+    fireEvent.click(screen.getByRole("tab", { name: /remotes/i }));
+
+    const syncButton = await screen.findByTestId("remotes-sync-origin-btn");
+    await user.click(syncButton);
+
+    await waitFor(() => {
+      expect(pullBranch).toHaveBeenCalledWith({ rebase: true }, undefined);
+    });
+    expect(pushBranch).not.toHaveBeenCalled();
+    expect(mockAddToast).toHaveBeenCalledWith("Merge conflict detected. Resolve manually.", "error");
+  });
+
+  it("does not push when sync pull rejects", async () => {
+    const user = userEvent.setup();
+    (pullBranch as any).mockRejectedValue(new Error("sync pull failed"));
+
+    render(
+      <GitManagerModal isOpen={true} onClose={vi.fn()} tasks={mockTasks} addToast={mockAddToast} />
+    );
+    fireEvent.click(screen.getByRole("tab", { name: /remotes/i }));
+
+    const syncButton = await screen.findByTestId("remotes-sync-origin-btn");
+    await user.click(syncButton);
+
+    await waitFor(() => {
+      expect(pullBranch).toHaveBeenCalledWith({ rebase: true }, undefined);
+    });
+    expect(pushBranch).not.toHaveBeenCalled();
+    expect(mockAddToast).toHaveBeenCalledWith("sync pull failed", "error");
+  });
+
+  it("shows a spinner and disables the Sync button while syncing", async () => {
+    const user = userEvent.setup();
+    let resolvePull: ((value: { success: boolean; message: string }) => void) | undefined;
+    const pendingPull = new Promise<{ success: boolean; message: string }>((resolve) => {
+      resolvePull = resolve;
+    });
+    (pullBranch as any).mockReturnValue(pendingPull);
+
+    render(
+      <GitManagerModal isOpen={true} onClose={vi.fn()} tasks={mockTasks} addToast={mockAddToast} />
+    );
+    fireEvent.click(screen.getByRole("tab", { name: /remotes/i }));
+
+    const syncButton = await screen.findByTestId("remotes-sync-origin-btn");
+    expect(syncButton).not.toBeDisabled();
+
+    await user.click(syncButton);
+
+    await waitFor(() => {
+      expect(syncButton).toBeDisabled();
+      expect(syncButton.querySelector(".spin")).not.toBeNull();
+    });
+
+    resolvePull?.({ success: true, message: "Already up to date." });
+
+    await waitFor(() => {
+      expect(pushBranch).toHaveBeenCalledWith(undefined);
+      expect(syncButton).not.toBeDisabled();
+    });
+    expectLatestCallStartsWith(fetchGitStatus as any, undefined, { extended: true });
+  });
+
   it("shows error toast when fetch fails", async () => {
     const user = userEvent.setup();
     (fetchGitRemotesDetailed as any).mockResolvedValue([

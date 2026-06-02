@@ -818,6 +818,28 @@ export function GitManagerModal({ isOpen, onClose, tasks: _tasks, addToast, proj
     }
   }, [addToast, projectId]);
 
+  const handleSyncWithOrigin = useCallback(async () => {
+    setRemoteLoading("sync");
+    try {
+      const pullResult = await pullBranch({ rebase: true }, projectId);
+      setLastRemoteResult(pullResult);
+      if (pullResult.conflict) {
+        addToast("Merge conflict detected. Resolve manually.", "error");
+        return;
+      }
+
+      const pushResult = await pushBranch(projectId);
+      setLastRemoteResult(pushResult);
+      addToast("Synced with origin (pull --rebase + push)", "success");
+      const statusData = await fetchGitStatus(projectId, { extended: true });
+      setStatus(statusData);
+    } catch (err) {
+      addToast(getErrorMessage(err) || "Sync with origin failed", "error");
+    } finally {
+      setRemoteLoading(null);
+    }
+  }, [addToast, projectId]);
+
   // Fetch rootDir from config (used as worktreePath for the per-task sync
   // button surfaced from RemotesPanel below).
   useEffect(() => {
@@ -1039,6 +1061,7 @@ export function GitManagerModal({ isOpen, onClose, tasks: _tasks, addToast, proj
                 onFetch={handleFetch}
                 onPull={handlePull}
                 onPush={handlePush}
+                onSync={handleSyncWithOrigin}
                 onSyncIntegrationTip={handleSyncIntegrationTip}
                 syncIntegrationDisabled={
                   !status?.integrationBranch ||
@@ -2244,6 +2267,7 @@ function RemotesPanel({
   onFetch,
   onPull,
   onPush,
+  onSync,
   onSyncIntegrationTip,
   syncIntegrationDisabled,
   addToast,
@@ -2256,6 +2280,7 @@ function RemotesPanel({
   onFetch: () => void;
   onPull: (options?: { rebase?: boolean }) => void;
   onPush: () => void;
+  onSync: () => void;
   onSyncIntegrationTip: () => void;
   syncIntegrationDisabled: boolean;
   addToast: (message: string, type?: ToastType) => void;
@@ -2760,6 +2785,20 @@ function RemotesPanel({
                       <ArrowUp size={14} />
                     )}
                     Push
+                  </button>
+                  <button
+                    className="btn btn-primary"
+                    onClick={onSync}
+                    disabled={remoteLoading !== null || loading}
+                    title="Pull --rebase from origin, then push current branch"
+                    data-testid="remotes-sync-origin-btn"
+                  >
+                    {remoteLoading === "sync" ? (
+                      <Loader2 size={14} className="spin" />
+                    ) : (
+                      <GitMerge size={14} />
+                    )}
+                    Sync
                   </button>
                   {status?.integrationBranch && (
                     <button
