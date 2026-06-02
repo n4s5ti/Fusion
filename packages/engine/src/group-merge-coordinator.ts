@@ -263,9 +263,12 @@ export async function resolveBranchGroupMergeRouting(input: {
 
   return {
     branchGroup,
-    mergeTarget: resolveTaskMergeTarget(input.task, {
-      projectDefaultBranch: input.projectDefaultBranch,
-      branchGroup,
-    }),
+    mergeTarget: resolveTaskMergeTarget(
+      { ...input.task, baseBranch: undefined },
+      {
+        projectDefaultBranch: input.projectDefaultBranch,
+        branchGroup,
+      },
+    ),
   };
 }

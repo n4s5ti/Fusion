@@ -48,6 +48,7 @@ import { findAlreadyMergedTaskCommit } from "./already-merged-detector.js";
 import { resolveWorktreesDir } from "./worktree-paths.js";
 import { canonicalFusionBranchName, resolveTaskWorkingBranch } from "./worktree-names.js";
 import { resolveIntegrationBranch } from "./integration-branch.js";
+import { resolveBranchGroupMergeRouting } from "./group-merge-coordinator.js";
 import type { OwnedLandedClassification } from "./merger.js";
 import { regenerateBareMergeSubject } from "./merger-bare-subject.js";
 import { recoverForeignOnlyContamination } from "./recovery/foreign-only-contamination.js";
@@ -73,6 +74,15 @@ export const STALE_ACTIVE_BRANCH_EXECUTION_GRACE_MS = 10 * 60_000;
 export const COMPLETION_HANDOFF_LIMBO_GRACE_MS = 5 * 60_000;
 export const MAX_COMPLETION_HANDOFF_LIMBO_RECOVERIES = 3;
 const MAX_NO_PROGRESS_RESUME_ATTEMPTS = 2;
+
+type BranchGroupLandingRecorder = {
+  recordBranchGroupMemberLanded?: (groupId: string, payload: {
+    taskId: string;
+    branchName: string;
+    worktreePath: string | null;
+    status: "open";
+  }) => unknown;
+};
 
 // listTasks already enforces ACTIVE_TASKS_WHERE (`"deletedAt" IS NULL`), but
 // deadlock/stall sweeps still defensively skip soft-deleted rows in case a
@@ -1390,6 +1400,125 @@ export class SelfHealingManager {
     baseCommitSha?: string;
   }) {
     return findAlreadyMergedTaskCommit(input);
+  }
+
+  private async resolveSelfHealingMergeTarget(
+    task: Task,
+    settings: Settings | undefined,
+    phase: string,
+  ): Promise<{ branch: string; source?: MergeDetails["mergeTargetSource"]; groupId?: string; groupBranchName?: string }> {
+    const projectDefaultBranch = await resolveIntegrationBranch(this.options.rootDir, settings);
+    const routing = await resolveBranchGroupMergeRouting({
+      task,
+      store: this.store,
+      projectDefaultBranch,
+      rootDir: this.options.rootDir,
+    });
+
+    if (!routing) {
+      return { branch: task.baseBranch || task.executionStartBranch || projectDefaultBranch };
+    }
+
+    const targetBranch = routing.branchGroup.branchName;
+    if (targetBranch === projectDefaultBranch || routing.mergeTarget.source !== "branch-group-integration") {
+      await this.recordSharedGroupDefaultTargetGuard(task, phase, {
+        projectDefaultBranch,
+        resolvedBranch: routing.mergeTarget.branch,
+        resolvedSource: routing.mergeTarget.source,
+        groupBranchName: routing.branchGroup.branchName,
+      });
+    }
+
+    return {
+      branch: targetBranch,
+      source: "branch-group-integration",
+      groupId: routing.branchGroup.id,
+      groupBranchName: routing.branchGroup.branchName,
+    };
+  }
+
+  private async recordSharedGroupDefaultTargetGuard(
+    task: Task,
+    phase: string,
+    metadata: Record<string, unknown>,
+  ): Promise<void> {
+    try {
+      await createRunAuditor(this.store, {
+        runId: generateSyntheticRunId("self-heal-shared-group-routing", task.id),
+        agentId: "self-healing",
+        taskId: task.id,
+        taskLineageId: task.lineageId,
+        phase,
+      }).database({
+        type: "task:shared-group-member-default-target-rerouted" as DatabaseMutationType,
+        target: task.id,
+        metadata: {
+          taskId: task.id,
+          groupId: task.branchContext?.groupId ?? null,
+          ...metadata,
+        },
+      });
+    } catch (err: unknown) {
+      const errorMessage = err instanceof Error ? err.message : String(err);
+      log.warn(`Failed to record shared-group routing guard for ${task.id}: ${errorMessage}`);
+    }
+  }
+
+  private async isCommitReachableFromBranch(commitSha: string | undefined, branch: string): Promise<boolean> {
+    if (!commitSha) return true;
+    try {
+      await execAsync(`git merge-base --is-ancestor ${shellQuote(commitSha)} ${shellQuote(branch)}`, {
+        cwd: this.options.rootDir,
+      });
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  private async recordSelfHealingBranchGroupMemberLanding(
+    task: Task,
+    target: { groupId?: string; branch: string; source?: MergeDetails["mergeTargetSource"] },
+    phase: string,
+  ): Promise<void> {
+    if (!target.groupId || target.source !== "branch-group-integration") {
+      return;
+    }
+
+    try {
+      const landingRecorder = this.store as TaskStore & BranchGroupLandingRecorder;
+      await Promise.resolve(landingRecorder.recordBranchGroupMemberLanded?.(target.groupId, {
+        taskId: task.id,
+        branchName: target.branch,
+        worktreePath: task.worktree ?? null,
+        status: "open",
+      }));
+    } catch (err: unknown) {
+      const errorMessage = err instanceof Error ? err.message : String(err);
+      log.warn(`Failed to record branch-group member landing for ${task.id}: ${errorMessage}`);
+    }
+
+    try {
+      await createRunAuditor(this.store, {
+        runId: generateSyntheticRunId("self-heal-shared-group-landed", task.id),
+        agentId: "self-healing",
+        taskId: task.id,
+        taskLineageId: task.lineageId,
+        phase,
+      }).database({
+        type: "task:shared-group-member-self-heal-landed" as DatabaseMutationType,
+        target: task.id,
+        metadata: {
+          taskId: task.id,
+          groupId: target.groupId,
+          mergeTargetBranch: target.branch,
+          mergeTargetSource: target.source,
+        },
+      });
+    } catch (err: unknown) {
+      const errorMessage = err instanceof Error ? err.message : String(err);
+      log.warn(`Failed to record shared-group self-heal landing audit for ${task.id}: ${errorMessage}`);
+    }
   }
 
   private async cleanupWorktreeOnly(task: Task): Promise<void> {
@@ -5479,7 +5608,23 @@ export class SelfHealingManager {
       let recovered = 0;
       for (const task of candidates) {
         try {
+          const mergeTarget = await this.resolveSelfHealingMergeTarget(task, settings, "recover-interrupted-merging");
           const landedCommit = await this.findLandedTaskCommit(task);
+
+          if (landedCommit && !(await this.isCommitReachableFromBranch(landedCommit.sha, mergeTarget.branch))) {
+            await this.recordSharedGroupDefaultTargetGuard(task, "recover-interrupted-merging", {
+              reason: "landed-commit-not-reachable-from-routed-target",
+              commitSha: landedCommit.sha,
+              mergeTargetBranch: mergeTarget.branch,
+              mergeTargetSource: mergeTarget.source ?? null,
+            });
+            await this.store.updateTask(task.id, { status: null, error: null });
+            try {
+              this.options.enqueueMerge?.(task.id);
+            } catch { /* rely on polling sweep */ }
+            recovered++;
+            continue;
+          }
 
           if (landedCommit) {
             const mergeCommitMessage = await regenerateBareMergeSubject({
@@ -5500,6 +5645,8 @@ export class SelfHealingManager {
               mergedAt: new Date().toISOString(),
               mergeConfirmed: true,
               prNumber: getPrimaryPrInfo(task)?.number,
+              mergeTargetBranch: mergeTarget.branch,
+              mergeTargetSource: mergeTarget.source,
             };
 
             await this.store.updateTask(task.id, {
@@ -5508,6 +5655,7 @@ export class SelfHealingManager {
               mergeRetries: 0,
               mergeDetails,
             });
+            await this.recordSelfHealingBranchGroupMemberLanding(task, mergeTarget, "recover-interrupted-merging");
             const movedTask = await this.store.moveTask(task.id, "done");
             this.emitTaskMerged(movedTask, { mergeConfirmed: true });
             await this.cleanupInterruptedMergeArtifacts(task);
@@ -5795,6 +5943,17 @@ export class SelfHealingManager {
             continue;
           }
 
+          const mergeTarget = await this.resolveSelfHealingMergeTarget(task, settings, "recover-merged-review");
+          if (!(await this.isCommitReachableFromBranch(task.mergeDetails?.commitSha, mergeTarget.branch))) {
+            await this.recordSharedGroupDefaultTargetGuard(task, "recover-merged-review", {
+              reason: "confirmed-commit-not-reachable-from-routed-target",
+              commitSha: task.mergeDetails?.commitSha ?? null,
+              mergeTargetBranch: mergeTarget.branch,
+              mergeTargetSource: mergeTarget.source ?? null,
+            });
+            continue;
+          }
+
           const clearedFlags = {
             paused: Boolean(task.paused),
             status: Boolean(task.status),
@@ -5805,7 +5964,15 @@ export class SelfHealingManager {
             status: null,
             error: null,
             mergeRetries: 0,
+            ...(mergeTarget.source ? {
+              mergeDetails: {
+                ...(task.mergeDetails || {}),
+                mergeTargetBranch: task.mergeDetails?.mergeTargetBranch ?? mergeTarget.branch,
+                mergeTargetSource: task.mergeDetails?.mergeTargetSource ?? mergeTarget.source,
+              },
+            } : {}),
           });
+          await this.recordSelfHealingBranchGroupMemberLanding(task, mergeTarget, "recover-merged-review");
           const movedTask = await this.store.moveTask(task.id, "done");
           this.emitTaskMerged(movedTask, { mergeConfirmed: true });
           await this.store.logEntry(
@@ -5825,7 +5992,9 @@ export class SelfHealingManager {
               target: task.id,
               metadata: {
                 mergeSha: task.mergeDetails?.commitSha ?? null,
-                baseBranch: task.baseBranch || task.executionStartBranch || await resolveIntegrationBranch(this.options.rootDir, undefined),
+                baseBranch: mergeTarget.branch,
+                mergeTargetBranch: mergeTarget.branch,
+                mergeTargetSource: mergeTarget.source ?? null,
                 clearedFlags,
               },
             });
@@ -5904,8 +6073,20 @@ export class SelfHealingManager {
         const blockedDependents = dependentsByBlocker.get(task.id) ?? [];
         const blockedTaskIds = blockedDependents.map((dep) => dep.id);
         try {
+          const mergeTarget = await this.resolveSelfHealingMergeTarget(task, settings, "recover-stuck-merge-deadlocks");
           const landedCommit = await this.findLandedTaskCommit(task);
-          if (landedCommit) {
+          const landedOnTarget = landedCommit
+            ? await this.isCommitReachableFromBranch(landedCommit.sha, mergeTarget.branch)
+            : false;
+          if (landedCommit && !landedOnTarget) {
+            await this.recordSharedGroupDefaultTargetGuard(task, "recover-stuck-merge-deadlocks", {
+              reason: "landed-commit-not-reachable-from-routed-target",
+              commitSha: landedCommit.sha,
+              mergeTargetBranch: mergeTarget.branch,
+              mergeTargetSource: mergeTarget.source ?? null,
+            });
+          }
+          if (landedCommit && landedOnTarget) {
             const mergeCommitMessage = await regenerateBareMergeSubject({
               subject: landedCommit.subject,
               commitSha: landedCommit.sha,
@@ -5924,6 +6105,8 @@ export class SelfHealingManager {
               mergedAt: new Date().toISOString(),
               mergeConfirmed: true,
               prNumber: getPrimaryPrInfo(task)?.number,
+              mergeTargetBranch: mergeTarget.branch,
+              mergeTargetSource: mergeTarget.source,
             };
 
             await this.store.updateTask(task.id, {
@@ -5934,6 +6117,7 @@ export class SelfHealingManager {
               branch: null,
               mergeDetails,
             });
+            await this.recordSelfHealingBranchGroupMemberLanding(task, mergeTarget, "recover-stuck-merge-deadlocks");
             const movedTask = await this.store.moveTask(task.id, "done");
             this.emitTaskMerged(movedTask, { mergeConfirmed: true });
             await this.cleanupInterruptedMergeArtifacts(task);
@@ -6078,7 +6262,8 @@ export class SelfHealingManager {
           const hasDeclaredOverlap = orphanFiles.some((file) => matchesScope(file, declaredScope));
           if (hasDeclaredOverlap) continue;
 
-          const baseBranch = task.baseBranch || task.executionStartBranch || await resolveIntegrationBranch(this.options.rootDir, undefined);
+          const mergeTarget = await this.resolveSelfHealingMergeTarget(task, settings, "recover-orphan-only-scope-violations");
+          const baseBranch = mergeTarget.branch;
           const landed = await this.findAlreadyMergedTaskCommit({
             taskId: task.id,
             lineageId: task.lineageId,
@@ -6094,6 +6279,8 @@ export class SelfHealingManager {
             mergedAt: new Date().toISOString(),
             mergeConfirmed: true,
             resolutionStrategy: "orphan-discard-no-op",
+            mergeTargetBranch: mergeTarget.branch,
+            mergeTargetSource: mergeTarget.source,
           };
 
           const hardBlocker = getTaskHardMergeBlocker({
@@ -6126,6 +6313,7 @@ export class SelfHealingManager {
             mergeRetries: 0,
             mergeDetails,
           });
+          await this.recordSelfHealingBranchGroupMemberLanding(task, mergeTarget, "recover-orphan-only-scope-violations");
           const movedTask = await this.store.moveTask(task.id, "done");
           this.emitTaskMerged(movedTask, { mergeConfirmed: true });
           await this.store.logEntry(
@@ -6148,6 +6336,8 @@ export class SelfHealingManager {
                 mergeSha: landed.sha,
                 baseBranch,
                 mergeStrategy: landed.strategy,
+                mergeTargetBranch: mergeTarget.branch,
+                mergeTargetSource: mergeTarget.source ?? null,
                 clearedFlags,
               },
             });
@@ -6216,7 +6406,8 @@ export class SelfHealingManager {
       let recovered = 0;
       for (const task of candidates) {
         try {
-          const baseBranch = task.baseBranch || task.executionStartBranch || await resolveIntegrationBranch(this.options.rootDir, undefined);
+          const mergeTarget = await this.resolveSelfHealingMergeTarget(task, settings, "recover-already-merged-review");
+          const baseBranch = mergeTarget.branch;
           if (!baseBranch) continue;
 
           const landed = await this.findAlreadyMergedTaskCommit({
@@ -6234,6 +6425,8 @@ export class SelfHealingManager {
             mergedAt: new Date().toISOString(),
             mergeConfirmed: true,
             prNumber: getPrimaryPrInfo(task)?.number,
+            mergeTargetBranch: mergeTarget.branch,
+            mergeTargetSource: mergeTarget.source,
           };
 
           const hardBlocker = getTaskHardMergeBlocker({
@@ -6267,6 +6460,7 @@ export class SelfHealingManager {
             mergeDetails,
           });
           const worktreeHint = task.worktree;
+          await this.recordSelfHealingBranchGroupMemberLanding(task, mergeTarget, "recover-already-merged-review");
           const movedTask = await this.store.moveTask(task.id, "done");
           this.emitTaskMerged(movedTask, { mergeConfirmed: true });
           await this.store.logEntry(
@@ -6289,6 +6483,8 @@ export class SelfHealingManager {
                 mergeSha: landed.sha,
                 mergeStrategy: landed.strategy,
                 baseBranch,
+                mergeTargetBranch: mergeTarget.branch,
+                mergeTargetSource: mergeTarget.source ?? null,
                 mergeRetries: task.mergeRetries ?? 0,
                 clearedFlags,
               },
@@ -6445,7 +6641,8 @@ export class SelfHealingManager {
         try {
           const branch = task.branch;
           if (!branch) continue;
-          const baseBranch = task.baseBranch || task.executionStartBranch || await resolveIntegrationBranch(this.options.rootDir, undefined);
+          const mergeTarget = await this.resolveSelfHealingMergeTarget(task, settings, "recover-branch-misbound-in-review");
+          const baseBranch = mergeTarget.branch;
           const check = await this.isBranchTipMisboundToTask({
             branch,
             taskId: task.id,
@@ -6459,6 +6656,8 @@ export class SelfHealingManager {
             mergedAt: new Date().toISOString(),
             mergeConfirmed: true,
             prNumber: getPrimaryPrInfo(task)?.number,
+            mergeTargetBranch: mergeTarget.branch,
+            mergeTargetSource: mergeTarget.source,
           };
 
           await this.store.updateTask(task.id, {
@@ -6487,6 +6686,7 @@ export class SelfHealingManager {
           // entire merger queue until engine restart. Mirrors the pattern in
           // merger.ts completeTask() and project-engine.ts auto-merge already-confirmed path.
           await this.store.updateTask(task.id, { status: null, error: null, paused: false });
+          await this.recordSelfHealingBranchGroupMemberLanding(task, mergeTarget, "recover-branch-misbound-in-review");
           const movedTask = await this.store.moveTask(task.id, "done");
           this.emitTaskMerged(movedTask, { mergeConfirmed: true });
           await this.store.logEntry(
@@ -6513,6 +6713,8 @@ export class SelfHealingManager {
                 mergeStrategy: check.landed.strategy,
                 lineageId: task.lineageId,
                 baseBranch,
+                mergeTargetBranch: mergeTarget.branch,
+                mergeTargetSource: mergeTarget.source ?? null,
               },
             });
           } catch (err: unknown) {

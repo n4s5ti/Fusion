@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 import { type TaskStore } from "@fusion/core";
 import { evaluateBranchGroupCompletion, promoteBranchGroup } from "../../group-merge-coordinator.js";
 import { aiMergeTask } from "../../merger.js";
+import { SelfHealingManager } from "../../self-healing.js";
 import { acquireTaskWorktree } from "../../worktree-acquisition.js";
 import { canonicalFusionBranchName, resolveTaskWorkingBranch } from "../../worktree-names.js";
 import { git, hasGit, makeReliabilityFixture } from "./_helpers.js";
@@ -122,6 +123,12 @@ describe("FN-5820 reliability interactions: shared branch group lifecycle", () =
       const secondResult = await aiMergeTask(store, rootDir, second.id);
       expect(firstResult.merged).toBe(true);
       expect(secondResult.merged).toBe(true);
+      const firstAfterMerge = await store.getTask(task.id);
+      const secondAfterMerge = await store.getTask(second.id);
+      expect(firstAfterMerge?.mergeDetails?.mergeTargetSource).toBe("branch-group-integration");
+      expect(firstAfterMerge?.mergeDetails?.mergeTargetBranch).toBe(group.branchName);
+      expect(secondAfterMerge?.mergeDetails?.mergeTargetSource).toBe("branch-group-integration");
+      expect(secondAfterMerge?.mergeDetails?.mergeTargetBranch).toBe(group.branchName);
 
       expect(git(rootDir, `git show ${group.branchName}:packages/engine/src/fn5820Case2A.ts`)).toContain("fn5820Case2A");
       expect(git(rootDir, `git show ${group.branchName}:packages/engine/src/fn5820Case2B.ts`)).toContain("fn5820Case2B");
@@ -181,10 +188,10 @@ describe("FN-5820 reliability interactions: shared branch group lifecycle", () =
 
       const firstMerge = await aiMergeTask(store, rootDir, task.id);
       expect(firstMerge.merged).toBe(true);
-      await store.updateTask(task.id, {
-        column: "done",
-        mergeDetails: { ...(await store.getTask(task.id))?.mergeDetails, mergeTargetSource: "branch-group-integration" },
-      } as any);
+      const firstMergedTask = await store.getTask(task.id);
+      expect(firstMergedTask?.mergeDetails?.mergeTargetSource).toBe("branch-group-integration");
+      expect(firstMergedTask?.mergeDetails?.mergeTargetBranch).toBe(group.branchName);
+      await store.updateTask(task.id, { column: "done" } as any);
 
       const incomplete = await promoteBranchGroup({
         store,
@@ -197,10 +204,10 @@ describe("FN-5820 reliability interactions: shared branch group lifecycle", () =
 
       const secondMerge = await aiMergeTask(store, rootDir, second.id);
       expect(secondMerge.merged).toBe(true);
-      await store.updateTask(second.id, {
-        column: "done",
-        mergeDetails: { ...(await store.getTask(second.id))?.mergeDetails, mergeTargetSource: "branch-group-integration" },
-      } as any);
+      const secondMergedTask = await store.getTask(second.id);
+      expect(secondMergedTask?.mergeDetails?.mergeTargetSource).toBe("branch-group-integration");
+      expect(secondMergedTask?.mergeDetails?.mergeTargetBranch).toBe(group.branchName);
+      await store.updateTask(second.id, { column: "done" } as any);
 
       const promoteWithMembers = async (recordAudit?: (event: { mutationType: string; metadata?: Record<string, unknown> }) => void) => promoteBranchGroup({
         store: {
@@ -269,14 +276,20 @@ describe("FN-5820 reliability interactions: shared branch group lifecycle", () =
 
       expect((await aiMergeTask(store, rootDir, task.id)).merged).toBe(true);
       expect((await aiMergeTask(store, rootDir, second.id)).merged).toBe(true);
+      const firstMergedTask = await store.getTask(task.id);
+      const secondMergedTask = await store.getTask(second.id);
+      expect(firstMergedTask?.mergeDetails?.mergeTargetSource).toBe("branch-group-integration");
+      expect(firstMergedTask?.mergeDetails?.mergeTargetBranch).toBe(group.branchName);
+      expect(secondMergedTask?.mergeDetails?.mergeTargetSource).toBe("branch-group-integration");
+      expect(secondMergedTask?.mergeDetails?.mergeTargetBranch).toBe(group.branchName);
 
       expect(git(rootDir, `git show ${group.branchName}:packages/engine/src/fn5820Case4A.ts`)).toContain("fn5820Case4A");
       expect(git(rootDir, `git show ${group.branchName}:packages/engine/src/fn5820Case4B.ts`)).toContain("fn5820Case4B");
       expect(() => git(rootDir, "git show main:packages/engine/src/fn5820Case4A.ts")).toThrow();
       expect(() => git(rootDir, "git show main:packages/engine/src/fn5820Case4B.ts")).toThrow();
 
-      await store.updateTask(task.id, { column: "done", mergeDetails: { ...(await store.getTask(task.id))?.mergeDetails, mergeTargetSource: "branch-group-integration" } } as any);
-      await store.updateTask(second.id, { column: "done", mergeDetails: { ...(await store.getTask(second.id))?.mergeDetails, mergeTargetSource: "branch-group-integration" } } as any);
+      await store.updateTask(task.id, { column: "done" } as any);
+      await store.updateTask(second.id, { column: "done" } as any);
 
       const audits: Array<{ mutationType: string; metadata?: Record<string, unknown> }> = [];
       const gated = await promoteBranchGroup({
@@ -311,7 +324,45 @@ describe("FN-5820 reliability interactions: shared branch group lifecycle", () =
     }
   }, 45_000);
 
-  it.skipIf(!hasGit)("CASE 5: per-task-derived and ungrouped tasks remain default-branch routed", async () => {
+  it.skipIf(!hasGit)("CASE 5: self-healing already-merged recovery stamps shared-branch routing metadata", async () => {
+    const fixture = await makeReliabilityFixture({ taskId: "FN-5820-RI-K", settings: { testMode: true, autoMerge: true } as any });
+    try {
+      const { rootDir, store, task } = fixture;
+      const group = store.createBranchGroup({
+        sourceType: "planning",
+        sourceId: "PS-FN5820-CASE5",
+        branchName: "fusion/groups/fn-5820-self-heal",
+      });
+
+      await stageSharedMember(store, rootDir, { taskId: task.id, groupId: group.id, source: "planning", fileName: "fn5820Case5SelfHeal" });
+      await store.setTaskBranchGroup(task.id, group.id);
+      expect((await aiMergeTask(store, rootDir, task.id)).merged).toBe(true);
+      expect(git(rootDir, `git show ${group.branchName}:packages/engine/src/fn5820Case5SelfHeal.ts`)).toContain("fn5820Case5SelfHeal");
+      expect(() => git(rootDir, "git show main:packages/engine/src/fn5820Case5SelfHeal.ts")).toThrow();
+
+      await store.updateTask(task.id, {
+        column: "in-review",
+        status: "failed",
+        error: "retry exhausted",
+        mergeRetries: 999,
+        mergeDetails: undefined,
+      } as any);
+
+      const manager = new SelfHealingManager(store, { rootDir, getExecutingTaskIds: () => new Set<string>() });
+      await manager.recoverAlreadyMergedReviewTasks();
+      const recovered = await store.getTask(task.id);
+      expect(recovered?.column).toBe("done");
+      expect(recovered?.mergeDetails?.mergeConfirmed).toBe(true);
+      expect(recovered?.mergeDetails?.mergeTargetSource).toBe("branch-group-integration");
+      expect(recovered?.mergeDetails?.mergeTargetBranch).toBe(group.branchName);
+      expect(Number(git(rootDir, `git rev-list --count main..${group.branchName}`).trim())).toBeGreaterThan(0);
+      expect(() => git(rootDir, "git show main:packages/engine/src/fn5820Case5SelfHeal.ts")).toThrow();
+    } finally {
+      await fixture.cleanup();
+    }
+  }, 45_000);
+
+  it.skipIf(!hasGit)("CASE 6: per-task-derived and ungrouped tasks remain default-branch routed", async () => {
     const fixture = await makeReliabilityFixture({ taskId: "FN-5820-RI-I", settings: { testMode: true } as any });
     try {
       const { rootDir, store, task } = fixture;

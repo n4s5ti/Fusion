@@ -295,6 +295,32 @@ describe("resolveBranchGroupMergeRouting", () => {
     expect(routing).toBeNull();
   });
 
+  it("routes shared members to the group branch even when task baseBranch points at default", async () => {
+    const branchGroup = {
+      id: "BG-1",
+      sourceType: "planning",
+      sourceId: "planning:x",
+      branchName: "fusion/groups/planning-x",
+      autoMerge: false,
+      prState: "none",
+      status: "open",
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    };
+
+    const routing = await resolveBranchGroupMergeRouting({
+      task: {
+        baseBranch: "main",
+        branchContext: { groupId: "BG-1", source: "planning", assignmentMode: "shared" },
+      },
+      store: { getBranchGroup: () => branchGroup } as any,
+      projectDefaultBranch: "main",
+    });
+
+    expect(routing?.mergeTarget.branch).toBe(branchGroup.branchName);
+    expect(routing?.mergeTarget.source).toBe("branch-group-integration");
+  });
+
   it("creates the group branch when missing", async () => {
     const rootDir = makeRepo();
     const branchGroup = {

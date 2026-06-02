@@ -1525,8 +1525,20 @@ export class ProjectEngine {
               // silently promote the poisoned row to `done` — exactly the
               // false-positive completion class that lost FN-5612/5613/5614/5616/
               // 5623/5625 work on 2026-05-27/28.
+              const branchGroupForFastPath = isSharedBranchGroupMemberIntegration(task)
+                ? (store as any).getBranchGroup?.(task.branchContext?.groupId)
+                : null;
+              const routedFastPathTarget = branchGroupForFastPath?.branchName?.trim();
               const integrationBranchForGate =
-                task.mergeDetails.mergeTargetBranch || task.baseBranch || "main";
+                routedFastPathTarget || task.mergeDetails.mergeTargetBranch || task.baseBranch || "main";
+              const expectedFastPathTargetSource = routedFastPathTarget
+                ? "branch-group-integration"
+                : task.mergeDetails.mergeTargetSource;
+              if (routedFastPathTarget && task.mergeDetails.mergeTargetBranch && task.mergeDetails.mergeTargetBranch !== routedFastPathTarget) {
+                runtimeLog.warn(
+                  `Auto-merge: ${taskId} merge-confirmed fast-path rerouting shared-group member from ${task.mergeDetails.mergeTargetBranch} to ${routedFastPathTarget}`,
+                );
+              }
               const reachability = await verifyMergeConfirmedReachability({
                 commitSha: task.mergeDetails.commitSha,
                 integrationBranch: integrationBranchForGate,
@@ -1690,6 +1702,40 @@ export class ProjectEngine {
                 continue;
               }
 
+              if (routedFastPathTarget && (
+                task.mergeDetails.mergeTargetBranch !== routedFastPathTarget ||
+                task.mergeDetails.mergeTargetSource !== "branch-group-integration"
+              )) {
+                await store.updateTask(taskId, {
+                  mergeDetails: {
+                    ...task.mergeDetails,
+                    mergeTargetBranch: routedFastPathTarget,
+                    mergeTargetSource: expectedFastPathTargetSource,
+                  },
+                });
+                task.mergeDetails = {
+                  ...task.mergeDetails,
+                  mergeTargetBranch: routedFastPathTarget,
+                  mergeTargetSource: expectedFastPathTargetSource,
+                } as typeof task.mergeDetails;
+              }
+              if (routedFastPathTarget && branchGroupForFastPath?.id) {
+                try {
+                  await Promise.resolve((store as any).recordBranchGroupMemberLanded?.(branchGroupForFastPath.id, {
+                    taskId,
+                    branchName: routedFastPathTarget,
+                    worktreePath: task.worktree ?? null,
+                    status: "open",
+                  }));
+                } catch (landingErr) {
+                  runtimeLog.warn(
+                    `Auto-merge: ${taskId} failed to record shared-group member landing: ${
+                      landingErr instanceof Error ? landingErr.message : String(landingErr)
+                    }`,
+                  );
+                }
+              }
+
               runtimeLog.log(
                 `Auto-merge: ${taskId} already has mergeConfirmed — unpausing and moving to done`,
               );
@@ -1710,6 +1756,7 @@ export class ProjectEngine {
                   mergeConfirmed: true,
                   mergedAt: mergedTask.mergeDetails?.mergedAt,
                   mergeTargetBranch: mergedTask.mergeDetails?.mergeTargetBranch,
+                  mergeTargetSource: mergedTask.mergeDetails?.mergeTargetSource,
                 } as MergeResult);
               } catch (error) {
                 if (isInvalidDoneTransitionError(error)) {
