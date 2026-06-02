@@ -108,6 +108,18 @@ function makeMultipart(fieldName: string, filename: string, contentType: string,
   return { payload: Buffer.concat([head, body, tail]), boundary };
 }
 
+function makeMultipartMessageRequest(content: string | undefined, filename: string, contentType: string, body: Buffer): { payload: Buffer; boundary: string } {
+  const boundary = `----fn-msg-${Date.now()}`;
+  const parts: Buffer[] = [];
+  if (content !== undefined) {
+    parts.push(Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="content"\r\n\r\n${content}\r\n`));
+  }
+  parts.push(Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="attachments"; filename="${filename}"\r\nContent-Type: ${contentType}\r\n\r\n`));
+  parts.push(body);
+  parts.push(Buffer.from(`\r\n--${boundary}--\r\n`));
+  return { payload: Buffer.concat(parts), boundary };
+}
+
 describe("chat attachment routes", () => {
   let app: (req: any, res: any) => void;
   let rootDir: string;
@@ -190,6 +202,27 @@ describe("chat attachment routes", () => {
     const response = await request(app, "POST", `/api/chat/sessions/${session.id}/messages`, body, { "content-type": "application/json" });
     expect(response.status).toBe(200);
     expect(mockSendMessage).toHaveBeenCalledWith(session.id, "hello", undefined, undefined, attachments, { generationId: 1 });
+  });
+
+  it("passes multipart file attachments on message send", async () => {
+    const { payload, boundary } = makeMultipartMessageRequest("hello", "x.txt", "text/plain", Buffer.from("x"));
+    const response = await request(app, "POST", `/api/chat/sessions/${session.id}/messages`, payload, { "content-type": `multipart/form-data; boundary=${boundary}` }, payload);
+    expect(response.status).toBe(200);
+    expect(mockSendMessage).toHaveBeenCalledWith(
+      session.id,
+      "hello",
+      undefined,
+      undefined,
+      [expect.objectContaining({ originalName: "x.txt", mimeType: "text/plain", size: 1 })],
+      { generationId: 1 },
+    );
+  });
+
+  it("returns 400 for multipart message send without content", async () => {
+    const { payload, boundary } = makeMultipartMessageRequest(undefined, "x.txt", "text/plain", Buffer.from("x"));
+    const response = await request(app, "POST", `/api/chat/sessions/${session.id}/messages`, payload, { "content-type": `multipart/form-data; boundary=${boundary}` }, payload);
+    expect(response.status).toBe(400);
+    expect((response.body as any).error).toContain("content is required");
   });
 
   afterEach(() => {

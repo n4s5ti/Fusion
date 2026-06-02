@@ -288,6 +288,27 @@ function createMockChatManager() {
   };
 }
 
+function makeMultipartMessageRequest(options: {
+  fields?: Record<string, string>;
+  files?: Array<{ fieldName: string; filename: string; contentType: string; body: Buffer }>;
+}): { payload: Buffer; boundary: string } {
+  const boundary = `----fn-chat-${Date.now()}`;
+  const parts: Buffer[] = [];
+
+  for (const [fieldName, value] of Object.entries(options.fields ?? {})) {
+    parts.push(Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="${fieldName}"\r\n\r\n${value}\r\n`));
+  }
+
+  for (const file of options.files ?? []) {
+    parts.push(Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="${file.fieldName}"; filename="${file.filename}"\r\nContent-Type: ${file.contentType}\r\n\r\n`));
+    parts.push(file.body);
+    parts.push(Buffer.from("\r\n"));
+  }
+
+  parts.push(Buffer.from(`--${boundary}--\r\n`));
+  return { payload: Buffer.concat(parts), boundary };
+}
+
 // ── Tests ───────────────────────────────────────────────────────────────────
 
 describe("Chat API Routes", () => {
@@ -1122,6 +1143,64 @@ describe("Chat API Routes", () => {
 
       expect(response.status).toBe(400);
       expect((response.body as any).error).toContain("content is required");
+    });
+
+    it("accepts multipart content with attachments without crashing", async () => {
+      mockGetSession.mockReturnValue(sampleSession);
+      mockSendMessage.mockImplementation(async (sessionId: string) => {
+        mockChatStreamManager.broadcast(sessionId, {
+          type: "done",
+          data: { messageId: "msg-multipart" },
+        });
+      });
+
+      const { payload, boundary } = makeMultipartMessageRequest({
+        fields: { content: "Hello with attachment" },
+        files: [{
+          fieldName: "attachments",
+          filename: "note.txt",
+          contentType: "text/plain",
+          body: Buffer.from("hello"),
+        }],
+      });
+
+      const response = await request(
+        app,
+        "POST",
+        "/api/chat/sessions/chat-abc123/messages",
+        payload,
+        { "content-type": `multipart/form-data; boundary=${boundary}` },
+        payload,
+      );
+
+      expect(response.status).toBe(200);
+      expect(String(response.body)).not.toContain("Cannot destructure property 'content'");
+    });
+
+    it("returns 400 for multipart requests missing content instead of crashing", async () => {
+      mockGetSession.mockReturnValue(sampleSession);
+
+      const { payload, boundary } = makeMultipartMessageRequest({
+        files: [{
+          fieldName: "attachments",
+          filename: "note.txt",
+          contentType: "text/plain",
+          body: Buffer.from("hello"),
+        }],
+      });
+
+      const response = await request(
+        app,
+        "POST",
+        "/api/chat/sessions/chat-abc123/messages",
+        payload,
+        { "content-type": `multipart/form-data; boundary=${boundary}` },
+        payload,
+      );
+
+      expect(response.status).toBe(400);
+      expect((response.body as any).error).toContain("content is required");
+      expect(mockSendMessage).not.toHaveBeenCalled();
     });
 
     describe("SSE stream lifecycle", () => {
