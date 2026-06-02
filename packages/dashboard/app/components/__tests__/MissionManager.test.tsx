@@ -2928,9 +2928,12 @@ describe("MissionManager", () => {
       fireEvent.click(screen.getByText("Generated Mission"));
 
       await waitFor(() => {
-        expect(screen.getByText("Generated Milestone")).toBeDefined();
-        expect(screen.getByText("Generated Slice")).toBeDefined();
-        expect(screen.getByText("Generated Feature")).toBeDefined();
+        const detailPane = document.querySelector(".mission-manager__detail-pane") as HTMLElement | null;
+        expect(detailPane).toBeTruthy();
+        expect(within(detailPane as HTMLElement).getByText("Generated Milestone")).toBeDefined();
+        const generatedSlice = within(detailPane as HTMLElement).getByText("Generated Slice").closest(".mission-slice");
+        expect(generatedSlice).toBeTruthy();
+        expect(within(generatedSlice as HTMLElement).getByText("Generated Feature")).toBeDefined();
       });
     });
 
@@ -3173,7 +3176,8 @@ describe("MissionManager", () => {
 
       await waitForDetailLoaded();
 
-      fireEvent.click(screen.getAllByLabelText("Edit mission")[0]);
+      const detailPane = document.querySelector(".mission-manager__detail-pane") as HTMLElement;
+      fireEvent.click(within(detailPane).getAllByLabelText("Edit mission")[0]);
 
       const targetBranchInput = await screen.findByLabelText("Mission target branch");
       expect(targetBranchInput).toHaveValue("develop");
@@ -3207,11 +3211,12 @@ describe("MissionManager", () => {
 
       await waitForDetailLoaded();
 
-      fireEvent.click(screen.getAllByLabelText("Edit mission")[0]);
+      const detailPane = document.querySelector(".mission-manager__detail-pane") as HTMLElement;
+      fireEvent.click(within(detailPane).getAllByLabelText("Edit mission")[0]);
 
       const targetBranchInput = await screen.findByLabelText("Mission target branch");
       fireEvent.change(targetBranchInput, { target: { value: "  release/2026.05  " } });
-      fireEvent.click(screen.getByRole("button", { name: "Update" }));
+      fireEvent.click(screen.getByRole("button", { name: /Update/ }));
 
       await waitFor(() => {
         const patchCall = fetchMock.mock.calls.find(
@@ -3633,12 +3638,18 @@ describe("MissionManager", () => {
       });
       fireEvent.click(screen.getByText("Triage Test Mission"));
 
+      let featureRow: HTMLElement;
       await waitFor(() => {
-        expect(screen.getByText("Test Feature")).toBeDefined();
+        const detailPane = document.querySelector(".mission-manager__detail-pane") as HTMLElement | null;
+        expect(detailPane).toBeTruthy();
+        const testSlice = within(detailPane as HTMLElement).getByText("Test Slice").closest(".mission-slice");
+        expect(testSlice).toBeTruthy();
+        featureRow = within(testSlice as HTMLElement).getByText("Test Feature").closest(".mission-feature") as HTMLElement;
+        expect(featureRow).toBeTruthy();
       });
 
       // Click triage button
-      fireEvent.click(screen.getByTitle("Triage — create task"));
+      fireEvent.click(within(featureRow!).getByTitle("Triage — create task"));
 
       // Preview should appear
       await waitFor(() => {
@@ -3657,12 +3668,18 @@ describe("MissionManager", () => {
       });
       fireEvent.click(screen.getByText("Triage Test Mission"));
 
+      let featureRow: HTMLElement;
       await waitFor(() => {
-        expect(screen.getByText("Test Feature")).toBeDefined();
+        const detailPane = document.querySelector(".mission-manager__detail-pane") as HTMLElement | null;
+        expect(detailPane).toBeTruthy();
+        const testSlice = within(detailPane as HTMLElement).getByText("Test Slice").closest(".mission-slice");
+        expect(testSlice).toBeTruthy();
+        featureRow = within(testSlice as HTMLElement).getByText("Test Feature").closest(".mission-feature") as HTMLElement;
+        expect(featureRow).toBeTruthy();
       });
 
       // Click triage button to show preview
-      fireEvent.click(screen.getByTitle("Triage — create task"));
+      fireEvent.click(within(featureRow!).getByTitle("Triage — create task"));
 
       await waitFor(() => {
         expect(screen.getByText("Enriched Description Preview")).toBeDefined();
@@ -3687,12 +3704,18 @@ describe("MissionManager", () => {
       });
       fireEvent.click(screen.getByText("Triage Test Mission"));
 
+      let featureRow: HTMLElement;
       await waitFor(() => {
-        expect(screen.getByText("Test Feature")).toBeDefined();
+        const detailPane = document.querySelector(".mission-manager__detail-pane") as HTMLElement | null;
+        expect(detailPane).toBeTruthy();
+        const testSlice = within(detailPane as HTMLElement).getByText("Test Slice").closest(".mission-slice");
+        expect(testSlice).toBeTruthy();
+        featureRow = within(testSlice as HTMLElement).getByText("Test Feature").closest(".mission-feature") as HTMLElement;
+        expect(featureRow).toBeTruthy();
       });
 
       // Click triage button to show preview
-      fireEvent.click(screen.getByTitle("Triage — create task"));
+      fireEvent.click(within(featureRow!).getByTitle("Triage — create task"));
 
       await waitFor(() => {
         expect(screen.getByText("Enriched Description Preview")).toBeDefined();
@@ -3723,12 +3746,18 @@ describe("MissionManager", () => {
       });
       fireEvent.click(screen.getByText("Triage Test Mission"));
 
+      let featureRow: HTMLElement;
       await waitFor(() => {
-        expect(screen.getByText("Test Feature")).toBeDefined();
+        const detailPane = document.querySelector(".mission-manager__detail-pane") as HTMLElement | null;
+        expect(detailPane).toBeTruthy();
+        const testSlice = within(detailPane as HTMLElement).getByText("Test Slice").closest(".mission-slice");
+        expect(testSlice).toBeTruthy();
+        featureRow = within(testSlice as HTMLElement).getByText("Test Feature").closest(".mission-feature") as HTMLElement;
+        expect(featureRow).toBeTruthy();
       });
 
       // Click triage button - should fall back to direct triage
-      fireEvent.click(screen.getByTitle("Triage — create task"));
+      fireEvent.click(within(featureRow!).getByTitle("Triage — create task"));
 
       // Should call triageFeature directly
       await waitFor(() => {
@@ -3938,7 +3967,8 @@ describe("MissionManager", () => {
         await waitFor(() => {
           expect(screen.getByText("Autopilot Mission")).toBeDefined();
         });
-        fireEvent.click(screen.getByText("Autopilot Mission"));
+        const sidebar = document.querySelector(".mission-manager__sidebar") as HTMLElement;
+        fireEvent.click(within(sidebar).getByText("Autopilot Mission"));
 
         await waitFor(() => {
           expect(screen.getByLabelText("Autopilot")).toBeDefined();
@@ -4292,8 +4322,9 @@ describe("MissionManager", () => {
       await waitFor(() => expect(screen.getByText("Build Auth System")).toBeDefined());
       const sidebar = document.querySelector(".mission-manager__sidebar") as HTMLElement;
       fireEvent.click(within(sidebar).getByText("Build Auth System"));
-      await waitFor(() => expect(screen.getByLabelText("Delete mission")).toBeDefined());
-      fireEvent.click(screen.getByLabelText("Delete mission"));
+      const detailPane = document.querySelector(".mission-manager__detail-pane") as HTMLElement;
+      await waitFor(() => expect(within(detailPane).getAllByLabelText("Delete mission")[0]).toBeDefined());
+      fireEvent.click(within(detailPane).getAllByLabelText("Delete mission")[0]);
       await waitFor(() => expect(document.querySelector(".mission-manager__detail-pane .mission-confirm-panel")).toBeTruthy());
     });
 
@@ -4453,8 +4484,9 @@ describe("MissionManager", () => {
 
       await waitFor(() => expect(screen.getByText("Build Auth System")).toBeInTheDocument());
       fireEvent.click(within(document.querySelector(".mission-manager__sidebar") as HTMLElement).getByText("Build Auth System"));
-      await waitFor(() => expect(screen.getByLabelText("Delete mission")).toBeInTheDocument());
-      fireEvent.click(screen.getByLabelText("Delete mission"));
+      const detailPane = document.querySelector(".mission-manager__detail-pane") as HTMLElement;
+      await waitFor(() => expect(within(detailPane).getAllByLabelText("Delete mission")[0]).toBeInTheDocument());
+      fireEvent.click(within(detailPane).getAllByLabelText("Delete mission")[0]);
 
       await waitFor(() => expect(document.querySelector(".mission-manager__detail-pane .mission-confirm-panel")).toBeTruthy());
     });
@@ -5058,7 +5090,7 @@ describe("MissionManager", () => {
         if (url.includes("/events")) return Promise.resolve(mockApiResponse(parseMissionEventsResponse(url, mockMissionEvents)));
         if (url.includes("/health")) return Promise.resolve(mockApiResponse(getMockMissionHealth(extractMissionId(url) ?? "M-001")));
         if (url.includes("/autopilot")) return Promise.resolve(mockApiResponse(mockAutopilotStatus));
-        if (url.includes("/milestones/MS-001/assertions/CA-ENF-1/features")) {
+        if (url.includes("/missions/assertions/CA-ENF-1/features")) {
           return Promise.resolve(mockApiResponse([{ id: "F-001", title: "User model" }]));
         }
         if (url.includes("/milestones/MS-001/assertions")) return Promise.resolve(mockApiResponse([assertion]));
@@ -5074,7 +5106,9 @@ describe("MissionManager", () => {
       fireEvent.click(await screen.findByText("Build Auth System"));
       await waitForDetailLoaded();
 
-      expect(await screen.findByTestId("mission-assertion-enforcement-CA-ENF-1")).toHaveTextContent("Enforced gate");
+      await waitFor(() => {
+        expect(screen.getByTestId("mission-assertion-enforcement-CA-ENF-1")).toHaveTextContent("Enforced gate");
+      });
 
       const noAssertionMission = JSON.parse(JSON.stringify(missionDetail)) as typeof missionDetail;
       noAssertionMission.milestones[0].slices[0].features[0].id = "F-INFO-1";
@@ -5169,7 +5203,7 @@ describe("MissionManager", () => {
 
       const milestone = screen.getByText("Database Schema").closest(".mission-milestone");
       expect(milestone).toBeTruthy();
-      const acceptanceLabel = within(milestone as HTMLElement).getByText("Acceptance:");
+      const acceptanceLabel = within(milestone as HTMLElement).getAllByText("Acceptance:")[0];
       expect(acceptanceLabel.tagName).toBe("STRONG");
       expect(within(milestone as HTMLElement).getByText("MILESTONE_BOLD").tagName).toBe("STRONG");
 
@@ -5179,7 +5213,7 @@ describe("MissionManager", () => {
       expect((slice as HTMLElement).querySelectorAll("li")).toHaveLength(1);
       expect(within(slice as HTMLElement).getByText("VERIFY_BULLET")).toBeInTheDocument();
 
-      const feature = screen.getByText("User model").closest(".mission-feature");
+      const feature = within(slice as HTMLElement).getByText("User model").closest(".mission-feature");
       expect(feature).toBeTruthy();
       expect(within(feature as HTMLElement).getByText("FEATURE_DESC_BOLD").tagName).toBe("STRONG");
       expect(within(feature as HTMLElement).getByText("FEATURE_AC_BOLD").tagName).toBe("STRONG");
@@ -5201,7 +5235,8 @@ describe("MissionManager", () => {
 
       fireEvent.click(screen.getByText("Build Auth System"));
       await waitForDetailLoaded();
-      fireEvent.click(screen.getByLabelText("Edit mission"));
+      const detailPane = document.querySelector(".mission-manager__detail-pane") as HTMLElement;
+      fireEvent.click(within(detailPane).getAllByLabelText("Edit mission")[0]);
 
       const strategySelect = await screen.findByLabelText("Mission branch strategy");
       expect(strategySelect).toBeInTheDocument();
@@ -5229,12 +5264,13 @@ describe("MissionManager", () => {
 
       fireEvent.click(screen.getByText("Build Auth System"));
       await waitForDetailLoaded();
-      fireEvent.click(screen.getByLabelText("Edit mission"));
+      const detailPane = document.querySelector(".mission-manager__detail-pane") as HTMLElement;
+      fireEvent.click(within(detailPane).getAllByLabelText("Edit mission")[0]);
 
       fireEvent.change(screen.getByLabelText("Mission target branch"), { target: { value: "release/2026" } });
       fireEvent.change(screen.getByLabelText("Mission branch strategy"), { target: { value: "custom-new" } });
       fireEvent.change(await screen.findByLabelText("Mission branch name"), { target: { value: "feature/mission-custom" } });
-      fireEvent.click(screen.getByRole("button", { name: "Update" }));
+      fireEvent.click(screen.getByRole("button", { name: /Update/ }));
 
       await waitFor(() => {
         const patchCall = fetchSpy.mock.calls.find(([input, init]) =>

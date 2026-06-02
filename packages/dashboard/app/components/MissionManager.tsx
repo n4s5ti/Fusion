@@ -783,6 +783,37 @@ export function MissionManager({ isOpen, isInline = false, onClose, addToast, pr
     });
   }, [loadMissionInterviewDraftRows, loadPendingInterviewSessions]);
 
+  const loadAssertionsForMilestone = useCallback(async (milestoneId: string) => {
+    try {
+      const assertions = await fetchAssertions(milestoneId, projectId);
+      const linkedFeatureEntries = await Promise.all(
+        assertions.map(async (assertion): Promise<readonly [string, MissionFeature[]]> => {
+          try {
+            const features = await fetchFeaturesForAssertion(assertion.id, projectId);
+            return [assertion.id, features] as const;
+          } catch {
+            return [assertion.id, []] as const;
+          }
+        }),
+      );
+
+      setAssertionsByMilestone((prev) => {
+        const next = new Map(prev);
+        next.set(milestoneId, assertions);
+        return next;
+      });
+      setLinkedFeaturesByAssertion((prev) => {
+        const next = new Map(prev);
+        for (const [assertionId, features] of linkedFeatureEntries) {
+          next.set(assertionId, features);
+        }
+        return next;
+      });
+    } catch {
+      // Silently fail - assertions are optional
+    }
+  }, [projectId]);
+
   // Detect pending mission interview sessions for resume prompt
   useEffect(() => {
     if (!isActive) return;
@@ -1034,13 +1065,7 @@ export function MissionManager({ isOpen, isInline = false, onClose, addToast, pr
         });
 
         // Load assertions and validation rollup for the selected milestone.
-        fetchAssertions(nextSelectedMilestoneId, projectId).then((assertions) => {
-          setAssertionsByMilestone((prev) => {
-            const next = new Map(prev);
-            next.set(nextSelectedMilestoneId, assertions);
-            return next;
-          });
-        }).catch(() => { /* silently fail */ });
+        void loadAssertionsForMilestone(nextSelectedMilestoneId);
         fetchMilestoneValidation(nextSelectedMilestoneId, projectId).then((rollup) => {
           setValidationRollupByMilestone((prev) => {
             const next = new Map(prev);
@@ -1058,7 +1083,7 @@ export function MissionManager({ isOpen, isInline = false, onClose, addToast, pr
     } finally {
       setDetailLoading(false);
     }
-  }, [addToast, projectId]);
+  }, [addToast, loadAssertionsForMilestone, projectId]);
 
   useEffect(() => {
     if (!isActive || !selectedMilestoneId) {
@@ -1297,16 +1322,20 @@ export function MissionManager({ isOpen, isInline = false, onClose, addToast, pr
     const handleMissionUpdated = (rawEvent: Event) => {
       refreshHealth();
 
-      // Update mission status in the list to keep badges in sync
       const messageEvent = rawEvent as MessageEvent<string>;
       if (messageEvent.data) {
         try {
-          const updatedMission = JSON.parse(messageEvent.data);
+          const updatedMission = JSON.parse(messageEvent.data) as Partial<MissionWithSummary> & { id?: string };
           if (updatedMission?.id) {
             setMissions((prev) =>
               prev.map((m) =>
                 m.id === updatedMission.id ? { ...m, ...updatedMission } : m
               )
+            );
+            setSelectedMission((prev) =>
+              prev && prev.id === updatedMission.id
+                ? normalizeMissionHierarchy({ ...prev, ...updatedMission })
+                : prev
             );
           }
         } catch {
@@ -1314,7 +1343,6 @@ export function MissionManager({ isOpen, isInline = false, onClose, addToast, pr
         }
       }
 
-      void loadMissions();
       refreshMissionSidebar();
 
       // Reload the selected mission detail to reflect updated mission state (autopilot, status, etc.)
@@ -1754,13 +1782,7 @@ export function MissionManager({ isOpen, isInline = false, onClose, addToast, pr
       if (isExpanding) {
         next.add(milestoneId);
         // Load assertions and validation rollup when expanding milestone
-        fetchAssertions(milestoneId, projectId).then((assertions) => {
-          setAssertionsByMilestone((prev) => {
-            const next = new Map(prev);
-            next.set(milestoneId, assertions);
-            return next;
-          });
-        }).catch(() => { /* silently fail */ });
+        void loadAssertionsForMilestone(milestoneId);
         fetchMilestoneValidation(milestoneId, projectId).then((rollup) => {
           setValidationRollupByMilestone((prev) => {
             const next = new Map(prev);
@@ -1773,7 +1795,7 @@ export function MissionManager({ isOpen, isInline = false, onClose, addToast, pr
       }
       return next;
     });
-  }, [projectId]);
+  }, [loadAssertionsForMilestone, projectId]);
 
   // Slice handlers
   const handleCreateSlice = useCallback((milestoneId: string) => {
@@ -2016,19 +2038,6 @@ export function MissionManager({ isOpen, isInline = false, onClose, addToast, pr
   }, [addToast, loadMissionDetail, selectedMission, projectId]);
 
   // ── Assertion handlers ──
-
-  const loadAssertionsForMilestone = useCallback(async (milestoneId: string) => {
-    try {
-      const assertions = await fetchAssertions(milestoneId, projectId);
-      setAssertionsByMilestone((prev) => {
-        const next = new Map(prev);
-        next.set(milestoneId, assertions);
-        return next;
-      });
-    } catch {
-      // Silently fail - assertions are optional
-    }
-  }, [projectId]);
 
   const loadValidationRollup = useCallback(async (milestoneId: string) => {
     try {
@@ -4455,7 +4464,7 @@ export function MissionManager({ isOpen, isInline = false, onClose, addToast, pr
               {renderMissionListItems(standardMissions)}
 
               {/* Edit mission form */}
-              {editingMissionId && (
+              {editingMissionId && selectedMission?.id !== editingMissionId && (
                 <div className="mission-form-card">
                   <input
                     type="text"
@@ -4805,6 +4814,8 @@ export function MissionManager({ isOpen, isInline = false, onClose, addToast, pr
       key={interviewModalKey}
       isOpen={showInterviewModal}
       onClose={handleInterviewModalClose}
+      onSendToBackground={handleInterviewModalClose}
+      showSendToBackgroundButton={interviewLaunchMode === "resume"}
       onMissionCreated={() => {
         loadMissions();
         addToast("Mission created from AI interview", "success");

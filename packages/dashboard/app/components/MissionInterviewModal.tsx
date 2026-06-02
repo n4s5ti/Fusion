@@ -41,6 +41,7 @@ import {
   Trash2,
   RefreshCw,
   Lock,
+  Minimize2,
 } from "lucide-react";
 import { ConversationHistory } from "./ConversationHistory";
 import { CustomModelDropdown } from "./CustomModelDropdown";
@@ -78,6 +79,8 @@ interface MissionInterviewModalProps {
   projectId?: string;
   initialGoal?: string;
   resumeSessionId?: string;
+  onSendToBackground?: () => void;
+  showSendToBackgroundButton?: boolean;
 }
 
 interface QuestionResponse {
@@ -105,6 +108,8 @@ export function MissionInterviewModal({
   projectId,
   initialGoal: initialGoalProp,
   resumeSessionId,
+  onSendToBackground,
+  showSendToBackgroundButton = false,
 }: MissionInterviewModalProps) {
   useMobileScrollLock(isOpen);
   const [missionGoal, setMissionGoal] = useState("");
@@ -127,6 +132,7 @@ export function MissionInterviewModal({
   const trackedLockSessionRef = useRef<string | null>(null);
   const [lockSessionId, setLockSessionId] = useState<string | null>(resumeSessionId ?? null);
   const sessionTabId = useMemo(() => getSessionTabId(), []);
+  const canSendToBackground = showSendToBackgroundButton && view.type !== "initial";
   const {
     isLockedByOther,
     takeControl,
@@ -529,6 +535,20 @@ export function MissionInterviewModal({
     onClose();
   }, [missionGoal, onClose, projectId, view.type]);
 
+  const handleSendToBackground = useCallback(() => {
+    streamConnectionRef.current?.close();
+    streamConnectionRef.current = null;
+    overlayMouseDownOnSelfRef.current = false;
+    setIsReconnecting(false);
+    setIsRetrying(false);
+    setIsCreating(false);
+    if (onSendToBackground) {
+      onSendToBackground();
+      return;
+    }
+    onClose();
+  }, [onClose, onSendToBackground]);
+
   // Escape key handler
   useEffect(() => {
     if (!isOpen) return;
@@ -736,6 +756,16 @@ export function MissionInterviewModal({
             <h3>Plan Mission with AI</h3>
           </div>
           <div className="modal-header-actions">
+            {canSendToBackground && (
+              <button
+                className="modal-send-to-background"
+                onClick={handleSendToBackground}
+                title="Send to background"
+                aria-label="Send to background"
+              >
+                <Minimize2 size={16} />
+              </button>
+            )}
             <button className="modal-close" onClick={handleClose} aria-label="Close">
               <X size={20} />
             </button>
