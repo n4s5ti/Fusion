@@ -8,11 +8,15 @@ describe("getProjectRootFromWorktree", () => {
   it("detects POSIX worktree paths", () => {
     expect(getProjectRootFromWorktree("/repo/.worktrees/fn-001")).toBe("/repo");
     expect(getProjectRootFromWorktree("/repo/.worktrees/fn-001/src/file.ts")).toBe("/repo");
+    expect(getProjectRootFromWorktree("/repo/.fusion/worktrees/fn-001")).toBe("/repo");
+    expect(getProjectRootFromWorktree("/repo/.fusion/worktrees/fn-001/src/file.ts")).toBe("/repo");
   });
 
   it("detects Windows worktree paths", () => {
     expect(getProjectRootFromWorktree("C:\\repo\\.worktrees\\fn-001")).toBe("C:\\repo");
     expect(getProjectRootFromWorktree("C:\\repo\\.worktrees\\fn-001\\src\\file.ts")).toBe("C:\\repo");
+    expect(getProjectRootFromWorktree("C:\\repo\\.fusion\\worktrees\\fn-001")).toBe("C:\\repo");
+    expect(getProjectRootFromWorktree("C:\\repo\\.fusion\\worktrees\\fn-001\\src\\file.ts")).toBe("C:\\repo");
   });
 
   it("supports configured candidate worktrees dir paths", () => {
@@ -43,10 +47,14 @@ describe("resolvePiExtensionProjectRoot", () => {
     try {
       mkdirSync(join(root, ".fusion"), { recursive: true });
       mkdirSync(join(root, ".worktrees", "feature", ".fusion"), { recursive: true });
-      const cwd = join(root, ".worktrees", "feature", "sub");
-      mkdirSync(cwd, { recursive: true });
+      mkdirSync(join(root, ".fusion", "worktrees", "feature", ".fusion"), { recursive: true });
+      const legacyCwd = join(root, ".worktrees", "feature", "sub");
+      const fusionCwd = join(root, ".fusion", "worktrees", "feature", "sub");
+      mkdirSync(legacyCwd, { recursive: true });
+      mkdirSync(fusionCwd, { recursive: true });
 
-      expect(resolvePiExtensionProjectRoot(cwd)).toBe(root);
+      expect(resolvePiExtensionProjectRoot(legacyCwd)).toBe(root);
+      expect(resolvePiExtensionProjectRoot(fusionCwd)).toBe(root);
     } finally {
       rmSync(root, { recursive: true, force: true });
     }

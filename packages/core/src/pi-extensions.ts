@@ -40,9 +40,15 @@ export function getProjectRootFromWorktree(
   cwd: string,
   opts?: { worktreesDirCandidates?: string[] },
 ): string | null {
-  const legacyMatch = cwd.match(/^(.+?)[\\/]\.worktrees[\\/][^\\/]+(?:[\\/]|$)/);
-  if (legacyMatch) {
-    return legacyMatch[1]!;
+  const knownWorktreePatterns = [
+    /^(.+?)[\\/]\.worktrees[\\/][^\\/]+(?:[\\/]|$)/,
+    /^(.+?)[\\/]\.fusion[\\/]worktrees[\\/][^\\/]+(?:[\\/]|$)/,
+  ];
+  for (const pattern of knownWorktreePatterns) {
+    const match = cwd.match(pattern);
+    if (match) {
+      return match[1]!;
+    }
   }
 
   for (const candidate of opts?.worktreesDirCandidates ?? []) {

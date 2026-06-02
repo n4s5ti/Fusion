@@ -232,7 +232,7 @@ describe("branch contamination recovery classification", () => {
 
   it("reanchors without checkout -B when detached worktree is already at base on bound branch", async () => {
     const { repoDir, baseSha } = await setupRepo();
-    const secondaryWorktree = path.join(repoDir, "../feature-secondary");
+    const secondaryWorktree = path.join(tmpdir(), `${path.basename(repoDir)}-feature-secondary`);
     await run(`git worktree add --detach ${JSON.stringify(secondaryWorktree)} ${baseSha}`, repoDir);
     dirs.push(secondaryWorktree);
 
