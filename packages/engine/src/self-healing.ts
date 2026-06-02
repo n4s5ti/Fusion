@@ -289,6 +289,8 @@ export interface SelfHealingOptions {
   reconcileAllMissionFeatures?: () => Promise<number>;
   /** Optional callback to re-run mission validation recovery during maintenance. */
   recoverActiveMissionValidations?: () => Promise<{ recoveredCount: number }>;
+  /** Optional callback to reap stale mission validator runs during startup and maintenance. */
+  reapStaleMissionValidatorRuns?: () => Promise<{ reapedCount: number }>;
 }
 
 const APPROVED_TRIAGE_RECOVERY_GRACE_MS = 60_000;
@@ -296,6 +298,7 @@ const STARVED_REFINEMENT_RECOVERY_GRACE_MS = 10 * 60_000;
 const STARVED_PEER_PROGRESS_THRESHOLD = 3;
 const STARVED_REFINEMENT_ESCALATION_COOLDOWN_MS = STARVED_REFINEMENT_RECOVERY_GRACE_MS * 4;
 const ORPHANED_EXECUTION_RECOVERY_GRACE_MS = 60_000;
+export const VALIDATOR_RUN_STALE_MAX_AGE_MS = 6 * 60 * 60 * 1000;
 const ACTIVE_MERGE_STATUSES = new Set(["merging", "merging-pr", "merging-fix"]);
 const NON_TERMINAL_STEP_STATUSES = new Set(["pending", "in-progress"]);
 const STRANDED_COMPLETED_TODO_ACTIVE_STATUSES = new Set([
@@ -854,6 +857,16 @@ export class SelfHealingManager {
       { name: "orphaned-planning", fn: () => this.recoverOrphanedPlanningTasks().then(() => undefined) },
       { name: "recover-orphaned-agents", fn: () => this.recoverOrphanedAgents().then(() => undefined) },
       { name: "recover-stale-heartbeat-runs", fn: () => this.recoverStaleHeartbeatRuns().then(() => undefined) },
+      {
+        name: "reap-stale-mission-validator-runs",
+        fn: async () => {
+          if (!this.options.reapStaleMissionValidatorRuns) {
+            return undefined;
+          }
+          await this.options.reapStaleMissionValidatorRuns();
+          return undefined;
+        },
+      },
       { name: "recover-running-on-inactive-tasks", fn: () => this.recoverAgentsRunningOnInactiveTasks().then(() => undefined) },
       { name: "recover-drifted-agent-task-links", fn: () => this.recoverDriftedAgentTaskLinks().then(() => undefined) },
       { name: "reconcile-soft-delete-column-drift", fn: () => this.reconcileSoftDeletedColumnDrift().then(() => undefined) },
@@ -1674,6 +1687,15 @@ export class SelfHealingManager {
                 return;
               }
               await this.options.recoverActiveMissionValidations();
+            },
+          },
+          {
+            name: "reap-stale-mission-validator-runs",
+            fn: async () => {
+              if (!this.options.reapStaleMissionValidatorRuns) {
+                return;
+              }
+              await this.options.reapStaleMissionValidatorRuns();
             },
           },
           {

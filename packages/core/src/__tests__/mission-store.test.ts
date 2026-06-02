@@ -3868,6 +3868,105 @@ describe("MissionStore", () => {
       expect(retrieved!.status).toBe("running");
     });
 
+    it("listStaleRunningValidatorRuns filters by age", () => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date("2026-01-15T12:00:00.000Z"));
+
+      const mission = store.createMission({ title: "Stale Run Test" });
+      const milestone = store.addMilestone(mission.id, { title: "MS" });
+      const slice = store.addSlice(milestone.id, { title: "SL" });
+      const staleFeature = store.addFeature(slice.id, { title: "Stale Feature" });
+      const freshFeature = store.addFeature(slice.id, { title: "Fresh Feature" });
+
+      const staleRun = store.startValidatorRun(staleFeature.id, "manual");
+      vi.setSystemTime(new Date("2026-01-15T12:09:00.000Z"));
+      const freshRun = store.startValidatorRun(freshFeature.id, "auto");
+
+      const staleRuns = store.listStaleRunningValidatorRuns(5 * 60 * 1000, new Date("2026-01-15T12:10:00.000Z").getTime());
+
+      expect(staleRuns.map((run) => run.id)).toEqual([staleRun.id]);
+      expect(staleRuns.some((run) => run.id === freshRun.id)).toBe(false);
+
+      vi.useRealTimers();
+    });
+
+    it("reapValidatorRun transitions running run to error and unwedges live feature", () => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date("2026-01-15T12:00:00.000Z"));
+
+      const mission = store.createMission({ title: "Reap Test" });
+      const milestone = store.addMilestone(mission.id, { title: "MS" });
+      const slice = store.addSlice(milestone.id, { title: "SL" });
+      const feature = store.addFeature(slice.id, { title: "Test Feature" });
+
+      const run = store.startValidatorRun(feature.id, "manual");
+      vi.setSystemTime(new Date("2026-01-15T12:06:00.000Z"));
+
+      const completedListener = vi.fn();
+      store.on("validator-run:completed", completedListener);
+      const reapedRun = store.reapValidatorRun(run.id, "stale owner");
+
+      expect(reapedRun.status).toBe("error");
+      expect(reapedRun.summary).toBe("stale owner");
+      expect(reapedRun.completedAt).toBe("2026-01-15T12:06:00.000Z");
+      expect(store.getFeature(feature.id)).toMatchObject({
+        loopState: "needs_fix",
+        lastValidatorStatus: "error",
+        lastValidatorRunId: run.id,
+      });
+      expect(completedListener).toHaveBeenCalledWith(reapedRun, "error", 360000);
+      store.off("validator-run:completed", completedListener);
+
+      vi.useRealTimers();
+    });
+
+    it("reapValidatorRun leaves completed or archived parent state untouched", () => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date("2026-01-15T12:00:00.000Z"));
+
+      const completeMission = store.createMission({ title: "Complete Parent" });
+      const completeMilestone = store.addMilestone(completeMission.id, { title: "MS" });
+      const completeSlice = store.addSlice(completeMilestone.id, { title: "SL" });
+      const completeFeature = store.addFeature(completeSlice.id, { title: "Feature" });
+      const completeRun = store.startValidatorRun(completeFeature.id, "manual");
+      store.updateFeature(completeFeature.id, { loopState: "passed", lastValidatorStatus: "passed", status: "done" });
+      store.updateMission(completeMission.id, { status: "complete" });
+
+      const archivedMission = store.createMission({ title: "Archived Parent" });
+      const archivedMilestone = store.addMilestone(archivedMission.id, { title: "MS" });
+      const archivedSlice = store.addSlice(archivedMilestone.id, { title: "SL" });
+      const archivedFeature = store.addFeature(archivedSlice.id, { title: "Feature" });
+      const archivedRun = store.startValidatorRun(archivedFeature.id, "auto");
+      store.updateFeature(archivedFeature.id, { loopState: "blocked", lastValidatorStatus: "blocked" });
+      store.updateMission(archivedMission.id, { status: "archived" });
+
+      vi.setSystemTime(new Date("2026-01-15T12:08:00.000Z"));
+
+      expect(store.reapValidatorRun(completeRun.id, "complete mission stale").status).toBe("error");
+      expect(store.reapValidatorRun(archivedRun.id, "archived mission stale").status).toBe("error");
+      expect(store.getFeature(completeFeature.id)).toMatchObject({ loopState: "passed", lastValidatorStatus: "passed", lastValidatorRunId: completeRun.id });
+      expect(store.getFeature(archivedFeature.id)).toMatchObject({ loopState: "blocked", lastValidatorStatus: "blocked", lastValidatorRunId: archivedRun.id });
+
+      vi.useRealTimers();
+    });
+
+    it("reapValidatorRun is idempotent for terminal runs", () => {
+      const mission = store.createMission({ title: "Idempotent Reap Test" });
+      const milestone = store.addMilestone(mission.id, { title: "MS" });
+      const slice = store.addSlice(milestone.id, { title: "SL" });
+      const feature = store.addFeature(slice.id, { title: "Test Feature" });
+
+      const run = store.startValidatorRun(feature.id, "manual");
+      const reaped = store.reapValidatorRun(run.id, "first reap");
+      const featureAfterFirstReap = store.getFeature(feature.id);
+
+      const second = store.reapValidatorRun(run.id, "second reap");
+      const featureAfterSecondReap = store.getFeature(feature.id);
+
+      expect(second).toEqual(reaped);
+      expect(featureAfterSecondReap).toEqual(featureAfterFirstReap);
+    });
+
     it("startValidatorRun emits validator-run:started event", () => {
       const mission = store.createMission({ title: "Event Test" });
       const milestone = store.addMilestone(mission.id, { title: "MS" });

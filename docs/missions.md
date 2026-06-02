@@ -449,7 +449,7 @@ On task completion, the scheduler calls `MissionExecutionLoop.processTaskOutcome
 2. If assertions are linked, keep feature completion gated until validation passes
 3. Transition feature to `validating` state
 4. Fire AI validator agent against contract assertions
-5. Record `MissionValidatorRun` with per-assertion results
+5. Record `MissionValidatorRun` metadata for the validation attempt (per-assertion failures are stored separately in `MissionAssertionFailureRecord` rows)
 
 Mission validation resolves its model from the validator lane before session creation: assigned agent runtime model (when the linked task has an assigned durable agent) → per-task `validatorModelProvider`/`validatorModelId` → project `validatorProvider`/`validatorModelId` → global `validatorGlobalProvider`/`validatorGlobalModelId` → project `defaultProviderOverride`/`defaultModelIdOverride` → global `defaultProvider`/`defaultModelId`. In `testMode`, validation is forced to `mock/scripted` instead of falling through to provider auto-detection.
 
@@ -459,21 +459,25 @@ Validation runs are internal mission-loop operations: Fusion does **not** create
 interface MissionValidatorRun {
   id: string;
   featureId: string;
-  missionId: string;
-  taskId: string;
-  triggerType: "manual" | "automatic";
+  milestoneId: string;
+  sliceId: string;
+  status: "running" | "passed" | "failed" | "blocked" | "error";
+  triggerType?: string;
   implementationAttempt: number;
   validatorAttempt: number;
-  status: "started" | "passed" | "failed" | "blocked" | "error";
-  summary: string;
-  results: AssertionResult[];
+  taskId?: string;
+  summary?: string;
   blockedReason?: string;
   startedAt: string;
   completedAt?: string;
+  createdAt: string;
+  updatedAt: string;
 }
 ```
 
 **Validation timeout:** 10 minutes (`VALIDATION_TIMEOUT_MS = 10 * 60 * 1000`). If session creation, auth/credit checks, prompting, or timeout fails, the run is marked `error` and emits a surfaced `validation_error` mission event instead of silently spawning a fix feature.
+
+**Stale validator-run reaper:** startup recovery and periodic self-healing also sweep `MissionValidatorRun` rows stuck in `status="running"` longer than `VALIDATOR_RUN_STALE_MAX_AGE_MS` (currently 6 hours). Ownerless stale runs are reaped to terminal `status="error"`, their reap reason is stored in `summary`, and active mission features are moved to `loopState="needs_fix"` with `lastValidatorStatus="error"` so the loop can re-trigger. Runs whose parent mission is already `complete`/`archived` are still terminated, but their feature state is left untouched. Each successful reap emits a run-audit event with `mutationType: "mission:validator-run-reaped"`.
 
 ### Phase 5: Fix-Feature Retries
 
@@ -504,7 +508,7 @@ A feature transitions to `blocked` when:
 - `MilestoneValidationRollup.state` reflects `blocked` assertions
 - The feature remains in `blocked` state until operator intervention
 
-On engine restart, `recoverActiveMissions()` re-enqueues features in `validating` or `needs_fix` states from the `activeValidations` set, ensuring no validation work is lost. It also re-triggers `implementing` features whose linked task is already `done`/`archived` and whose assertion validation has not passed yet. The same recovery path is replayed during periodic self-heal maintenance, so historically stranded `implementing` features can self-heal without requiring an engine restart.
+On engine restart, `recoverActiveMissions()` re-enqueues features in `validating` or `needs_fix` states, ensuring no validation work is lost. It also re-triggers `implementing` features whose linked task is already `done`/`archived` and whose assertion validation has not passed yet. When the stale-run reaper has already converted an abandoned validator run into `needs_fix`, `processTaskOutcome()` promotes the feature back through `implementing` and re-validates instead of skipping it. The same recovery path is replayed during periodic self-heal maintenance, so historically stranded `implementing` features can self-heal without requiring an engine restart.
 
 For features with zero linked assertions, the completion path is explicit: the loop marks the feature `done`, advances `loopState` to `passed`, emits `validation:passed` with summary `"No assertions linked"`, and records mission event code `validation_auto_passed_no_assertions`. Contract details (including canonical no-assertions behavior and FN-5696 assertion-authoring separation) are defined in [Mission Completion Gate Contract](./missions-completion-contract.md).
 
@@ -542,10 +546,10 @@ These are independent tracking mechanisms — autopilot monitors mission progres
 - `fix_feature:created`, `feature:blocked`
 
 **Validator run telemetry:**
-- `triggerType` — manual vs automatic
+- `triggerType` — free-form trigger source (`manual`, `task_completion`, `auto`, etc.)
 - `implementationAttempt` — which retry attempt this was
 - `validatorAttempt` — how many validator runs for this implementation
-- `status` — started | passed | failed | blocked | error
+- `status` — running | passed | failed | blocked | error
 - `summary` — natural language summary of results
 
 **Assertion failure records:**
@@ -565,7 +569,7 @@ interface MissionAssertionFailureRecord {
 
 | Symptom | Diagnosis | Resolution |
 |---------|-----------|------------|
-| Feature stuck in "validating" | `activeValidations` set may be stale; engine restart needed | Check logs for validator errors; restart engine to trigger `recoverActiveMissions()` |
+| Feature stuck in "validating" | Validator owner may have died, leaving a stale `MissionValidatorRun` in `status="running"` | Check mission-loop/self-healing logs; the startup or maintenance reaper should terminate runs older than `VALIDATOR_RUN_STALE_MAX_AGE_MS` (6h) and emit `mission:validator-run-reaped` |
 | Fix feature not auto-planning | `planFeature()` may have errored; check logs | Manual planning via `fn mission plan-feature <id>`; investigate `planFeature()` errors |
 | Budget exhaustion loop | `implementationAttemptCount >= maxRetryBudget` (default: 3) | Increase `maxRetryBudget` in mission settings or fix root cause |
 | Blocked mission not advancing | `MilestoneValidationRollup.state` shows `blocked` | Identify blocked assertions; operator must resolve root cause |

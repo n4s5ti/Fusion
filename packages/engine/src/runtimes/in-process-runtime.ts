@@ -34,7 +34,7 @@ import type {
 import { runtimeLog } from "../logger.js";
 import { StuckTaskDetector } from "../stuck-task-detector.js";
 import type { UsageLimitPauser } from "../usage-limit-detector.js";
-import { SelfHealingManager } from "../self-healing.js";
+import { SelfHealingManager, VALIDATOR_RUN_STALE_MAX_AGE_MS } from "../self-healing.js";
 import { RestartRecoveryCoordinator } from "../restart-recovery-coordinator.js";
 import { MeshLeaseManager } from "../mesh-lease-manager.js";
 import { PluginRunner } from "../plugin-runner.js";
@@ -737,6 +737,12 @@ export class InProcessRuntime
             return { recoveredCount: 0 };
           }
           return this.missionExecutionLoop.recoverActiveMissions();
+        },
+        reapStaleMissionValidatorRuns: async () => {
+          if (!this.missionExecutionLoop) {
+            return { reapedCount: 0 };
+          }
+          return this.missionExecutionLoop.reapStaleValidatorRuns(VALIDATOR_RUN_STALE_MAX_AGE_MS);
         },
         reconcileAllMissionFeatures: async () => this.scheduler.reconcileAllMissionFeatures(),
         chatStore: this.chatStore,

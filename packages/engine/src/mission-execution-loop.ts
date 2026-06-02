@@ -140,6 +140,57 @@ export class MissionExecutionLoop extends EventEmitter {
   }
 
   /**
+   * Reap validator runs that have been left in status='running' beyond the stale window.
+   *
+   * Runs still actively owned by this process are skipped so live validations are never
+   * terminated by maintenance while their session is still in-flight.
+   */
+  async reapStaleValidatorRuns(maxAgeMs: number): Promise<{ reapedCount: number }> {
+    const staleRuns = this.missionStore.listStaleRunningValidatorRuns(maxAgeMs);
+    let reapedCount = 0;
+
+    for (const run of staleRuns) {
+      if (this.activeValidations.has(run.featureId)) {
+        continue;
+      }
+
+      try {
+        const reapedRun = this.missionStore.reapValidatorRun(
+          run.id,
+          `Validator run reaped after exceeding stale threshold (${maxAgeMs}ms) without a live owner.`,
+        );
+        reapedCount += 1;
+
+        try {
+          const milestone = this.missionStore.getMilestone(reapedRun.milestoneId);
+          const missionId = milestone ? this.missionStore.getMission(milestone.missionId)?.id : undefined;
+          const elapsedMs = Math.max(0, Date.now() - new Date(run.startedAt).getTime());
+          this.taskStore.recordRunAuditEvent({
+            agentId: "store",
+            runId: "validator-run-reaper",
+            domain: "database",
+            mutationType: "mission:validator-run-reaped",
+            target: reapedRun.id,
+            metadata: {
+              runId: reapedRun.id,
+              featureId: reapedRun.featureId,
+              missionId,
+              triggerType: reapedRun.triggerType,
+              elapsedMs,
+            },
+          });
+        } catch (auditErr) {
+          loopLog.warn(`Failed to record validator-run reaper audit for ${run.id}:`, auditErr);
+        }
+      } catch (err) {
+        loopLog.warn(`Failed to reap stale validator run ${run.id}:`, err);
+      }
+    }
+
+    return { reapedCount };
+  }
+
+  /**
    * Recover active missions on startup.
    *
    * Finds all features in "validating" or "needs_fix" state and re-enqueues
@@ -277,6 +328,11 @@ export class MissionExecutionLoop extends EventEmitter {
       if (!feature) {
         loopLog.log(`Task ${taskId} has no linked feature; skipping validation`);
         return;
+      }
+
+      if (feature.loopState === "needs_fix") {
+        this.missionStore.transitionLoopState(feature.id, "implementing");
+        feature.loopState = "implementing";
       }
 
       // Only validate features in "implementing" state
@@ -842,6 +898,30 @@ ${taskContext ? `\n\nImplementation context:\n${taskContext}` : ""}`;
     return lines.join("\n");
   }
 
+  private completeValidatorRunIfStillRunning(
+    runId: string | undefined,
+    status: "passed" | "failed" | "blocked" | "error",
+    summaryOrReason?: string,
+  ): boolean {
+    if (!runId) {
+      return false;
+    }
+
+    if (typeof this.missionStore.getValidatorRun !== "function") {
+      this.missionStore.completeValidatorRun(runId, status, summaryOrReason);
+      return true;
+    }
+
+    const run = this.missionStore.getValidatorRun(runId);
+    if (!run || run.status !== "running") {
+      loopLog.warn(`Validator run ${runId} is no longer running; skipping ${status} completion.`);
+      return false;
+    }
+
+    this.missionStore.completeValidatorRun(runId, status, summaryOrReason);
+    return true;
+  }
+
   /**
    * Handle a successful validation (pass).
    */
@@ -851,9 +931,7 @@ ${taskContext ? `\n\nImplementation context:\n${taskContext}` : ""}`;
     summary: string,
   ): Promise<void> {
     try {
-      if (runId) {
-        this.missionStore.completeValidatorRun(runId, "passed", summary);
-      }
+      this.completeValidatorRunIfStillRunning(runId, "passed", summary);
 
       const feature = this.missionStore.getFeature(featureId);
       if (feature && feature.status !== "done") {
@@ -920,13 +998,15 @@ ${taskContext ? `\n\nImplementation context:\n${taskContext}` : ""}`;
           actual: a.actual,
         }));
 
-      if (runId && failures.length > 0) {
+      const canCompleteRun = runId
+        ? typeof this.missionStore.getValidatorRun !== "function" || this.missionStore.getValidatorRun(runId)?.status === "running"
+        : false;
+
+      if (runId && failures.length > 0 && canCompleteRun) {
         this.missionStore.recordValidatorFailures(runId, failures);
       }
 
-      if (runId) {
-        this.missionStore.completeValidatorRun(runId, "failed", result.summary);
-      }
+      this.completeValidatorRunIfStillRunning(runId, "failed", result.summary);
 
       loopLog.log(`Feature ${featureId} failed validation with ${failures.length} failures`);
 
@@ -984,9 +1064,7 @@ ${taskContext ? `\n\nImplementation context:\n${taskContext}` : ""}`;
     blockedReason: string | undefined,
   ): Promise<void> {
     try {
-      if (runId) {
-        this.missionStore.completeValidatorRun(runId, "blocked", blockedReason);
-      }
+      this.completeValidatorRunIfStillRunning(runId, "blocked", blockedReason);
       loopLog.log(`Feature ${featureId} blocked: ${blockedReason}`);
       this.logFeatureErrorEvent(featureId, "validation_blocked", `Validation blocked for feature ${featureId}: ${blockedReason ?? "no reason provided"}`, {
         runId,
@@ -1013,9 +1091,7 @@ ${taskContext ? `\n\nImplementation context:\n${taskContext}` : ""}`;
     error: string,
   ): Promise<void> {
     try {
-      if (runId) {
-        this.missionStore.completeValidatorRun(runId, "error", error);
-      }
+      this.completeValidatorRunIfStillRunning(runId, "error", error);
       loopLog.error(`Feature ${featureId} validation error: ${error}`);
       this.logFeatureErrorEvent(featureId, "validation_error", `Validation error for feature ${featureId}: ${error}`, {
         runId,

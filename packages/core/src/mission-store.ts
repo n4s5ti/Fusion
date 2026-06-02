@@ -2733,6 +2733,97 @@ export class MissionStore extends EventEmitter<MissionStoreEvents> {
   }
 
   /**
+   * List validator runs that are still marked running even though their startedAt is older
+   * than the supplied age threshold.
+   */
+  listStaleRunningValidatorRuns(maxAgeMs: number, now = Date.now()): MissionValidatorRun[] {
+    const cutoff = new Date(now - maxAgeMs).toISOString();
+    const rows = this.db.prepare(
+      "SELECT * FROM mission_validator_runs WHERE status = 'running' AND startedAt < ? ORDER BY startedAt ASC"
+    ).all(cutoff);
+    return (rows as unknown as ValidatorRunRow[]).map((row) => this.rowToValidatorRun(row));
+  }
+
+  /**
+   * Reap a stale validator run whose owning execution no longer exists.
+   *
+   * Intentionally does not delegate to completeValidatorRun(): the generic error path keeps
+   * the feature in loopState='validating', but a stale-owner recovery must move live features
+   * back to loopState='needs_fix' so the mission loop can retry validation later.
+   *
+   * The feature's lastValidatorRunId is intentionally left pointing at this now-terminal run so
+   * readers can resolve it and observe the authoritative terminal status instead of a dangling gap.
+   */
+  reapValidatorRun(runId: string, reason: string): MissionValidatorRun {
+    const run = this.getValidatorRun(runId);
+    if (!run) {
+      throw new Error(`Validator run ${runId} not found`);
+    }
+
+    if (run.status !== "running") {
+      return run;
+    }
+
+    const feature = this.getFeature(run.featureId);
+    if (!feature) {
+      throw new Error(`Feature ${run.featureId} not found`);
+    }
+
+    const slice = this.getSlice(feature.sliceId);
+    if (!slice) {
+      throw new Error(`Slice ${feature.sliceId} not found`);
+    }
+
+    const milestone = this.getMilestone(slice.milestoneId);
+    if (!milestone) {
+      throw new Error(`Milestone ${slice.milestoneId} not found`);
+    }
+
+    const mission = this.getMission(milestone.missionId);
+    if (!mission) {
+      throw new Error(`Mission ${milestone.missionId} not found`);
+    }
+
+    const now = new Date().toISOString();
+    const completedAt = now;
+    const startedAtMs = new Date(run.startedAt).getTime();
+    const completedAtMs = new Date(completedAt).getTime();
+    const durationMs = Math.max(0, completedAtMs - startedAtMs);
+    const shouldUpdateFeature = mission.status !== "archived" && mission.status !== "complete" && feature.status !== "done";
+
+    this.db.transaction(() => {
+      this.db.prepare(`
+        UPDATE mission_validator_runs SET
+          status = ?,
+          summary = ?,
+          completedAt = ?,
+          updatedAt = ?
+        WHERE id = ?
+      `).run(
+        "error",
+        reason,
+        completedAt,
+        now,
+        runId,
+      );
+
+      if (shouldUpdateFeature) {
+        this.updateFeature(run.featureId, {
+          loopState: "needs_fix",
+          lastValidatorStatus: "error",
+        });
+      }
+    });
+
+    this.db.bumpLastModified();
+
+    const updatedRun = this.getValidatorRun(runId)!;
+    this.emit("validator-run:completed", updatedRun, "error", durationMs);
+
+    return updatedRun;
+  }
+
+  /**
    * Create a generated fix feature for a failed validation.
    *
    * Creates a new MissionFeature in the same slice as the source feature,
