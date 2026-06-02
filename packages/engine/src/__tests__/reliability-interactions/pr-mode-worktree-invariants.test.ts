@@ -283,10 +283,15 @@ describe("FN-5420 reliability interactions: PR mode worktree invariants", () => 
     expect(releaseSpy).toHaveBeenCalledWith(path, "FN-5455-THROW");
   });
 
-  it.skip("FN-5456 follow-up required: cleanup should clear active-session registry entry", async () => {
-    const path = "/tmp/fn-5456-session";
-    activeSessionRegistry.registerPath(path, { taskId: "FN-5456", kind: "executor", ownerKey: "FN-5456" });
+  it("FN-5872: cleanup clears active-session registry entry", async () => {
+    const path = "/tmp/fn-5872-session";
+    activeSessionRegistry.registerPath(path, { taskId: "FN-5872", kind: "executor", ownerKey: "FN-5872" });
     expect(activeSessionRegistry.lookupByPath(path)).not.toBeNull();
+
+    const { cleanupMergedTaskArtifacts } = await loadPrLifecycleModule();
+    await cleanupMergedTaskArtifacts("/tmp", { id: "FN-5872", worktree: path } as any);
+
+    expect(activeSessionRegistry.lookupByPath(path)).toBeNull();
   });
 
   it("FN-5420/FN-5279: mergeIntegrationWorktree setting does not gate PR-mode processing", async () => {

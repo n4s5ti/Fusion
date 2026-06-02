@@ -172,6 +172,7 @@ export {
   type MockScript,
   type MockScriptContext,
 } from "./providers/index.js";
+export { activeSessionRegistry } from "./active-session-registry.js";
 export { WorktreePool, scanIdleWorktrees, cleanupOrphanedWorktrees, reapOrphanWorktrees } from "./worktree-pool.js";
 export {
   pruneWorktreeAdminEntries,

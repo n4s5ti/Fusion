@@ -19,7 +19,7 @@ const execAsync = promisify(exec);
 import type { TaskStore } from "@fusion/core";
 import { resolveTaskMergeTarget } from "@fusion/core";
 import type { Settings, TaskDetail, PrInfo, MergeResult, BranchGroup, BranchGroupPrState, Task } from "@fusion/core";
-import { resolveIntegrationBranch } from "@fusion/engine";
+import { activeSessionRegistry, resolveIntegrationBranch } from "@fusion/engine";
 import type { WorktreePool } from "@fusion/engine";
 
 /**
@@ -194,6 +194,12 @@ export async function cleanupMergedTaskArtifacts(
       } catch {
         // Best-effort cleanup — release may fail if pool state is already divergent.
       }
+    }
+
+    try {
+      activeSessionRegistry.unregisterPath(task.worktree);
+    } catch {
+      // Best-effort cleanup — registry entry may already be absent or registry state divergent.
     }
 
     try {

@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { EventEmitter } from "node:events";
 
 // Mock child_process so we can intercept the `git push -u origin <branch>`
@@ -23,6 +23,7 @@ vi.mock("node:child_process", () => ({
   },
 }));
 
+import { activeSessionRegistry } from "@fusion/engine";
 import {
   cleanupMergedTaskArtifacts,
   processPullRequestMergeTask,
@@ -1252,6 +1253,11 @@ describe("cleanupMergedTaskArtifacts FN-5455", () => {
   beforeEach(() => {
     execMock.mockReset();
     execMock.mockReturnValue("");
+    activeSessionRegistry.clear();
+  });
+
+  afterEach(() => {
+    activeSessionRegistry.clear();
   });
 
   it("FN-5455: releases pool lease before removing worktree and deleting branch", async () => {
@@ -1283,5 +1289,26 @@ describe("cleanupMergedTaskArtifacts FN-5455", () => {
     ).resolves.toBeUndefined();
     expect(execMock).toHaveBeenCalledWith(expect.stringContaining('git worktree remove "/repo/wt-d" --force'), expect.any(Object));
     expect(execMock).toHaveBeenCalledWith(expect.stringContaining('git branch -d "fusion/fn-5455-d"'), expect.any(Object));
+  });
+
+  it("FN-5872: cleanup clears active-session registry entry", async () => {
+    const worktree = "/repo/wt-fn-5872";
+    activeSessionRegistry.registerPath(worktree, {
+      taskId: "FN-5872-A",
+      kind: "executor",
+      ownerKey: "FN-5872-A",
+    });
+
+    expect(activeSessionRegistry.lookupByPath(worktree)).not.toBeNull();
+
+    await cleanupMergedTaskArtifacts("/repo", { id: "FN-5872-A", worktree } as never);
+
+    expect(activeSessionRegistry.lookupByPath(worktree)).toBeNull();
+  });
+
+  it("FN-5872: cleanup remains a no-throw best-effort when no registry entry exists", async () => {
+    await expect(
+      cleanupMergedTaskArtifacts("/repo", { id: "FN-5872-B", worktree: "/repo/wt-fn-5872-missing" } as never),
+    ).resolves.toBeUndefined();
   });
 });
