@@ -348,6 +348,10 @@ describe("POST /workflow-steps", () => {
   let store: TaskStore;
   let app: express.Express;
 
+  async function postWorkflowStep(body: Record<string, unknown>) {
+    return REQUEST(app, "POST", "/api/workflow-steps", JSON.stringify(body), { "Content-Type": "application/json" });
+  }
+
   beforeAll(() => {
     store = createMockStore();
     app = express();
@@ -359,45 +363,294 @@ describe("POST /workflow-steps", () => {
     vi.clearAllMocks();
   });
 
-  it("creates a workflow step", async () => {
-    const created = { id: "WS-001", name: "Docs", description: "Check docs", mode: "prompt", prompt: "", enabled: true, createdAt: "2026-01-01", updatedAt: "2026-01-01" };
-    (store.createWorkflowStep as ReturnType<typeof vi.fn>).mockResolvedValueOnce(created);
-
-    const res = await REQUEST(app, "POST", "/api/workflow-steps", JSON.stringify({
-      name: "Docs",
-      description: "Check docs",
-    }), { "Content-Type": "application/json" });
-
-    expect(res.status).toBe(201);
-    expect(res.body.id).toBe("WS-001");
-    expect(store.createWorkflowStep).toHaveBeenCalledWith({
-      name: "Docs",
-      description: "Check docs",
-      mode: "prompt",
-      phase: undefined,
-      prompt: undefined,
-      scriptName: undefined,
-      enabled: undefined,
-      defaultOn: false,
-    });
+  it.each([
+    {
+      name: "creates a workflow step",
+      body: {
+        name: "Docs",
+        description: "Check docs",
+      },
+      mockSetup: () => {
+        (store.createWorkflowStep as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+          id: "WS-001",
+          name: "Docs",
+          description: "Check docs",
+          mode: "prompt",
+          prompt: "",
+          enabled: true,
+          createdAt: "2026-01-01",
+          updatedAt: "2026-01-01",
+        });
+      },
+      assert: (res: { status: number; body: any }) => {
+        expect(res.status).toBe(201);
+        expect(res.body.id).toBe("WS-001");
+        expect(store.createWorkflowStep).toHaveBeenCalledWith({
+          name: "Docs",
+          description: "Check docs",
+          mode: "prompt",
+          phase: undefined,
+          prompt: undefined,
+          scriptName: undefined,
+          enabled: undefined,
+          defaultOn: false,
+        });
+      },
+    },
+    {
+      name: "creates a workflow step with model override",
+      body: {
+        name: "Security",
+        description: "Security audit",
+        modelProvider: "anthropic",
+        modelId: "claude-sonnet-4-5",
+      },
+      mockSetup: () => {
+        (store.createWorkflowStep as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+          id: "WS-002",
+          name: "Security",
+          description: "Security audit",
+          prompt: "",
+          enabled: true,
+          modelProvider: "anthropic",
+          modelId: "claude-sonnet-4-5",
+          createdAt: "2026-01-01",
+          updatedAt: "2026-01-01",
+        });
+      },
+      assert: (res: { status: number; body: any }) => {
+        expect(res.status).toBe(201);
+        expect(store.createWorkflowStep).toHaveBeenCalledWith({
+          name: "Security",
+          description: "Security audit",
+          mode: "prompt",
+          phase: undefined,
+          prompt: undefined,
+          scriptName: undefined,
+          enabled: undefined,
+          defaultOn: false,
+          modelProvider: "anthropic",
+          modelId: "claude-sonnet-4-5",
+        });
+      },
+    },
+    {
+      name: "creates a workflow step without model fields when both empty strings",
+      body: {
+        name: "Docs",
+        description: "Check docs",
+        modelProvider: "",
+        modelId: "",
+      },
+      mockSetup: () => {
+        (store.createWorkflowStep as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+          id: "WS-001",
+          name: "Docs",
+          description: "Check docs",
+          mode: "prompt",
+          prompt: "",
+          enabled: true,
+          createdAt: "2026-01-01",
+          updatedAt: "2026-01-01",
+        });
+      },
+      assert: (res: { status: number; body: any }) => {
+        expect(res.status).toBe(201);
+        expect(store.createWorkflowStep).toHaveBeenCalledWith({
+          name: "Docs",
+          description: "Check docs",
+          mode: "prompt",
+          phase: undefined,
+          prompt: undefined,
+          scriptName: undefined,
+          enabled: undefined,
+          defaultOn: false,
+          modelProvider: undefined,
+          modelId: undefined,
+        });
+      },
+    },
+    {
+      name: "creates a script-mode workflow step with valid scriptName",
+      body: {
+        name: "Run Tests",
+        description: "Execute tests",
+        mode: "script",
+        scriptName: "test",
+      },
+      mockSetup: () => {
+        (store.getSettings as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+          scripts: { test: "pnpm test", lint: "pnpm lint" },
+        });
+        (store.createWorkflowStep as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+          id: "WS-001",
+          name: "Run Tests",
+          description: "Execute tests",
+          mode: "script",
+          scriptName: "test",
+          prompt: "",
+          enabled: true,
+          createdAt: "2026-01-01",
+          updatedAt: "2026-01-01",
+        });
+      },
+      assert: (res: { status: number; body: any }) => {
+        expect(res.status).toBe(201);
+        expect(store.createWorkflowStep).toHaveBeenCalledWith({
+          name: "Run Tests",
+          description: "Execute tests",
+          mode: "script",
+          phase: undefined,
+          prompt: undefined,
+          scriptName: "test",
+          enabled: undefined,
+          defaultOn: false,
+        });
+      },
+    },
+    {
+      name: "creates a workflow step with 'post-merge' phase",
+      body: {
+        name: "Post Merge",
+        description: "After merge",
+        phase: "post-merge",
+      },
+      mockSetup: () => {
+        (store.createWorkflowStep as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+          id: "WS-001",
+          name: "Post Merge",
+          description: "After merge",
+          mode: "prompt",
+          phase: "post-merge",
+          prompt: "",
+          enabled: true,
+          createdAt: "2026-01-01",
+          updatedAt: "2026-01-01",
+        });
+      },
+      assert: (res: { status: number; body: any }) => {
+        expect(res.status).toBe(201);
+        expect(store.createWorkflowStep).toHaveBeenCalledWith({
+          name: "Post Merge",
+          description: "After merge",
+          mode: "prompt",
+          phase: "post-merge",
+          prompt: undefined,
+          scriptName: undefined,
+          enabled: undefined,
+          defaultOn: false,
+        });
+      },
+    },
+    {
+      name: "creates a workflow step with defaultOn true",
+      body: {
+        name: "Auto Step",
+        description: "Auto-enabled",
+        defaultOn: true,
+      },
+      mockSetup: () => {
+        (store.createWorkflowStep as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+          id: "WS-010",
+          name: "Auto Step",
+          description: "Auto-enabled",
+          mode: "prompt",
+          prompt: "",
+          enabled: true,
+          defaultOn: true,
+          createdAt: "2026-01-01",
+          updatedAt: "2026-01-01",
+        });
+      },
+      assert: (res: { status: number; body: any }) => {
+        expect(res.status).toBe(201);
+        expect(store.createWorkflowStep).toHaveBeenCalledWith({
+          name: "Auto Step",
+          description: "Auto-enabled",
+          mode: "prompt",
+          phase: undefined,
+          prompt: undefined,
+          scriptName: undefined,
+          enabled: undefined,
+          defaultOn: true,
+        });
+      },
+    },
+    {
+      name: "defaults defaultOn to false when not specified",
+      body: {
+        name: "Manual Step",
+        description: "Manual only",
+      },
+      mockSetup: () => {
+        (store.createWorkflowStep as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+          id: "WS-011",
+          name: "Manual Step",
+          description: "Manual only",
+          mode: "prompt",
+          prompt: "",
+          enabled: true,
+          createdAt: "2026-01-01",
+          updatedAt: "2026-01-01",
+        });
+      },
+      assert: (res: { status: number; body: any }) => {
+        expect(res.status).toBe(201);
+        expect(store.createWorkflowStep).toHaveBeenCalledWith(expect.objectContaining({ defaultOn: false }));
+      },
+    },
+  ])("$name", async ({ body, mockSetup, assert }) => {
+    mockSetup();
+    const res = await postWorkflowStep(body);
+    assert(res);
   });
 
-  it("returns 400 when name is missing", async () => {
-    const res = await REQUEST(app, "POST", "/api/workflow-steps", JSON.stringify({
-      description: "Check docs",
-    }), { "Content-Type": "application/json" });
+  it.each([
+    {
+      name: "returns 400 when name is missing",
+      body: { description: "Check docs" },
+      errorSubstring: "name",
+    },
+    {
+      name: "returns 400 when description is missing",
+      body: { name: "Docs" },
+      errorSubstring: "description",
+    },
+    {
+      name: "returns 400 when model provider is set without modelId",
+      body: { name: "Security", description: "Security audit", modelProvider: "anthropic" },
+      errorSubstring: "must include both provider and modelId",
+    },
+    {
+      name: "returns 400 when modelId is set without model provider",
+      body: { name: "Security", description: "Security audit", modelId: "claude-sonnet-4-5" },
+      errorSubstring: "must include both provider and modelId",
+    },
+    {
+      name: "returns 400 for script mode without scriptName",
+      body: { name: "Run Tests", description: "Execute tests", mode: "script" },
+      errorSubstring: "scriptName is required",
+    },
+    {
+      name: "returns 400 for invalid mode value",
+      body: { name: "Test", description: "Test", mode: "invalid" },
+      errorSubstring: "mode must be",
+    },
+    {
+      name: "returns 400 for invalid phase value",
+      body: { name: "Test", description: "Test", phase: "during-merge" },
+      errorSubstring: "phase must be",
+    },
+    {
+      name: "returns 400 when defaultOn is not a boolean",
+      body: { name: "Bad Step", description: "Bad defaultOn", defaultOn: "yes" },
+      errorSubstring: "defaultOn",
+    },
+  ])("$name", async ({ body, errorSubstring }) => {
+    const res = await postWorkflowStep(body);
 
     expect(res.status).toBe(400);
-    expect(res.body.error).toContain("name");
-  });
-
-  it("returns 400 when description is missing", async () => {
-    const res = await REQUEST(app, "POST", "/api/workflow-steps", JSON.stringify({
-      name: "Docs",
-    }), { "Content-Type": "application/json" });
-
-    expect(res.status).toBe(400);
-    expect(res.body.error).toContain("description");
+    expect(res.body.error).toContain(errorSubstring);
   });
 
   it("returns 409 when name already exists", async () => {
@@ -405,125 +658,13 @@ describe("POST /workflow-steps", () => {
       { id: "WS-001", name: "Docs", description: "Check docs", prompt: "", enabled: true, createdAt: "2026-01-01", updatedAt: "2026-01-01" },
     ]);
 
-    const res = await REQUEST(app, "POST", "/api/workflow-steps", JSON.stringify({
+    const res = await postWorkflowStep({
       name: "Docs",
       description: "Another docs step",
-    }), { "Content-Type": "application/json" });
+    });
 
     expect(res.status).toBe(409);
     expect(res.body.error).toContain("already exists");
-  });
-
-  it("creates a workflow step with model override", async () => {
-    const created = { id: "WS-002", name: "Security", description: "Security audit", prompt: "", enabled: true, modelProvider: "anthropic", modelId: "claude-sonnet-4-5", createdAt: "2026-01-01", updatedAt: "2026-01-01" };
-    (store.createWorkflowStep as ReturnType<typeof vi.fn>).mockResolvedValueOnce(created);
-
-    const res = await REQUEST(app, "POST", "/api/workflow-steps", JSON.stringify({
-      name: "Security",
-      description: "Security audit",
-      modelProvider: "anthropic",
-      modelId: "claude-sonnet-4-5",
-    }), { "Content-Type": "application/json" });
-
-    expect(res.status).toBe(201);
-    expect(store.createWorkflowStep).toHaveBeenCalledWith({
-      name: "Security",
-      description: "Security audit",
-      mode: "prompt",
-      phase: undefined,
-      prompt: undefined,
-      scriptName: undefined,
-      enabled: undefined,
-      defaultOn: false,
-      modelProvider: "anthropic",
-      modelId: "claude-sonnet-4-5",
-    });
-  });
-
-  it("returns 400 when model provider is set without modelId", async () => {
-    const res = await REQUEST(app, "POST", "/api/workflow-steps", JSON.stringify({
-      name: "Security",
-      description: "Security audit",
-      modelProvider: "anthropic",
-    }), { "Content-Type": "application/json" });
-
-    expect(res.status).toBe(400);
-    expect(res.body.error).toContain("must include both provider and modelId");
-  });
-
-  it("returns 400 when modelId is set without model provider", async () => {
-    const res = await REQUEST(app, "POST", "/api/workflow-steps", JSON.stringify({
-      name: "Security",
-      description: "Security audit",
-      modelId: "claude-sonnet-4-5",
-    }), { "Content-Type": "application/json" });
-
-    expect(res.status).toBe(400);
-    expect(res.body.error).toContain("must include both provider and modelId");
-  });
-
-  it("creates a workflow step without model fields when both empty strings", async () => {
-    const created = { id: "WS-001", name: "Docs", description: "Check docs", mode: "prompt", prompt: "", enabled: true, createdAt: "2026-01-01", updatedAt: "2026-01-01" };
-    (store.createWorkflowStep as ReturnType<typeof vi.fn>).mockResolvedValueOnce(created);
-
-    const res = await REQUEST(app, "POST", "/api/workflow-steps", JSON.stringify({
-      name: "Docs",
-      description: "Check docs",
-      modelProvider: "",
-      modelId: "",
-    }), { "Content-Type": "application/json" });
-
-    expect(res.status).toBe(201);
-    expect(store.createWorkflowStep).toHaveBeenCalledWith({
-      name: "Docs",
-      description: "Check docs",
-      mode: "prompt",
-      phase: undefined,
-      prompt: undefined,
-      scriptName: undefined,
-      enabled: undefined,
-      defaultOn: false,
-      modelProvider: undefined,
-      modelId: undefined,
-    });
-  });
-
-  it("creates a script-mode workflow step with valid scriptName", async () => {
-    (store.getSettings as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
-      scripts: { test: "pnpm test", lint: "pnpm lint" },
-    });
-    const created = { id: "WS-001", name: "Run Tests", description: "Execute tests", mode: "script", scriptName: "test", prompt: "", enabled: true, createdAt: "2026-01-01", updatedAt: "2026-01-01" };
-    (store.createWorkflowStep as ReturnType<typeof vi.fn>).mockResolvedValueOnce(created);
-
-    const res = await REQUEST(app, "POST", "/api/workflow-steps", JSON.stringify({
-      name: "Run Tests",
-      description: "Execute tests",
-      mode: "script",
-      scriptName: "test",
-    }), { "Content-Type": "application/json" });
-
-    expect(res.status).toBe(201);
-    expect(store.createWorkflowStep).toHaveBeenCalledWith({
-      name: "Run Tests",
-      description: "Execute tests",
-      mode: "script",
-      phase: undefined,
-      prompt: undefined,
-      scriptName: "test",
-      enabled: undefined,
-      defaultOn: false,
-    });
-  });
-
-  it("returns 400 for script mode without scriptName", async () => {
-    const res = await REQUEST(app, "POST", "/api/workflow-steps", JSON.stringify({
-      name: "Run Tests",
-      description: "Execute tests",
-      mode: "script",
-    }), { "Content-Type": "application/json" });
-
-    expect(res.status).toBe(400);
-    expect(res.body.error).toContain("scriptName is required");
   });
 
   it("returns 400 for script mode with scriptName not in project scripts", async () => {
@@ -531,186 +672,190 @@ describe("POST /workflow-steps", () => {
       scripts: { lint: "pnpm lint" },
     });
 
-    const res = await REQUEST(app, "POST", "/api/workflow-steps", JSON.stringify({
+    const res = await postWorkflowStep({
       name: "Run Tests",
       description: "Execute tests",
       mode: "script",
       scriptName: "nonexistent",
-    }), { "Content-Type": "application/json" });
+    });
 
     expect(res.status).toBe(400);
     expect(res.body.error).toContain("not found in project settings");
-  });
-
-  it("returns 400 for invalid mode value", async () => {
-    const res = await REQUEST(app, "POST", "/api/workflow-steps", JSON.stringify({
-      name: "Test",
-      description: "Test",
-      mode: "invalid",
-    }), { "Content-Type": "application/json" });
-
-    expect(res.status).toBe(400);
-    expect(res.body.error).toContain("mode must be");
-  });
-
-  it("creates a workflow step with 'post-merge' phase", async () => {
-    const created = { id: "WS-001", name: "Post Merge", description: "After merge", mode: "prompt", phase: "post-merge", prompt: "", enabled: true, createdAt: "2026-01-01", updatedAt: "2026-01-01" };
-    (store.createWorkflowStep as ReturnType<typeof vi.fn>).mockResolvedValueOnce(created);
-
-    const res = await REQUEST(app, "POST", "/api/workflow-steps", JSON.stringify({
-      name: "Post Merge",
-      description: "After merge",
-      phase: "post-merge",
-    }), { "Content-Type": "application/json" });
-
-    expect(res.status).toBe(201);
-    expect(store.createWorkflowStep).toHaveBeenCalledWith({
-      name: "Post Merge",
-      description: "After merge",
-      mode: "prompt",
-      phase: "post-merge",
-      prompt: undefined,
-      scriptName: undefined,
-      enabled: undefined,
-      defaultOn: false,
-    });
-  });
-
-  it("returns 400 for invalid phase value", async () => {
-    const res = await REQUEST(app, "POST", "/api/workflow-steps", JSON.stringify({
-      name: "Test",
-      description: "Test",
-      phase: "during-merge",
-    }), { "Content-Type": "application/json" });
-
-    expect(res.status).toBe(400);
-    expect(res.body.error).toContain("phase must be");
-  });
-
-  it("creates a workflow step with defaultOn true", async () => {
-    const created = { id: "WS-010", name: "Auto Step", description: "Auto-enabled", mode: "prompt", prompt: "", enabled: true, defaultOn: true, createdAt: "2026-01-01", updatedAt: "2026-01-01" };
-    (store.createWorkflowStep as ReturnType<typeof vi.fn>).mockResolvedValueOnce(created);
-
-    const res = await REQUEST(app, "POST", "/api/workflow-steps", JSON.stringify({
-      name: "Auto Step",
-      description: "Auto-enabled",
-      defaultOn: true,
-    }), { "Content-Type": "application/json" });
-
-    expect(res.status).toBe(201);
-    expect(store.createWorkflowStep).toHaveBeenCalledWith({
-      name: "Auto Step",
-      description: "Auto-enabled",
-      mode: "prompt",
-      phase: undefined,
-      prompt: undefined,
-      scriptName: undefined,
-      enabled: undefined,
-      defaultOn: true,
-    });
-  });
-
-  it("defaults defaultOn to false when not specified", async () => {
-    const created = { id: "WS-011", name: "Manual Step", description: "Manual only", mode: "prompt", prompt: "", enabled: true, createdAt: "2026-01-01", updatedAt: "2026-01-01" };
-    (store.createWorkflowStep as ReturnType<typeof vi.fn>).mockResolvedValueOnce(created);
-
-    const res = await REQUEST(app, "POST", "/api/workflow-steps", JSON.stringify({
-      name: "Manual Step",
-      description: "Manual only",
-    }), { "Content-Type": "application/json" });
-
-    expect(res.status).toBe(201);
-    expect(store.createWorkflowStep).toHaveBeenCalledWith(
-      expect.objectContaining({ defaultOn: false })
-    );
-  });
-
-  it("returns 400 when defaultOn is not a boolean", async () => {
-    const res = await REQUEST(app, "POST", "/api/workflow-steps", JSON.stringify({
-      name: "Bad Step",
-      description: "Bad defaultOn",
-      defaultOn: "yes",
-    }), { "Content-Type": "application/json" });
-
-    expect(res.status).toBe(400);
-    expect(res.body.error).toContain("defaultOn");
   });
 });
 
 describe("PATCH /workflow-steps/:id", () => {
   let store: TaskStore;
+  let app: express.Express;
 
-  beforeEach(() => {
-    store = createMockStore();
-  });
-
-  function buildApp() {
-    const app = express();
-    app.use(express.json());
-    app.use("/api", createApiRoutes(store));
-    return app;
+  async function patchWorkflowStep(body: Record<string, unknown>, id = "WS-001") {
+    return REQUEST(app, "PATCH", `/api/workflow-steps/${id}`, JSON.stringify(body), { "Content-Type": "application/json" });
   }
 
-  it("updates a workflow step", async () => {
-    const updated = { id: "WS-001", name: "Updated", description: "Updated desc", prompt: "Updated prompt", enabled: false, createdAt: "2026-01-01", updatedAt: "2026-01-02" };
-    (store.updateWorkflowStep as ReturnType<typeof vi.fn>).mockResolvedValueOnce(updated);
+  beforeAll(() => {
+    store = createMockStore();
+    app = express();
+    app.use(express.json());
+    app.use("/api", createApiRoutes(store));
+  });
 
-    const res = await REQUEST(buildApp(), "PATCH", "/api/workflow-steps/WS-001", JSON.stringify({
-      name: "Updated",
-      enabled: false,
-    }), { "Content-Type": "application/json" });
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
 
-    expect(res.status).toBe(200);
-    expect(res.body.name).toBe("Updated");
+  it.each([
+    {
+      name: "updates a workflow step",
+      body: { name: "Updated", enabled: false },
+      mockSetup: () => {
+        (store.updateWorkflowStep as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+          id: "WS-001",
+          name: "Updated",
+          description: "Updated desc",
+          prompt: "Updated prompt",
+          enabled: false,
+          createdAt: "2026-01-01",
+          updatedAt: "2026-01-02",
+        });
+      },
+      assert: (res: { status: number; body: any }) => {
+        expect(res.status).toBe(200);
+        expect(res.body.name).toBe("Updated");
+      },
+    },
+    {
+      name: "updates a workflow step with model override",
+      body: { modelProvider: "anthropic", modelId: "claude-sonnet-4-5" },
+      mockSetup: () => {
+        (store.updateWorkflowStep as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+          id: "WS-001",
+          name: "Security",
+          description: "Audit",
+          prompt: "",
+          enabled: true,
+          modelProvider: "anthropic",
+          modelId: "claude-sonnet-4-5",
+          createdAt: "2026-01-01",
+          updatedAt: "2026-01-02",
+        });
+      },
+      assert: (res: { status: number; body: any }) => {
+        expect(res.status).toBe(200);
+        expect(store.updateWorkflowStep).toHaveBeenCalledWith("WS-001", expect.objectContaining({
+          modelProvider: "anthropic",
+          modelId: "claude-sonnet-4-5",
+        }));
+      },
+    },
+    {
+      name: "updates a workflow step phase",
+      body: { phase: "post-merge" },
+      mockSetup: () => {
+        (store.updateWorkflowStep as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+          id: "WS-001",
+          name: "Post Merge",
+          description: "After merge",
+          phase: "post-merge",
+          createdAt: "2026-01-01",
+          updatedAt: "2026-01-02",
+        });
+        (store.getWorkflowStep as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+          id: "WS-001",
+          name: "Pre Merge",
+          description: "Before merge",
+          mode: "prompt",
+          prompt: "",
+          enabled: true,
+          createdAt: "2026-01-01",
+          updatedAt: "2026-01-01",
+        });
+      },
+      assert: (res: { status: number; body: any }) => {
+        expect(res.status).toBe(200);
+        expect(store.updateWorkflowStep).toHaveBeenCalledWith("WS-001", expect.objectContaining({ phase: "post-merge" }));
+      },
+    },
+    {
+      name: "updates defaultOn to true",
+      body: { defaultOn: true },
+      mockSetup: () => {
+        (store.updateWorkflowStep as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+          id: "WS-001",
+          name: "Docs",
+          description: "Check docs",
+          mode: "prompt",
+          prompt: "",
+          enabled: true,
+          defaultOn: true,
+          createdAt: "2026-01-01",
+          updatedAt: "2026-01-01",
+        });
+      },
+      assert: (res: { status: number; body: any }) => {
+        expect(res.status).toBe(200);
+        expect(store.updateWorkflowStep).toHaveBeenCalledWith("WS-001", expect.objectContaining({ defaultOn: true }));
+      },
+    },
+    {
+      name: "updates defaultOn to false",
+      body: { defaultOn: false },
+      mockSetup: () => {
+        (store.updateWorkflowStep as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+          id: "WS-001",
+          name: "Docs",
+          description: "Check docs",
+          mode: "prompt",
+          prompt: "",
+          enabled: true,
+          defaultOn: false,
+          createdAt: "2026-01-01",
+          updatedAt: "2026-01-01",
+        });
+      },
+      assert: (res: { status: number; body: any }) => {
+        expect(res.status).toBe(200);
+        expect(store.updateWorkflowStep).toHaveBeenCalledWith("WS-001", expect.objectContaining({ defaultOn: false }));
+      },
+    },
+  ])("$name", async ({ body, mockSetup, assert }) => {
+    mockSetup();
+    const res = await patchWorkflowStep(body);
+    assert(res);
+  });
+
+  it.each([
+    {
+      name: "returns 400 when updating with only modelProvider",
+      body: { modelProvider: "anthropic" },
+      errorSubstring: "must include both provider and modelId",
+    },
+    {
+      name: "returns 400 when updating with only modelId",
+      body: { modelId: "claude-sonnet-4-5" },
+      errorSubstring: "must include both provider and modelId",
+    },
+    {
+      name: "returns 400 when defaultOn is not a boolean in PATCH",
+      body: { defaultOn: "yes" },
+      errorSubstring: "defaultOn",
+    },
+  ])("$name", async ({ body, errorSubstring }) => {
+    const res = await patchWorkflowStep(body);
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toContain(errorSubstring);
   });
 
   it("returns 404 for non-existent step", async () => {
     (store.updateWorkflowStep as ReturnType<typeof vi.fn>).mockRejectedValueOnce(new Error("Workflow step 'WS-999' not found"));
 
-    const res = await REQUEST(buildApp(), "PATCH", "/api/workflow-steps/WS-999", JSON.stringify({
-      name: "Nope",
-    }), { "Content-Type": "application/json" });
+    const res = await patchWorkflowStep({ name: "Nope" }, "WS-999");
 
     expect(res.status).toBe(404);
     expect(res.body.error).toContain("not found");
   });
 
-  it("updates a workflow step with model override", async () => {
-    const updated = { id: "WS-001", name: "Security", description: "Audit", prompt: "", enabled: true, modelProvider: "anthropic", modelId: "claude-sonnet-4-5", createdAt: "2026-01-01", updatedAt: "2026-01-02" };
-    (store.updateWorkflowStep as ReturnType<typeof vi.fn>).mockResolvedValueOnce(updated);
-
-    const res = await REQUEST(buildApp(), "PATCH", "/api/workflow-steps/WS-001", JSON.stringify({
-      modelProvider: "anthropic",
-      modelId: "claude-sonnet-4-5",
-    }), { "Content-Type": "application/json" });
-
-    expect(res.status).toBe(200);
-    expect(store.updateWorkflowStep).toHaveBeenCalledWith("WS-001", expect.objectContaining({
-      modelProvider: "anthropic",
-      modelId: "claude-sonnet-4-5",
-    }));
-  });
-
-  it("returns 400 when updating with only modelProvider", async () => {
-    const res = await REQUEST(buildApp(), "PATCH", "/api/workflow-steps/WS-001", JSON.stringify({
-      modelProvider: "anthropic",
-    }), { "Content-Type": "application/json" });
-
-    expect(res.status).toBe(400);
-    expect(res.body.error).toContain("must include both provider and modelId");
-  });
-
-  it("returns 400 when updating with only modelId", async () => {
-    const res = await REQUEST(buildApp(), "PATCH", "/api/workflow-steps/WS-001", JSON.stringify({
-      modelId: "claude-sonnet-4-5",
-    }), { "Content-Type": "application/json" });
-
-    expect(res.status).toBe(400);
-    expect(res.body.error).toContain("must include both provider and modelId");
-  });
-
   it("returns 400 when updating scriptName to nonexistent on existing script-mode step", async () => {
-    // Simulate an existing script-mode step
     (store.getWorkflowStep as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
       id: "WS-001",
       name: "Run Tests",
@@ -726,18 +871,14 @@ describe("PATCH /workflow-steps/:id", () => {
       scripts: { test: "pnpm test", lint: "pnpm lint" },
     });
 
-    const res = await REQUEST(buildApp(), "PATCH", "/api/workflow-steps/WS-001", JSON.stringify({
-      scriptName: "nonexistent",
-    }), { "Content-Type": "application/json" });
+    const res = await patchWorkflowStep({ scriptName: "nonexistent" });
 
     expect(res.status).toBe(400);
     expect(res.body.error).toContain("not found in project settings");
-    // Should NOT have called updateWorkflowStep since validation failed
     expect(store.updateWorkflowStep).not.toHaveBeenCalled();
   });
 
   it("returns 400 when updating script-mode step without scriptName (resulting state)", async () => {
-    // Simulate an existing script-mode step with scriptName cleared
     (store.getWorkflowStep as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
       id: "WS-001",
       name: "Run Tests",
@@ -750,29 +891,10 @@ describe("PATCH /workflow-steps/:id", () => {
       updatedAt: "2026-01-01",
     });
 
-    const res = await REQUEST(buildApp(), "PATCH", "/api/workflow-steps/WS-001", JSON.stringify({
-      name: "Updated Name",
-    }), { "Content-Type": "application/json" });
+    const res = await patchWorkflowStep({ name: "Updated Name" });
 
     expect(res.status).toBe(400);
     expect(res.body.error).toContain("scriptName is required when mode is 'script'");
-  });
-
-  it("updates a workflow step phase", async () => {
-    const updated = { id: "WS-001", name: "Post Merge", description: "After merge", phase: "post-merge", createdAt: "2026-01-01", updatedAt: "2026-01-02" };
-    (store.updateWorkflowStep as ReturnType<typeof vi.fn>).mockResolvedValueOnce(updated);
-    (store.getWorkflowStep as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
-      id: "WS-001", name: "Pre Merge", description: "Before merge", mode: "prompt", prompt: "", enabled: true, createdAt: "2026-01-01", updatedAt: "2026-01-01",
-    });
-
-    const res = await REQUEST(buildApp(), "PATCH", "/api/workflow-steps/WS-001", JSON.stringify({
-      phase: "post-merge",
-    }), { "Content-Type": "application/json" });
-
-    expect(res.status).toBe(200);
-    expect(store.updateWorkflowStep).toHaveBeenCalledWith("WS-001", expect.objectContaining({
-      phase: "post-merge",
-    }));
   });
 
   it("returns 400 for invalid phase value on update", async () => {
@@ -780,66 +902,36 @@ describe("PATCH /workflow-steps/:id", () => {
       id: "WS-001", name: "Test", description: "Test", mode: "prompt", prompt: "", enabled: true, createdAt: "2026-01-01", updatedAt: "2026-01-01",
     });
 
-    const res = await REQUEST(buildApp(), "PATCH", "/api/workflow-steps/WS-001", JSON.stringify({
-      phase: "during-merge",
-    }), { "Content-Type": "application/json" });
+    const res = await patchWorkflowStep({ phase: "during-merge" });
 
     expect(res.status).toBe(400);
     expect(res.body.error).toContain("phase must be");
-  });
-
-  it("updates defaultOn to true", async () => {
-    const updated = { id: "WS-001", name: "Docs", description: "Check docs", mode: "prompt", prompt: "", enabled: true, defaultOn: true, createdAt: "2026-01-01", updatedAt: "2026-01-01" };
-    (store.updateWorkflowStep as ReturnType<typeof vi.fn>).mockResolvedValueOnce(updated);
-
-    const res = await REQUEST(buildApp(), "PATCH", "/api/workflow-steps/WS-001", JSON.stringify({
-      defaultOn: true,
-    }), { "Content-Type": "application/json" });
-
-    expect(res.status).toBe(200);
-    expect(store.updateWorkflowStep).toHaveBeenCalledWith("WS-001", expect.objectContaining({ defaultOn: true }));
-  });
-
-  it("updates defaultOn to false", async () => {
-    const updated = { id: "WS-001", name: "Docs", description: "Check docs", mode: "prompt", prompt: "", enabled: true, defaultOn: false, createdAt: "2026-01-01", updatedAt: "2026-01-01" };
-    (store.updateWorkflowStep as ReturnType<typeof vi.fn>).mockResolvedValueOnce(updated);
-
-    const res = await REQUEST(buildApp(), "PATCH", "/api/workflow-steps/WS-001", JSON.stringify({
-      defaultOn: false,
-    }), { "Content-Type": "application/json" });
-
-    expect(res.status).toBe(200);
-    expect(store.updateWorkflowStep).toHaveBeenCalledWith("WS-001", expect.objectContaining({ defaultOn: false }));
-  });
-
-  it("returns 400 when defaultOn is not a boolean in PATCH", async () => {
-    const res = await REQUEST(buildApp(), "PATCH", "/api/workflow-steps/WS-001", JSON.stringify({
-      defaultOn: "yes",
-    }), { "Content-Type": "application/json" });
-
-    expect(res.status).toBe(400);
-    expect(res.body.error).toContain("defaultOn");
   });
 });
 
 describe("DELETE /workflow-steps/:id", () => {
   let store: TaskStore;
+  let app: express.Express;
 
-  beforeEach(() => {
+  async function deleteWorkflowStep(id: string) {
+    return REQUEST(app, "DELETE", `/api/workflow-steps/${id}`, undefined, {});
+  }
+
+  beforeAll(() => {
     store = createMockStore();
-  });
-
-  function buildApp() {
-    const app = express();
+    app = express();
     app.use(express.json());
     app.use("/api", createApiRoutes(store));
-    return app;
-  }
+  });
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
 
   it("deletes a workflow step", async () => {
     (store.deleteWorkflowStep as ReturnType<typeof vi.fn>).mockResolvedValueOnce(undefined);
 
-    const res = await REQUEST(buildApp(), "DELETE", "/api/workflow-steps/WS-001", undefined, {});
+    const res = await deleteWorkflowStep("WS-001");
 
     expect(res.status).toBe(204);
   });
@@ -847,7 +939,7 @@ describe("DELETE /workflow-steps/:id", () => {
   it("returns 404 for non-existent step", async () => {
     (store.deleteWorkflowStep as ReturnType<typeof vi.fn>).mockRejectedValueOnce(new Error("Workflow step 'WS-999' not found"));
 
-    const res = await REQUEST(buildApp(), "DELETE", "/api/workflow-steps/WS-999", undefined, {});
+    const res = await deleteWorkflowStep("WS-999");
 
     expect(res.status).toBe(404);
     expect(res.body.error).toContain("not found");
@@ -856,26 +948,27 @@ describe("DELETE /workflow-steps/:id", () => {
 
 describe("POST /workflow-steps/:id/refine", () => {
   let store: TaskStore;
+  let app: express.Express;
+
+  beforeAll(() => {
+    store = createMockStore();
+    app = express();
+    app.use(express.json());
+    app.use("/api", createApiRoutes(store));
+  });
 
   beforeEach(() => {
-    store = createMockStore();
+    vi.clearAllMocks();
   });
 
   afterEach(() => {
     __setCreateFnAgentForRefine(undefined);
   });
 
-  function buildApp() {
-    const app = express();
-    app.use(express.json());
-    app.use("/api", createApiRoutes(store));
-    return app;
-  }
-
   it("returns 404 when workflow step not found", async () => {
     (store.getWorkflowStep as ReturnType<typeof vi.fn>).mockResolvedValueOnce(undefined);
 
-    const res = await REQUEST(buildApp(), "POST", "/api/workflow-steps/WS-999/refine", JSON.stringify({}), {
+    const res = await REQUEST(app, "POST", "/api/workflow-steps/WS-999/refine", JSON.stringify({}), {
       "Content-Type": "application/json",
     });
 
@@ -888,7 +981,7 @@ describe("POST /workflow-steps/:id/refine", () => {
       id: "WS-001", name: "Empty", description: "  ", mode: "prompt", prompt: "", enabled: true, createdAt: "2026-01-01", updatedAt: "2026-01-01",
     });
 
-    const res = await REQUEST(buildApp(), "POST", "/api/workflow-steps/WS-001/refine", JSON.stringify({}), {
+    const res = await REQUEST(app, "POST", "/api/workflow-steps/WS-001/refine", JSON.stringify({}), {
       "Content-Type": "application/json",
     });
 
@@ -901,7 +994,7 @@ describe("POST /workflow-steps/:id/refine", () => {
       id: "WS-001", name: "Run Tests", description: "Execute test suite", mode: "script", scriptName: "test", prompt: "", enabled: true, createdAt: "2026-01-01", updatedAt: "2026-01-01",
     });
 
-    const res = await REQUEST(buildApp(), "POST", "/api/workflow-steps/WS-001/refine", JSON.stringify({}), {
+    const res = await REQUEST(app, "POST", "/api/workflow-steps/WS-001/refine", JSON.stringify({}), {
       "Content-Type": "application/json",
     });
 
@@ -937,7 +1030,7 @@ describe("POST /workflow-steps/:id/refine", () => {
     const createFnAgentMock = vi.fn(async () => ({ session }));
     __setCreateFnAgentForRefine(createFnAgentMock);
 
-    const res = await REQUEST(buildApp(), "POST", "/api/workflow-steps/WS-001/refine", JSON.stringify({}), {
+    const res = await REQUEST(app, "POST", "/api/workflow-steps/WS-001/refine", JSON.stringify({}), {
       "Content-Type": "application/json",
     });
 
@@ -961,7 +1054,7 @@ describe("POST /workflow-steps/:id/refine", () => {
       throw new Error("AI unavailable");
     });
 
-    const res = await REQUEST(buildApp(), "POST", "/api/workflow-steps/WS-001/refine", JSON.stringify({}), {
+    const res = await REQUEST(app, "POST", "/api/workflow-steps/WS-001/refine", JSON.stringify({}), {
       "Content-Type": "application/json",
     });
 
@@ -1002,7 +1095,7 @@ describe("POST /workflow-steps/:id/refine", () => {
     });
     __setCreateFnAgentForRefine(createFnAgentMock);
 
-    const res = await REQUEST(buildApp(), "POST", "/api/workflow-steps/WS-001/refine", JSON.stringify({}), {
+    const res = await REQUEST(app, "POST", "/api/workflow-steps/WS-001/refine", JSON.stringify({}), {
       "Content-Type": "application/json",
     });
 
@@ -1043,7 +1136,7 @@ describe("POST /workflow-steps/:id/refine", () => {
     });
     __setCreateFnAgentForRefine(createFnAgentMock);
 
-    const res = await REQUEST(buildApp(), "POST", "/api/workflow-steps/WS-001/refine", JSON.stringify({}), {
+    const res = await REQUEST(app, "POST", "/api/workflow-steps/WS-001/refine", JSON.stringify({}), {
       "Content-Type": "application/json",
     });
 
@@ -1084,7 +1177,7 @@ describe("POST /workflow-steps/:id/refine", () => {
     });
     __setCreateFnAgentForRefine(createFnAgentMock);
 
-    const res = await REQUEST(buildApp(), "POST", "/api/workflow-steps/WS-001/refine", JSON.stringify({}), {
+    const res = await REQUEST(app, "POST", "/api/workflow-steps/WS-001/refine", JSON.stringify({}), {
       "Content-Type": "application/json",
     });
 
@@ -1118,7 +1211,7 @@ describe("POST /workflow-steps/:id/refine", () => {
     });
     __setCreateFnAgentForRefine(createFnAgentMock);
 
-    const res = await REQUEST(buildApp(), "POST", "/api/workflow-steps/WS-001/refine", JSON.stringify({}), {
+    const res = await REQUEST(app, "POST", "/api/workflow-steps/WS-001/refine", JSON.stringify({}), {
       "Content-Type": "application/json",
     });
 
@@ -1152,7 +1245,7 @@ describe("POST /workflow-steps/:id/refine", () => {
     });
     __setCreateFnAgentForRefine(createFnAgentMock);
 
-    const res = await REQUEST(buildApp(), "POST", "/api/workflow-steps/WS-001/refine", JSON.stringify({}), {
+    const res = await REQUEST(app, "POST", "/api/workflow-steps/WS-001/refine", JSON.stringify({}), {
       "Content-Type": "application/json",
     });
 
@@ -1188,7 +1281,7 @@ describe("POST /workflow-steps/:id/refine", () => {
     });
     __setCreateFnAgentForRefine(createFnAgentMock);
 
-    const res = await REQUEST(buildApp(), "POST", "/api/workflow-steps/WS-001/refine", JSON.stringify({}), {
+    const res = await REQUEST(app, "POST", "/api/workflow-steps/WS-001/refine", JSON.stringify({}), {
       "Content-Type": "application/json",
     });
 
@@ -1224,7 +1317,7 @@ describe("POST /workflow-steps/:id/refine", () => {
     });
     __setCreateFnAgentForRefine(createFnAgentMock);
 
-    const res = await REQUEST(buildApp(), "POST", "/api/workflow-steps/WS-001/refine", JSON.stringify({}), {
+    const res = await REQUEST(app, "POST", "/api/workflow-steps/WS-001/refine", JSON.stringify({}), {
       "Content-Type": "application/json",
     });
 
@@ -1242,11 +1335,18 @@ describe("POST /workflow-steps/:id/refine with projectId scoping", () => {
 
   let defaultStore: TaskStore;
   let scopedStore: TaskStore;
+  let app: express.Express;
 
-  beforeEach(() => {
+  beforeAll(() => {
     defaultStore = createMockStore();
     scopedStore = createMockStore();
+    app = express();
+    app.use(express.json());
+    app.use("/api", createApiRoutes(defaultStore));
+  });
 
+  beforeEach(() => {
+    vi.clearAllMocks();
     vi.spyOn(projectStoreResolver, "getOrCreateProjectStore").mockResolvedValue(scopedStore);
   });
 
@@ -1254,13 +1354,6 @@ describe("POST /workflow-steps/:id/refine with projectId scoping", () => {
     vi.restoreAllMocks();
     __setCreateFnAgentForRefine(undefined);
   });
-
-  function buildApp() {
-    const app = express();
-    app.use(express.json());
-    app.use("/api", createApiRoutes(defaultStore));
-    return app;
-  }
 
   it("uses scoped settings from project store when projectId is provided", async () => {
     const ws = { id: "WS-001", name: "Docs", description: "Check docs", mode: "prompt", prompt: "", enabled: true, createdAt: "2026-01-01", updatedAt: "2026-01-01" };
@@ -1295,7 +1388,7 @@ describe("POST /workflow-steps/:id/refine with projectId scoping", () => {
     __setCreateFnAgentForRefine(createFnAgentMock);
 
     const res = await REQUEST(
-      buildApp(),
+      app,
       "POST",
       `/api/workflow-steps/WS-001/refine?projectId=${projectId}`,
       JSON.stringify({}),
@@ -1344,7 +1437,7 @@ describe("POST /workflow-steps/:id/refine with projectId scoping", () => {
     __setCreateFnAgentForRefine(createFnAgentMock);
 
     const res = await REQUEST(
-      buildApp(),
+      app,
       "POST",
       `/api/workflow-steps/WS-001/refine?projectId=${projectId}`,
       JSON.stringify({}),
@@ -1363,17 +1456,18 @@ describe("POST /workflow-steps/:id/refine with projectId scoping", () => {
 
 describe("POST /api/agents/generate/* diagnostics", () => {
   let store: TaskStore;
+  let app: express.Express;
 
-  beforeEach(() => {
+  beforeAll(() => {
     store = createMockStore();
-  });
-
-  function buildApp() {
-    const app = express();
+    app = express();
     app.use(express.json());
     app.use("/api", createApiRoutes(store));
-    return app;
-  }
+  });
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
 
   function captureDiagnostics(): LogEntry[] {
     const entries: LogEntry[] = [];
@@ -1394,7 +1488,7 @@ describe("POST /api/agents/generate/* diagnostics", () => {
     vi.spyOn(agentGenerationModule, "startAgentGeneration").mockRejectedValueOnce(new Error("start failed"));
 
     const res = await REQUEST(
-      buildApp(),
+      app,
       "POST",
       "/api/agents/generate/start",
       JSON.stringify({ role: "Senior frontend reviewer" }),
@@ -1421,7 +1515,7 @@ describe("POST /api/agents/generate/* diagnostics", () => {
     vi.spyOn(agentGenerationModule, "generateAgentSpec").mockRejectedValueOnce(new Error("spec failed"));
 
     const res = await REQUEST(
-      buildApp(),
+      app,
       "POST",
       "/api/agents/generate/spec",
       JSON.stringify({ sessionId: "session-123" }),
@@ -1449,8 +1543,9 @@ describe("POST /agents/generate/spec with projectId scoping", () => {
 
   let defaultStore: TaskStore;
   let scopedStore: TaskStore;
+  let app: express.Express;
 
-  beforeEach(() => {
+  beforeAll(() => {
     defaultStore = createMockStore();
     scopedStore = createMockStore({
       getAgentGenerationSession: vi.fn().mockImplementation((sessionId: string) => {
@@ -1465,20 +1560,19 @@ describe("POST /agents/generate/spec with projectId scoping", () => {
         return undefined;
       }),
     });
+    app = express();
+    app.use(express.json());
+    app.use("/api", createApiRoutes(defaultStore));
+  });
 
+  beforeEach(() => {
+    vi.clearAllMocks();
     vi.spyOn(projectStoreResolver, "getOrCreateProjectStore").mockResolvedValue(scopedStore);
   });
 
   afterEach(() => {
     vi.restoreAllMocks();
   });
-
-  function buildApp() {
-    const app = express();
-    app.use(express.json());
-    app.use("/api", createApiRoutes(defaultStore));
-    return app;
-  }
 
   it("uses scoped settings for prompt resolution when projectId is provided", async () => {
     const customPrompt = "CUSTOM SCOPED AGENT GENERATION PROMPT";
@@ -1510,7 +1604,7 @@ describe("POST /agents/generate/spec with projectId scoping", () => {
     });
 
     const res = await REQUEST(
-      buildApp(),
+      app,
       "POST",
       `/api/agents/generate/spec?projectId=${projectId}`,
       JSON.stringify({ sessionId: "test-session-id" }),
@@ -1551,7 +1645,7 @@ describe("POST /agents/generate/spec with projectId scoping", () => {
     });
 
     const res = await REQUEST(
-      buildApp(),
+      app,
       "POST",
       `/api/agents/generate/spec?projectId=${projectId}`,
       JSON.stringify({ sessionId: "test-session-id" }),
@@ -1570,50 +1664,49 @@ describe("POST /agents/generate/spec with projectId scoping", () => {
 
 describe("GET /workflow-step-templates", () => {
   let store: TaskStore;
+  let app: express.Express;
   let pluginRunner: { getPluginWorkflowStepTemplates?: () => Array<{ pluginId: string; template: { id: string; name: string; description: string; prompt: string; toolMode: "readonly" | "coding"; category: string; icon: string } }> };
 
-  beforeEach(() => {
+  beforeAll(() => {
     store = createMockStore();
     pluginRunner = {};
-  });
-
-  function buildApp() {
-    const app = express();
+    app = express();
     app.use(express.json());
     app.use("/api", createApiRoutes(store, { pluginRunner: pluginRunner as any }));
-    return app;
-  }
+  });
 
-  it("returns all built-in templates", async () => {
-    const res = await GET(buildApp(), "/api/workflow-step-templates");
+  beforeEach(() => {
+    vi.clearAllMocks();
+    delete pluginRunner.getPluginWorkflowStepTemplates;
+  });
+
+  it("returns built-in templates with required fields and expected IDs", async () => {
+    const res = await GET(app, "/api/workflow-step-templates");
 
     expect(res.status).toBe(200);
-    expect(res.body.templates).toBeDefined();
     expect(Array.isArray(res.body.templates)).toBe(true);
     expect(res.body.templates.length).toBeGreaterThanOrEqual(5);
 
-    // Check that templates have required fields
     for (const template of res.body.templates) {
-      expect(template.id).toBeDefined();
-      expect(template.name).toBeDefined();
-      expect(template.description).toBeDefined();
-      expect(template.category).toBeDefined();
-      expect(template.prompt).toBeDefined();
+      expect(template).toEqual(expect.objectContaining({
+        id: expect.any(String),
+        name: expect.any(String),
+        description: expect.any(String),
+        category: expect.any(String),
+        prompt: expect.any(String),
+      }));
     }
-  });
 
-  it("includes expected template IDs", async () => {
-    const res = await GET(buildApp(), "/api/workflow-step-templates");
-
-    expect(res.status).toBe(200);
     const ids = res.body.templates.map((t: { id: string }) => t.id);
-    expect(ids).toContain("documentation-review");
-    expect(ids).toContain("qa-check");
-    expect(ids).toContain("security-audit");
-    expect(ids).toContain("performance-review");
-    expect(ids).toContain("accessibility-check");
-    expect(ids).toContain("browser-verification");
-    expect(ids).toContain("frontend-ux-design");
+    expect(ids).toEqual(expect.arrayContaining([
+      "documentation-review",
+      "qa-check",
+      "security-audit",
+      "performance-review",
+      "accessibility-check",
+      "browser-verification",
+      "frontend-ux-design",
+    ]));
   });
 
   it("merges plugin templates into workflow-step-templates response", async () => {
@@ -1632,7 +1725,7 @@ describe("GET /workflow-step-templates", () => {
       },
     ];
 
-    const res = await GET(buildApp(), "/api/workflow-step-templates");
+    const res = await GET(app, "/api/workflow-step-templates");
 
     expect(res.status).toBe(200);
     expect(res.body.templates.some((t: { id: string }) => t.id === "plugin:my-plugin:my-step")).toBe(true);
@@ -1654,7 +1747,7 @@ describe("GET /workflow-step-templates", () => {
       },
     ];
 
-    const res = await GET(buildApp(), "/api/plugin-workflow-step-templates");
+    const res = await GET(app, "/api/plugin-workflow-step-templates");
 
     expect(res.status).toBe(200);
     expect(res.body.templates).toHaveLength(1);
@@ -1665,19 +1758,21 @@ describe("GET /workflow-step-templates", () => {
 
 describe("POST /workflow-step-templates/:id/create", () => {
   let store: TaskStore;
+  let app: express.Express;
   let pluginRunner: { getPluginWorkflowStepTemplates?: () => Array<{ pluginId: string; template: { id: string; name: string; description: string; prompt: string; toolMode: "readonly" | "coding"; category: string; icon: string } }> };
 
-  beforeEach(() => {
+  beforeAll(() => {
     store = createMockStore();
     pluginRunner = {};
-  });
-
-  function buildApp() {
-    const app = express();
+    app = express();
     app.use(express.json());
     app.use("/api", createApiRoutes(store, { pluginRunner: pluginRunner as any }));
-    return app;
-  }
+  });
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    delete pluginRunner.getPluginWorkflowStepTemplates;
+  });
 
   it("creates workflow step from template", async () => {
     const created = {
@@ -1692,7 +1787,7 @@ describe("POST /workflow-step-templates/:id/create", () => {
     (store.listWorkflowSteps as ReturnType<typeof vi.fn>).mockResolvedValueOnce([]);
     (store.createWorkflowStep as ReturnType<typeof vi.fn>).mockResolvedValueOnce(created);
 
-    const res = await REQUEST(buildApp(), "POST", "/api/workflow-step-templates/documentation-review/create", JSON.stringify({}), {
+    const res = await REQUEST(app, "POST", "/api/workflow-step-templates/documentation-review/create", JSON.stringify({}), {
       "Content-Type": "application/json",
     });
 
@@ -1722,7 +1817,7 @@ describe("POST /workflow-step-templates/:id/create", () => {
     (store.listWorkflowSteps as ReturnType<typeof vi.fn>).mockResolvedValueOnce([]);
     (store.createWorkflowStep as ReturnType<typeof vi.fn>).mockResolvedValueOnce(created);
 
-    const res = await REQUEST(buildApp(), "POST", "/api/workflow-step-templates/qa-check/create", JSON.stringify({}), {
+    const res = await REQUEST(app, "POST", "/api/workflow-step-templates/qa-check/create", JSON.stringify({}), {
       "Content-Type": "application/json",
     });
 
@@ -1752,7 +1847,7 @@ describe("POST /workflow-step-templates/:id/create", () => {
     (store.listWorkflowSteps as ReturnType<typeof vi.fn>).mockResolvedValueOnce([]);
     (store.createWorkflowStep as ReturnType<typeof vi.fn>).mockResolvedValueOnce(created);
 
-    const res = await REQUEST(buildApp(), "POST", "/api/workflow-step-templates/frontend-ux-design/create", JSON.stringify({}), {
+    const res = await REQUEST(app, "POST", "/api/workflow-step-templates/frontend-ux-design/create", JSON.stringify({}), {
       "Content-Type": "application/json",
     });
 
@@ -1797,7 +1892,7 @@ describe("POST /workflow-step-templates/:id/create", () => {
       updatedAt: "2026-01-01",
     });
 
-    const res = await REQUEST(buildApp(), "POST", "/api/workflow-step-templates/plugin:my-plugin:my-step/create", JSON.stringify({}), {
+    const res = await REQUEST(app, "POST", "/api/workflow-step-templates/plugin:my-plugin:my-step/create", JSON.stringify({}), {
       "Content-Type": "application/json",
     });
 
@@ -1809,7 +1904,7 @@ describe("POST /workflow-step-templates/:id/create", () => {
   });
 
   it("returns 404 for non-existent template", async () => {
-    const res = await REQUEST(buildApp(), "POST", "/api/workflow-step-templates/nonexistent/create", JSON.stringify({}), {
+    const res = await REQUEST(app, "POST", "/api/workflow-step-templates/nonexistent/create", JSON.stringify({}), {
       "Content-Type": "application/json",
     });
 
@@ -1823,7 +1918,7 @@ describe("POST /workflow-step-templates/:id/create", () => {
     ];
     (store.listWorkflowSteps as ReturnType<typeof vi.fn>).mockResolvedValueOnce(existingSteps);
 
-    const res = await REQUEST(buildApp(), "POST", "/api/workflow-step-templates/documentation-review/create", JSON.stringify({}), {
+    const res = await REQUEST(app, "POST", "/api/workflow-step-templates/documentation-review/create", JSON.stringify({}), {
       "Content-Type": "application/json",
     });
 
@@ -2244,6 +2339,7 @@ describe("POST /api/agents/:id/runs", () => {
   let tempDir: string;
   let fusionDir: string;
   let agentId: string;
+  let app: express.Express;
 
   beforeEach(async () => {
     tempDir = mkdtempSync(join(tmpdir(), "kb-routes-agent-runs-"));
@@ -2259,6 +2355,7 @@ describe("POST /api/agents/:id/runs", () => {
       role: "executor",
     });
     agentId = agent.id;
+    app = buildApp();
   });
 
   afterEach(() => {
@@ -2317,7 +2414,7 @@ describe("POST /api/agents/:id/runs", () => {
 
   it("uses custom source and triggerDetail from body", async () => {
     const res = await REQUEST(
-      buildApp(),
+      app,
       "POST",
       `/api/agents/${agentId}/runs`,
       JSON.stringify({ source: "timer", triggerDetail: "cron schedule" }),
@@ -2345,7 +2442,7 @@ describe("POST /api/agents/:id/runs", () => {
 
   it("accepts taskId in body and includes it in contextSnapshot", async () => {
     const res = await REQUEST(
-      buildApp(),
+      app,
       "POST",
       `/api/agents/${agentId}/runs`,
       JSON.stringify({ source: "on_demand", triggerDetail: "manual", taskId: "FN-001" }),
@@ -2362,7 +2459,7 @@ describe("POST /api/agents/:id/runs", () => {
 
   it("accepts triggering comment wake fields and persists them in contextSnapshot", async () => {
     const res = await REQUEST(
-      buildApp(),
+      app,
       "POST",
       `/api/agents/${agentId}/runs`,
       JSON.stringify({
@@ -2387,7 +2484,7 @@ describe("POST /api/agents/:id/runs", () => {
 
   it("returns 400 when triggeringCommentIds is not an array", async () => {
     const res = await REQUEST(
-      buildApp(),
+      app,
       "POST",
       `/api/agents/${agentId}/runs`,
       JSON.stringify({ triggeringCommentIds: "not-an-array" }),
@@ -2400,7 +2497,7 @@ describe("POST /api/agents/:id/runs", () => {
 
   it("returns 400 when triggeringCommentIds contains non-string values", async () => {
     const res = await REQUEST(
-      buildApp(),
+      app,
       "POST",
       `/api/agents/${agentId}/runs`,
       JSON.stringify({ triggeringCommentIds: ["c1", 42] }),
@@ -2413,7 +2510,7 @@ describe("POST /api/agents/:id/runs", () => {
 
   it("returns 400 when triggeringCommentType is invalid", async () => {
     const res = await REQUEST(
-      buildApp(),
+      app,
       "POST",
       `/api/agents/${agentId}/runs`,
       JSON.stringify({ triggeringCommentType: "invalid" }),
@@ -2426,7 +2523,7 @@ describe("POST /api/agents/:id/runs", () => {
 
   it("includes wake context without taskId when not provided", async () => {
     const res = await REQUEST(
-      buildApp(),
+      app,
       "POST",
       `/api/agents/${agentId}/runs`,
       JSON.stringify({ source: "timer", triggerDetail: "scheduled" }),
@@ -3115,10 +3212,14 @@ describe("POST /api/ai/refine-text with projectId scoping", () => {
 
   let defaultStore: TaskStore;
   let scopedStore: TaskStore;
+  let app: express.Express;
 
   beforeEach(() => {
     defaultStore = createMockStore();
     scopedStore = createMockStore();
+    app = express();
+    app.use(express.json());
+    app.use("/api", createApiRoutes(defaultStore));
 
     vi.spyOn(projectStoreResolver, "getOrCreateProjectStore").mockResolvedValue(scopedStore);
   });
@@ -3126,13 +3227,6 @@ describe("POST /api/ai/refine-text with projectId scoping", () => {
   afterEach(() => {
     vi.restoreAllMocks();
   });
-
-  function buildApp() {
-    const app = express();
-    app.use(express.json());
-    app.use("/api", createApiRoutes(defaultStore));
-    return app;
-  }
 
   it("uses scoped store when projectId is provided", async () => {
     (scopedStore.getSettings as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
@@ -3144,7 +3238,7 @@ describe("POST /api/ai/refine-text with projectId scoping", () => {
     // The route will call refineText which requires AI engine
     // We verify that scoped store is correctly used by checking settings was called
     const res = await REQUEST(
-      buildApp(),
+      app,
       "POST",
       `/api/ai/refine-text?projectId=${projectId}`,
       JSON.stringify({ text: "Task description", type: "clarify" }),
@@ -3159,7 +3253,7 @@ describe("POST /api/ai/refine-text with projectId scoping", () => {
 
   it("returns 400 for missing text field", async () => {
     const res = await REQUEST(
-      buildApp(),
+      app,
       "POST",
       `/api/ai/refine-text?projectId=${projectId}`,
       JSON.stringify({ type: "clarify" }),
@@ -3172,7 +3266,7 @@ describe("POST /api/ai/refine-text with projectId scoping", () => {
 
   it("returns 400 for missing type field", async () => {
     const res = await REQUEST(
-      buildApp(),
+      app,
       "POST",
       `/api/ai/refine-text?projectId=${projectId}`,
       JSON.stringify({ text: "Some text" }),
@@ -3185,7 +3279,7 @@ describe("POST /api/ai/refine-text with projectId scoping", () => {
 
   it("returns 422 for invalid refinement type", async () => {
     const res = await REQUEST(
-      buildApp(),
+      app,
       "POST",
       `/api/ai/refine-text?projectId=${projectId}`,
       JSON.stringify({ text: "Some text", type: "invalid-type" }),
@@ -3198,7 +3292,7 @@ describe("POST /api/ai/refine-text with projectId scoping", () => {
 
   it("returns 400 when text is empty", async () => {
     const res = await REQUEST(
-      buildApp(),
+      app,
       "POST",
       "/api/ai/refine-text",
       JSON.stringify({ text: "", type: "clarify" }),
@@ -3212,7 +3306,7 @@ describe("POST /api/ai/refine-text with projectId scoping", () => {
   it("returns 400 when text exceeds 2000 characters", async () => {
     const longText = "a".repeat(2001);
     const res = await REQUEST(
-      buildApp(),
+      app,
       "POST",
       "/api/ai/refine-text",
       JSON.stringify({ text: longText, type: "clarify" }),
@@ -3226,12 +3320,16 @@ describe("POST /api/ai/refine-text with projectId scoping", () => {
 
 describe("POST /api/ai/draft-goal-description", () => {
   let store: TaskStore;
+  let app: express.Express;
 
   beforeEach(() => {
     store = createMockStore({
       getRootDir: vi.fn().mockReturnValue("/test/project"),
     });
     aiRefineModule.__resetRefineState();
+    app = express();
+    app.use(express.json());
+    app.use("/api", createApiRoutes(store));
   });
 
   afterEach(() => {
@@ -3252,7 +3350,7 @@ describe("POST /api/ai/draft-goal-description", () => {
       .mockResolvedValueOnce("Grow the ecosystem with clear extension support and measurable adoption.");
 
     const res = await REQUEST(
-      buildApp(),
+      app,
       "POST",
       "/api/ai/draft-goal-description",
       JSON.stringify({ title: "Grow plugin ecosystem" }),
@@ -3268,7 +3366,7 @@ describe("POST /api/ai/draft-goal-description", () => {
 
   it("returns 400 when title is missing or empty", async () => {
     const missing = await REQUEST(
-      buildApp(),
+      app,
       "POST",
       "/api/ai/draft-goal-description",
       JSON.stringify({}),
@@ -3278,7 +3376,7 @@ describe("POST /api/ai/draft-goal-description", () => {
     expect(missing.body.error).toContain("title is required");
 
     const empty = await REQUEST(
-      buildApp(),
+      app,
       "POST",
       "/api/ai/draft-goal-description",
       JSON.stringify({ title: "   " }),
@@ -4581,6 +4679,7 @@ describe("GET /api/chat/sessions lookup=resume", () => {
 
 describe("remote access auth login-url endpoints", () => {
   let store: TaskStore;
+  let app: express.Express;
 
   const remoteAccessSettings = {
     enabled: true,
@@ -4627,6 +4726,9 @@ describe("remote access auth login-url endpoints", () => {
 
   beforeEach(() => {
     store = createMockStore();
+    app = express();
+    app.use(express.json());
+    app.use("/api", createApiRoutes(store));
     (store.getSettings as ReturnType<typeof vi.fn>).mockResolvedValue({
       ...DEFAULT_SETTINGS,
       remoteAccess: remoteAccessSettings,
@@ -4649,7 +4751,7 @@ describe("remote access auth login-url endpoints", () => {
     });
 
     const res = await REQUEST(
-      buildApp(),
+      app,
       "POST",
       "/api/remote-access/auth/login-url",
       JSON.stringify({ mode: "persistent" }),
@@ -4692,7 +4794,7 @@ describe("remote access auth login-url endpoints", () => {
     });
 
     const res = await REQUEST(
-      buildApp(),
+      app,
       "POST",
       "/api/remote-access/auth/login-url",
       JSON.stringify({ mode: "short-lived" }),
@@ -4714,7 +4816,7 @@ describe("remote access auth login-url endpoints", () => {
 
   it("rejects invalid login-url mode", async () => {
     const res = await REQUEST(
-      buildApp(),
+      app,
       "POST",
       "/api/remote-access/auth/login-url",
       JSON.stringify({ mode: "legacy" }),

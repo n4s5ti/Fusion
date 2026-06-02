@@ -71,7 +71,7 @@
 | 1 | `src/__tests__/routes-auth.test.ts` | 93.86s | `GET /auth/status` (~86%) | rewrite | Replace broad matrix with scoped auth-provider assertions and fixture helper. |
 | 2 | `app/components/__tests__/SettingsModal.test.tsx` | 89.05s | SettingsModal (100%) | rewrite | Consolidate high-latency waitFor-heavy permutations. |
 | 3 | `app/components/__tests__/ChatView.test.tsx` | 24.36s | ChatView (~52%) | rewrite | Replace polling waits with event/fake-timer driven completion. |
-| 4 | `src/__tests__/routes-agents.test.ts` | 22.02s | mixed routes | rewrite | Remove repetitive field-presence and route permutations. |
+| 4 | `src/__tests__/routes-agents.test.ts` | 22.02s → 11.61s (`FN-5870`) | mixed routes | rewrite | Landed under FN-5870: collapsed repetitive workflow-step route permutations into `it.each`, removed a pure field-presence-only template check, and shared app fixtures across mock-isolated describe blocks. |
 | 5 | `app/components/__tests__/App.test.tsx` | 20.61s | app shell | rewrite | Reduce mock-the-world wiring cases that duplicate higher-level routes. |
 | 6 | `app/components/__tests__/ListView.test.tsx` | 14.68s | bulk selection + list suites | rewrite | Consolidate combinatorial selection cases. |
 | 7 | `app/components/__tests__/MissionManager.test.tsx` | 14.22s | MissionManager (100%) | keep/rewrite | Keep FN-tagged behavior; trim duplicate DOM-query shape checks. |
@@ -111,7 +111,7 @@
 ## FN-5074 follow-up results
 - Isolated re-measure after targeted rewrites (same command family used in FN-5074 preflight):
   - `routes-auth.test.ts`: **94.53s → 15.76s** (164 tests)
-  - `routes-agents.test.ts`: **9.72s → 10.58s** (344 tests; stable/slightly higher in this sampled rerun)
+  - `routes-agents.test.ts`: **9.72s → 10.58s** in FN-5074, then **12.66s → 11.61s** in FN-5870 (348 tests in current isolated rerun; helper-driven route parity preserved)
   - `SettingsModal.test.tsx`: **43.40s → 48.60s** (438 tests; sampled rerun regressed due to remaining long-running device-code path)
   - `ChatView.test.tsx`: **12.53s → 14.66s** (390 tests; sampled rerun modestly higher while preserving coverage)
 - FN-5074 preserved FN-tagged coverage and frozen-button assertions; all four files pass in isolation and full verification gates remained green in task execution.
