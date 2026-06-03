@@ -250,8 +250,10 @@ export function createEventBridge(callbacks: AcpCallbacks): EventBridge {
           handlePlan(update.entries);
           break;
         case "plan_update":
-          // Treat an incremental plan op as a plan refresh for v1.
-          handlePlan((update as { entries?: PlanEntry[] }).entries);
+          // The (experimental) `PlanUpdate` variant carries a `plan` field, NOT a
+          // top-level `entries` array — so there is nothing here to map to our
+          // entries-based snapshot. v1 treats it as a NO-OP rather than wiping the
+          // prior plan: the full `plan` event remains the source of truth.
           break;
         case "plan_removed":
           // Clearing the plan: surface nothing.

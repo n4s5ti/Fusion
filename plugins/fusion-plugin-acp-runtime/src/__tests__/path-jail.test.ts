@@ -141,6 +141,15 @@ describe("deny-list predicates", () => {
       "id_rsa",
       "id_ed25519.pub",
       "credentials",
+      // FIX 6: expanded secret deny-list.
+      ".git-credentials",
+      "server.p12",
+      "cert.pfx",
+      "release.keystore",
+      "app.jks",
+      ".dockercfg",
+      ".pgpass",
+      ".htpasswd",
     ]) {
       expect(isSecretPath(path.join(cwd, f))).toBe(true);
     }

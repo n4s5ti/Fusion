@@ -18,6 +18,7 @@ import {
   ndJsonStream,
   PROTOCOL_VERSION,
   type Agent,
+  type AgentCapabilities,
   type Client,
   type ContentBlock,
   type RequestPermissionResponse,
@@ -93,6 +94,13 @@ export interface BridgingClientHandler {
    * immediately (U5 cancel-drain — KTD4a). Idempotent.
    */
   cancelPending(): void;
+  /**
+   * Reset the event bridge's PER-TURN state (tool correlation, delta
+   * accumulators, cumulative-output counter, output-cap latch). MUST be called
+   * at the start of each prompt turn so a turn that trips the per-turn output cap
+   * does not silently suppress every subsequent turn (FIX 1).
+   */
+  resetTurn(): void;
 }
 
 /**
@@ -183,14 +191,14 @@ export function createBridgingClientHandler(
   if (fsHandlers.readTextFile) handler.readTextFile = fsHandlers.readTextFile;
   if (fsHandlers.writeTextFile) handler.writeTextFile = fsHandlers.writeTextFile;
 
-  return { handler, cancelPending };
+  return { handler, cancelPending, resetTurn: () => bridge.reset() };
 }
 
 export interface AcpConnection {
   /** Live ACP connection — later units drive session/new, prompt, cancel, load. */
   conn: ClientSideConnection;
   child: ChildProcess;
-  agentCapabilities?: unknown;
+  agentCapabilities?: AgentCapabilities;
   /** Auth methods the agent advertised; non-empty means auth is required. */
   authMethods: Array<{ id: string }>;
   /** Current redacted stderr buffer. */
@@ -326,14 +334,9 @@ export async function connect(opts: ConnectOptions): Promise<AcpConnection> {
 // adapter drives one shape (open → prompt → cancel/resume) without touching SDK
 // types directly. v1 always sends an empty `mcpServers` (KTD5).
 
-/** Narrow view of the agent capabilities we read for resume routing. */
-interface AgentCapabilitiesView {
-  loadSession?: boolean;
-}
-
 function readsLoadSession(connection: AcpConnection): boolean {
-  const caps = connection.agentCapabilities as AgentCapabilitiesView | undefined;
-  return caps?.loadSession === true;
+  // `agentCapabilities` is already typed as `AgentCapabilities | undefined`.
+  return connection.agentCapabilities?.loadSession === true;
 }
 
 export interface NewAcpSessionResult {
@@ -380,12 +383,25 @@ export async function promptAcpSession(
  * runs during teardown where the registry SIGKILL is the authoritative guarantee
  * (KTD4a).
  */
+/** Upper bound on how long `cancelAcpSession` waits on the cancel write (FIX 7). */
+const CANCEL_TIMEOUT_MS = 2_000;
+
 export async function cancelAcpSession(
   connection: AcpConnection,
   sessionId: string,
 ): Promise<void> {
+  // `conn.cancel` writes to the agent's stdin pipe; a dead or full pipe can
+  // back-pressure and stall teardown (the adapter awaits this BEFORE the
+  // authoritative registry SIGKILL). Bound it so the kill still runs promptly
+  // (FIX 7). Errors are swallowed — this is already best-effort.
   try {
-    await connection.conn.cancel({ sessionId });
+    await Promise.race([
+      connection.conn.cancel({ sessionId }),
+      new Promise<void>((resolve) => {
+        const timer = setTimeout(resolve, CANCEL_TIMEOUT_MS);
+        timer.unref?.();
+      }),
+    ]);
   } catch {
     // fire-and-forget; teardown's SIGKILL is authoritative
   }

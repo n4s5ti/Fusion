@@ -144,7 +144,25 @@ export function createFsHandlers(opts: FsHandlerOptions): FsHandlers {
       // Atomic, symlink-safe open (TOCTOU defense), then read.
       const handle = await openWithinCwd(resolved, opts.cwd, fsConstants.O_RDONLY);
       try {
-        const content = await handle.readFile({ encoding: "utf8" });
+        const hasLimit =
+          typeof params.limit === "number" &&
+          Number.isFinite(params.limit) &&
+          params.limit > 0;
+        // DoS guard (FIX 4): a multi-GB file would OOM if we `readFile` the whole
+        // thing before `applyReadWindow` truncates. When the file exceeds the byte
+        // ceiling AND no bounding `limit` was supplied, read at most ceiling+1
+        // bytes so memory stays bounded; the +1 still lets applyReadWindow apply
+        // its truncation marker logic identically to a full read. A `limit` is
+        // line-bounded and read in full (matches prior behavior).
+        const stat = await handle.stat();
+        let content: string;
+        if (!hasLimit && stat.size > readMaxBytes) {
+          const buf = Buffer.alloc(readMaxBytes + 1);
+          const { bytesRead } = await handle.read(buf, 0, readMaxBytes + 1, 0);
+          content = buf.subarray(0, bytesRead).toString("utf8");
+        } else {
+          content = await handle.readFile({ encoding: "utf8" });
+        }
         return {
           content: applyReadWindow(content, params.line, params.limit, readMaxBytes),
         };
@@ -214,16 +232,24 @@ export function createFsHandlers(opts: FsHandlerOptions): FsHandlers {
       }
       // disposition === "allow" → proceed.
 
-      // Atomic, symlink-safe create/truncate within cwd. O_NOFOLLOW (in
-      // openWithinCwd) prevents following a swapped-in symlink on the final
-      // component (TOCTOU). O_CREAT|O_TRUNC|O_WRONLY for a normal write.
+      // Atomic, symlink-safe create within cwd. O_NOFOLLOW (in openWithinCwd)
+      // guards ONLY the FINAL component; an intermediate dir swapped to a symlink
+      // is still followed. We therefore must NOT pass O_TRUNC into open(): doing
+      // so would TRUNCATE an escaped target BEFORE openWithinCwd's post-open
+      // realpath re-validation gets to reject it (write-path TOCTOU, FIX 3).
+      // Instead open create+write WITHOUT truncate, let openWithinCwd run its
+      // re-validation, and ONLY truncate (via the fd) AFTER it has proven the
+      // opened inode is still inside the jail.
       const handle = await openWithinCwd(
         resolved,
         opts.cwd,
-        fsConstants.O_WRONLY | fsConstants.O_CREAT | fsConstants.O_TRUNC,
+        fsConstants.O_WRONLY | fsConstants.O_CREAT,
         0o644,
       );
       try {
+        // Truncate-AFTER-validate: openWithinCwd returned only because the
+        // re-validation passed, so it is now safe to empty the file and write.
+        await handle.truncate(0);
         await handle.writeFile(content, { encoding: "utf8" });
       } finally {
         await handle.close().catch(() => undefined);

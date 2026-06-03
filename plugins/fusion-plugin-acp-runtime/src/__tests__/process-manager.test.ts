@@ -95,6 +95,24 @@ describe("captureStderr", () => {
     expect(out).toContain("Authorization:");
     expect(out).not.toContain("sk-live-SECRETSECRETSECRET123456");
   });
+
+  it("redacts a token split across two stderr writes (cross-chunk) (FIX 5)", async () => {
+    // The secret is emitted in two separate write() calls so it straddles two
+    // `data` chunks. Per-chunk redaction would leak it; cross-boundary redaction
+    // must catch it.
+    const child = track(
+      spawn(process.execPath, [
+        "-e",
+        "process.stderr.write('Authorization: Bearer sk-live-SPLIT');" +
+          "setTimeout(()=>process.stderr.write('TOKENTOKENTOKEN123456\\n'),20);",
+      ]),
+    );
+    const getStderr = captureStderr(child);
+    await waitForExit(child);
+    const out = getStderr();
+    expect(out).not.toContain("sk-live-SPLITTOKENTOKENTOKEN123456");
+    expect(out).toContain("[REDACTED]");
+  });
 });
 
 describe("process registry (KTD4)", () => {

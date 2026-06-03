@@ -26,12 +26,6 @@ import type {
   AcpSession,
 } from "./types.js";
 
-/**
- * Retained for back-compat: earlier units' tests imported this marker. The real
- * adapter no longer throws it; it remains exported so external references resolve.
- */
-export const ACP_NOT_IMPLEMENTED = "acp_not_implemented";
-
 export class AcpRuntimeAdapter implements AgentRuntime {
   readonly id = "acp";
   readonly name = "ACP Runtime";
@@ -61,7 +55,7 @@ export class AcpRuntimeAdapter implements AgentRuntime {
     // default OFF (KTD6) — and confined to the task cwd by the path jail. The
     // same toggles drive the advertised `fs` capability in connect() below, so
     // advertisement and registered handlers stay consistent.
-    const { handler: clientHandler, cancelPending } = createBridgingClientHandler(
+    const { handler: clientHandler, cancelPending, resetTurn } = createBridgingClientHandler(
       callbacks,
       options.actionGateContext,
       {
@@ -110,6 +104,10 @@ export class AcpRuntimeAdapter implements AgentRuntime {
       // Persist the per-run gate (KTD3) so U5/U7 can reach the live action gate.
       gate: options.actionGateContext,
       connection,
+      // Reset the event bridge's per-turn state at the start of each turn so a
+      // turn that trips the per-turn output cap can't latch and suppress every
+      // subsequent turn (FIX 1).
+      resetTurn,
       dispose: () => {
         if (disposed) return;
         disposed = true;
@@ -132,6 +130,11 @@ export class AcpRuntimeAdapter implements AgentRuntime {
     if (!acp.connection) {
       throw new Error("ACP session has no live connection (createSession not completed)");
     }
+    // Clear per-turn event-bridge state BEFORE driving the turn so tool
+    // correlation, delta accumulators, and the output-cap latch all start clean
+    // each turn (FIX 1). Without this, a turn that hit the per-turn output cap
+    // would silently suppress all later turns.
+    acp.resetTurn?.();
     const blocks = buildPromptBlocks(prompt);
     // Resolve when the SDK prompt promise resolves — it already drains all
     // session/update notifications for the turn before reporting the stopReason.

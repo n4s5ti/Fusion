@@ -53,6 +53,13 @@ const SECRET_BASENAME_PATTERNS: RegExp[] = [
   /^\.netrc$/i,
   /^id_.+$/i, // id_rsa, id_ed25519, id_rsa.pub, ...
   /^credentials$/i,
+  /^\.git-credentials$/i, // git stored plaintext credentials
+  /\.p12$/i, // PKCS#12 keystore
+  /\.pfx$/i, // PKCS#12 keystore (Windows)
+  /\.(keystore|jks)$/i, // Java keystore
+  /^\.dockercfg$/i, // legacy docker registry auth
+  /^\.pgpass$/i, // PostgreSQL password file
+  /^\.htpasswd$/i, // Apache basic-auth credentials
 ];
 
 /**

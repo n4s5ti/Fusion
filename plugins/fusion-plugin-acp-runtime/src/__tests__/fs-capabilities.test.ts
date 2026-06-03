@@ -89,6 +89,21 @@ describe("readTextFile", () => {
     expect(res.content.length).toBe(100);
   });
 
+  it("reads a file larger than the ceiling WITHOUT loading it fully (bounded read) (FIX 4)", async () => {
+    // Content far larger than the ceiling: a full readFile would load it all
+    // before truncation. The bounded-read path must cap memory + output.
+    const ceiling = 100;
+    const huge = "a".repeat(50_000); // 500x the ceiling
+    await writeFile(path.join(cwd, "huge.txt"), huge, "utf8");
+    const res = await reader({ readMaxBytes: ceiling })({
+      sessionId: "s",
+      path: "huge.txt",
+    } as never);
+    // Output is capped at the ceiling and equals the first `ceiling` bytes.
+    expect(res.content.length).toBe(ceiling);
+    expect(res.content).toBe("a".repeat(ceiling));
+  });
+
   it("rejects a lexical ../ escape", async () => {
     await expect(
       reader()({ sessionId: "s", path: "../../etc/passwd" } as never),
@@ -151,7 +166,7 @@ describe("writeTextFile", () => {
     // no approver the write must be denied, not silently written.
     await expect(
       writer(allowGate)({ sessionId: "s", path: "out2.txt", content: "x" } as never),
-    ).rejects.toThrow();
+    ).rejects.toBeInstanceOf(FsWriteDeniedError);
   });
 
   it("rejects an oversized write before touching the fs", async () => {

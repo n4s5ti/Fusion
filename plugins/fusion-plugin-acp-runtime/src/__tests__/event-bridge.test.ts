@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 import type { SessionUpdate } from "@agentclientprotocol/sdk";
-import { createEventBridge } from "../event-bridge.js";
+import { createEventBridge, PER_TURN_OUTPUT_CAP_CHARS } from "../event-bridge.js";
 import type { AcpCallbacks } from "../types.js";
 
 function makeCallbacks() {
@@ -207,6 +207,66 @@ describe("event bridge: plan (full replacement)", () => {
     expect(second).toContain("Step B");
     expect(second).toContain("Step C");
     expect(second).not.toContain("Step A");
+  });
+
+  it("plan_update does NOT wipe the prior plan (no-op; full plan stays source of truth) (FIX 2)", () => {
+    const { callbacks, onThinking } = makeCallbacks();
+    const bridge = createEventBridge(callbacks);
+
+    bridge.handleSessionUpdate({
+      sessionUpdate: "plan",
+      entries: [{ content: "Step A", priority: "high", status: "pending" }],
+    } as SessionUpdate);
+    // The PlanUpdate variant carries `plan`, not a top-level `entries` array.
+    // The bridge must treat it as a no-op rather than firing an empty-plan
+    // onThinking that wipes the displayed plan.
+    bridge.handleSessionUpdate({
+      sessionUpdate: "plan_update",
+      plan: { type: "items", items: [] },
+    } as unknown as SessionUpdate);
+
+    // Only the `plan` event fired onThinking; plan_update fired nothing.
+    expect(onThinking).toHaveBeenCalledTimes(1);
+    expect(onThinking.mock.calls[0][0]).toContain("Step A");
+  });
+});
+
+describe("event bridge: per-turn reset (FIX 1)", () => {
+  it("resetTurn clears the output-cap latch so a later turn is not suppressed", () => {
+    const { callbacks, onText, onThinking } = makeCallbacks();
+    const bridge = createEventBridge(callbacks);
+
+    // Turn 1: flood past the per-turn cap so the latch trips and the truncation
+    // flag fires. One oversized chunk is bounded per-chunk, so send enough chunks
+    // to cross the cumulative cap.
+    const chunk = "y".repeat(50_000);
+    const chunksToTrip = Math.ceil(PER_TURN_OUTPUT_CAP_CHARS / chunk.length) + 1;
+    for (let i = 0; i < chunksToTrip; i++) {
+      bridge.handleSessionUpdate({
+        sessionUpdate: "agent_message_chunk",
+        content: { type: "text", text: chunk },
+      } as SessionUpdate);
+    }
+    // The cap fired exactly one truncation flag via onThinking.
+    expect(
+      onThinking.mock.calls.some((c) => /output truncated/i.test(String(c[0]))),
+    ).toBe(true);
+
+    // After the latch trips, further text on the SAME turn is suppressed.
+    const callsAfterTrip = onText.mock.calls.length;
+    bridge.handleSessionUpdate({
+      sessionUpdate: "agent_message_chunk",
+      content: { type: "text", text: "suppressed" },
+    } as SessionUpdate);
+    expect(onText.mock.calls.length).toBe(callsAfterTrip);
+
+    // Turn 2: reset, then ordinary text must flow again (latch cleared).
+    bridge.reset();
+    bridge.handleSessionUpdate({
+      sessionUpdate: "agent_message_chunk",
+      content: { type: "text", text: "turn 2 output" },
+    } as SessionUpdate);
+    expect(onText).toHaveBeenLastCalledWith("turn 2 output");
   });
 });
 

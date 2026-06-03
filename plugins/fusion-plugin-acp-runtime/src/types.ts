@@ -112,6 +112,12 @@ export interface AcpSession {
    * agent through it. Undefined only for the bare session shell used in tests.
    */
   connection?: AcpConnection;
+  /**
+   * Reset the event bridge's per-turn state (tool correlation, delta
+   * accumulators, output-cap latch). Called by `promptWithFallback` at the start
+   * of each turn (FIX 1). Undefined for the bare session shell used in tests.
+   */
+  resetTurn?: () => void;
   dispose(): void;
 }
 

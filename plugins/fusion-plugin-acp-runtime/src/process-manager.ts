@@ -143,12 +143,18 @@ export function redactSecrets(text: string): string {
  * Returns a getter for the current (redacted) buffer contents.
  */
 export function captureStderr(child: ChildProcess): () => string {
-  let buffer = "";
+  // FIX 5: redacting each chunk in isolation leaks a secret that straddles a
+  // chunk boundary (the token is split across two `data` events so neither half
+  // matches a pattern). Accumulate the RAW bytes into a bounded buffer first,
+  // then redact across the whole (bounded) buffer after each append so a
+  // boundary-spanning secret is caught. The buffer stays bounded by the existing
+  // ceiling; the returned getter always reports the redacted view.
+  let raw = "";
   child.stderr?.on("data", (data: Buffer) => {
-    buffer += redactSecrets(data.toString());
-    if (buffer.length > STDERR_BUFFER_CEILING) {
-      buffer = buffer.slice(buffer.length - STDERR_BUFFER_CEILING);
+    raw += data.toString();
+    if (raw.length > STDERR_BUFFER_CEILING) {
+      raw = raw.slice(raw.length - STDERR_BUFFER_CEILING);
     }
   });
-  return () => buffer;
+  return () => redactSecrets(raw);
 }
