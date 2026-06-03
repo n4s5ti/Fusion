@@ -105,15 +105,13 @@ describe("reliability interactions: FN-5189 verification spawn supervision", () 
       if (parent.exitCode === null && parent.signalCode === null) {
         // Register the exit listener BEFORE kill so we don't miss the
         // event and deadlock.
-        const exited = once(parent, "exit").catch(() => {});
+        const exited = once(parent, "exit");
         try {
-          const exited = once(parent, "exit");
           parent.kill("SIGKILL");
-          await exited;
         } catch {
           // ignore cleanup failures
         }
-        await exited;
+        await exited.catch(() => {});
       }
     }
     spawnedParents.clear();
