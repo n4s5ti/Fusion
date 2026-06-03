@@ -209,6 +209,9 @@ importers:
       '@fusion-plugin-examples/cli-printing-press':
         specifier: workspace:*
         version: link:../../plugins/fusion-plugin-cli-printing-press
+      '@fusion-plugin-examples/compound-engineering':
+        specifier: workspace:*
+        version: link:../../plugins/fusion-plugin-compound-engineering
       '@fusion-plugin-examples/cursor-runtime':
         specifier: workspace:*
         version: link:../../plugins/fusion-plugin-cursor-runtime

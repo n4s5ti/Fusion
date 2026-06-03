@@ -1,13 +1,12 @@
-import type { PluginDashboardViewContext } from "@fusion/dashboard/app/plugins/types";
-
 /**
- * Placeholder dashboard surface for the Compound Engineering plugin.
+ * Dashboard surface entry for the Compound Engineering plugin (U3).
  *
- * U1 ships only a loadable scaffold. The real artifact hub and interactive
- * ce-* session surface arrive in later units (U3+).
+ * Thin re-export of the real hub component (mirrors how reports splits
+ * `src/dashboard-view.tsx` from `src/dashboard/ReportsView.tsx`). The export
+ * name `CompoundEngineeringDashboardView` is the one `registerBundledPluginViews`
+ * imports — `componentPath` in the manifest is cosmetic; this binding is real.
  */
-export function CompoundEngineeringDashboardView(_props: { context?: PluginDashboardViewContext }) {
-  return <div data-testid="compound-engineering-view">Compound Engineering</div>;
-}
-
-export default CompoundEngineeringDashboardView;
+export {
+  CompoundEngineeringView as CompoundEngineeringDashboardView,
+  default,
+} from "./dashboard/CompoundEngineeringView.js";

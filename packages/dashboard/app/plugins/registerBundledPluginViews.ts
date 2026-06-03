@@ -37,6 +37,18 @@ async function loadRoadmapView(): Promise<{ default: PluginViewComponent }> {
   return { default: component as PluginViewComponent };
 }
 
+async function loadCompoundEngineeringView(): Promise<{ default: PluginViewComponent }> {
+  const moduleId = "@fusion-plugin-examples/compound-engineering/dashboard-view";
+  const exportName = "CompoundEngineeringDashboardView";
+  const mod = await import("@fusion-plugin-examples/compound-engineering/dashboard-view") as unknown as Record<string, ComponentType<{ context?: PluginDashboardViewContext }>>;
+  const component = mod[exportName];
+  if (!component) {
+    console.warn(`[plugin-views] Missing export ${exportName} from ${moduleId}`);
+    return { default: createMissingPluginView(moduleId, exportName) };
+  }
+  return { default: component as PluginViewComponent };
+}
+
 async function loadCliPrintingPressWizardView(): Promise<{ default: PluginViewComponent }> {
   const moduleId = "@fusion-plugin-examples/cli-printing-press/dashboard-view";
   const exportName = "CliPrintingPressWizardView";
@@ -83,6 +95,12 @@ export function registerBundledPluginViews(): void {
     "fusion-plugin-roadmap",
     "roadmaps",
     lazy(loadRoadmapView),
+  );
+
+  registerPluginView(
+    "fusion-plugin-compound-engineering",
+    "compound-engineering",
+    lazy(loadCompoundEngineeringView),
   );
 
   registerPluginView(

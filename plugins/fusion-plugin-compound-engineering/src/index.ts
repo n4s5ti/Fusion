@@ -3,6 +3,7 @@ import { COMPOUND_ENGINEERING_SKILLS } from "./skills.js";
 import { installBundledCeSkills } from "./skill-installation.js";
 import { ensureCeSchema } from "./schema.js";
 import { createSessionRoutes } from "./routes/session-routes.js";
+import { createArtifactRoutes } from "./routes/artifact-routes.js";
 
 export { CompoundEngineeringDashboardView } from "./dashboard-view.js";
 export { COMPOUND_ENGINEERING_SKILLS } from "./skills.js";
@@ -60,7 +61,7 @@ const plugin = definePlugin({
       }
     },
   },
-  routes: [...createSessionRoutes()],
+  routes: [...createSessionRoutes(), ...createArtifactRoutes()],
   dashboardViews: [
     {
       viewId: "compound-engineering",

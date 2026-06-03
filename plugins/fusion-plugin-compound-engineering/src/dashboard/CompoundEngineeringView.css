@@ -1,0 +1,146 @@
+.ce-view {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  padding: 1rem 1.25rem;
+  height: 100%;
+  overflow: auto;
+}
+
+.ce-view-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.ce-view-header h2 {
+  margin: 0;
+}
+
+.ce-view-summary {
+  font-size: 0.8rem;
+  opacity: 0.7;
+}
+
+.ce-loading,
+.ce-view-error {
+  padding: 0.75rem 1rem;
+  font-size: 0.85rem;
+}
+
+.ce-view-error {
+  color: var(--color-danger, #d23);
+}
+
+.ce-empty {
+  max-width: 36rem;
+  padding: 1.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  align-items: flex-start;
+}
+
+.ce-empty h3 {
+  margin: 0;
+}
+
+.ce-empty-hint {
+  opacity: 0.7;
+  font-size: 0.85rem;
+}
+
+.ce-groups {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(18rem, 1fr));
+  gap: 1rem;
+}
+
+.ce-group {
+  border: 1px solid var(--color-border, rgba(128, 128, 128, 0.25));
+  border-radius: 8px;
+  padding: 0.75rem 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.ce-group[data-empty="true"] {
+  opacity: 0.65;
+}
+
+.ce-group-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.ce-group-header h3 {
+  margin: 0;
+  font-size: 0.95rem;
+}
+
+.ce-group-count {
+  font-size: 0.75rem;
+  opacity: 0.6;
+}
+
+.ce-group-empty {
+  margin: 0;
+  font-size: 0.8rem;
+  opacity: 0.6;
+}
+
+.ce-artifact-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.ce-artifact {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  font-size: 0.85rem;
+}
+
+.ce-artifact.is-selected {
+  font-weight: 600;
+}
+
+.ce-artifact-btn {
+  background: none;
+  border: none;
+  text-align: left;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  color: inherit;
+  padding: 0.25rem 0;
+  flex: 1;
+}
+
+.ce-artifact-path {
+  font-size: 0.7rem;
+  opacity: 0.55;
+}
+
+.ce-artifact-error .ce-artifact-error-msg {
+  color: var(--color-danger, #d23);
+  font-size: 0.78rem;
+}
+
+.ce-artifact-error {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.15rem;
+}
+
+.ce-view[data-mobile="true"] .ce-groups {
+  grid-template-columns: 1fr;
+}

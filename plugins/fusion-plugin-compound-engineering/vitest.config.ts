@@ -4,6 +4,11 @@ import { computeMaxWorkers } from "../../packages/core/src/__test-utils__/vitest
 
 const maxWorkers = computeMaxWorkers();
 
+const coreSetup = fileURLToPath(
+  new URL("../../packages/core/src/__test-utils__/vitest-setup.ts", import.meta.url),
+);
+const dashboardSetup = fileURLToPath(new URL("./src/dashboard/test-setup.ts", import.meta.url));
+
 export default defineConfig({
   resolve: {
     alias: [
@@ -28,12 +33,32 @@ export default defineConfig({
     ],
   },
   test: {
-    include: ["src/**/*.test.{ts,tsx}"],
-    environment: "jsdom",
-    setupFiles: [fileURLToPath(new URL("../../packages/core/src/__test-utils__/vitest-setup.ts", import.meta.url))],
+    // coreSetup runs for all projects via extends: true inheritance.
+    setupFiles: [coreSetup],
     globalSetup: [fileURLToPath(new URL("../../packages/core/src/__test-utils__/vitest-teardown.ts", import.meta.url))],
     pool: "threads",
     maxWorkers,
     poolOptions: { threads: { minThreads: 1, maxThreads: maxWorkers }, forks: { minForks: 1, maxForks: maxWorkers } },
+    projects: [
+      {
+        extends: true,
+        test: {
+          name: "compound-engineering-dashboard",
+          environment: "jsdom",
+          include: ["src/dashboard/**/__tests__/**/*.test.{ts,tsx}", "src/dashboard/**/*.test.{ts,tsx}"],
+          // jsdom-specific setup; coreSetup is inherited via extends: true.
+          setupFiles: [dashboardSetup],
+        },
+      },
+      {
+        extends: true,
+        test: {
+          name: "compound-engineering-node",
+          environment: "node",
+          include: ["src/**/__tests__/**/*.test.{ts,tsx}", "src/**/*.test.{ts,tsx}"],
+          exclude: ["src/dashboard/**/__tests__/**/*.test.{ts,tsx}", "src/dashboard/**/*.test.{ts,tsx}"],
+        },
+      },
+    ],
   },
 });
