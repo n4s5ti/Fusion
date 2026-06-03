@@ -52,8 +52,12 @@
     "README.md"
   ],
   "scripts": {
+    "gen:locales": "node scripts/sync-locales.mjs",
+    "verify:locale-chunks": "node scripts/assert-locale-chunks.mjs",
+    "prebuild": "node scripts/sync-locales.mjs",
     "build": "vite build && tsc",
     "build:client": "vite build",
+    "predev:serve": "node scripts/sync-locales.mjs",
     "dev": "pnpm build && pnpm typecheck && pnpm dev:serve",
     "dev:serve": "vite dev",
     "pretest": "node ../../scripts/ensure-test-artifacts.mjs",

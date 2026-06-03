@@ -49,6 +49,8 @@ import { useProjects } from "./hooks/useProjects";
 import { useAgents } from "./hooks/useAgents";
 import { useNodes } from "./hooks/useNodes";
 import { useCurrentProject } from "./hooks/useCurrentProject";
+import { I18nextProvider } from "react-i18next";
+import i18n from "./i18n";
 import { ToastProvider, useToast } from "./hooks/useToast";
 import { ConfirmDialogProvider } from "./hooks/useConfirm";
 import { useTheme } from "./hooks/useTheme";
@@ -2043,16 +2045,18 @@ function AppInner() {
 
 export function App() {
   return (
-    <ToastProvider>
-      <ShellHostProvider>
-        <ShellProvider>
-          <NodeProvider>
-            <ConfirmDialogProvider>
-              <AppInner />
-            </ConfirmDialogProvider>
-          </NodeProvider>
-        </ShellProvider>
-      </ShellHostProvider>
-    </ToastProvider>
+    <I18nextProvider i18n={i18n}>
+      <ToastProvider>
+        <ShellHostProvider>
+          <ShellProvider>
+            <NodeProvider>
+              <ConfirmDialogProvider>
+                <AppInner />
+              </ConfirmDialogProvider>
+            </NodeProvider>
+          </ShellProvider>
+        </ShellHostProvider>
+      </ToastProvider>
+    </I18nextProvider>
   );
 }

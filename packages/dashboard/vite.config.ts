@@ -168,6 +168,15 @@ export default defineConfig({
             return "vendor-codemirror";
           }
 
+          if (
+            id.includes("/node_modules/i18next/") ||
+            id.includes("/node_modules/react-i18next/") ||
+            id.includes("/node_modules/i18next-browser-languagedetector/") ||
+            id.includes("/node_modules/i18next-resources-to-backend/")
+          ) {
+            return "vendor-i18n";
+          }
+
           return undefined;
         },
       },
