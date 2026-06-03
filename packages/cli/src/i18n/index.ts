@@ -4,6 +4,7 @@ import {
   CLI_NAMESPACES,
   cliResources,
   DEFAULT_NAMESPACE,
+  normalizeToSupportedLocale,
 } from "@fusion/i18n";
 import i18next, { type i18n as I18nInstance, type Resource } from "i18next";
 import { initReactI18next } from "react-i18next";
@@ -24,30 +25,10 @@ import { initReactI18next } from "react-i18next";
 export function detectEnvLocale(env: NodeJS.ProcessEnv = process.env): Locale | undefined {
   const raw = env.LC_ALL || env.LC_MESSAGES || env.LANG || env.LANGUAGE;
   if (!raw) return undefined;
-
-  // Strip encoding/modifier (`.UTF-8`, `@euro`) and normalize `_` to `-`.
-  const code = raw.split(/[.:@\s]/)[0].replaceAll("_", "-");
-  if (isLocale(code)) return code;
-
-  const lower = code.toLowerCase();
-  // Script/region-aware Chinese resolution BEFORE the bare-language fallback,
-  // so Traditional-script tags (zh_Hant, zh_Hant_TW, zh_HK, zh_MO) are not
-  // silently served Simplified. Region-only zh_CN/zh_TW already matched above.
-  if (lower.startsWith("zh")) {
-    if (
-      lower.includes("hant") ||
-      lower.includes("-tw") ||
-      lower.includes("-hk") ||
-      lower.includes("-mo")
-    ) {
-      return "zh-TW";
-    }
-    return "zh-CN";
-  }
-
-  const lang = lower.split("-")[0];
-  if (isLocale(lang)) return lang;
-  return undefined;
+  // Strip encoding/modifier (`.UTF-8`, `@euro`), then normalize via the shared
+  // helper so env detection matches the dashboard's navigator detection
+  // (incl. Traditional-script Chinese → zh-TW).
+  return normalizeToSupportedLocale(raw.split(/[.:@\s]/)[0]);
 }
 
 /**

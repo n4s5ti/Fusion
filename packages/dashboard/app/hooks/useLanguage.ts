@@ -49,6 +49,25 @@ export function useLanguage(): UseLanguageReturn {
     };
   }, [i18n]);
 
+  // Keep tabs in sync: when another tab changes the persisted language, adopt it
+  // here too (the storage event only fires in *other* tabs, so this never loops).
+  useEffect(() => {
+    if (!isBrowser) return;
+    const onStorage = (event: StorageEvent) => {
+      if (
+        event.key === LANGUAGE_STORAGE_KEY &&
+        isLocale(event.newValue) &&
+        event.newValue !== i18n.resolvedLanguage
+      ) {
+        void i18n.changeLanguage(event.newValue);
+      }
+    };
+    window.addEventListener("storage", onStorage);
+    return () => {
+      window.removeEventListener("storage", onStorage);
+    };
+  }, [i18n]);
+
   // Hydrate from server settings, but never override a local/user choice.
   useEffect(() => {
     if (!isBrowser) return;

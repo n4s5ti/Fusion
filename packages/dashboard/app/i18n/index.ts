@@ -1,4 +1,9 @@
-import { baseInitOptions, DASHBOARD_NAMESPACES, DEFAULT_NAMESPACE } from "@fusion/i18n/config";
+import {
+  baseInitOptions,
+  DASHBOARD_NAMESPACES,
+  DEFAULT_NAMESPACE,
+  normalizeToSupportedLocale,
+} from "@fusion/i18n/config";
 import i18next from "i18next";
 import LanguageDetector from "i18next-browser-languagedetector";
 import resourcesToBackend from "i18next-resources-to-backend";
@@ -37,6 +42,10 @@ export const i18nReady = i18next.init({
     order: ["localStorage", "navigator", "htmlTag"],
     lookupLocalStorage: LANGUAGE_STORAGE_KEY,
     caches: ["localStorage"],
+    // Normalize multi-subtag detections (e.g. navigator "zh-Hans-CN" /
+    // "zh-Hant-TW") to a supported locale before fallback, matching the CLI's
+    // env detection.
+    convertDetectedLanguage: (lng: string) => normalizeToSupportedLocale(lng) ?? lng,
   },
   react: {
     // First paint is gated on `i18nReady` in main.tsx, so Suspense is not

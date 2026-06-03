@@ -10,11 +10,13 @@ import { fileURLToPath } from "node:url";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const assetsDir = join(here, "..", "dist", "client", "assets");
-const namespaces = ["common", "app", "errors"];
+const i18nRoot = join(here, "..", "..", "i18n");
+// Single source of truth shared with @fusion/i18n config.ts.
+const namespaces = JSON.parse(readFileSync(join(i18nRoot, "namespaces.json"), "utf8")).dashboard;
 
 // Derive the expected per-namespace chunk floor from the authored locale set
 // rather than hardcoding a count, so adding a locale needs no edit here.
-const localesDir = join(here, "..", "..", "i18n", "locales");
+const localesDir = join(i18nRoot, "locales");
 const expectedLocaleCount = readdirSync(localesDir, { withFileTypes: true }).filter(
   (d) => d.isDirectory(),
 ).length;

@@ -5,7 +5,7 @@
 // map rather than a dynamic loader. Driving this off the locales/ directory
 // listing keeps "add a language" a no-code operation on the CLI side: add the
 // locale (via `i18next-cli sync`), regenerate, done.
-import { readdirSync, writeFileSync } from "node:fs";
+import { readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -13,8 +13,8 @@ const here = dirname(fileURLToPath(import.meta.url));
 const root = join(here, "..");
 const localesDir = join(root, "locales");
 
-// Keep in sync with CLI_NAMESPACES in src/config.ts.
-const CLI_NAMESPACES = ["common", "cli", "errors"];
+// Single source of truth shared with src/config.ts and the dashboard scripts.
+const CLI_NAMESPACES = JSON.parse(readFileSync(join(root, "namespaces.json"), "utf8")).cli;
 
 const locales = readdirSync(localesDir, { withFileTypes: true })
   .filter((d) => d.isDirectory())

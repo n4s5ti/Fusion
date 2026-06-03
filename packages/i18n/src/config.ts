@@ -1,5 +1,6 @@
-import { DEFAULT_LOCALE, SUPPORTED_LOCALES } from "@fusion/core";
+import { DEFAULT_LOCALE, isLocale, type Locale, SUPPORTED_LOCALES } from "@fusion/core";
 import type { FallbackLngObjList, InitOptions } from "i18next";
+import namespaces from "../namespaces.json";
 
 /**
  * Shared, framework-agnostic i18next configuration for both Fusion UI surfaces.
@@ -9,18 +10,20 @@ import type { FallbackLngObjList, InitOptions } from "i18next";
  * chain, and base options defined here so the two surfaces stay consistent.
  */
 
-/** All translation namespaces. Split so each surface loads only what it needs. */
-export const NAMESPACES = ["common", "app", "errors", "cli"] as const;
-export type Namespace = (typeof NAMESPACES)[number];
+/** All translation namespaces. Split so each surface loads only what it needs.
+ *  Sourced from namespaces.json so the build scripts and this config can never
+ *  drift (the scripts read the same JSON). */
+export type Namespace = "common" | "app" | "errors" | "cli";
+export const NAMESPACES = namespaces.all as readonly Namespace[];
 
 /** Default namespace keys resolve against when none is specified. */
 export const DEFAULT_NAMESPACE: Namespace = "common";
 
 /** Namespaces the browser dashboard loads (skips the terminal-only `cli`). */
-export const DASHBOARD_NAMESPACES: readonly Namespace[] = ["common", "app", "errors"];
+export const DASHBOARD_NAMESPACES = namespaces.dashboard as readonly Namespace[];
 
 /** Namespaces the terminal UI loads (skips the dashboard-only `app`). */
-export const CLI_NAMESPACES: readonly Namespace[] = ["common", "cli", "errors"];
+export const CLI_NAMESPACES = namespaces.cli as readonly Namespace[];
 
 /**
  * Script-aware fallback chain. A generic `zh` resolves to Simplified, the
@@ -40,6 +43,36 @@ export const FALLBACK_LNG: FallbackLngObjList = {
  * adds its own resource-loading strategy (lazy backend for the dashboard,
  * static `resources` for the CLI) plus framework plugins.
  */
+/**
+ * Normalize a BCP-47-ish or POSIX-ish language tag to a supported {@link Locale},
+ * or undefined when nothing matches. Shared by the dashboard (navigator
+ * detection) and the CLI (env detection) so Chinese script/region resolution is
+ * identical on both surfaces — Traditional tags (zh-Hant, zh-TW, zh-HK, zh-MO)
+ * resolve to zh-TW, everything else Chinese to zh-CN, and region subtags on
+ * other languages strip to the base.
+ */
+export function normalizeToSupportedLocale(tag: string): Locale | undefined {
+  if (!tag) return undefined;
+  const norm = tag.replaceAll("_", "-");
+  if (isLocale(norm)) return norm;
+
+  const lower = norm.toLowerCase();
+  if (lower.startsWith("zh")) {
+    if (
+      lower.includes("hant") ||
+      lower.includes("-tw") ||
+      lower.includes("-hk") ||
+      lower.includes("-mo")
+    ) {
+      return "zh-TW";
+    }
+    return "zh-CN";
+  }
+
+  const base = lower.split("-")[0];
+  return isLocale(base) ? base : undefined;
+}
+
 export function baseInitOptions(): InitOptions {
   return {
     supportedLngs: [...SUPPORTED_LOCALES],

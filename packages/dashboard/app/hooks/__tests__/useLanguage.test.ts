@@ -100,6 +100,30 @@ describe("useLanguage", () => {
     expect(i18nMock.changeLanguage).not.toHaveBeenCalledWith("es");
   });
 
+  it("does not let in-flight server hydration override a concurrent user choice", async () => {
+    let resolveFetch!: (s: Settings) => void;
+    mockFetch.mockImplementation(() => new Promise<Settings>((r) => { resolveFetch = r; }));
+    const { result } = renderHook(() => useLanguage());
+    // User picks fr while the hydration fetch is still pending (sets userSetRef).
+    act(() => result.current.setLanguage("fr"));
+    i18nMock.changeLanguage.mockClear();
+    // Now the server responds with a different locale — must be ignored.
+    resolveFetch({ language: "es" } as Settings);
+    await new Promise((r) => setTimeout(r, 0));
+    expect(i18nMock.changeLanguage).not.toHaveBeenCalledWith("es");
+  });
+
+  it("adopts a language change made in another tab via the storage event", () => {
+    renderHook(() => useLanguage());
+    i18nMock.changeLanguage.mockClear();
+    act(() => {
+      window.dispatchEvent(
+        new StorageEvent("storage", { key: LANGUAGE_STORAGE_KEY, newValue: "zh-TW" }),
+      );
+    });
+    expect(i18nMock.changeLanguage).toHaveBeenCalledWith("zh-TW");
+  });
+
   it("degrades gracefully when localStorage is unavailable", () => {
     vi.stubGlobal("localStorage", {
       getItem: () => null,

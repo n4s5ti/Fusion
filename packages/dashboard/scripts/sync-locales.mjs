@@ -4,17 +4,20 @@
 // generated app/locales/ dir is gitignored — @fusion/i18n/locales is the
 // source-of-truth. Only the dashboard namespaces are copied (the terminal-only
 // `cli` namespace is skipped). Runs as a predev/prebuild step.
-import { cpSync, mkdirSync, readdirSync, rmSync } from "node:fs";
+import { cpSync, mkdirSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const dashboardRoot = join(here, "..");
-const srcLocales = join(dashboardRoot, "..", "i18n", "locales");
+const i18nRoot = join(dashboardRoot, "..", "i18n");
+const srcLocales = join(i18nRoot, "locales");
 const destLocales = join(dashboardRoot, "app", "locales");
 
-// Keep in sync with DASHBOARD_NAMESPACES in @fusion/i18n config.ts.
-const DASHBOARD_NAMESPACES = ["common", "app", "errors"];
+// Single source of truth shared with @fusion/i18n config.ts.
+const DASHBOARD_NAMESPACES = JSON.parse(
+  readFileSync(join(i18nRoot, "namespaces.json"), "utf8"),
+).dashboard;
 
 const locales = readdirSync(srcLocales, { withFileTypes: true })
   .filter((d) => d.isDirectory())
