@@ -156,6 +156,11 @@ const _createInteractiveAiSessionAdapter: CreateInteractiveAiSessionFactory = (
         tools: opts.tools,
         defaultProvider: opts.defaultProvider,
         defaultModelId: opts.defaultModelId,
+        // Forward skill selection so a plugin can load a specific bundled skill.
+        // `skills` (convenience) auto-builds a SkillSelectionContext; the extra
+        // discovery dirs make those skills actually visible to the loader.
+        ...(opts.requestedSkillNames?.length ? { skills: opts.requestedSkillNames } : {}),
+        ...(opts.additionalSkillPaths?.length ? { additionalSkillPaths: opts.additionalSkillPaths } : {}),
       }),
     options,
   );

@@ -1,58 +1,49 @@
-import { existsSync, mkdtempSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { installBundledCeSkills } from "../skill-installation.js";
-import { resolveStageSkillCwd, buildStageSystemPrompt } from "../session/orchestrator.js";
+import { resolveStageSkillPaths, buildStageSystemPrompt } from "../session/orchestrator.js";
 import { getStage } from "../session/stage-registry.js";
 
 /**
- * CARRY-FORWARD (U2 → U5): prove the launched stage's ce-* skill is REACHABLE
- * for the session.
+ * Prove the launched stage's ce-* skill is REACHABLE for the session — now via
+ * the real seam wiring (closes the U2 → U5 carry-forward).
  *
- * HONEST SCOPE — proved at the installer/resolver layer (exactly as U2 did),
- * NOT at the live session layer. The U4 `CreateInteractiveAiSessionOptions`
- * surface carries only `cwd` (no `requestedSkillNames`/`additionalSkillPaths`/
- * `skillSelection`), so the orchestrator cannot hand the session an explicit
- * skill-discovery path. The closest honest wiring is:
- *   1. point the session `cwd` at the install-target root (where pi's
- *      DefaultResourceLoader can discover `<skillId>/SKILL.md`), and
- *   2. name the skill id in the system prompt.
- * This test asserts BOTH: the resolved cwd contains the stage's installed
- * SKILL.md, and the system prompt names the stage's skill id.
+ * The U4 `CreateInteractiveAiSessionOptions` surface now carries
+ * `requestedSkillNames` + `additionalSkillPaths`, which the engine adapter
+ * forwards into `createFnAgent` (`skills` + the loader's `additionalSkillPaths`).
+ * So the orchestrator hands the session BOTH the stage's skill id and the
+ * install directory to discover it from. This test asserts:
+ *   1. the install directory `resolveStageSkillPaths()` returns actually holds
+ *      the stage's `<skillId>/SKILL.md` after install, and
+ *   2. the system prompt names the stage's skill id.
  *
- * A complete fix needs U4's options to gain a forwarded
- * `requestedSkillNames`/`additionalSkillPaths` field — flagged as a carry-
- * forward for U6/follow-up.
+ * The engine package separately proves (compound-engineering-skill-resolution
+ * .test.ts) that `loadSkills` + the resolver resolve a ce-* skill once that
+ * directory is on the discovery path — together the chain is closed.
  */
 
-describe("stage skill reachability (carry-forward, resolver-layer proof)", () => {
-  let targets: string[] = [];
-
+describe("stage skill reachability (real seam wiring)", () => {
   afterEach(() => {
-    targets = [];
     vi.restoreAllMocks();
   });
 
-  it("the resolved session cwd contains the stage's installed SKILL.md", () => {
-    const target = mkdtempSync(join(tmpdir(), "ce-skill-target-"));
-    targets.push(target);
+  it("the resolved additionalSkillPaths directory contains the stage's installed SKILL.md", () => {
+    const stage = getStage("brainstorm")!;
 
-    // Install bundled skills into a plugin-local target.
-    const { results } = installBundledCeSkills({ targetRoot: target });
+    // resolveStageSkillPaths() returns the plugin-local install root the session
+    // is told to discover skills from (never a global one).
+    const skillPaths = resolveStageSkillPaths();
+    expect(skillPaths).toHaveLength(1);
+    expect(skillPaths[0]).toMatch(/\.fusion-ce-skills$/);
+
+    // Install bundled skills into that exact root and assert the stage's skill
+    // is present on the path the session will scan.
+    const { results } = installBundledCeSkills({ targetRoot: skillPaths[0] });
     expect(results.every((r) => r.outcome === "installed" || r.outcome === "skipped")).toBe(true);
 
-    const stage = getStage("brainstorm")!;
-    // The orchestrator resolves the discovery cwd to the default install-target
-    // root. For this isolation test we assert the SAME structure exists at the
-    // explicit target we installed into (resolveStageSkillCwd returns the
-    // default root, which the production onLoad install populates identically).
-    const installedSkillMd = join(target, stage.skillId, "SKILL.md");
+    const installedSkillMd = join(skillPaths[0], stage.skillId, "SKILL.md");
     expect(existsSync(installedSkillMd)).toBe(true);
-
-    // resolveStageSkillCwd returns a plugin-local directory (never a global one).
-    const cwd = resolveStageSkillCwd();
-    expect(cwd).toMatch(/\.fusion-ce-skills$/);
   });
 
   it("the stage system prompt names the stage's ce-* skill id", () => {

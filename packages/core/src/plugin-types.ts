@@ -151,6 +151,19 @@ export interface CreateInteractiveAiSessionOptions {
   defaultProvider?: string;
   /** Default model ID within the provider */
   defaultModelId?: string;
+  /**
+   * Skill names the session should load (matched against discovered skills).
+   * Lets a plugin point a session at a specific bundled skill rather than
+   * relying on cwd-only discovery. Forwarded to the engine's skill selection.
+   */
+  requestedSkillNames?: string[];
+  /**
+   * Extra directories to scan for skills (each holding `<id>/SKILL.md`), in
+   * addition to the default cwd/agent-dir roots. A plugin that installs its
+   * skills to a plugin-local directory passes that directory here so its
+   * `requestedSkillNames` are actually discoverable in the live session.
+   */
+  additionalSkillPaths?: string[];
 }
 
 /**

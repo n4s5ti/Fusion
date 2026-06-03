@@ -30,7 +30,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { loadSkills } from "@earendil-works/pi-coding-agent";
+import { DefaultResourceLoader, loadSkills, type Skill } from "@earendil-works/pi-coding-agent";
 import {
   createSkillsOverrideFromSelection,
   resolveSessionSkills,
@@ -155,5 +155,40 @@ describe("U2: CE bundled skill session-resolution (empirical)", () => {
     for (const s of CE_STAGES) {
       expect(resolved).toContain(s);
     }
+  });
+
+  it("PASSING (real loader): DefaultResourceLoader with additionalSkillPaths + skillsOverride discovers ce-plan — the exact path createFnAgent now feeds", async () => {
+    const installRoot = join(tmp, ".fusion-ce-skills");
+    materializeInstalledSkills(installRoot, ["ce-plan", "ce-work"]);
+    mkdirSync(projectRootDir, { recursive: true });
+    mkdirSync(agentDir, { recursive: true });
+
+    // Build the same skillsOverride createFnAgent builds from `skills: ["ce-plan"]`.
+    const selection = resolveSessionSkills({
+      projectRootDir,
+      requestedSkillNames: ["ce-plan"],
+      sessionPurpose: "executor",
+    });
+    const skillsOverride = createSkillsOverrideFromSelection(selection, {
+      requestedSkillNames: ["ce-plan"],
+      sessionPurpose: "executor",
+    });
+
+    // Construct the loader exactly as pi.ts createFnAgent now does: cwd on the
+    // project root, the install dir passed via additionalSkillPaths, and the
+    // requested-name filter as skillsOverride.
+    const loader = new DefaultResourceLoader({
+      cwd: projectRootDir,
+      agentDir,
+      additionalSkillPaths: [installRoot],
+      skillsOverride,
+    });
+    await loader.reload();
+
+    const names = loader.getSkills().skills.map((s: Skill) => s.name);
+    // ce-plan is discoverable (via additionalSkillPaths) AND survives the filter;
+    // ce-work is discovered but filtered out by the requested-name override.
+    expect(names).toContain("ce-plan");
+    expect(names).not.toContain("ce-work");
   });
 });

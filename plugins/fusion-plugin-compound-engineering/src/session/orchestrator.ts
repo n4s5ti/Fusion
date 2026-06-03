@@ -89,33 +89,24 @@ export interface OrchestratorDeps {
 }
 
 /**
- * CARRY-FORWARD (U2 → U5) — skill discovery wiring.
+ * Skill discovery wiring (closes the U2 → U5 carry-forward).
  *
  * U2 proved a `PluginSkillContribution` is NOT auto-ingested by the engine
- * skill-resolver; a physical install onto a cwd-discoverable path is required.
- * The U4 `CreateInteractiveAiSessionOptions` surface carries ONLY `cwd` (plus
- * systemPrompt/tools/provider/model) — it has NO `requestedSkillNames` /
- * `additionalSkillPaths` / `skillSelection` field. So we cannot point the
- * session at the install target the way `createFnAgent`'s `skills`/
- * `skillSelection` options would.
- *
- * The closest honest thing we CAN do today:
- *   1. Set the session `cwd` to a root under which the installed ce-* skills are
- *      discoverable by pi's DefaultResourceLoader (the install-target root).
- *   2. Name the required skill id in the systemPrompt so the agent is told which
- *      ce-* skill to apply (protocol-level instruction).
- *
- * This function computes that cwd. We PROVE reachability at the installer/
- * resolver layer (like U2 did) in the tests — the U4 options surface cannot yet
- * carry an explicit skill-path, so a complete fix needs U4's options to gain a
- * `requestedSkillNames`/`additionalSkillPaths` field forwarded into
- * `createFnAgent`. That gap is documented as a carry-forward for the follow-up,
- * which will re-expand this to derive a per-stage/per-project path.
+ * skill-resolver; a physical install onto a discoverable path is required, and
+ * the plugin installs its bundled `ce-*` skills to a plugin-local directory
+ * (`resolveDefaultInstallTargetRoot()`). The U4 seam now carries
+ * `requestedSkillNames` + `additionalSkillPaths`, which the engine adapter
+ * forwards into `createFnAgent` (`skills` + the loader's `additionalSkillPaths`).
+ * So the orchestrator hands the live session BOTH the stage's skill id and the
+ * install directory to discover it from — the session runs with `cwd` at the
+ * real project root (where it reads context and writes artifacts), not at the
+ * skills directory.
  */
-export function resolveStageSkillCwd(): string {
-  // The install target root holds `<skillId>/SKILL.md` for each installed
-  // skill; using it as the discovery root makes the stage's skill loadable.
-  return resolveDefaultInstallTargetRoot();
+export function resolveStageSkillPaths(): string[] {
+  // The install target root holds `<skillId>/SKILL.md` for each installed skill;
+  // passing it as an additional skill-discovery path makes the stage's skill
+  // loadable while the session cwd stays on the project.
+  return [resolveDefaultInstallTargetRoot()];
 }
 
 /**
@@ -125,7 +116,7 @@ export function resolveStageSkillCwd(): string {
 export function buildStageSystemPrompt(stage: CeStageDefinition): string {
   return [
     `You are running the Compound Engineering "${stage.stageId}" stage.`,
-    `Apply the bundled skill "${stage.skillId}" (its SKILL.md is discoverable in your working directory).`,
+    `Apply the bundled skill "${stage.skillId}" (it has been loaded into this session).`,
     "",
     "Drive the stage as an interactive question/answer flow. On every turn respond with ONLY a JSON object:",
     '  - To ask the user something: {"type":"question","data":{"id":"<unique>","type":"single_select|multi_select|text|confirm","question":"...","options":[{"id":"..","label":".."}]}}',
@@ -175,6 +166,28 @@ export class CeOrchestrator {
     this.turnTimeoutMs = deps.turnTimeoutMs ?? DEFAULT_TURN_TIMEOUT_MS;
   }
 
+  /**
+   * Build the interactive-session options for a stage. The session runs with
+   * `cwd` on the real project root (where it reads context and writes the stage
+   * artifact) and is handed BOTH the stage's `ce-*` skill id and the plugin-local
+   * install directory to discover it from — so the live agent actually loads the
+   * bundled skill (closing the U2/U5 skill-discovery carry-forward). Model
+   * provider/model are setting-gated (U9); omitted keys let the host pick defaults.
+   */
+  private buildSessionOptions(stage: CeStageDefinition): Parameters<CreateInteractiveAiSessionFactory>[0] {
+    const defaultProvider = getDefaultProvider(this.ctx.settings);
+    const defaultModelId = getDefaultModelId(this.ctx.settings);
+    return {
+      cwd: this.projectRoot,
+      systemPrompt: buildStageSystemPrompt(stage),
+      tools: "coding",
+      requestedSkillNames: [stage.skillId],
+      additionalSkillPaths: resolveStageSkillPaths(),
+      ...(defaultProvider ? { defaultProvider } : {}),
+      ...(defaultModelId ? { defaultModelId } : {}),
+    };
+  }
+
   /** Start a fresh session for a registered stage and run the opening turn. */
   async start(stageId: string, opts: StartStageOptions): Promise<CeStepResult> {
     const stage = getStage(stageId);
@@ -196,24 +209,9 @@ export class CeOrchestrator {
     });
     this.store.appendHistory(session.id, { role: "user", text: opts.openingMessage, at: new Date().toISOString() });
 
-    const cwd = resolveStageSkillCwd();
-    const systemPrompt = buildStageSystemPrompt(stage);
-
-    // Setting-gated model selection (U9): pass the operator's default
-    // provider/model through to the host factory; omitted keys let the host
-    // pick its own defaults.
-    const defaultProvider = getDefaultProvider(this.ctx.settings);
-    const defaultModelId = getDefaultModelId(this.ctx.settings);
-
     let interactive;
     try {
-      interactive = await this.factory({
-        cwd,
-        systemPrompt,
-        tools: "coding",
-        ...(defaultProvider ? { defaultProvider } : {}),
-        ...(defaultModelId ? { defaultModelId } : {}),
-      });
+      interactive = await this.factory(this.buildSessionOptions(stage));
     } catch (err) {
       return { session: this.failSession(session.id, err), event: undefined };
     }
@@ -331,18 +329,7 @@ export class CeOrchestrator {
     const stage = getStage(session.stage);
     if (!stage) throw new Error(`Unknown CE stage: ${session.stage}`);
 
-    const cwd = resolveStageSkillCwd();
-    const systemPrompt = buildStageSystemPrompt(stage);
-    const defaultProvider = getDefaultProvider(this.ctx.settings);
-    const defaultModelId = getDefaultModelId(this.ctx.settings);
-
-    const interactive = await this.factory!({
-      cwd,
-      systemPrompt,
-      tools: "coding",
-      ...(defaultProvider ? { defaultProvider } : {}),
-      ...(defaultModelId ? { defaultModelId } : {}),
-    });
+    const interactive = await this.factory!(this.buildSessionOptions(stage));
     const live = interactive.session;
 
     // Walk the recorded user turns in order. The FIRST user turn is the opening
