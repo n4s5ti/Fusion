@@ -39,7 +39,7 @@ Observed merging `main` into `gsxdsm/missonsdebug` (merge `60c307320`): the bran
 3. **Port the incoming semantic change into the helper body** at its new home — do not accept either hunk verbatim.
 4. **Sweep the moved code's documentation** — a doc comment or glossary entry describing the old behavior is now a lie; fix it in the same merge.
 5. **Run the merged (union) test suite + typecheck**, not just one branch's tests — the merge creates a combination neither branch tested.
-6. **Name the merge commit after the adopted change** (e.g. `Merge main: adopt FN-5902 lazy assertion linkage in shared runFeatureValidation`), not a bare `merge main`. (auto memory [claude])
+6. **Name the merge commit after the adopted change** (e.g. `Merge main: adopt FN-5902 lazy assertion linkage in shared runFeatureValidation`), not a bare `merge main`.
 
 For **accretive docs** (`CONCEPTS.md`, glossaries, registries) hitting add/add: **merge as a union** — clusters are independent; keep one preamble. For near-identical pointer lines (e.g. `AGENTS.md` references), take the wording that minimizes the diff. Then sweep the merged prose for statements the incoming commits falsified.
 
