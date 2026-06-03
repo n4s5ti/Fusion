@@ -1,6 +1,9 @@
 {
   "tui": {
     "loading": "Loading…",
+    "loadingTasks": "Loading tasks…",
+    "noTasks": "No tasks in this project.",
+    "switchProjectsHint": "Press [{{key}}] to switch projects.",
     "quit": "Quit"
   }
 }

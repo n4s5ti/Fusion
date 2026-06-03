@@ -67,3 +67,36 @@ describe("react-i18next under the Ink reconciler", () => {
     expect(lastFrame()).toContain("加载中…");
   });
 });
+
+// Keybinding accelerators must stay literal even inside translated hints.
+function ProjectHint() {
+  const { t } = useTranslation("cli");
+  return createElement(
+    Text,
+    null,
+    t("tui.switchProjectsHint", { key: "p", defaultValue: "Press [{{key}}] to switch projects." }),
+  );
+}
+
+describe("CLI string migration", () => {
+  it("renders the migrated en label", () => {
+    const i18n = initCliI18n("en");
+    function Tasks() {
+      const { t } = useTranslation("cli");
+      return createElement(Text, null, t("tui.loadingTasks", "Loading tasks…"));
+    }
+    const { lastFrame } = render(
+      createElement(I18nextProvider, { i18n }, createElement(Tasks)),
+    );
+    expect(lastFrame()).toContain("Loading tasks…");
+  });
+
+  it("keeps the [p] accelerator literal in an interpolated hint", () => {
+    const i18n = initCliI18n("en");
+    const { lastFrame } = render(
+      createElement(I18nextProvider, { i18n }, createElement(ProjectHint)),
+    );
+    expect(lastFrame()).toContain("[p]");
+    expect(lastFrame()).toContain("Press");
+  });
+});

@@ -2,6 +2,7 @@ import React, { useState, useSyncExternalStore, useCallback, useEffect, useRef }
 import { Box, Text, useInput, useApp, useStdout } from "ink";
 import Spinner from "ink-spinner";
 import TextInput from "ink-text-input";
+import { useTranslation } from "react-i18next";
 import { spawn } from "node:child_process";
 import { appendFileSync } from "node:fs";
 
@@ -1695,6 +1696,7 @@ function groupTasksByColumn(tasks: TaskItem[]): Record<KanbanColumn, TaskItem[]>
 }
 
 function BoardView({ state, controller }: { state: DashboardState; controller: DashboardTUI }) {
+  const { t } = useTranslation("cli");
   const { stdout } = useStdout();
   const cols = stdout?.columns ?? 80;
   const rows = stdout?.rows ?? 24;
@@ -1937,12 +1939,13 @@ function BoardView({ state, controller }: { state: DashboardState; controller: D
       ) : tasksState.loading ? (
         <Box justifyContent="center" alignItems="center" flexGrow={1} gap={1}>
           <Text color="white"><Spinner type="dots" /></Text>
-          <Text dimColor>Loading tasks…</Text>
+          <Text dimColor>{t("tui.loadingTasks", "Loading tasks…")}</Text>
         </Box>
       ) : tasksState.tasks.length === 0 ? (
         <Box justifyContent="center" alignItems="center" flexGrow={1} flexDirection="column">
-          <Text dimColor>No tasks in this project.</Text>
-          <Text dimColor>Press [p] to switch projects.</Text>
+          <Text dimColor>{t("tui.noTasks", "No tasks in this project.")}</Text>
+          {/* Keybinding accelerator [{{key}}] stays literal — never translated. */}
+          <Text dimColor>{t("tui.switchProjectsHint", { key: "p", defaultValue: "Press [{{key}}] to switch projects." })}</Text>
         </Box>
       ) : (
         <Box flexDirection="row" flexGrow={1} overflow="hidden">

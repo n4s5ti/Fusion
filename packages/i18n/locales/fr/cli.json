@@ -1,6 +1,9 @@
 {
   "tui": {
     "loading": "",
-    "quit": ""
+    "quit": "",
+    "loadingTasks": "",
+    "noTasks": "",
+    "switchProjectsHint": ""
   }
 }
