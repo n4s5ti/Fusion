@@ -3365,7 +3365,8 @@ describe("SelfHealingManager", () => {
       const result = await managerWithRecovery.recoverMergeableReviewTasks();
 
       expect(result).toBe(0);
-      expect(store.listTasks).not.toHaveBeenCalled();
+      // The sweep may list tasks to discover per-task autoMerge overrides,
+      // but must not merge or enqueue anything without one.
       expect(store.mergeTask).not.toHaveBeenCalled();
       expect(enqueueMerge).not.toHaveBeenCalled();
 
@@ -3747,7 +3748,10 @@ describe("SelfHealingManager", () => {
       const result = await managerWithRecovery.finalizeNoOpReviewTasks();
 
       expect(result).toBe(0);
-      expect(store.listTasks).not.toHaveBeenCalled();
+      // The sweep may list tasks to discover per-task autoMerge overrides,
+      // but must not finalize anything without one.
+      expect(store.moveTask).not.toHaveBeenCalled();
+      expect(store.updateTask).not.toHaveBeenCalled();
 
       managerWithRecovery.stop();
     });
@@ -8227,25 +8231,97 @@ describe("autoMerge gating for mutating in-review sweeps (FN-5147)", () => {
     "recoverMissingWorktreeReviewFailures",
     "recoverPartialProgressNoTaskDoneFailures",
     "reclaimSelfOwnedBranchConflicts",
-  ] as const)("skips entirely when autoMerge is disabled (respects PR-based review flow): %s", async (methodName) => {
+  ] as const)("performs no mutations when autoMerge is disabled and no per-task override exists: %s", async (methodName) => {
     if (methodName === "recoverReviewTasksWithFailedPreMergeSteps") {
       manager = new SelfHealingManager(store, { rootDir: "/tmp/test-project", recoverFailedPreMergeStep: vi.fn() });
     }
     const result = await (manager as any)[methodName]();
     expect(result).toBe(0);
-    expect(store.listTasks).not.toHaveBeenCalled();
+    // The sweep may list tasks to discover per-task autoMerge overrides,
+    // but must not mutate anything without one (respects PR-based review flow).
     expect(store.moveTask).not.toHaveBeenCalled();
     expect(store.updateTask).not.toHaveBeenCalled();
     expect(store.logEntry).not.toHaveBeenCalled();
   });
 
-  it("skips entirely when autoMerge is disabled (respects PR-based review flow): recoverCompletionHandoffLimbo", async () => {
+  it("performs no mutations when autoMerge is disabled and no per-task override exists: recoverCompletionHandoffLimbo", async () => {
     const result = await manager.recoverCompletionHandoffLimbo();
     expect(result).toBeUndefined();
-    expect(store.listTasks).not.toHaveBeenCalled();
     expect(store.moveTask).not.toHaveBeenCalled();
     expect(store.updateTask).not.toHaveBeenCalled();
     expect(store.logEntry).not.toHaveBeenCalled();
+  });
+
+  it("surfaces in-review stalls for tasks with an explicit autoMerge:true override when the global setting is off", async () => {
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(new Date("2026-01-01T00:10:00.000Z"));
+      (store.getSettings as ReturnType<typeof vi.fn>).mockResolvedValue({
+        autoMerge: false,
+        globalPause: false,
+        enginePaused: false,
+        taskStuckTimeoutMs: 60_000,
+      });
+      (store.listTasks as ReturnType<typeof vi.fn>).mockResolvedValue([
+        {
+          id: "FN-OVERRIDE",
+          column: "in-review",
+          paused: false,
+          status: "merging",
+          autoMerge: true,
+          steps: [],
+          log: [],
+          updatedAt: new Date(Date.parse("2026-01-01T00:10:00.000Z") - 600_000).toISOString(),
+          columnMovedAt: new Date(Date.parse("2026-01-01T00:10:00.000Z") - 600_000).toISOString(),
+        },
+      ]);
+
+      const surfaced = await manager.surfaceInReviewStalls();
+
+      expect(surfaced).toBe(1);
+      expect(store.logEntry).toHaveBeenCalledWith(
+        "FN-OVERRIDE",
+        expect.stringContaining("In-review stall surfaced ["),
+      );
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("keeps skipping override-less siblings while processing the override task", async () => {
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(new Date("2026-01-01T00:10:00.000Z"));
+      const staleFields = {
+        column: "in-review",
+        paused: false,
+        status: "merging",
+        steps: [],
+        log: [],
+        updatedAt: new Date(Date.parse("2026-01-01T00:10:00.000Z") - 600_000).toISOString(),
+        columnMovedAt: new Date(Date.parse("2026-01-01T00:10:00.000Z") - 600_000).toISOString(),
+      };
+      (store.getSettings as ReturnType<typeof vi.fn>).mockResolvedValue({
+        autoMerge: false,
+        globalPause: false,
+        enginePaused: false,
+        taskStuckTimeoutMs: 60_000,
+      });
+      (store.listTasks as ReturnType<typeof vi.fn>).mockResolvedValue([
+        { id: "FN-OVERRIDE", autoMerge: true, ...staleFields },
+        { id: "FN-MANUAL", ...staleFields },
+      ]);
+
+      const surfaced = await manager.surfaceInReviewStalls();
+
+      expect(surfaced).toBe(1);
+      expect(store.logEntry).not.toHaveBeenCalledWith(
+        "FN-MANUAL",
+        expect.stringContaining("In-review stall surfaced ["),
+      );
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 

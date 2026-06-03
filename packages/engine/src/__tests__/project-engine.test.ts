@@ -2670,3 +2670,29 @@ describe("ProjectEngine stale mergeActive rescue (FN-3900)", () => {
     await engine.stop();
   });
 });
+
+describe("allowInReviewMergeProcessing per-task autoMerge override", () => {
+  const gate = (task: Partial<Task>, settings: { autoMerge: boolean }) =>
+    (createEngine() as any).allowInReviewMergeProcessing(task, settings) as boolean;
+
+  it("lets an explicit per-task autoMerge:true through when the global setting is off", () => {
+    expect(gate({ autoMerge: true }, { autoMerge: false })).toBe(true);
+  });
+
+  it("blocks tasks without a per-task override when the global setting is off", () => {
+    expect(gate({}, { autoMerge: false })).toBe(false);
+    expect(gate({ autoMerge: false }, { autoMerge: false })).toBe(false);
+  });
+
+  it("keeps everything flowing when the global setting is on — explicit autoMerge:false is parked manual-required downstream", () => {
+    expect(gate({}, { autoMerge: true })).toBe(true);
+    expect(gate({ autoMerge: false }, { autoMerge: true })).toBe(true);
+  });
+
+  it("still exempts shared-branch-group member integration when the global setting is off", () => {
+    expect(gate(
+      { branchContext: { assignmentMode: "shared", groupId: "grp-1" } as Task["branchContext"] },
+      { autoMerge: false },
+    )).toBe(true);
+  });
+});
