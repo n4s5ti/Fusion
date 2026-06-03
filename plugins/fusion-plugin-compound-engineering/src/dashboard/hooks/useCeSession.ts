@@ -33,10 +33,27 @@ const SETTLED: ReadonlySet<CeSessionStatus> = new Set([
   "interrupted",
 ]);
 
+/**
+ * Subscribe to live session push events. Called with the current sessionId +
+ * projectId and a callback to invoke when this session changes; returns an
+ * unsubscribe fn. Default is a no-op (polling-only) so the hook stays pure and
+ * node/jsdom tests don't touch the browser SSE bus; the dashboard view injects a
+ * real adapter built on the shared `/api/events` stream.
+ */
+export type CeSessionSubscribe = (
+  sessionId: string,
+  projectId: string | undefined,
+  onSessionEvent: () => void,
+) => () => void;
+
+const noopSubscribe: CeSessionSubscribe = () => () => {};
+
 export interface UseCeSessionOptions {
   /** Poll interval (ms) while a turn is running (status active/launching). */
   pollIntervalMs?: number;
   transport?: CeSessionTransport;
+  /** Live push subscription (default no-op = polling only). */
+  subscribe?: CeSessionSubscribe;
 }
 
 export interface UseCeSessionResult {
@@ -63,6 +80,7 @@ export interface UseCeSessionResult {
 export function useCeSession(options: UseCeSessionOptions = {}): UseCeSessionResult {
   const transport = options.transport ?? defaultTransport;
   const pollIntervalMs = options.pollIntervalMs ?? 1500;
+  const subscribe = options.subscribe ?? noopSubscribe;
 
   const [session, setSession] = useState<CeSession | undefined>();
   const [busy, setBusy] = useState(false);
@@ -134,6 +152,24 @@ export function useCeSession(options: UseCeSessionOptions = {}): UseCeSessionRes
     setError(undefined);
     setBusy(false);
   }, []);
+
+  // Live push: when the host forwards a session event over SSE, refetch the
+  // persisted state immediately (lower latency than the poll interval). Polling
+  // below remains as a fallback when push isn't wired or an event is missed.
+  const sessionId = session?.id;
+  useEffect(() => {
+    if (!sessionId) return;
+    return subscribe(sessionId, projectIdRef.current, () => {
+      transport
+        .get(sessionId, projectIdRef.current)
+        .then((next) => {
+          if (mounted.current) apply(next);
+        })
+        .catch((err: unknown) => {
+          if (mounted.current) setError(err instanceof Error ? err.message : String(err));
+        });
+    });
+  }, [sessionId, subscribe, transport, apply]);
 
   // Poll while a turn is mid-flight (active/launching) and we are not already
   // issuing a request. Stops as soon as the session settles.

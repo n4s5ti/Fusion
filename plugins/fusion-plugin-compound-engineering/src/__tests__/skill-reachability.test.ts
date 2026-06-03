@@ -1,4 +1,5 @@
-import { existsSync } from "node:fs";
+import { existsSync, mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { installBundledCeSkills } from "../skill-installation.js";
@@ -24,25 +25,32 @@ import { getStage } from "../session/stage-registry.js";
  */
 
 describe("stage skill reachability (real seam wiring)", () => {
+  let tmpTargets: string[] = [];
   afterEach(() => {
+    for (const t of tmpTargets) rmSync(t, { recursive: true, force: true });
+    tmpTargets = [];
     vi.restoreAllMocks();
   });
 
-  it("the resolved additionalSkillPaths directory contains the stage's installed SKILL.md", () => {
-    const stage = getStage("brainstorm")!;
-
-    // resolveStageSkillPaths() returns the plugin-local install root the session
-    // is told to discover skills from (never a global one).
+  it("resolveStageSkillPaths returns the plugin-local install root the session scans", () => {
+    // The orchestrator passes this as additionalSkillPaths; never a global path.
     const skillPaths = resolveStageSkillPaths();
     expect(skillPaths).toHaveLength(1);
     expect(skillPaths[0]).toMatch(/\.fusion-ce-skills$/);
+    expect(skillPaths[0]).not.toMatch(/\.(claude|codex|gemini)[/\\]skills/);
+  });
 
-    // Install bundled skills into that exact root and assert the stage's skill
-    // is present on the path the session will scan.
-    const { results } = installBundledCeSkills({ targetRoot: skillPaths[0] });
+  it("installing bundled skills onto a discovery root produces the stage's SKILL.md", () => {
+    const stage = getStage("brainstorm")!;
+    // Install into a temp discovery root (isolated; mirrors what the real
+    // plugin-local install produces, without writing into the repo dir).
+    const target = mkdtempSync(join(tmpdir(), "ce-skill-reach-"));
+    tmpTargets.push(target);
+
+    const { results } = installBundledCeSkills({ targetRoot: target });
     expect(results.every((r) => r.outcome === "installed" || r.outcome === "skipped")).toBe(true);
 
-    const installedSkillMd = join(skillPaths[0], stage.skillId, "SKILL.md");
+    const installedSkillMd = join(target, stage.skillId, "SKILL.md");
     expect(existsSync(installedSkillMd)).toBe(true);
   });
 

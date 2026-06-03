@@ -120,7 +120,7 @@ export class PluginLoader extends EventEmitter<{
 
   async createRouteContext(
     pluginId: string,
-    overrides?: Partial<Pick<PluginContext, "taskStore" | "settings" | "resolveProjectTaskStore">>,
+    overrides?: Partial<Pick<PluginContext, "taskStore" | "settings" | "resolveProjectTaskStore" | "emitEvent">>,
   ): Promise<PluginContext> {
     const createAiSession = await getCreateAiSessionFactory();
     const createInteractiveAiSession = await getCreateInteractiveAiSessionFactory();
@@ -140,10 +140,13 @@ export class PluginLoader extends EventEmitter<{
       createAiSession,
       createInteractiveAiSession,
       resolveProjectTaskStore: overrides?.resolveProjectTaskStore,
-      emitEvent: (event: string, data: unknown) => {
-        this.emit("plugin:error", { pluginId, error: new Error(`Custom event: ${event}`) });
+      // The host (dashboard) may supply a real publisher that forwards custom
+      // plugin events to connected SSE clients. Absent an override, fall back to
+      // logging (the historical no-op behavior) so non-dashboard hosts and tests
+      // keep working.
+      emitEvent: overrides?.emitEvent ?? ((event: string, data: unknown) => {
         this.log.log(`[plugin:${pluginId}] Custom event: ${event}`, data);
-      },
+      }),
     };
   }
 

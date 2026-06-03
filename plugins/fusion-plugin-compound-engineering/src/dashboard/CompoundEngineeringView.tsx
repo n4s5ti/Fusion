@@ -1,15 +1,17 @@
 import "./CompoundEngineeringView.css";
-import { useCallback, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import * as LucideIcons from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import type { PluginDashboardViewContext } from "@fusion/dashboard/app/plugins/types";
 import { useArtifacts } from "./hooks/useArtifacts.js";
 import { useViewportMode } from "./hooks/useViewportMode.js";
-import { useCeSession } from "./hooks/useCeSession.js";
+import { useCeSession, type CeSessionSubscribe } from "./hooks/useCeSession.js";
 import { getArtifactPreviewUrl } from "./hooks/api.js";
 import { CeFlow } from "./CeFlow.js";
 import { listStages, type CeStageDefinition } from "../session/stage-registry.js";
 import type { CeArtifactEntry, CeArtifactGroup } from "../artifacts/discovery.js";
+
+const CE_PLUGIN_ID = "fusion-plugin-compound-engineering";
 
 /** Resolve a lucide icon name (from the registry) to a component, with fallback. */
 function resolveIcon(name: string): LucideIcon {
@@ -175,7 +177,22 @@ export function CompoundEngineeringView(props: CompoundEngineeringViewProps) {
   const [selectedId, setSelectedId] = useState<string | undefined>();
 
   const stages = listStages();
-  const ceSession = useCeSession();
+  // Live push: when the host forwards a plugin:custom SSE event for THIS session,
+  // refetch — lower latency than the poll fallback. Uses the host-provided
+  // subscribe capability (no raw EventSource, no deep dashboard import); when the
+  // host doesn't supply it, the hook falls back to polling.
+  const subscribePluginEvents = (props.context as PluginDashboardViewContext | undefined)
+    ?.subscribePluginEvents;
+  const subscribe = useMemo<CeSessionSubscribe | undefined>(() => {
+    if (!subscribePluginEvents) return undefined;
+    return (sessionId, _projectId, onSessionEvent) =>
+      subscribePluginEvents(CE_PLUGIN_ID, ({ payload }) => {
+        if ((payload as { sessionId?: string } | undefined)?.sessionId === sessionId) {
+          onSessionEvent();
+        }
+      });
+  }, [subscribePluginEvents]);
+  const ceSession = useCeSession(subscribe ? { subscribe } : {});
   const [launcherOpen, setLauncherOpen] = useState(false);
 
   const totalArtifacts = result?.totalArtifacts ?? 0;

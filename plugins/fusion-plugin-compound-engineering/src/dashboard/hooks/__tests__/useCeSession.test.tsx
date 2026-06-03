@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { act, render, screen } from "@testing-library/react";
 import type { PlanningQuestion } from "@fusion/core";
-import { useCeSession, type CeSessionTransport } from "../useCeSession.js";
+import { useCeSession, type CeSessionTransport, type CeSessionSubscribe } from "../useCeSession.js";
 import type { CeSession } from "../../../session/session-store.js";
 
 function mkSession(over: Partial<CeSession>): CeSession {
@@ -145,5 +145,47 @@ describe("useCeSession lifecycle", () => {
     });
     expect(transport.resume).toHaveBeenCalledWith("s1", "p1");
     expect(screen.getByTestId("status")).toHaveTextContent("awaiting_input");
+  });
+
+  it("refetches when a session event is pushed over the subscribe seam", async () => {
+    let fire: (() => void) | undefined;
+    const subscribe: CeSessionSubscribe = (_sessionId, _projectId, onSessionEvent) => {
+      fire = onSessionEvent;
+      return () => {
+        fire = undefined;
+      };
+    };
+    const get = vi.fn(async () => mkSession({ status: "completed", currentQuestion: null, artifactPath: "/a.md" }));
+    const transport: CeSessionTransport = {
+      // start returns an active (mid-turn) session; without a push or poll it stays active.
+      start: vi.fn(async () => mkSession({ status: "active", currentQuestion: null })),
+      answer: vi.fn(),
+      resume: vi.fn(),
+      get,
+    };
+
+    function PushHarness() {
+      const s = useCeSession({ transport, subscribe, pollIntervalMs: 100000 });
+      return (
+        <div>
+          <span data-testid="status">{s.session?.status ?? "none"}</span>
+          <button onClick={() => void s.start("brainstorm", { projectId: "p1" })}>start</button>
+        </div>
+      );
+    }
+
+    render(<PushHarness />);
+    await act(async () => {
+      screen.getByText("start").click();
+    });
+    expect(screen.getByTestId("status")).toHaveTextContent("active");
+
+    // A pushed event triggers an immediate refetch (no poll interval elapsed).
+    await act(async () => {
+      fire?.();
+      await Promise.resolve();
+    });
+    expect(get).toHaveBeenCalledWith("s1", "p1");
+    expect(screen.getByTestId("status")).toHaveTextContent("completed");
   });
 });
