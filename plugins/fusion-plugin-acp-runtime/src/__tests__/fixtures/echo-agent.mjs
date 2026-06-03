@@ -21,6 +21,9 @@ class EchoAgent {
   constructor(connection) {
     this.connection = connection;
     this.sessions = new Map();
+    // Resolver for the in-flight prompt when ACP_FIXTURE_HANG_PROMPT is set:
+    // the turn stays open until cancel() fires, then resolves "cancelled".
+    this._cancelTurn = undefined;
   }
 
   async initialize(_params) {
@@ -38,7 +41,7 @@ class EchoAgent {
       versionOverride !== undefined ? Number(versionOverride) : PROTOCOL_VERSION;
     const response = {
       protocolVersion,
-      agentCapabilities: { loadSession: false },
+      agentCapabilities: { loadSession: process.env.ACP_FIXTURE_LOAD_SESSION === "1" },
     };
     if (process.env.ACP_FIXTURE_REQUIRE_AUTH === "1") {
       response.authMethods = [{ id: "api-key", name: "API Key", description: null }];
@@ -58,6 +61,13 @@ class EchoAgent {
     return { sessionId };
   }
 
+  async loadSession(params) {
+    // Resume path: acknowledge the existing session id (history replay would
+    // happen here in a real agent). Mark that this session was loaded, not new.
+    this.sessions.set(params.sessionId, { loaded: true });
+    return {};
+  }
+
   async setSessionMode(_params) {
     return {};
   }
@@ -70,11 +80,23 @@ class EchoAgent {
         content: { type: "text", text: "echo: hello" },
       },
     });
+    // Cancel-mid-prompt test: keep the turn open until cancel() arrives, then
+    // resolve with the "cancelled" stop reason (mirrors a real agent).
+    if (process.env.ACP_FIXTURE_HANG_PROMPT === "1") {
+      return await new Promise((resolve) => {
+        this._cancelTurn = () => resolve({ stopReason: "cancelled" });
+      });
+    }
     return { stopReason: "end_turn" };
   }
 
   async cancel(_params) {
-    // no-op for the trivial turn
+    // Release any in-flight hung turn with a "cancelled" stop reason.
+    if (this._cancelTurn) {
+      const release = this._cancelTurn;
+      this._cancelTurn = undefined;
+      release();
+    }
   }
 }
 

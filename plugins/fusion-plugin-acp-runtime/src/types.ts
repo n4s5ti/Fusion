@@ -10,6 +10,8 @@
 // per-run permission gate — see `PermissionGate` below, the narrow structural
 // view this plugin couples to instead of importing `@fusion/engine` internals.
 
+import type { AcpConnection } from "./provider.js";
+
 /** Callbacks the engine wires to surface streamed agent output into Fusion's UI/logs. */
 export interface AcpCallbacks {
   onText?: (text: string) => void;
@@ -65,6 +67,11 @@ export interface AcpSession {
   callbacks: AcpCallbacks;
   /** Per-run permission gate captured at createSession (U5/U7 read this). */
   gate?: PermissionGate;
+  /**
+   * Live ACP connection backing this session (U3). Prompt/dispose reach the
+   * agent through it. Undefined only for the bare session shell used in tests.
+   */
+  connection?: AcpConnection;
   dispose(): void;
 }
 

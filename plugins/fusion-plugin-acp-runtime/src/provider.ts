@@ -19,6 +19,8 @@ import {
   PROTOCOL_VERSION,
   type Agent,
   type Client,
+  type ContentBlock,
+  type StopReason,
 } from "@agentclientprotocol/sdk";
 import { spawnAgent, captureStderr, forceKill, unregisterProcess } from "./process-manager.js";
 
@@ -197,4 +199,93 @@ export async function connect(opts: ConnectOptions): Promise<AcpConnection> {
     stderr,
     dispose,
   };
+}
+
+// --- U3: session driving on top of connect() -------------------------------
+//
+// These helpers wrap the `ClientSideConnection` session methods so the runtime
+// adapter drives one shape (open → prompt → cancel/resume) without touching SDK
+// types directly. v1 always sends an empty `mcpServers` (KTD5).
+
+/** Narrow view of the agent capabilities we read for resume routing. */
+interface AgentCapabilitiesView {
+  loadSession?: boolean;
+}
+
+function readsLoadSession(connection: AcpConnection): boolean {
+  const caps = connection.agentCapabilities as AgentCapabilitiesView | undefined;
+  return caps?.loadSession === true;
+}
+
+export interface NewAcpSessionResult {
+  sessionId: string;
+  /** Initial session mode state, when the agent reports one. */
+  modes?: unknown;
+}
+
+/**
+ * Open a fresh ACP session via `session/new`. Always passes an empty
+ * `mcpServers` (KTD5 — Fusion custom-tool forwarding is deferred).
+ */
+export async function newAcpSession(
+  connection: AcpConnection,
+  opts: { cwd: string },
+): Promise<NewAcpSessionResult> {
+  const res = await connection.conn.newSession({ cwd: opts.cwd, mcpServers: [] });
+  return { sessionId: res.sessionId, modes: res.modes ?? undefined };
+}
+
+/**
+ * Send a prompt turn via `session/prompt` and return the terminal `stopReason`.
+ *
+ * The SDK prompt promise resolves only AFTER every `session/update` for the turn
+ * has been delivered to the client handler — so resolving here is the correct
+ * "turn complete" signal (no extra draining required).
+ */
+export async function promptAcpSession(
+  connection: AcpConnection,
+  sessionId: string,
+  blocks: ContentBlock[],
+): Promise<StopReason> {
+  const res = await connection.conn.prompt({ sessionId, prompt: blocks });
+  return res.stopReason;
+}
+
+/**
+ * Best-effort cancel of the active turn via the `session/cancel` notification.
+ *
+ * This is fire-and-forget (no ack in the protocol). Errors are swallowed — it
+ * runs during teardown where the registry SIGKILL is the authoritative guarantee
+ * (KTD4a).
+ */
+export async function cancelAcpSession(
+  connection: AcpConnection,
+  sessionId: string,
+): Promise<void> {
+  try {
+    await connection.conn.cancel({ sessionId });
+  } catch {
+    // fire-and-forget; teardown's SIGKILL is authoritative
+  }
+}
+
+/**
+ * Resume a session. Prefers `session/load` (history replay) when the agent
+ * advertised the `loadSession` capability; otherwise falls back to opening a
+ * fresh `session/new`. There is no separate `resume` method in this SDK build —
+ * `loadSession` IS the resume path.
+ */
+export async function loadAcpSession(
+  connection: AcpConnection,
+  opts: { sessionId: string; cwd: string },
+): Promise<NewAcpSessionResult> {
+  if (readsLoadSession(connection)) {
+    const res = await connection.conn.loadSession({
+      sessionId: opts.sessionId,
+      cwd: opts.cwd,
+      mcpServers: [],
+    });
+    return { sessionId: opts.sessionId, modes: res.modes ?? undefined };
+  }
+  return newAcpSession(connection, { cwd: opts.cwd });
 }

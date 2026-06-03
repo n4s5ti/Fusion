@@ -1,12 +1,22 @@
 // AgentRuntime adapter for the ACP runtime.
 //
-// U1 scaffold: implements the full `AgentRuntime` contract shape (including the
-// required `describeModel`) with stubs that throw `not_implemented` until the
-// session driver lands in U2/U3. The skeleton exists so the plugin loads,
-// registers as `runtimeId: "acp"`, and conforms to the interface the engine
-// resolves via `getRuntimeById`.
+// U3 implements the real session lifecycle: createSession spawns + handshakes
+// (U2 connect()) then opens a `session/new`; promptWithFallback drives one
+// prompt turn to its terminal stopReason; dispose tears down the connection
+// (KTD4a — registry SIGKILL is authoritative). The `session/update` event
+// bridge (U4) and the permission gate (U5) are wired in later units; for U3 the
+// default client handler from U2 is used and a turn still resolves with a
+// stopReason.
 
 import { resolveCliSettings, type AcpCliSettings } from "./cli-spawn.js";
+import {
+  connect,
+  newAcpSession,
+  promptAcpSession,
+  cancelAcpSession,
+} from "./provider.js";
+import { buildSpawnEnv } from "./process-manager.js";
+import { buildPromptBlocks } from "./prompt-builder.js";
 import type {
   AgentRuntime,
   AgentRuntimeOptions,
@@ -15,6 +25,10 @@ import type {
   AcpSession,
 } from "./types.js";
 
+/**
+ * Retained for back-compat: earlier units' tests imported this marker. The real
+ * adapter no longer throws it; it remains exported so external references resolve.
+ */
 export const ACP_NOT_IMPLEMENTED = "acp_not_implemented";
 
 export class AcpRuntimeAdapter implements AgentRuntime {
@@ -27,13 +41,35 @@ export class AcpRuntimeAdapter implements AgentRuntime {
   }
 
   async createSession(options: AgentRuntimeOptions): Promise<AgentSessionResult> {
-    // Session establishment (spawn + initialize + session/new) lands in U2/U3.
-    // The skeleton constructs the session shell so the contract is observable.
     const model = this.settings.model ?? options.defaultModelId ?? "acp";
+
+    // Spawn + initialize (U2). fs capabilities are advertised only where the
+    // resolved settings enable them (KTD6); the subprocess env is built from the
+    // allow-list, never inherited process.env (KTD6b).
+    const connection = await connect({
+      binaryPath: this.settings.binaryPath,
+      args: this.settings.args,
+      cwd: options.cwd,
+      env: buildSpawnEnv(this.settings.envAllowList),
+      advertiseFs: { read: this.settings.fsRead, write: this.settings.fsWrite },
+    });
+
+    // Open the ACP session over the task worktree (empty mcpServers — KTD5).
+    let sessionId: string;
+    try {
+      const opened = await newAcpSession(connection, { cwd: options.cwd });
+      sessionId = opened.sessionId;
+    } catch (err) {
+      // Don't leak the subprocess if session/new fails after a good handshake.
+      connection.dispose();
+      throw err;
+    }
+
+    let disposed = false;
     const session: AcpSession = {
       model,
       systemPrompt: options.systemPrompt,
-      sessionId: "",
+      sessionId,
       cwd: options.cwd,
       lastModelDescription: `acp/${model}`,
       callbacks: {
@@ -42,14 +78,34 @@ export class AcpRuntimeAdapter implements AgentRuntime {
         onToolStart: options.onToolStart,
         onToolEnd: options.onToolEnd,
       },
+      // Persist the per-run gate (KTD3) so U5/U7 can reach the live action gate.
       gate: options.actionGateContext,
-      dispose: () => undefined,
+      connection,
+      dispose: () => {
+        if (disposed) return;
+        disposed = true;
+        connection.dispose();
+      },
     };
-    throw new Error(`${ACP_NOT_IMPLEMENTED}: createSession lands in U2/U3 (session=${session.lastModelDescription})`);
+
+    return { session };
   }
 
-  async promptWithFallback(_session: AgentSession, _prompt: string, _options?: unknown): Promise<void> {
-    throw new Error(`${ACP_NOT_IMPLEMENTED}: promptWithFallback lands in U3`);
+  async promptWithFallback(
+    session: AgentSession,
+    prompt: string,
+    _options?: unknown,
+  ): Promise<void> {
+    const acp = session as AcpSession;
+    if (!acp.connection) {
+      throw new Error("ACP session has no live connection (createSession not completed)");
+    }
+    const blocks = buildPromptBlocks(prompt);
+    // Resolve when the SDK prompt promise resolves — it already drains all
+    // session/update notifications for the turn before reporting the stopReason.
+    // TODO(U4): wire a bridging client handler so streamed text/tool updates
+    // surface onto session.callbacks; for U3 the turn simply completes.
+    await promptAcpSession(acp.connection, acp.sessionId, blocks);
   }
 
   describeModel(session: AgentSession): string {
@@ -57,7 +113,13 @@ export class AcpRuntimeAdapter implements AgentRuntime {
   }
 
   async dispose(session: AgentSession): Promise<void> {
-    // Best-effort teardown; the authoritative kill is the process registry (KTD4a).
+    // KTD4a teardown: best-effort cancel of any in-flight turn, then force the
+    // connection down. The process-registry SIGKILL is the authoritative
+    // no-orphan guarantee, not the cancel round-trip. Idempotent.
+    const acp = session as AcpSession;
+    if (acp.connection && acp.sessionId) {
+      await cancelAcpSession(acp.connection, acp.sessionId);
+    }
     session.dispose();
   }
 }

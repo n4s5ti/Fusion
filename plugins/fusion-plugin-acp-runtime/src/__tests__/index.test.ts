@@ -1,7 +1,11 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, afterEach } from "vitest";
 import plugin, { AcpRuntimeAdapter, acpRuntimeFactory, acpRuntimeMetadata, resolveCliSettings } from "../index.js";
-import { ACP_NOT_IMPLEMENTED } from "../runtime-adapter.js";
+import { killAllProcesses } from "../process-manager.js";
 import type { AgentRuntime } from "../types.js";
+
+afterEach(() => {
+  killAllProcesses();
+});
 
 describe("fusion-plugin-acp-runtime", () => {
   it("declares the acp runtime in its manifest", () => {
@@ -27,12 +31,21 @@ describe("fusion-plugin-acp-runtime", () => {
     expect(desc).toBe("acp/gemini-2.0");
   });
 
-  it("session-driving stubs reject with the not-implemented marker (until U2/U3)", async () => {
-    const runtime = new AcpRuntimeAdapter({});
+  it("createSession against a non-spawnable binary rejects (ENOENT), no orphan", async () => {
+    const runtime = new AcpRuntimeAdapter({
+      acpBinaryPath: "/nonexistent/acp-agent-does-not-exist",
+      acpArgs: [],
+    });
     await expect(
-      runtime.createSession({ cwd: "/tmp", systemPrompt: "" } as never),
-    ).rejects.toThrow(ACP_NOT_IMPLEMENTED);
-    await expect(runtime.promptWithFallback({} as never, "hi")).rejects.toThrow(ACP_NOT_IMPLEMENTED);
+      runtime.createSession({ cwd: process.cwd(), systemPrompt: "" } as never),
+    ).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it("promptWithFallback on a session with no live connection rejects cleanly", async () => {
+    const runtime = new AcpRuntimeAdapter({});
+    await expect(runtime.promptWithFallback({ sessionId: "x" } as never, "hi")).rejects.toThrow(
+      /no live connection/,
+    );
   });
 });
 
