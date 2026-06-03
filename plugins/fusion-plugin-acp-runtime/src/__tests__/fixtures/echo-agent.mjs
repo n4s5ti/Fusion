@@ -13,6 +13,10 @@
 //   ACP_FIXTURE_LEAK_TOKEN=1      — write a fake auth token to stderr (redaction
 //                                   test).
 //   ACP_FIXTURE_REQUIRE_AUTH=1    — advertise a non-empty authMethods list.
+//   ACP_FIXTURE_RICH_PROMPT=1     — prompt emits the full U4 update vocabulary
+//                                   (agent_message_chunk, agent_thought_chunk,
+//                                   tool_call, tool_call_update[completed], plan)
+//                                   before resolving the turn.
 
 import { AgentSideConnection, ndJsonStream, PROTOCOL_VERSION } from "@agentclientprotocol/sdk";
 import { Readable, Writable } from "node:stream";
@@ -73,6 +77,54 @@ class EchoAgent {
   }
 
   async prompt(params) {
+    if (process.env.ACP_FIXTURE_RICH_PROMPT === "1") {
+      const sessionId = params.sessionId;
+      await this.connection.sessionUpdate({
+        sessionId,
+        update: {
+          sessionUpdate: "agent_message_chunk",
+          content: { type: "text", text: "Working on it." },
+        },
+      });
+      await this.connection.sessionUpdate({
+        sessionId,
+        update: {
+          sessionUpdate: "agent_thought_chunk",
+          content: { type: "text", text: "Let me think about this." },
+        },
+      });
+      await this.connection.sessionUpdate({
+        sessionId,
+        update: {
+          sessionUpdate: "tool_call",
+          toolCallId: "call-1",
+          title: "Run tests",
+          kind: "execute",
+          status: "in_progress",
+          rawInput: { command: "pnpm test" },
+        },
+      });
+      await this.connection.sessionUpdate({
+        sessionId,
+        update: {
+          sessionUpdate: "tool_call_update",
+          toolCallId: "call-1",
+          status: "completed",
+          rawOutput: { exitCode: 0 },
+        },
+      });
+      await this.connection.sessionUpdate({
+        sessionId,
+        update: {
+          sessionUpdate: "plan",
+          entries: [
+            { content: "Read the code", priority: "high", status: "completed" },
+            { content: "Fix the bug", priority: "medium", status: "pending" },
+          ],
+        },
+      });
+      return { stopReason: "end_turn" };
+    }
     await this.connection.sessionUpdate({
       sessionId: params.sessionId,
       update: {

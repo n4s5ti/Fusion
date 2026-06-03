@@ -23,6 +23,8 @@ import {
   type StopReason,
 } from "@agentclientprotocol/sdk";
 import { spawnAgent, captureStderr, forceKill, unregisterProcess } from "./process-manager.js";
+import { createEventBridge } from "./event-bridge.js";
+import type { AcpCallbacks } from "./types.js";
 
 /** Default bound for the `initialize` handshake. */
 export const DEFAULT_INITIALIZE_TIMEOUT_MS = 30_000;
@@ -62,6 +64,25 @@ export function createDefaultClientHandler(): Client {
       // no-op until the U4 event bridge is wired
     },
     async requestPermission() {
+      return { outcome: { outcome: "cancelled" } };
+    },
+  };
+}
+
+/**
+ * The real client handler (U4): bridges every `session/update` notification into
+ * the engine callbacks via an event bridge so streamed agent text/thinking/tool
+ * activity surfaces in Fusion. The permission floor is still the safe default —
+ * U5 replaces `requestPermission` with the per-category action gate.
+ */
+export function createBridgingClientHandler(callbacks: AcpCallbacks): Client {
+  const bridge = createEventBridge(callbacks);
+  return {
+    async sessionUpdate(params) {
+      bridge.handleSessionUpdate(params.update);
+    },
+    async requestPermission() {
+      // U5 replaces this with the per-category gate; default-cancel for now.
       return { outcome: { outcome: "cancelled" } };
     },
   };

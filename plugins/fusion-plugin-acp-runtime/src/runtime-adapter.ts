@@ -14,6 +14,7 @@ import {
   newAcpSession,
   promptAcpSession,
   cancelAcpSession,
+  createBridgingClientHandler,
 } from "./provider.js";
 import { buildSpawnEnv } from "./process-manager.js";
 import { buildPromptBlocks } from "./prompt-builder.js";
@@ -43,6 +44,15 @@ export class AcpRuntimeAdapter implements AgentRuntime {
   async createSession(options: AgentRuntimeOptions): Promise<AgentSessionResult> {
     const model = this.settings.model ?? options.defaultModelId ?? "acp";
 
+    // Bridge streamed `session/update` notifications onto the engine callbacks
+    // (U4) so ACP agents render like existing runtimes.
+    const callbacks = {
+      onText: options.onText,
+      onThinking: options.onThinking,
+      onToolStart: options.onToolStart,
+      onToolEnd: options.onToolEnd,
+    };
+
     // Spawn + initialize (U2). fs capabilities are advertised only where the
     // resolved settings enable them (KTD6); the subprocess env is built from the
     // allow-list, never inherited process.env (KTD6b).
@@ -52,6 +62,7 @@ export class AcpRuntimeAdapter implements AgentRuntime {
       cwd: options.cwd,
       env: buildSpawnEnv(this.settings.envAllowList),
       advertiseFs: { read: this.settings.fsRead, write: this.settings.fsWrite },
+      clientHandler: createBridgingClientHandler(callbacks),
     });
 
     // Open the ACP session over the task worktree (empty mcpServers — KTD5).
@@ -72,12 +83,7 @@ export class AcpRuntimeAdapter implements AgentRuntime {
       sessionId,
       cwd: options.cwd,
       lastModelDescription: `acp/${model}`,
-      callbacks: {
-        onText: options.onText,
-        onThinking: options.onThinking,
-        onToolStart: options.onToolStart,
-        onToolEnd: options.onToolEnd,
-      },
+      callbacks,
       // Persist the per-run gate (KTD3) so U5/U7 can reach the live action gate.
       gate: options.actionGateContext,
       connection,
@@ -103,8 +109,8 @@ export class AcpRuntimeAdapter implements AgentRuntime {
     const blocks = buildPromptBlocks(prompt);
     // Resolve when the SDK prompt promise resolves — it already drains all
     // session/update notifications for the turn before reporting the stopReason.
-    // TODO(U4): wire a bridging client handler so streamed text/tool updates
-    // surface onto session.callbacks; for U3 the turn simply completes.
+    // The bridging client handler installed at createSession (U4) has already
+    // surfaced streamed text/thinking/tool updates onto session.callbacks.
     await promptAcpSession(acp.connection, acp.sessionId, blocks);
   }
 

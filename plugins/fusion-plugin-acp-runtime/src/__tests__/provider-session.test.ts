@@ -1,4 +1,4 @@
-import { describe, it, expect, afterEach } from "vitest";
+import { describe, it, expect, afterEach, vi } from "vitest";
 import { fileURLToPath } from "node:url";
 import {
   connect,
@@ -6,6 +6,7 @@ import {
   promptAcpSession,
   cancelAcpSession,
   loadAcpSession,
+  createBridgingClientHandler,
   type AcpConnection,
 } from "../provider.js";
 import { buildPromptBlocks } from "../prompt-builder.js";
@@ -91,6 +92,33 @@ describe("session driving helpers", () => {
       });
       // session/load echoes back the requested id (no fresh id minted).
       expect(result.sessionId).toBe("prior-session-id");
+    } finally {
+      conn.dispose();
+    }
+  });
+
+  it("bridging client handler surfaces a rich prompt turn's updates onto callbacks (U4)", async () => {
+    const onText = vi.fn<(t: string) => void>();
+    const onThinking = vi.fn<(t: string) => void>();
+    const onToolStart = vi.fn<(name: string, args?: unknown) => void>();
+    const onToolEnd = vi.fn<(name: string, isError: boolean, result?: unknown) => void>();
+
+    const conn = await connect({
+      ...baseOpts({ ACP_FIXTURE_RICH_PROMPT: "1" }),
+      clientHandler: createBridgingClientHandler({ onText, onThinking, onToolStart, onToolEnd }),
+    });
+    try {
+      const { sessionId } = await newAcpSession(conn, { cwd: process.cwd() });
+      const stopReason = await promptAcpSession(conn, sessionId, buildPromptBlocks("go"));
+      expect(stopReason).toBe("end_turn");
+
+      // The SDK prompt promise resolves only after all updates are delivered.
+      expect(onText.mock.calls.map((c) => c[0]).join("")).toBe("Working on it.");
+      expect(onThinking).toHaveBeenCalledWith("Let me think about this.");
+      expect(onToolStart).toHaveBeenCalledWith("Run tests", { command: "pnpm test" });
+      expect(onToolEnd).toHaveBeenCalledWith("Run tests", false, { exitCode: 0 });
+      // The plan surfaces as a thinking line.
+      expect(onThinking.mock.calls.some((c) => String(c[0]).includes("Fix the bug"))).toBe(true);
     } finally {
       conn.dispose();
     }
