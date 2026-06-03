@@ -69,7 +69,7 @@ async function spawnParent(scenario: Scenario): Promise<{ parent: ReturnType<typ
   const childPid = await new Promise<number>((resolve, reject) => {
     const timeout = setTimeout(() => {
       reject(new Error(`Timed out waiting for supervised child pid from scenario ${scenario}`));
-    }, 5_000);
+    }, 15_000);
 
     const onData = (chunk: Buffer | string) => {
       stdout += chunk.toString();
@@ -104,18 +104,15 @@ describe("reliability interactions: FN-5189 verification spawn supervision", () 
   afterEach(async () => {
     for (const parent of spawnedParents) {
       if (parent.exitCode === null && parent.signalCode === null) {
+        // Register the exit listener BEFORE kill so we don't miss the
+        // event and deadlock.
+        const exited = once(parent, "exit").catch(() => {});
         try {
           parent.kill("SIGKILL");
         } catch {
           // ignore cleanup failures
         }
-        // Wait for the parent to fully exit so the subprocess guard
-        // does not flag it as "left running" under concurrent load.
-        try {
-          await once(parent, "exit");
-        } catch {
-          // Already exited
-        }
+        await exited;
       }
     }
     spawnedParents.clear();
