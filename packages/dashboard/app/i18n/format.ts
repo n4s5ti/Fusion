@@ -1,3 +1,4 @@
+import { useMemo } from "react";
 import { useTranslation } from "react-i18next";
 
 /**
@@ -11,15 +12,20 @@ export function useLocaleFormat() {
   const { i18n } = useTranslation();
   const locale = i18n.resolvedLanguage || i18n.language || "en";
 
-  return {
-    locale,
-    formatDate: (value: number | string | Date, options?: Intl.DateTimeFormatOptions) =>
-      new Date(value).toLocaleDateString(locale, options),
-    formatTime: (value: number | string | Date, options?: Intl.DateTimeFormatOptions) =>
-      new Date(value).toLocaleTimeString(locale, options),
-    formatDateTime: (value: number | string | Date, options?: Intl.DateTimeFormatOptions) =>
-      new Date(value).toLocaleString(locale, options),
-    formatNumber: (value: number, options?: Intl.NumberFormatOptions) =>
-      value.toLocaleString(locale, options),
-  };
+  // Memoized per locale so the formatter identities stay stable across
+  // renders — consumers can safely put them in hook dependency arrays.
+  return useMemo(
+    () => ({
+      locale,
+      formatDate: (value: number | string | Date, options?: Intl.DateTimeFormatOptions) =>
+        new Date(value).toLocaleDateString(locale, options),
+      formatTime: (value: number | string | Date, options?: Intl.DateTimeFormatOptions) =>
+        new Date(value).toLocaleTimeString(locale, options),
+      formatDateTime: (value: number | string | Date, options?: Intl.DateTimeFormatOptions) =>
+        new Date(value).toLocaleString(locale, options),
+      formatNumber: (value: number, options?: Intl.NumberFormatOptions) =>
+        value.toLocaleString(locale, options),
+    }),
+    [locale],
+  );
 }

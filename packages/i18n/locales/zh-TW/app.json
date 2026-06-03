@@ -3,6 +3,8 @@
     "appearance": {
       "title": "外觀",
       "language": "語言",
+      "languageAuto": "自動",
+      "languageAutoHint": "跟隨瀏覽器語言",
       "languageHint": "選擇 {{brand}} 介面的語言。"
     }
   }

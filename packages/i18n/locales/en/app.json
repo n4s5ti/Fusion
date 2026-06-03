@@ -3,6 +3,8 @@
     "appearance": {
       "title": "Appearance",
       "language": "Language",
+      "languageAuto": "Auto",
+      "languageAutoHint": "Follow the browser language",
       "languageHint": "Choose the language for the {{brand}} interface."
     }
   }

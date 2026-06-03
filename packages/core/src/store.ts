@@ -3255,12 +3255,17 @@ export class TaskStore extends EventEmitter<TaskStoreEvents> {
     // Validate the optional UI locale at the write boundary: drop unrecognized
     // values rather than persisting junk into settings.json. Runtime consumers
     // also guard via isLocale, but the contract is `language?: Locale`.
+    // `null` passes through intact — GlobalSettingsStore treats null as
+    // "delete this key", which reverts the language to runtime auto-detect.
     if ("language" in globalPatch) {
-      const validatedLanguage = validateLocale((globalPatch as Record<string, unknown>)["language"]);
-      if (validatedLanguage === undefined) {
-        delete (globalPatch as Record<string, unknown>)["language"];
-      } else {
-        globalPatch.language = validatedLanguage;
+      const rawLanguage = (globalPatch as Record<string, unknown>)["language"];
+      if (rawLanguage !== null) {
+        const validatedLanguage = validateLocale(rawLanguage);
+        if (validatedLanguage === undefined) {
+          delete (globalPatch as Record<string, unknown>)["language"];
+        } else {
+          globalPatch.language = validatedLanguage;
+        }
       }
     }
 

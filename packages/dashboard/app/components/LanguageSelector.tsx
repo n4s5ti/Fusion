@@ -15,7 +15,8 @@ const ENDONYMS: Record<Locale, string> = {
 /** Settings control for choosing the UI language. Applies in place (no reload). */
 export function LanguageSelector() {
   const { t } = useTranslation("app");
-  const { language, supportedLocales, setLanguage } = useLanguage();
+  const { language, supportedLocales, setLanguage, clearLanguage, hasExplicitChoice } =
+    useLanguage();
   const label = t("settings.appearance.language", "Language");
 
   return (
@@ -24,13 +25,22 @@ export function LanguageSelector() {
       {/* role="group" + aria-pressed: toggle-button semantics (radiogroup would
           conflict with aria-pressed and confuse screen readers). */}
       <div className="language-options" role="group" aria-label={label}>
+        <button
+          type="button"
+          className={`language-option${hasExplicitChoice ? "" : " active"}`}
+          onClick={clearLanguage}
+          aria-pressed={!hasExplicitChoice}
+          title={t("settings.appearance.languageAutoHint", "Follow the browser language")}
+        >
+          {t("settings.appearance.languageAuto", "Auto")}
+        </button>
         {supportedLocales.map((locale) => (
           <button
             key={locale}
             type="button"
-            className={`language-option${language === locale ? " active" : ""}`}
+            className={`language-option${hasExplicitChoice && language === locale ? " active" : ""}`}
             onClick={() => setLanguage(locale)}
-            aria-pressed={language === locale}
+            aria-pressed={hasExplicitChoice && language === locale}
             lang={locale}
           >
             {ENDONYMS[locale]}

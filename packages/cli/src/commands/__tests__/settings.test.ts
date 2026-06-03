@@ -156,6 +156,34 @@ describe("settings commands", () => {
     expect(resolveProject).not.toHaveBeenCalled();
   });
 
+  it("runSettingsSet language persists a supported locale globally", async () => {
+    const updateSettings = vi.fn().mockResolvedValue(makeSettings({ language: "zh-TW" } as any));
+    const getSettings = vi.fn().mockResolvedValue(makeSettings({ language: "zh-TW" } as any));
+    (GlobalSettingsStore as unknown as ReturnType<typeof vi.fn>).mockImplementation(() => ({
+      init: vi.fn().mockResolvedValue(undefined),
+      updateSettings,
+      getSettings,
+    }));
+
+    await runSettingsSet("language", "zh-TW");
+
+    expect(updateSettings).toHaveBeenCalledWith({ language: "zh-TW" });
+  });
+
+  it("runSettingsSet language auto clears the persisted locale (null-as-delete)", async () => {
+    const updateSettings = vi.fn().mockResolvedValue(makeSettings({}));
+    const getSettings = vi.fn().mockResolvedValue(makeSettings({}));
+    (GlobalSettingsStore as unknown as ReturnType<typeof vi.fn>).mockImplementation(() => ({
+      init: vi.fn().mockResolvedValue(undefined),
+      updateSettings,
+      getSettings,
+    }));
+
+    await runSettingsSet("language", "auto");
+
+    expect(updateSettings).toHaveBeenCalledWith({ language: null });
+  });
+
   it("runSettingsSet with project updates project-only settings", async () => {
     const updateSettings = vi.fn().mockResolvedValue(makeSettings({ maxConcurrent: 6 }));
     const getSettings = vi.fn().mockResolvedValue(makeSettings({ maxConcurrent: 6 }));

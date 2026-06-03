@@ -66,7 +66,8 @@ const ENUM_SETTINGS: Record<string, readonly string[]> = {
   worktreeNaming: ["random", "task-id", "task-title"],
   unavailableNodePolicy: ["block", "fallback-local"],
   "worktrunk.onFailure": ["fail", "fallback-native"],
-  language: SUPPORTED_LOCALES,
+  // "auto" clears the persisted locale and reverts to runtime detection.
+  language: [...SUPPORTED_LOCALES, "auto"],
 };
 
 const STRING_SETTINGS: readonly string[] = [
@@ -338,6 +339,16 @@ export async function runSettingsSet(key: string, value: string, projectName?: s
 
   try {
     const parsedValue = parseValue(validKey, value);
+
+    if (key === "language" && parsedValue === "auto") {
+      // null-as-delete: removes the persisted key so the dashboard re-detects
+      // from the browser and the TUI falls back to the environment locale.
+      await globalStore!.updateSettings({ language: null } as unknown as Partial<GlobalSettings>);
+      console.log();
+      console.log("  ✓ Language reset to auto-detect (browser/environment locale)");
+      console.log();
+      return;
+    }
 
     if (key === "defaultModel") {
       const parts = (parsedValue as string).split("/");

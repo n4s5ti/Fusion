@@ -11,14 +11,18 @@ vi.mock("react-i18next", () => ({
 const { LanguageSelector } = await import("../LanguageSelector");
 const mockUseLanguage = vi.mocked(useLanguage);
 const setLanguage = vi.fn();
+const clearLanguage = vi.fn();
 
 describe("LanguageSelector", () => {
   beforeEach(() => {
     setLanguage.mockClear();
+    clearLanguage.mockClear();
     mockUseLanguage.mockReturnValue({
       language: "en",
       supportedLocales: SUPPORTED_LOCALES,
       setLanguage,
+      clearLanguage,
+      hasExplicitChoice: true,
     });
   });
 
@@ -39,5 +43,26 @@ describe("LanguageSelector", () => {
     render(<LanguageSelector />);
     fireEvent.click(screen.getByText("简体中文"));
     expect(setLanguage).toHaveBeenCalledWith("zh-CN");
+  });
+
+  it("offers an Auto option that clears the explicit choice", () => {
+    render(<LanguageSelector />);
+    const auto = screen.getByText("Auto");
+    expect(auto.getAttribute("aria-pressed")).toBe("false");
+    fireEvent.click(auto);
+    expect(clearLanguage).toHaveBeenCalledTimes(1);
+  });
+
+  it("marks Auto as pressed (and no locale) when no explicit choice exists", () => {
+    mockUseLanguage.mockReturnValue({
+      language: "fr", // detected, not chosen
+      supportedLocales: SUPPORTED_LOCALES,
+      setLanguage,
+      clearLanguage,
+      hasExplicitChoice: false,
+    });
+    render(<LanguageSelector />);
+    expect(screen.getByText("Auto").getAttribute("aria-pressed")).toBe("true");
+    expect(screen.getByText("Français").getAttribute("aria-pressed")).toBe("false");
   });
 });

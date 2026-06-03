@@ -2,8 +2,16 @@ import { Text } from "ink";
 import { render } from "ink-testing-library";
 import { createElement } from "react";
 import { I18nextProvider, useTranslation } from "react-i18next";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import { cliI18n, detectEnvLocale, initCliI18n, resolveCliLocale } from "../index.js";
+
+// cliI18n is a module singleton: restore the locale after each test so cases
+// that switch language (zh-CN/fr) can't leak state into later tests.
+afterEach(async () => {
+  if (cliI18n.isInitialized && cliI18n.language !== "en") {
+    await cliI18n.changeLanguage("en");
+  }
+});
 
 describe("detectEnvLocale", () => {
   it("parses POSIX locale env values to a supported locale", () => {

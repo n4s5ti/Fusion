@@ -124,6 +124,29 @@ describe("useLanguage", () => {
     expect(i18nMock.changeLanguage).toHaveBeenCalledWith("zh-TW");
   });
 
+  it("clearLanguage removes the local key, clears the server setting, and re-detects", () => {
+    store[LANGUAGE_STORAGE_KEY] = "fr";
+    vi.stubGlobal("navigator", { languages: ["es-419", "en-US"], language: "es-419" });
+    const { result } = renderHook(() => useLanguage());
+    expect(result.current.hasExplicitChoice).toBe(true);
+
+    act(() => result.current.clearLanguage());
+
+    expect(store[LANGUAGE_STORAGE_KEY]).toBeUndefined();
+    expect(mockUpdate).toHaveBeenCalledWith({ language: null });
+    expect(i18nMock.changeLanguage).toHaveBeenCalledWith("es"); // re-detected
+    expect(result.current.hasExplicitChoice).toBe(false);
+  });
+
+  it("setLanguage marks the choice explicit; clearLanguage unmarks it", () => {
+    const { result } = renderHook(() => useLanguage());
+    expect(result.current.hasExplicitChoice).toBe(false);
+    act(() => result.current.setLanguage("fr"));
+    expect(result.current.hasExplicitChoice).toBe(true);
+    act(() => result.current.clearLanguage());
+    expect(result.current.hasExplicitChoice).toBe(false);
+  });
+
   it("degrades gracefully when localStorage is unavailable", () => {
     vi.stubGlobal("localStorage", {
       getItem: () => null,

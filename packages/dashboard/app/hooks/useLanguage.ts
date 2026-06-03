@@ -1,4 +1,5 @@
 import { DEFAULT_LOCALE, isLocale, type Locale, SUPPORTED_LOCALES } from "@fusion/core";
+import { normalizeToSupportedLocale } from "@fusion/i18n/config";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { fetchGlobalSettings, updateGlobalSettings } from "../api";
@@ -16,10 +17,26 @@ function readCachedLanguage(): Locale | undefined {
   }
 }
 
+/** Re-run browser language detection, mirroring the i18next detector's
+ *  navigator step (used when the user clears their explicit choice). */
+function detectBrowserLocale(): Locale {
+  if (!isBrowser) return DEFAULT_LOCALE;
+  for (const candidate of navigator.languages ?? [navigator.language]) {
+    const match = normalizeToSupportedLocale(candidate);
+    if (match) return match;
+  }
+  return DEFAULT_LOCALE;
+}
+
 export interface UseLanguageReturn {
   language: Locale;
   supportedLocales: readonly Locale[];
   setLanguage: (locale: Locale) => void;
+  /** Drop the explicit choice everywhere (localStorage + server) and revert
+   *  to runtime auto-detection. */
+  clearLanguage: () => void;
+  /** True when the user has explicitly chosen a language (vs auto-detect). */
+  hasExplicitChoice: boolean;
 }
 
 /**
@@ -36,6 +53,9 @@ export function useLanguage(): UseLanguageReturn {
   const resolved = i18n.resolvedLanguage ?? i18n.language;
   const initial: Locale = isLocale(resolved) ? resolved : DEFAULT_LOCALE;
   const [language, setLanguageState] = useState<Locale>(initial);
+  const [hasExplicitChoice, setHasExplicitChoice] = useState<boolean>(
+    () => readCachedLanguage() !== undefined,
+  );
   const userSetRef = useRef(false);
 
   // Reflect any i18next language change (including programmatic ones) into state.
@@ -54,12 +74,19 @@ export function useLanguage(): UseLanguageReturn {
   useEffect(() => {
     if (!isBrowser) return;
     const onStorage = (event: StorageEvent) => {
-      if (
-        event.key === LANGUAGE_STORAGE_KEY &&
-        isLocale(event.newValue) &&
-        event.newValue !== i18n.resolvedLanguage
-      ) {
-        void i18n.changeLanguage(event.newValue);
+      if (event.key !== LANGUAGE_STORAGE_KEY) return;
+      if (isLocale(event.newValue)) {
+        setHasExplicitChoice(true);
+        if (event.newValue !== i18n.resolvedLanguage) {
+          void i18n.changeLanguage(event.newValue);
+        }
+      } else if (event.newValue === null) {
+        // Another tab cleared the choice — revert to auto-detect here too.
+        setHasExplicitChoice(false);
+        const detected = detectBrowserLocale();
+        if (detected !== i18n.resolvedLanguage) {
+          void i18n.changeLanguage(detected);
+        }
       }
     };
     window.addEventListener("storage", onStorage);
@@ -94,8 +121,9 @@ export function useLanguage(): UseLanguageReturn {
     (locale: Locale) => {
       userSetRef.current = true;
       setLanguageState(locale);
-      // changeLanguage re-renders the tree in place and the detector caches the
-      // choice to localStorage; write it explicitly too in case caching is off.
+      setHasExplicitChoice(true);
+      // changeLanguage re-renders the tree in place; the storage key is the
+      // marker for "explicit user choice", written only here.
       void i18n.changeLanguage(locale);
       try {
         localStorage.setItem(LANGUAGE_STORAGE_KEY, locale);
@@ -109,5 +137,23 @@ export function useLanguage(): UseLanguageReturn {
     [i18n],
   );
 
-  return { language, supportedLocales: SUPPORTED_LOCALES, setLanguage };
+  const clearLanguage = useCallback(() => {
+    userSetRef.current = true;
+    setHasExplicitChoice(false);
+    try {
+      localStorage.removeItem(LANGUAGE_STORAGE_KEY);
+    } catch {
+      // localStorage unavailable — server clear below still runs.
+    }
+    // `language: null` is null-as-delete at the store boundary: the persisted
+    // key is removed and every surface reverts to runtime auto-detection.
+    void updateGlobalSettings({ language: null } as unknown as Parameters<
+      typeof updateGlobalSettings
+    >[0]).catch((error) => {
+      console.warn("[useLanguage] Failed to clear language in global settings", error);
+    });
+    void i18n.changeLanguage(detectBrowserLocale());
+  }, [i18n]);
+
+  return { language, supportedLocales: SUPPORTED_LOCALES, setLanguage, clearLanguage, hasExplicitChoice };
 }
