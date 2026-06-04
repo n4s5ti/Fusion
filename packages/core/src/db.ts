@@ -149,7 +149,7 @@ export function probeFts5(db: DatabaseSync): boolean {
 
 // ── Schema Definition ────────────────────────────────────────────────
 
-const SCHEMA_VERSION = 106;
+const SCHEMA_VERSION = 107;
 
 export { SCHEMA_VERSION };
 
@@ -574,6 +574,20 @@ CREATE TABLE IF NOT EXISTS completion_handoff_markers (
   source TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_completion_handoff_markers_acceptedAt ON completion_handoff_markers(acceptedAt);
+
+-- Per-branch run state for concurrent workflow fan-out/join (U13, KTD-11/R21).
+-- Reconstructible per ADR-0001: a crashed parallel run resumes each branch from
+-- its persisted node; completed branches are not re-run. Additive-only.
+CREATE TABLE IF NOT EXISTS workflow_run_branches (
+  taskId TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+  runId TEXT NOT NULL,
+  branchId TEXT NOT NULL,
+  currentNodeId TEXT NOT NULL,
+  status TEXT NOT NULL,
+  updatedAt TEXT NOT NULL,
+  PRIMARY KEY (taskId, runId, branchId)
+);
+CREATE INDEX IF NOT EXISTS idx_workflow_run_branches_task_run ON workflow_run_branches(taskId, runId);
 
 -- Task documents (key-value store per task with revision tracking)
 CREATE TABLE IF NOT EXISTS task_documents (
@@ -4190,6 +4204,28 @@ export class Database {
     if (version < 106) {
       this.applyMigration(106, () => {
         this.addColumnIfMissing("tasks", "transitionPending", "TEXT");
+      });
+    }
+
+    // Migration 107: Per-branch run state for concurrent workflow fan-out/join
+    // (workflow-columns U13, KTD-11/R21). Stores {taskId, runId, branchId,
+    // currentNodeId, status} so a crashed parallel run resumes each branch from
+    // its persisted node without re-running completed branches. Additive-only,
+    // idempotent (table-exists guard); no backfill.
+    if (version < 107) {
+      this.applyMigration(107, () => {
+        this.db.exec(`
+          CREATE TABLE IF NOT EXISTS workflow_run_branches (
+            taskId TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+            runId TEXT NOT NULL,
+            branchId TEXT NOT NULL,
+            currentNodeId TEXT NOT NULL,
+            status TEXT NOT NULL,
+            updatedAt TEXT NOT NULL,
+            PRIMARY KEY (taskId, runId, branchId)
+          );
+          CREATE INDEX IF NOT EXISTS idx_workflow_run_branches_task_run ON workflow_run_branches(taskId, runId);
+        `);
       });
     }
 

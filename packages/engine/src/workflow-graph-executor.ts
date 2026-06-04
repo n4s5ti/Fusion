@@ -7,6 +7,14 @@ import {
   type WorkflowCustomNodeRunner,
   type WorkflowLegacySeams,
 } from "./workflow-node-handlers.js";
+import {
+  runSplitJoin,
+  type BranchEnvironment,
+  type WorkflowBranchPersistence,
+  type WorkflowBranchProgress,
+  type WorkflowBranchRunState,
+  type WorkflowBranchSemaphore,
+} from "./workflow-graph-branches.js";
 
 export type WorkflowNodeOutcome = "success" | "failure";
 
@@ -20,6 +28,9 @@ export interface WorkflowNodeExecutionContext {
   task: TaskDetail;
   settings: Pick<Settings, "experimentalFeatures"> | undefined;
   context: Record<string, unknown>;
+  /** Set during concurrent branch execution; fail-fast aborts via this signal.
+   *  Undefined on the sequential path (zero behavior change for linear graphs). */
+  signal?: AbortSignal;
 }
 
 export type WorkflowNodeHandler = (node: WorkflowIrNode, context: WorkflowNodeExecutionContext) => Promise<WorkflowNodeResult>;
@@ -30,6 +41,15 @@ export interface WorkflowGraphExecutorDeps {
   /** Executes custom (non-seam) prompt/script/gate nodes. */
   runCustomNode?: WorkflowCustomNodeRunner;
   maxRetriesPerNode?: number;
+  /** Per-branch run-state persistence (U13). Optional — fully in-memory without it. */
+  branchPersistence?: WorkflowBranchPersistence;
+  /** Bounds concurrent branch-node execution. Omit when the semaphore is
+   *  enforced beneath runCustomNode (the session layer) to avoid double-acquire. */
+  branchSemaphore?: WorkflowBranchSemaphore;
+  /** Live per-branch progress (dashboard badges). */
+  onBranchProgress?: (progress: WorkflowBranchProgress) => void;
+  /** Stable identifier for this run, used to key persisted branch state. */
+  runId?: string;
 }
 
 export interface WorkflowGraphExecutorResult {
@@ -85,6 +105,34 @@ export class WorkflowGraphExecutor {
     const context: Record<string, unknown> = {};
     const visitedNodeIds: string[] = [];
     const inStack = new Set<string>();
+    const runId = this.deps.runId ?? `${task.id}:run`;
+
+    // On resume, completed branch nodes (from a prior crashed run) are skipped
+    // so their handlers do not re-fire (idempotency).
+    let completedNodeIds: Set<string> | undefined;
+    const persisted = await this.deps.branchPersistence?.loadBranchStates?.(task.id, runId);
+    if (persisted && persisted.length > 0) {
+      completedNodeIds = new Set(
+        persisted
+          .filter((s: WorkflowBranchRunState) => s.status === "completed")
+          .map((s) => s.currentNodeId),
+      );
+    }
+
+    // Shared branch environment: built lazily so the sequential path pays nothing.
+    const branchEnv = (): BranchEnvironment => ({
+      task,
+      settings,
+      runId,
+      nodeMap,
+      outgoingMap,
+      runBranchNode: (node, signal) => this.executeNodeWithRetries(node, task, settings, context, signal),
+      shouldTraverseEdge: (edge, source) => this.shouldTraverseEdge(edge, source),
+      persistence: this.deps.branchPersistence,
+      semaphore: this.deps.branchSemaphore,
+      onBranchProgress: this.deps.onBranchProgress,
+      completedNodeIds,
+    });
 
     const walk = async (nodeId: string): Promise<WorkflowNodeResult> => {
       const node = nodeMap.get(nodeId);
@@ -99,6 +147,23 @@ export class WorkflowGraphExecutor {
         }
         if (node.kind === "end") {
           return { outcome: "success" };
+        }
+
+        if (node.kind === "split") {
+          // Concurrent fan-out: branches run in parallel up to their join, which
+          // synchronizes per its config. The card stays in the split's column for
+          // the whole window (no handler-driven move happens in here). Execution
+          // then continues sequentially from the join node.
+          const splitResult = await runSplitJoin(node, branchEnv());
+          visitedNodeIds.push(...splitResult.visitedNodeIds);
+          context[`node:${node.id}:outcome`] = splitResult.outcome;
+          context[`node:${splitResult.joinNodeId}:outcome`] = splitResult.outcome;
+          context[`node:${splitResult.joinNodeId}:branchOutcomes`] = splitResult.branchOutcomes;
+          if (!inStack.has(splitResult.joinNodeId)) visitedNodeIds.push(splitResult.joinNodeId);
+          return await traverseChildren(
+            nodeMap.get(splitResult.joinNodeId)!,
+            { outcome: splitResult.outcome },
+          );
         }
 
         const result = await this.executeNodeWithRetries(node, task, settings, context);
@@ -164,6 +229,7 @@ export class WorkflowGraphExecutor {
     task: TaskDetail,
     settings: Pick<Settings, "experimentalFeatures"> | undefined,
     context: Record<string, unknown>,
+    signal?: AbortSignal,
   ): Promise<WorkflowNodeResult> {
     const handler = this.handlers[node.kind];
     if (!handler) {
@@ -178,8 +244,10 @@ export class WorkflowGraphExecutor {
 
     let lastError: unknown;
     for (let attempt = 0; attempt < maxAttempts; attempt++) {
+      // Fail-fast cancellation: a branch aborted mid-retry stops re-trying.
+      if (signal?.aborted) return { outcome: "failure", value: "aborted" };
       try {
-        return await handler(node, { task, settings, context });
+        return await handler(node, { task, settings, context, signal });
       } catch (error) {
         lastError = error;
       }

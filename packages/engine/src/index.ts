@@ -26,6 +26,13 @@ export {
   type WorkflowGraphExecutorResult,
 } from "./workflow-graph-executor.js";
 export {
+  runSplitJoin,
+  type WorkflowBranchPersistence,
+  type WorkflowBranchProgress,
+  type WorkflowBranchRunState,
+  type WorkflowBranchSemaphore,
+} from "./workflow-graph-branches.js";
+export {
   createDefaultNodeHandlers,
   createNoopLegacySeams,
   type WorkflowCustomNodeRunner,
@@ -63,6 +70,13 @@ export {
   getConflictedFiles,
   type AutostashHandle,
 } from "./merger.js";
+export {
+  registerMergeTraitHooks,
+  resolveMergePolicy,
+  type ResolvedMergePolicy,
+  type MergeFileScopeMode,
+  type MergeTraitStrategy,
+} from "./merge-trait.js";
 export {
   resolveIntegrationBranch,
   resolveIntegrationBranchSync,
