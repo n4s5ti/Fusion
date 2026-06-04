@@ -16,7 +16,7 @@ vi.mock("../../api", () => ({
 }));
 
 import { fireEvent } from "@testing-library/react";
-import { fetchWorkflows, fetchTraits, updateWorkflow, compileWorkflow, createWorkflow } from "../../api";
+import { fetchWorkflows, fetchTraits, updateWorkflow, compileWorkflow, createWorkflow, fetchModels } from "../../api";
 import type { TraitCatalogEntry } from "../../api";
 import { WorkflowNodeEditor } from "../WorkflowNodeEditor";
 
@@ -253,5 +253,223 @@ describe("WorkflowNodeEditor — U10 columns/traits/holds", () => {
     const [, updates] = vi.mocked(updateWorkflow).mock.calls[0];
     expect((updates as { ir: { version: string } }).ir.version).toBe("v2");
     expect((updates as { ir: { columns: unknown[] } }).ir.columns).toHaveLength(2);
+  });
+});
+
+// ── U8: step-inversion authoring (foreach/step-review/parse-steps/code) ──────
+
+/** A custom v2 workflow with a foreach (one step-execute child + a step-review)
+ *  so the editor's group/template + edge inspector surfaces have something to
+ *  render and round-trip. */
+function stepwiseDef(): WorkflowDefinition {
+  return {
+    id: "WF-STEP",
+    name: "Stepwise",
+    description: "",
+    ir: {
+      version: "v2",
+      name: "Stepwise",
+      columns: [
+        { id: "plan", name: "Plan", traits: [{ trait: "intake" }] },
+        { id: "in-progress", name: "In progress", traits: [] },
+        { id: "done", name: "Done", traits: [{ trait: "complete" }] },
+      ],
+      artifacts: [{ key: "PROMPT.md", role: "step-source" }],
+      nodes: [
+        { id: "start", kind: "start", column: "plan" },
+        { id: "parse", kind: "parse-steps", column: "plan", config: { artifact: "PROMPT.md", parser: "step-headings" } },
+        {
+          id: "loop",
+          kind: "foreach",
+          column: "in-progress",
+          config: {
+            source: "task-steps",
+            mode: "sequential",
+            isolation: "shared",
+            template: {
+              nodes: [
+                { id: "exec", kind: "prompt", config: { seam: "step-execute" } },
+                { id: "review", kind: "step-review", config: { type: "code" } },
+              ],
+              edges: [
+                { from: "exec", to: "review", condition: "success" },
+                { from: "review", to: "exec", condition: "outcome:approve" },
+              ],
+            },
+          },
+        },
+        { id: "end", kind: "end", column: "done" },
+      ],
+      edges: [
+        { from: "start", to: "parse", condition: "success" },
+        { from: "parse", to: "loop", condition: "success" },
+        { from: "loop", to: "end", condition: "success" },
+      ],
+    },
+    layout: {},
+    createdAt: "2026-06-04T00:00:00.000Z",
+    updatedAt: "2026-06-04T00:00:00.000Z",
+  };
+}
+
+describe("WorkflowNodeEditor — U8 step-inversion authoring", () => {
+  beforeEach(() => {
+    vi.mocked(fetchTraits).mockResolvedValue(TRAIT_CATALOG);
+  });
+  afterEach(() => {
+    cleanup();
+    vi.clearAllMocks();
+  });
+
+  it("offers the new step-inversion palette entries (i18n defaults present)", async () => {
+    vi.mocked(fetchWorkflows).mockResolvedValue([v2Def()]);
+    render(<WorkflowNodeEditor isOpen onClose={() => {}} addToast={() => {}} />);
+    await screen.findByText("Save");
+    expect(screen.getByText("For-each step")).toBeInTheDocument();
+    expect(screen.getByText("Step review")).toBeInTheDocument();
+    expect(screen.getByText("Parse steps")).toBeInTheDocument();
+    expect(screen.getByText("Code")).toBeInTheDocument();
+  });
+
+  it("auto-populates a step-execute child when a foreach is added from the palette", async () => {
+    vi.mocked(fetchWorkflows).mockResolvedValue([v2Def()]);
+    vi.mocked(updateWorkflow).mockImplementation(async (_id, updates) => ({ ...v2Def(), ...(updates as object) }));
+    vi.mocked(compileWorkflow).mockResolvedValue({ steps: [] });
+
+    render(<WorkflowNodeEditor isOpen onClose={() => {}} addToast={() => {}} />);
+    await screen.findByText("Save");
+    // Adding a foreach renders a group node with an empty inspector hint absent
+    // (it has a child) and an inspector for the foreach.
+    fireEvent.click(screen.getByText("For-each step").closest("button")!);
+    await waitFor(() => expect(screen.getByTestId("wf-node-foreach")).toBeInTheDocument());
+    // The foreach inspector shows the Mode select (KTD-3).
+    expect(screen.getByText("Mode")).toBeInTheDocument();
+    // No empty-state hint because the palette seeded a step-execute child.
+    expect(screen.queryByTestId("wf-foreach-empty")).not.toBeInTheDocument();
+
+    // Save and assert the foreach round-trips with exactly one step-execute child.
+    await waitFor(() => expect(screen.getAllByLabelText(/Column name/i).length).toBeGreaterThan(0));
+    fireEvent.click(screen.getByText("Save").closest("button")!);
+    await waitFor(() => expect(updateWorkflow).toHaveBeenCalled());
+    const [, updates] = vi.mocked(updateWorkflow).mock.calls[0];
+    const ir = (updates as { ir: { nodes: { kind: string; config?: Record<string, unknown> }[] } }).ir;
+    const foreach = ir.nodes.find((n) => n.kind === "foreach");
+    expect(foreach).toBeTruthy();
+    const template = foreach!.config!.template as { nodes: { config?: Record<string, unknown> }[] };
+    expect(template.nodes).toHaveLength(1);
+    expect(template.nodes[0].config?.seam).toBe("step-execute");
+  });
+
+  it("edits foreach mode/isolation/concurrency/maxReworkCycles inspector fields", async () => {
+    vi.mocked(fetchWorkflows).mockResolvedValue([stepwiseDef()]);
+    render(<WorkflowNodeEditor isOpen onClose={() => {}} addToast={() => {}} />);
+    const group = await screen.findByTestId("wf-node-foreach");
+    fireEvent.click(group);
+
+    const modeSel = (await screen.findByText("Mode")).parentElement!.querySelector("select")!;
+    // Switching to parallel flips isolation away from the (now disabled) shared
+    // option and reveals the concurrency input.
+    fireEvent.change(modeSel, { target: { value: "parallel" } });
+    await waitFor(() => expect(screen.getByText("Concurrency")).toBeInTheDocument());
+    const isoSel = screen.getByText("Isolation").parentElement!.querySelector("select")! as HTMLSelectElement;
+    expect(isoSel.value).toBe("worktree");
+    const sharedOpt = isoSel.querySelector('option[value="shared"]') as HTMLOptionElement;
+    expect(sharedOpt.disabled).toBe(true);
+
+    const maxRework = screen.getByText("Max rework cycles").parentElement!.querySelector("input")!;
+    fireEvent.change(maxRework, { target: { value: "5" } });
+    expect((maxRework as HTMLInputElement).value).toBe("5");
+  });
+
+  it("edits step-review type and shows the verdict edge inspector with a rework toggle", async () => {
+    vi.mocked(fetchWorkflows).mockResolvedValue([stepwiseDef()]);
+    vi.mocked(fetchModels).mockResolvedValue({ models: [] });
+    render(<WorkflowNodeEditor isOpen onClose={() => {}} addToast={() => {}} />);
+    // Select the step-review template child.
+    const reviewNode = await screen.findByTestId("wf-node-step-review");
+    fireEvent.click(reviewNode);
+    const typeSel = (await screen.findByText("Review type")).parentElement!.querySelector("select")! as HTMLSelectElement;
+    expect(typeSel.value).toBe("code");
+    fireEvent.change(typeSel, { target: { value: "plan" } });
+    expect(typeSel.value).toBe("plan");
+  });
+
+  it("round-trips a rework edge created/removed via the edge inspector contract", () => {
+    // React Flow does not render edges under jsdom (it needs measured node
+    // dimensions), so the in-browser edge-click path is exercised at the mapping
+    // level: the edge inspector's only effect is to stamp `data.kind` (rework)
+    // and the `outcome:<verdict>` condition onto the selected flow edge; flowToIr
+    // must fold that into the foreach template as kind:"rework". (The full
+    // template round-trip — including rework edges — is covered in
+    // workflow-flow-mapping.test.ts.)
+    const def = stepwiseDef();
+    const { nodes, edges } = irToFlow(def);
+    const columns = def.ir.version === "v2" ? def.ir.columns : [];
+
+    // Simulate the edge inspector toggling the review→exec edge to rework.
+    const reworked = edges.map((e) =>
+      e.source.endsWith("::review") && e.target.endsWith("::exec")
+        ? { ...e, data: { ...(e.data ?? {}), condition: "outcome:approve", kind: "rework" } }
+        : e,
+    );
+    const { ir: out } = flowToIr("Stepwise", nodes, reworked, columns);
+    const foreach = out.nodes.find((n) => n.kind === "foreach")!;
+    const template = foreach.config!.template as { edges: { condition?: string; kind?: string }[] };
+    expect(template.edges.find((e) => e.condition === "outcome:approve")?.kind).toBe("rework");
+
+    // Removing rework (toggle off) drops the kind on round-trip.
+    const cleared = edges.map((e) =>
+      e.source.endsWith("::review") && e.target.endsWith("::exec")
+        ? { ...e, data: { ...(e.data ?? {}), condition: "outcome:approve", kind: undefined } }
+        : e,
+    );
+    const { ir: out2 } = flowToIr("Stepwise", nodes, cleared, columns);
+    const fe2 = out2.nodes.find((n) => n.kind === "foreach")!;
+    const tpl2 = fe2.config!.template as { edges: { condition?: string; kind?: string }[] };
+    expect(tpl2.edges.find((e) => e.condition === "outcome:approve")?.kind).toBeUndefined();
+  });
+
+  it("surfaces a parseWorkflowIr validation error inline at save (unrouted approve edge)", async () => {
+    const addToast = vi.fn();
+    vi.mocked(fetchWorkflows).mockResolvedValue([stepwiseDef()]);
+    vi.mocked(updateWorkflow).mockRejectedValue(
+      new Error("step-review node 'review' must route outcome:revise"),
+    );
+    render(<WorkflowNodeEditor isOpen onClose={() => {}} addToast={addToast} />);
+    await screen.findByText("Save");
+    await waitFor(() => expect(screen.getAllByLabelText(/Column name/i).length).toBeGreaterThan(0));
+    fireEvent.click(screen.getByText("Save").closest("button")!);
+    await waitFor(() => expect(updateWorkflow).toHaveBeenCalled());
+    // Validation banner renders the server error inline.
+    await waitFor(() =>
+      expect(screen.getByText(/must route outcome:revise/i)).toBeInTheDocument(),
+    );
+    expect(addToast).toHaveBeenCalledWith(expect.stringMatching(/must route outcome:revise/i), "error");
+  });
+
+  it("edits parse-steps artifact (from declared artifacts) and parser", async () => {
+    vi.mocked(fetchWorkflows).mockResolvedValue([stepwiseDef()]);
+    render(<WorkflowNodeEditor isOpen onClose={() => {}} addToast={() => {}} />);
+    const parseNode = await screen.findByTestId("wf-node-parse-steps");
+    fireEvent.click(parseNode);
+    const artifactSel = (await screen.findByText("Artifact")).parentElement!.querySelector("select")! as HTMLSelectElement;
+    // Sourced from the workflow's declared artifacts.
+    expect(artifactSel.value).toBe("PROMPT.md");
+    const parserSel = screen.getByText("Parser").parentElement!.querySelector("select")! as HTMLSelectElement;
+    fireEvent.change(parserSel, { target: { value: "json-steps" } });
+    expect(parserSel.value).toBe("json-steps");
+  });
+
+  it("edits a code node source and timeout", async () => {
+    vi.mocked(fetchWorkflows).mockResolvedValue([v2Def()]);
+    render(<WorkflowNodeEditor isOpen onClose={() => {}} addToast={() => {}} />);
+    await screen.findByText("Save");
+    fireEvent.click(screen.getByText("Code").closest("button")!);
+    const source = (await screen.findByText("Source (TypeScript)")).parentElement!.querySelector("textarea")! as HTMLTextAreaElement;
+    fireEvent.change(source, { target: { value: "export default async()=>({outcome:'success'})" } });
+    expect(source.value).toContain("outcome:'success'");
+    const timeout = screen.getByText("Timeout (ms)").parentElement!.querySelector("input")! as HTMLInputElement;
+    fireEvent.change(timeout, { target: { value: "12000" } });
+    expect(timeout.value).toBe("12000");
   });
 });
