@@ -17,7 +17,7 @@
 
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { readFileSync, statSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import path from "node:path";
 
 /**
@@ -61,42 +61,14 @@ function parseLsFiles(lsOut) {
 }
 
 /**
- * Compute a content hash over the given repo-relative input paths.
+ * Parse `git status --porcelain -uall` output into dirty/untracked path sets.
  *
- * Each path may be a file or a directory; git expands directories to their
- * tracked files. Dirty (modified-tracked) and untracked-not-ignored files have
- * their working-tree bytes hashed so the hash reflects real on-disk content,
- * never a stale index blob SHA.
- *
- * @param {object} options
- * @param {string} options.rootDir          Repo root (cwd for git).
- * @param {string[]} options.inputPaths     Repo-relative files/dirs to hash.
- * @param {string} [options.versionPrefix]  Constant mixed in to bust on format change.
- * @param {(args: string[], cwd: string) => string|null} [options.gitFn]  Injectable git.
- * @param {(absPath: string) => Buffer|string} [options.readFn]  Injectable file reader.
- * @returns {string} 64-char hex SHA-256.
+ * @param {string|null} statusOut
+ * @returns {{ dirtyPaths: Set<string>, untrackedPaths: Set<string> }}
  */
-export function computeContentHash({
-  rootDir,
-  inputPaths,
-  versionPrefix = "ch-v1",
-  gitFn = defaultGitRunner,
-  readFn = (absPath) => readFileSync(absPath),
-}) {
-  const hash = createHash("sha256");
-  hash.update(versionPrefix);
-  hash.update("\0");
-
-  // Tracked files (index blob SHAs) for every input path.
-  const tracked = parseLsFiles(gitFn(["ls-files", "-s", "--", ...inputPaths], rootDir));
-  const trackedByPath = new Map(tracked.map((entry) => [entry.filePath, entry.blobSha]));
-
-  // Working-tree status: which tracked files are modified, which are untracked.
-  // `git status --porcelain -uall -- <paths>` reports both. Untracked entries
-  // are prefixed with `??`; modified-tracked with ` M`/`M `/etc.
+function parseStatus(statusOut) {
   const dirtyPaths = new Set();
   const untrackedPaths = new Set();
-  const statusOut = gitFn(["status", "--porcelain", "-uall", "--", ...inputPaths], rootDir);
   if (statusOut) {
     for (const rawLine of statusOut.split("\n")) {
       if (!rawLine) continue;
@@ -117,6 +89,102 @@ export function computeContentHash({
         dirtyPaths.add(file);
       }
     }
+  }
+  return { dirtyPaths, untrackedPaths };
+}
+
+/**
+ * Snapshot the WHOLE repo's tracked blob SHAs and working-tree status with two
+ * git spawns total, so many computeContentHash calls in one run can filter by
+ * path prefix in JS instead of each spawning its own scoped `git ls-files` +
+ * `git status` pair (~2 spawns x N packages otherwise — the dominant fixed cost
+ * of the cache-check pass).
+ *
+ * The snapshot reflects the working tree at creation time; callers must not
+ * reuse it across operations that modify the tree.
+ *
+ * @param {object} options
+ * @param {string} options.rootDir
+ * @param {(args: string[], cwd: string) => string|null} [options.gitFn]
+ * @returns {{ trackedByPath: Map<string, string>, dirtyPaths: Set<string>, untrackedPaths: Set<string> }}
+ */
+export function createRepoContentSnapshot({ rootDir, gitFn = defaultGitRunner }) {
+  const tracked = parseLsFiles(gitFn(["ls-files", "-s"], rootDir));
+  const trackedByPath = new Map(tracked.map((entry) => [entry.filePath, entry.blobSha]));
+  const { dirtyPaths, untrackedPaths } = parseStatus(
+    gitFn(["status", "--porcelain", "-uall"], rootDir),
+  );
+  return { trackedByPath, dirtyPaths, untrackedPaths };
+}
+
+/**
+ * True when repo-relative `filePath` is selected by one of `inputPaths` (each
+ * an exact file path or a directory prefix).
+ *
+ * @param {string} filePath
+ * @param {string[]} inputPaths
+ * @returns {boolean}
+ */
+function matchesInputPaths(filePath, inputPaths) {
+  for (const input of inputPaths) {
+    if (filePath === input || filePath.startsWith(`${input}/`)) return true;
+  }
+  return false;
+}
+
+/**
+ * Compute a content hash over the given repo-relative input paths.
+ *
+ * Each path may be a file or a directory; git expands directories to their
+ * tracked files. Dirty (modified-tracked) and untracked-not-ignored files have
+ * their working-tree bytes hashed so the hash reflects real on-disk content,
+ * never a stale index blob SHA.
+ *
+ * @param {object} options
+ * @param {string} options.rootDir          Repo root (cwd for git).
+ * @param {string[]} options.inputPaths     Repo-relative files/dirs to hash.
+ * @param {string} [options.versionPrefix]  Constant mixed in to bust on format change.
+ * @param {(args: string[], cwd: string) => string|null} [options.gitFn]  Injectable git.
+ * @param {(absPath: string) => Buffer|string} [options.readFn]  Injectable file reader.
+ * @param {ReturnType<typeof createRepoContentSnapshot>} [options.snapshot]
+ *        Optional repo-wide snapshot; when given, no git is spawned — entries
+ *        are selected from the snapshot by path prefix. Hash output is
+ *        identical to the spawn path for the same tree state.
+ * @returns {string} 64-char hex SHA-256.
+ */
+export function computeContentHash({
+  rootDir,
+  inputPaths,
+  versionPrefix = "ch-v1",
+  gitFn = defaultGitRunner,
+  readFn = (absPath) => readFileSync(absPath),
+  snapshot,
+}) {
+  const hash = createHash("sha256");
+  hash.update(versionPrefix);
+  hash.update("\0");
+
+  let trackedByPath;
+  let dirtyPaths;
+  let untrackedPaths;
+  if (snapshot) {
+    // Select from the repo-wide snapshot by prefix — zero git spawns.
+    trackedByPath = new Map();
+    for (const [filePath, blobSha] of snapshot.trackedByPath) {
+      if (matchesInputPaths(filePath, inputPaths)) trackedByPath.set(filePath, blobSha);
+    }
+    dirtyPaths = new Set([...snapshot.dirtyPaths].filter((p) => matchesInputPaths(p, inputPaths)));
+    untrackedPaths = new Set(
+      [...snapshot.untrackedPaths].filter((p) => matchesInputPaths(p, inputPaths)),
+    );
+  } else {
+    // Tracked files (index blob SHAs) for every input path.
+    const tracked = parseLsFiles(gitFn(["ls-files", "-s", "--", ...inputPaths], rootDir));
+    trackedByPath = new Map(tracked.map((entry) => [entry.filePath, entry.blobSha]));
+    // Working-tree status: which tracked files are modified, which are untracked.
+    ({ dirtyPaths, untrackedPaths } = parseStatus(
+      gitFn(["status", "--porcelain", "-uall", "--", ...inputPaths], rootDir),
+    ));
   }
 
   // Build the full path list: every tracked file plus every untracked file.
@@ -172,6 +240,3 @@ export function readJsonCache(filePath, fallback) {
 export function fusionCacheDir(rootDir) {
   return path.join(rootDir, "node_modules", ".cache", "fusion");
 }
-
-/** Re-export statSync passthrough so callers can stub uniformly if needed. */
-export { statSync };

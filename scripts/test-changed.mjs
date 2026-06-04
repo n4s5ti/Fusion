@@ -9,7 +9,7 @@ import { cpus, tmpdir } from "node:os";
 import { createRequire } from "node:module";
 import { ensureTestArtifacts } from "./ensure-test-artifacts.mjs";
 import { isSkillSyncCheckCached } from "./sync-fusion-skill-tools.mjs";
-import { computeContentHash } from "./lib/content-hash.mjs";
+import { computeContentHash, createRepoContentSnapshot } from "./lib/content-hash.mjs";
 
 const currentFilePath = fileURLToPath(import.meta.url);
 const scriptDir = path.dirname(currentFilePath);
@@ -112,6 +112,10 @@ const HASH_VERSION_PREFIX = "v2";
  *     (mobile, droid-cli, pi-*, and every plugin/example). Dep-aware hashing
  *     alone would miss those, so we fold the tree in globally — the simplest
  *     provably-correct choice (mirrors the tsconfig.base.json treatment).
+ *
+ * NOTE: this list intentionally overlaps `shouldForceFullSuite`'s
+ * `fullSuitePaths` (which decides full-suite mode, a different axis than cache
+ * busting). When adding a new shared root config input, consider both lists.
  */
 const SHARED_HASH_INPUT_PATHS = [
   "pnpm-lock.yaml",
@@ -425,6 +429,9 @@ function isTestIrrelevantRootPath(file) {
 }
 
 export function shouldForceFullSuite(changedFiles) {
+  // NOTE: overlaps SHARED_HASH_INPUT_PATHS by intent (different axis: this list
+  // forces full-suite mode; that one busts every package's cache hash). When
+  // adding a new shared root config input, consider both lists.
   const fullSuitePaths = [
     "package.json",
     "pnpm-lock.yaml",
@@ -619,7 +626,7 @@ function adaptGitFnForContentHash(gitFn) {
  * @param {Map<string, string>} [memo]  Per-call memo keyed by packageDir.
  * @returns {string} 64-char hex SHA-256
  */
-export function computeOwnHash(packageDir, gitFn = gitOutput, memo) {
+export function computeOwnHash(packageDir, gitFn = gitOutput, memo, snapshot) {
   if (memo?.has(packageDir)) return memo.get(packageDir);
 
   const ownHash = computeContentHash({
@@ -627,6 +634,7 @@ export function computeOwnHash(packageDir, gitFn = gitOutput, memo) {
     inputPaths: [packageDir],
     versionPrefix: `${HASH_VERSION_PREFIX}:own`,
     gitFn: adaptGitFnForContentHash(gitFn),
+    snapshot,
   });
 
   memo?.set(packageDir, ownHash);
@@ -642,7 +650,7 @@ export function computeOwnHash(packageDir, gitFn = gitOutput, memo) {
  * @param {Map<string, string>} [memo]
  * @returns {string}
  */
-function computeSharedInputsHash(gitFn = gitOutput, memo) {
+function computeSharedInputsHash(gitFn = gitOutput, memo, snapshot) {
   const memoKey = "\0shared-inputs\0";
   if (memo?.has(memoKey)) return memo.get(memoKey);
 
@@ -651,6 +659,7 @@ function computeSharedInputsHash(gitFn = gitOutput, memo) {
     inputPaths: SHARED_HASH_INPUT_PATHS,
     versionPrefix: `${HASH_VERSION_PREFIX}:shared`,
     gitFn: adaptGitFnForContentHash(gitFn),
+    snapshot,
   });
 
   memo?.set(memoKey, sharedHash);
@@ -681,10 +690,13 @@ function computeSharedInputsHash(gitFn = gitOutput, memo) {
  * @param {Map<string, string[]>} [options.forwardDependencyMap]  name → [dep names].
  * @param {Map<string, string>} [options.packageDirByName]  name → relative dir.
  * @param {Map<string, string>} [options.memo]  Per-run own-hash memo (perf).
+ * @param {object} [options.snapshot]  Repo-wide content snapshot (from
+ *        createRepoContentSnapshot — 2 git spawns total) shared across all hash
+ *        computations in a run; without it each own-hash pays its own spawns.
  * @returns {string} 64-char hex SHA-256
  */
 export function computePackageHash(packageDir, gitFn = gitOutput, options = {}) {
-  const { packageName, forwardDependencyMap, packageDirByName, memo = new Map() } = options;
+  const { packageName, forwardDependencyMap, packageDirByName, memo = new Map(), snapshot } = options;
 
   const hash = createHash("sha256");
   hash.update(HASH_VERSION_PREFIX);
@@ -692,12 +704,12 @@ export function computePackageHash(packageDir, gitFn = gitOutput, options = {}) 
 
   // Shared inputs (lockfile, base tsconfig, shared __test-utils__ tree).
   hash.update("shared=");
-  hash.update(computeSharedInputsHash(gitFn, memo));
+  hash.update(computeSharedInputsHash(gitFn, memo, snapshot));
   hash.update("\0");
 
   // This package's own dirty-aware content.
   hash.update("own=");
-  hash.update(computeOwnHash(packageDir, gitFn, memo));
+  hash.update(computeOwnHash(packageDir, gitFn, memo, snapshot));
   hash.update("\0");
 
   // Transitive workspace dependencies' own hashes (sorted by name for stability).
@@ -709,7 +721,7 @@ export function computePackageHash(packageDir, gitFn = gitOutput, options = {}) 
       hash.update("dep:");
       hash.update(depName);
       hash.update("=");
-      hash.update(computeOwnHash(depDir, gitFn, memo));
+      hash.update(computeOwnHash(depDir, gitFn, memo, snapshot));
       hash.update("\0");
     }
   }
@@ -768,6 +780,11 @@ export function applyCacheToPlan(plan, options = {}) {
     writeCacheFn,
     packageDirByName = new Map(),
     forwardDependencyMap = new Map(),
+    // Shared per-RUN memo + repo snapshot: main() passes the same pair to
+    // recordCachePass so the record pass re-spawns zero git and re-hashes
+    // nothing (test runs don't modify hashed source).
+    memo = new Map(),
+    snapshot,
   } = options;
 
   // Full suite runs always bypass cache (full means full).
@@ -781,9 +798,6 @@ export function applyCacheToPlan(plan, options = {}) {
 
   const cachedPackages = [];
   const activePackages = [];
-  // Shared per-call memo so each package/dependency own-hash is computed once,
-  // keeping dep-aware hashing O(packages) rather than O(packages^2).
-  const memo = new Map();
 
   for (const pkg of plan.packages ?? []) {
     const pkgDir = packageDirByName.get(pkg) ?? `packages/${pkg.replace(/^@[^/]+\//, "")}`;
@@ -792,6 +806,7 @@ export function applyCacheToPlan(plan, options = {}) {
       forwardDependencyMap,
       packageDirByName,
       memo,
+      snapshot,
     });
     const entry = cache.entries[pkg];
 
@@ -827,6 +842,10 @@ export function recordCachePass(packages, packageDirByName, options = {}) {
     readCacheFn,
     writeCacheFn,
     forwardDependencyMap = new Map(),
+    // When main() passes the memo/snapshot already populated by
+    // applyCacheToPlan, every hash below is a memo hit — zero git spawns.
+    memo = new Map(),
+    snapshot,
   } = options;
 
   if (noCache || packages.length === 0) return;
@@ -834,8 +853,6 @@ export function recordCachePass(packages, packageDirByName, options = {}) {
   const filePath = cacheFilePath();
   const cache = readCacheFn ? readCacheFn() : readCache(filePath);
   const now = new Date().toISOString();
-  // Shared per-call memo (see applyCacheToPlan): keep own-hashing O(packages).
-  const memo = new Map();
 
   for (const pkg of packages) {
     const pkgDir = packageDirByName.get(pkg) ?? `packages/${pkg.replace(/^@[^/]+\//, "")}`;
@@ -844,6 +861,7 @@ export function recordCachePass(packages, packageDirByName, options = {}) {
       forwardDependencyMap,
       packageDirByName,
       memo,
+      snapshot,
     });
     cache.entries[pkg] = { hash, passedAt: now, command: "test" };
   }
@@ -1100,11 +1118,21 @@ export function main(argv = process.argv.slice(2)) {
   // actually needs running before we spend setup time.
   let cachedPackages = [];
   let activePackages = plan.packages ?? [];
+  // One repo-wide content snapshot (2 git spawns) + one own-hash memo for the
+  // entire run: applyCacheToPlan populates them, recordCachePass reuses them,
+  // so per-package git spawns and re-hashing happen exactly once per run.
+  const hashMemo = new Map();
+  let hashSnapshot;
   if (plan.mode === "changed") {
+    if (!(noCache || forceFullSuite)) {
+      hashSnapshot = createRepoContentSnapshot({ rootDir });
+    }
     ({ cachedPackages, activePackages } = applyCacheToPlan(plan, {
       noCache: noCache || forceFullSuite,
       packageDirByName,
       forwardDependencyMap,
+      memo: hashMemo,
+      snapshot: hashSnapshot,
     }));
   }
 
@@ -1180,7 +1208,12 @@ export function main(argv = process.argv.slice(2)) {
   });
 
   // Tests passed — record in cache (never cache failures; process.exit on failure above).
-  recordCachePass(activePackages, packageDirByName, { noCache, forwardDependencyMap });
+  recordCachePass(activePackages, packageDirByName, {
+    noCache,
+    forwardDependencyMap,
+    memo: hashMemo,
+    snapshot: hashSnapshot,
+  });
   } finally {
     cleanupIsolatedHome();
   }

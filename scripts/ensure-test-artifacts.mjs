@@ -229,10 +229,6 @@ export function detectMissingOrStaleArtifacts(
   });
 }
 
-export function detectMissingArtifacts(rootDir = process.cwd(), existsFn = existsSync, statFn = statSync, readdirFn = readdirSync) {
-  return detectMissingOrStaleArtifacts(rootDir, existsFn, statFn, readdirFn);
-}
-
 function classifyArtifactIssues(pkgEntry, rootDir, existsFn, statFn, readdirFn) {
   const missingPaths = pkgEntry.requiredArtifacts.filter((artifactPath) => !existsFn(path.join(rootDir, artifactPath)));
   if (missingPaths.length > 0) {

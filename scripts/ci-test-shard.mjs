@@ -69,13 +69,27 @@ export function parseShardArgs(argv = process.argv.slice(2), env = process.env) 
   return { shard, total };
 }
 
-export function countPackageTestFiles(packageDir, { projectRoot = process.cwd() } = {}) {
+/**
+ * List a package's test files (repo-relative to the package dir). Single source
+ * of truth for the test-file glob + dist exclusion so counting, duration
+ * weighting, and the cold-start probe can't drift apart.
+ *
+ * @param {string} packageDir
+ * @param {{ projectRoot?: string, extraExclude?: (p: string) => boolean }} [options]
+ * @returns {string[]}
+ */
+export function listPackageTestFiles(packageDir, { projectRoot = process.cwd(), extraExclude } = {}) {
   const packageRoot = path.join(projectRoot, packageDir);
   return globSync("**/__tests__/**/*.test.{ts,tsx,mjs}", {
     cwd: packageRoot,
     nodir: true,
-    exclude: (p) => p.startsWith("dist/") || p.includes("/dist/"),
-  }).length;
+    exclude: (p) =>
+      p.startsWith("dist/") || p.includes("/dist/") || (extraExclude ? extraExclude(p) : false),
+  });
+}
+
+export function countPackageTestFiles(packageDir, options = {}) {
+  return listPackageTestFiles(packageDir, options).length;
 }
 
 /**
@@ -511,11 +525,7 @@ export function sumFileDurations(files, fileDurations) {
  */
 export function computePackageDurationWeight(pkg, timings, options = {}) {
   const projectRoot = options.projectRoot ?? process.cwd();
-  const files = globSync("**/__tests__/**/*.test.{ts,tsx,mjs}", {
-    cwd: path.join(projectRoot, pkg.dir),
-    nodir: true,
-    exclude: (p) => p.startsWith("dist/") || p.includes("/dist/"),
-  }).map((f) => `${pkg.dir}/${f}`);
+  const files = listPackageTestFiles(pkg.dir, { projectRoot }).map((f) => `${pkg.dir}/${f}`);
 
   const fallbackPerFile = timings.medianPerFileMs > 0 ? timings.medianPerFileMs : DURATION_BUCKET_MS;
   const { durationMs, timedCount, untimedCount } = sumFileDurations(files, timings.fileDurations);
@@ -995,10 +1005,9 @@ export function runColdStartProbe(packageName, options = {}) {
   // Pick the cheapest (smallest) test file as the probe target unless given.
   let testFile = options.testFile ?? null;
   if (!testFile) {
-    const candidates = globSync("**/__tests__/**/*.test.{ts,tsx,mjs}", {
-      cwd: path.join(projectRoot, pkg.dir),
-      nodir: true,
-      exclude: (p) => p.startsWith("dist/") || p.includes("/dist/") || /\.slow\./.test(p),
+    const candidates = listPackageTestFiles(pkg.dir, {
+      projectRoot,
+      extraExclude: (p) => /\.slow\./.test(p),
     });
     testFile = candidates.sort((a, b) => a.length - b.length)[0] ?? null;
   }

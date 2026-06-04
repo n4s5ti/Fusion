@@ -9,7 +9,7 @@
 
 import test from "node:test";
 import assert from "node:assert/strict";
-import { computeContentHash } from "../lib/content-hash.mjs";
+import { computeContentHash, createRepoContentSnapshot } from "../lib/content-hash.mjs";
 
 /**
  * Build a fake git runner from a description of the tree.
@@ -21,16 +21,25 @@ import { computeContentHash } from "../lib/content-hash.mjs";
  */
 function fakeGit(tree) {
   const { tracked = {}, dirty = [], untracked = [] } = tree;
+  // Honor the `-- <paths>` filter the way real git does (exact file or dir
+  // prefix); commands without a path filter return the whole tree.
+  const selected = (args, file) => {
+    const dashIdx = args.indexOf("--");
+    if (dashIdx === -1) return true;
+    const inputs = args.slice(dashIdx + 1);
+    return inputs.some((input) => file === input || file.startsWith(`${input}/`));
+  };
   return (args) => {
     if (args[0] === "ls-files") {
       return Object.entries(tracked)
+        .filter(([file]) => selected(args, file))
         .map(([file, sha]) => `100644 ${sha} 0\t${file}`)
         .join("\n");
     }
     if (args[0] === "status") {
       const lines = [];
-      for (const file of dirty) lines.push(` M ${file}`);
-      for (const file of untracked) lines.push(`?? ${file}`);
+      for (const file of dirty) if (selected(args, file)) lines.push(` M ${file}`);
+      for (const file of untracked) if (selected(args, file)) lines.push(`?? ${file}`);
       return lines.join("\n");
     }
     return null;
@@ -150,4 +159,45 @@ test("versionPrefix busts the hash so a format bump invalidates all entries", ()
   const v1 = computeContentHash({ ...base, versionPrefix: "v1", gitFn: git, readFn: readBytes({}) });
   const v2 = computeContentHash({ ...base, versionPrefix: "v2", gitFn: git, readFn: readBytes({}) });
   assert.notEqual(v1, v2);
+});
+
+test("snapshot path produces identical hashes to the spawn path and spawns no git", () => {
+  const tree = {
+    tracked: {
+      "packages/core/src/a.ts": "aaa",
+      "packages/core/src/b.ts": "bbb",
+      "packages/engine/src/c.ts": "ccc",
+      "pnpm-lock.yaml": "lll",
+    },
+    dirty: ["packages/core/src/b.ts"],
+    untracked: ["packages/engine/src/new.ts"],
+  };
+  const readFn = readBytes({
+    "packages/core/src/b.ts": "B-ON-DISK",
+    "packages/engine/src/new.ts": "NEW-ON-DISK",
+  });
+
+  const snapshot = createRepoContentSnapshot({ rootDir: base.rootDir, gitFn: fakeGit(tree) });
+
+  for (const inputPaths of [["packages/core"], ["packages/engine"], ["pnpm-lock.yaml"], ["packages/core", "pnpm-lock.yaml"]]) {
+    const viaSpawn = computeContentHash({ ...base, inputPaths, gitFn: fakeGit(tree), readFn });
+    let spawnCalls = 0;
+    const viaSnapshot = computeContentHash({
+      ...base,
+      inputPaths,
+      gitFn: () => {
+        spawnCalls += 1;
+        return null;
+      },
+      readFn,
+      snapshot,
+    });
+    assert.equal(viaSnapshot, viaSpawn, `hash mismatch for ${inputPaths.join(",")}`);
+    assert.equal(spawnCalls, 0, "snapshot path must not invoke git");
+  }
+
+  // Prefix selection must not match sibling dirs sharing a name prefix.
+  const coreOnly = computeContentHash({ ...base, inputPaths: ["packages/core"], readFn, snapshot });
+  const engineOnly = computeContentHash({ ...base, inputPaths: ["packages/engine"], readFn, snapshot });
+  assert.notEqual(coreOnly, engineOnly);
 });

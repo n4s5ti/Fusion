@@ -31,7 +31,7 @@
  */
 
 import { spawnSync } from "node:child_process";
-import { readFileSync, writeFileSync, existsSync, readdirSync, statSync } from "node:fs";
+import { readFileSync, writeFileSync, existsSync, readdirSync } from "node:fs";
 import { dirname, join, resolve, relative, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -240,10 +240,13 @@ export function validateDashboardCurated({ includedFiles, allTestFiles, skipList
 function listExecutedDashboardQualityFiles({ repoRoot = REPO_ROOT, listFn = runVitestList } = {}) {
   const { packages } = loadSpec();
   const dashboard = packages.find((p) => p.name === "@fusion/dashboard");
-  if (!dashboard || !Array.isArray(dashboard.curatedProjects)) {
-    throw new Error('spec must define @fusion/dashboard with a "curatedProjects" array');
+  // `curatedProjects` defaults to `projects` — list it explicitly only when the
+  // coverage set genuinely diverges from what --capture enumerates.
+  const curatedProjects = dashboard?.curatedProjects ?? dashboard?.projects;
+  if (!dashboard || !Array.isArray(curatedProjects)) {
+    throw new Error('spec must define @fusion/dashboard with "curatedProjects" or "projects"');
   }
-  const rows = listFn(dashboard.dir, dashboard.curatedProjects, { repoRoot });
+  const rows = listFn(dashboard.dir, curatedProjects, { repoRoot });
   return new Set(rows.map((row) => toRepoRelative(row.file, repoRoot)));
 }
 
