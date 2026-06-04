@@ -965,6 +965,27 @@ export function discoverTimingFiles(dir) {
 }
 
 /**
+ * Discover timing files across the whole workspace: the root .timings/ dir
+ * plus every package/plugin's own .timings/ dir (shard runs emit RELATIVE
+ * outputFile paths, so each package writes under its own directory — see
+ * the timingFlags comment in main()).
+ *
+ * @param {string} projectRoot
+ * @returns {string[]} Absolute paths, sorted.
+ */
+export function discoverWorkspaceTimingFiles(projectRoot) {
+  const dirs = [
+    path.join(projectRoot, ".timings"),
+    ...globSync("{packages,plugins,plugins/examples}/*/.timings", { cwd: projectRoot }).map((d) =>
+      path.join(projectRoot, d),
+    ),
+  ];
+  const files = new Set();
+  for (const dir of dirs) for (const f of discoverTimingFiles(dir)) files.add(f);
+  return [...files].sort();
+}
+
+/**
  * Merge per-shard JSON reporter outputs into the committed snapshot.
  * Refuses to overwrite a snapshot whose capturedAt is newer than this run's.
  *
@@ -975,7 +996,9 @@ export function writeTimings(options = {}) {
   const projectRoot = options.projectRoot ?? process.cwd();
   const snapshotPath = options.snapshotPath ?? path.join(projectRoot, TIMINGS_SNAPSHOT_RELATIVE);
   const inputs = options.inputs
-    ?? discoverTimingFiles(options.inputDir ?? path.join(projectRoot, ".timings"));
+    ?? (options.inputDir
+      ? discoverTimingFiles(options.inputDir)
+      : discoverWorkspaceTimingFiles(projectRoot));
 
   if (inputs.length === 0) {
     console.warn("[ci-test-shard] no timing input files found; snapshot unchanged.");
@@ -1236,11 +1259,16 @@ export function main(argv = process.argv.slice(2), env = process.env) {
   // Per-shard timing telemetry (U1 / R4): each test invocation also emits a
   // vitest JSON reporter file under .timings/. These are uploaded as CI
   // artifacts and consumed by `--write-timings` to refresh the snapshot.
-  const timingsDir = path.join(process.cwd(), ".timings");
-  mkdirSync(timingsDir, { recursive: true });
+  //
+  // The path MUST be RELATIVE: one pnpm invocation can fan out to several
+  // packages, each spawning its own vitest with these identical forwarded
+  // flags. A relative path resolves against each package's cwd, giving every
+  // package its own <pkgDir>/.timings/ file; an absolute path would make all
+  // packages in the invocation overwrite the same file (last writer wins,
+  // silently dropping every other package's timings).
   let invocationIndex = 0;
   const timingFlags = () => {
-    const outputFile = path.join(timingsDir, `timings-shard${shard}-${invocationIndex++}.json`);
+    const outputFile = path.join(".timings", `timings-shard${shard}-${invocationIndex++}.json`);
     return ["--reporter=json", `--outputFile.json=${outputFile}`];
   };
 

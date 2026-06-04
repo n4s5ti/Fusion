@@ -96,7 +96,13 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: test-timings-shard-${{ matrix.shard }}
-          path: .timings/timings-*.json
+          # Relative outputFile paths mean each package writes its own
+          # <pkgDir>/.timings/ file — glob the whole tree, not just the root.
+          path: |
+            .timings/timings-*.json
+            packages/*/.timings/timings-*.json
+            plugins/*/.timings/timings-*.json
+            plugins/examples/*/.timings/timings-*.json
           if-no-files-found: ignore
           retention-days: 14
 

@@ -18,6 +18,7 @@ import {
   buildTimingsSnapshot,
   writeTimings,
   TIMINGS_SNAPSHOT_RELATIVE,
+  discoverWorkspaceTimingFiles,
 } from "../ci-test-shard.mjs";
 
 const PACKAGES = [
@@ -202,4 +203,24 @@ test("writeTimings warns and does not write when there are no input files", () =
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
+});
+
+test("discoverWorkspaceTimingFiles finds root and per-package .timings files", (t) => {
+  const root = mkdtempSync(path.join(tmpdir(), "wts-discover-"));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  mkdirSync(path.join(root, ".timings"), { recursive: true });
+  mkdirSync(path.join(root, "packages/aaa/.timings"), { recursive: true });
+  mkdirSync(path.join(root, "plugins/bbb/.timings"), { recursive: true });
+  mkdirSync(path.join(root, "packages/no-timings-here"), { recursive: true });
+  writeFileSync(path.join(root, ".timings/timings-shard1-0.json"), "{}");
+  writeFileSync(path.join(root, "packages/aaa/.timings/timings-shard1-0.json"), "{}");
+  writeFileSync(path.join(root, "plugins/bbb/.timings/timings-shard2-0.json"), "{}");
+  writeFileSync(path.join(root, "packages/aaa/.timings/not-a-match.txt"), "");
+
+  const found = discoverWorkspaceTimingFiles(root).map((f) => path.relative(root, f));
+  assert.deepEqual(found.sort(), [
+    ".timings/timings-shard1-0.json",
+    "packages/aaa/.timings/timings-shard1-0.json",
+    "plugins/bbb/.timings/timings-shard2-0.json",
+  ]);
 });
