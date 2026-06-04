@@ -329,7 +329,7 @@ function renderCardFieldBadge(
         key={field.id}
         className="card-field-badge card-field-badge--enum"
         title={`${field.name}: ${labelOf(value)}`}
-        style={color ? { backgroundColor: color, borderColor: color, color: "#fff" } : undefined}
+        style={color ? { backgroundColor: color, borderColor: color, color: "white" } : undefined}
       >
         {labelOf(value)}
       </span>
@@ -346,7 +346,7 @@ function renderCardFieldBadge(
             <span
               key={v}
               className="card-field-badge-token"
-              style={color ? { backgroundColor: color, borderColor: color, color: "#fff" } : undefined}
+              style={color ? { backgroundColor: color, borderColor: color, color: "white" } : undefined}
             >
               {labelOf(v)}
             </span>

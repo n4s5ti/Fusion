@@ -1465,7 +1465,7 @@
   border: 1px solid var(--border-color, #2a2d34);
   border-radius: 999px;
   background: var(--chip-bg, #1c1f26);
-  color: var(--text-secondary, #b4b8c0);
+  color: var(--text-muted, #b4b8c0);
   font-size: 11px;
   line-height: 1.5;
   max-width: 16ch;
