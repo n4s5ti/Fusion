@@ -1131,6 +1131,10 @@ export {
   compareWorkflowRunAudits,
   compareWorkflowRunObservations,
   extractWorkflowAuditObservations,
+  DEFAULT_WORKFLOW_INVARIANTS,
+  deriveStageTransitions,
+  buildWorkflowObservationFromTask,
+  buildWorkflowObservation,
 } from "./workflow-parity.js";
 export type {
   WorkflowAuditObservation,
@@ -1141,6 +1145,9 @@ export type {
   WorkflowReliabilityInvariantSignals,
   WorkflowRunObservation,
   WorkflowStage,
+  WorkflowObservationTaskInput,
+  WorkflowObservationBuildOptions,
+  WorkflowObservationParts,
 } from "./workflow-parity.js";
 export { isResearchExperimentalEnabled, resolveResearchSettings } from "./research-settings.js";
 export type { ResolvedResearchSettings } from "./research-settings.js";
