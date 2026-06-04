@@ -63,7 +63,8 @@
 
 .lane-columns > .column {
   flex: 0 0 clamp(280px, 28vw, 340px);
-  scroll-snap-align: start;
+  /* Repo convention (mobile-scroll-snap test): snap-align must be `center`. */
+  scroll-snap-align: center;
 }
 
 .lane-columns::-webkit-scrollbar {
