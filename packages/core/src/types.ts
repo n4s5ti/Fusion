@@ -18,6 +18,15 @@ export type ThinkingLevel = (typeof THINKING_LEVELS)[number];
 export const COLUMNS = ["triage", "todo", "in-progress", "in-review", "done", "archived"] as const;
 export type Column = (typeof COLUMNS)[number];
 
+/**
+ * Column identifier accepted at task-movement entry points (KTD-1).
+ * Equals the legacy `Column` union for autocomplete purposes, but admits
+ * workflow-defined custom column ids; flag-ON paths validate the id against
+ * the task's resolved workflow at runtime, flag-OFF paths reject non-legacy
+ * ids exactly as before.
+ */
+export type ColumnId = Column | (string & {});
+
 export const DEFAULT_COLUMN: Column = "triage";
 
 export function isColumn(value: unknown): value is Column {
