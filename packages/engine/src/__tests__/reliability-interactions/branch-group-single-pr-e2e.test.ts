@@ -189,8 +189,16 @@ describe("U8 end-to-end: single managed group PR (planning + mission)", () => {
         expect((await aiMergeTask(store, rootDir, second.id, { syncGroupPr })).merged).toBe(true);
         await store.updateTask(second.id, { column: "done" } as any);
 
-        // Completion gate now satisfied (canonical predicate).
-        const members = (await store.listTasksByBranchGroup(group.id)) as Task[];
+        // Completion gate now satisfied (canonical predicate). listTasks carries
+        // a 2.5s startup memo that can serve a pre-landing snapshot on fast CI
+        // runs — poll past it (bounded) so this and the promote gate below read
+        // fresh member state through the real listTasksByBranchGroup path.
+        let members: Task[] = [];
+        for (let attempt = 0; attempt < 20; attempt += 1) {
+          members = (await store.listTasksByBranchGroup(group.id)) as Task[];
+          if (evaluateBranchGroupCompletion({ members, group }).complete) break;
+          await new Promise((resolve) => setTimeout(resolve, 250));
+        }
         expect(evaluateBranchGroupCompletion({ members, group }).complete).toBe(true);
 
         // Promote → EXACTLY ONE PR via createGroupPr; persisted open.

@@ -1,11 +1,17 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { execSync, exec, execFile } from "node:child_process";
+import { execSync, exec } from "node:child_process";
+import * as childProcess from "node:child_process";
 import { promisify } from "node:util";
 import { IDENTITY_GUARD_BYPASS_ENV } from "./worktree-hooks.js";
 
 // Internal git plumbing intentionally bypasses sandbox backends.
 const execAsync = promisify(exec);
-const execFileAsync = promisify(execFile);
+// `execFile` is resolved lazily through the namespace import so test mocks that
+// only stub `exec`/`execSync` (the repo's established node:child_process mock
+// convention) can still load this module; `execFile` is only required when a
+// code path actually shells out.
+const execFileAsync: (file: string, args: string[], opts?: import("node:child_process").ExecFileOptions) => Promise<{ stdout: string; stderr: string }> = (file, args, opts) =>
+  (promisify(childProcess.execFile) as (f: string, a: string[], o?: object) => Promise<{ stdout: string; stderr: string }>)(file, args, opts);
 
 /**
  * Env for merger-driven `git commit` calls so the identity-guard pre-commit
