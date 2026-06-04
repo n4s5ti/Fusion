@@ -49,12 +49,20 @@ export {
   parseWorkflowIr,
   serializeWorkflowIr,
   WorkflowIrError,
+  DEFAULT_WORKFLOW_COLUMN_IDS,
 } from "./workflow-ir.js";
 export type {
   WorkflowIr,
+  WorkflowIrV1,
+  WorkflowIrV2,
   WorkflowIrNode,
   WorkflowIrEdge,
   WorkflowIrNodeKind,
+  WorkflowIrColumn,
+  WorkflowIrColumnTrait,
+  WorkflowHoldRelease,
+  WorkflowJoinMode,
+  WorkflowJoinBranchFailure,
 } from "./workflow-ir-types.js";
 export { BUILTIN_CODING_WORKFLOW_IR } from "./builtin-coding-workflow-ir.js";
 export type {
