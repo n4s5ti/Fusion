@@ -1443,7 +1443,17 @@ export class TaskStore extends EventEmitter<TaskStoreEvents> {
     await this.migrateActiveArchivedTasksToArchiveDb();
     await this.migrateAgentLogEntriesToFilesOnce();
     await this.cleanupNoOpTaskMovedActivityRowsOnce();
-    if (this.db.getSchemaVersion() < SCHEMA_VERSION) {
+    // Re-run init when migrations are pending, or when the deferred
+    // agentLogEntries drop still needs to fire: migration 102 skips the
+    // destructive drop until migrateAgentLogEntriesToFilesOnce() above writes
+    // the __meta guard, but migrations 103+ bump the schema version past 102
+    // on the first pass, so the version check alone no longer triggers the
+    // second pass that performs the drop.
+    const legacyAgentLogTableRemains =
+      this.db
+        .prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'agentLogEntries' LIMIT 1")
+        .get() !== undefined;
+    if (this.db.getSchemaVersion() < SCHEMA_VERSION || legacyAgentLogTableRemains) {
       this.db.init();
     }
     await this.importLegacyAgentLogsOnce();

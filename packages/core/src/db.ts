@@ -2028,6 +2028,28 @@ export class Database {
       this.addColumnIfMissing("tasks", "scopeAutoWiden", "TEXT DEFAULT '[]'");
     }
 
+    // Deferred agentLogEntries drop (companion to migration 102): when the
+    // legacy table still had rows on the first init pass, the destructive drop
+    // was deferred until TaskStore copies the rows to JSONL and writes the
+    // __meta guard, then re-runs init(). Migrations 103+ bump the schema
+    // version past 102 on that first pass, so the re-run can no longer reach
+    // the version-gated 102 block — finish the drop here, version-independent
+    // (and before the early return below, which fires once the version is
+    // current).
+    if (this.hasTable("agentLogEntries")) {
+      const agentLogMigrationComplete = this.getMetaValue("agentLogEntriesToFileMigrationVersion") === "1";
+      const legacyAgentLogTableIsEmpty =
+        (this.db.prepare("SELECT COUNT(*) as count FROM agentLogEntries").get() as { count: number }).count === 0;
+      const hasLegacyAgentLogCitations = this.hasTable("goal_citations")
+        ? (this.db.prepare(
+            "SELECT 1 FROM goal_citations WHERE surface = 'agent_log' AND sourceRef GLOB 'agentLog:[0-9]*' LIMIT 1",
+          ).get() ?? undefined) !== undefined
+        : false;
+      if (agentLogMigrationComplete || (legacyAgentLogTableIsEmpty && !hasLegacyAgentLogCitations)) {
+        this.db.exec(`DROP TABLE IF EXISTS agentLogEntries`);
+      }
+    }
+
     if (version >= SCHEMA_VERSION) return;
 
     if (version < 2) {
