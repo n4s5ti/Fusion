@@ -256,7 +256,7 @@ export function MergeSection({
             <select
               id="directMergeCommitStrategy"
               className="select"
-              value={form.directMergeCommitStrategy ?? "auto"}
+              value={form.directMergeCommitStrategy ?? "always-squash"}
               onChange={(e) =>
                 setForm((f) => ({
                   ...f,

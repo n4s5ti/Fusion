@@ -7204,27 +7204,35 @@ export class TaskStore extends EventEmitter<TaskStoreEvents> {
       throw new WorkflowSettingRejectionError(result.rejections);
     }
 
-    const current = this.getWorkflowSettingValues(workflowId, projectId);
-    const next: Record<string, unknown> = { ...current };
-    for (const [key, value] of Object.entries(result.accepted)) {
-      if (value === null) {
-        delete next[key];
-      } else {
-        next[key] = value;
+    // Read-merge-upsert must be atomic: two concurrent calls for the same
+    // (workflowId, projectId) could otherwise both merge from the same
+    // pre-update snapshot, and the later upsert would erase the earlier
+    // call's keys (lost update). Serialize the whole cycle under an immediate
+    // write transaction. Validation/declaration resolution above stays outside
+    // since it's async and doesn't read the row being mutated.
+    return this.db.transactionImmediate(() => {
+      const current = this.getWorkflowSettingValues(workflowId, projectId);
+      const next: Record<string, unknown> = { ...current };
+      for (const [key, value] of Object.entries(result.accepted)) {
+        if (value === null) {
+          delete next[key];
+        } else {
+          next[key] = value;
+        }
       }
-    }
 
-    const now = new Date().toISOString();
-    this.db
-      .prepare(
-        `INSERT INTO workflow_settings (workflowId, projectId, "values", updatedAt)
-         VALUES (?, ?, ?, ?)
-         ON CONFLICT(workflowId, projectId)
-         DO UPDATE SET "values" = excluded."values", updatedAt = excluded.updatedAt`,
-      )
-      .run(workflowId, projectId, JSON.stringify(next), now);
-    this.db.bumpLastModified();
-    return next;
+      const now = new Date().toISOString();
+      this.db
+        .prepare(
+          `INSERT INTO workflow_settings (workflowId, projectId, "values", updatedAt)
+           VALUES (?, ?, ?, ?)
+           ON CONFLICT(workflowId, projectId)
+           DO UPDATE SET "values" = excluded."values", updatedAt = excluded.updatedAt`,
+        )
+        .run(workflowId, projectId, JSON.stringify(next), now);
+      this.db.bumpLastModified();
+      return next;
+    });
   }
 
   /**

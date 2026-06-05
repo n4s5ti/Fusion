@@ -174,7 +174,8 @@ export async function resolveEffectiveSettingsDetailed(
     projectId = store.getWorkflowSettingsProjectId();
   } catch {
     // Degrade to declaration defaults (empty stored map) on identity failure.
-    return effectiveFrom(store, ir, undefined, "");
+    // Keep the resolved workflowId so builtin graphs still pick up the catalog fallback.
+    return effectiveFrom(store, ir, effectiveWorkflowId, "");
   }
   return effectiveFrom(store, ir, effectiveWorkflowId, projectId);
 }

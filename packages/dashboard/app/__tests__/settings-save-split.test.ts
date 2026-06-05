@@ -177,5 +177,8 @@ describe("splitSettingsSave", () => {
       activeSection: "general",
     });
     expect("githubTrackingDefaultRepo" in onProject.globalPatch).toBe(false);
+    // ...and is instead routed to the project patch on the project-scoped
+    // "general" section, rather than being dropped or erroring.
+    expect(onProject.projectPatch).toMatchObject({ githubTrackingDefaultRepo: "org/repo" });
   });
 });

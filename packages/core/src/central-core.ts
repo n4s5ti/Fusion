@@ -3666,9 +3666,11 @@ export class CentralCore extends EventEmitter<CentralCoreEvents> {
     // count reflects only the keys that survive the strip.
     if (payload.global) {
       // The actual application of global settings is handled by the caller (dashboard route)
-      // since CentralCore doesn't have access to GlobalSettingsStore.
-      // We simply count the number of global settings entries for reporting.
+      // since CentralCore doesn't have access to GlobalSettingsStore. Mutate the payload
+      // in place so the caller applies the stripped version — otherwise moved keys survive
+      // in payload.global and get resurrected cross-node (KTD-8).
       const cleanGlobal = stripMovedSettingsKeys(payload.global as Record<string, unknown>);
+      payload.global = cleanGlobal as typeof payload.global;
       globalCount = Object.keys(cleanGlobal).length;
     }
 

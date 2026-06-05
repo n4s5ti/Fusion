@@ -177,6 +177,21 @@ export function registerWorkflowRoutes(ctx: ApiRoutesContext): void {
   }
 
   /**
+   * 404 guard for the setting-values routes (consistent with GET /workflows/:id).
+   * `resolveWorkflowIrById` / the store value methods silently degrade to the
+   * built-in default for an unknown id (so the route would otherwise 200 with
+   * empty/built-in data), and `updateWorkflowSettingValues` likewise resolves
+   * declarations gracefully — neither throws "not found". Mirror the sibling
+   * handlers: an id that is neither a built-in nor an existing custom workflow
+   * must surface as `notFound` rather than a silent success.
+   */
+  async function assertWorkflowExists(store: TaskStore, workflowId: string): Promise<void> {
+    if (isBuiltinWorkflowId(workflowId)) return;
+    const def = await store.getWorkflowDefinition(workflowId);
+    if (!def) throw notFound(`Workflow '${workflowId}' not found`);
+  }
+
+  /**
    * Write-time column-agent validation (U6, R11/R13). Delegates to the shared
    * `validateColumnAgentBindings` helper in @fusion/core (the SAME gate the
    * `fn_workflow_*` agent tools run), then maps its typed
@@ -397,6 +412,7 @@ export function registerWorkflowRoutes(ctx: ApiRoutesContext): void {
     try {
       const { store } = await getProjectContext(req);
       const workflowId = req.params.id;
+      await assertWorkflowExists(store, workflowId);
       const projectId = store.getWorkflowSettingsProjectId();
       const declarations = await resolveSettingDeclarations(store, workflowId);
       const stored = store.getWorkflowSettingValues(workflowId, projectId);
@@ -427,6 +443,7 @@ export function registerWorkflowRoutes(ctx: ApiRoutesContext): void {
       if (!values || typeof values !== "object" || Array.isArray(values)) {
         throw badRequest("values is required and must be an object map of setting id → value (null to delete)");
       }
+      await assertWorkflowExists(store, workflowId);
       const projectId = store.getWorkflowSettingsProjectId();
       try {
         const stored = await store.updateWorkflowSettingValues(

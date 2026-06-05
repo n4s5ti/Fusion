@@ -578,6 +578,18 @@ describe("workflow routes (U4)", () => {
       const res = await patch(`/api/workflows/${encodeURIComponent(id)}/setting-values`, { values: [1, 2, 3] });
       expect(res.status).toBe(400);
     });
+
+    it("GET returns 404 for an unknown workflow id (neither built-in nor custom)", async () => {
+      const res = await get("/api/workflows/WF-404/setting-values");
+      expect(res.status).toBe(404);
+    });
+
+    it("PATCH returns 404 for an unknown workflow id (neither built-in nor custom)", async () => {
+      const res = await patch("/api/workflows/WF-404/setting-values", {
+        values: { "timeout-ms": 5000 },
+      });
+      expect(res.status).toBe(404);
+    });
   });
 });
 
