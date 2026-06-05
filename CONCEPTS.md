@@ -10,6 +10,9 @@ One of Fusion's user-facing frontends — the browser dashboard and the terminal
 ### Global Settings
 User-level settings persisted server-side that apply across all Surfaces and all projects, as opposed to per-project settings. Values are validated at the write boundary — an invalid value is dropped rather than persisted — so every reader can trust what it loads.
 
+### Workflow Setting
+A typed setting declared by a workflow in its IR (id, type, default, options), mirroring the custom-task-field shape. Declarations describe the schema; *values* persist per workflow + project through a single validating store authority, so built-in workflows can carry values without their IR being editable. The engine consumes **effective settings** — stored value falling back to declaration default, with values that no longer validate against the current declaration dropped (never fed to execution).
+
 ### Three-Tier Setting
 The named persistence pattern for a user preference on the dashboard: a device-local cache for instant reads, a write-through to Global Settings so other Surfaces see it, and a hydrate-on-mount from the server when no local value exists. A local or in-flight user choice always wins over server hydration, and changes propagate to other open tabs.
 
