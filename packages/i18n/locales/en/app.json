@@ -6218,8 +6218,12 @@
     "titlePlaceholder": "Task title",
     "useDropdown": "Use dropdown",
     "usingPreset": "Using preset: {{name}}",
-    "workflowStepsDescription": "Select steps to run after task implementation completes",
-    "workflowStepsLabel": "Workflow Steps",
+    "workflowDefaultBadge": "(default)",
+    "workflowHelp": "The selected workflow's steps run automatically around this task's execution.",
+    "workflowLabel": "Workflow",
+    "workflowNone": "No workflow",
+    "workflowsCta": "Set up workflows in the editor",
+    "workflowsLoading": "Loading workflows…",
     "workingBranchLabel": "Working branch"
   },
   "taskHandlers": {

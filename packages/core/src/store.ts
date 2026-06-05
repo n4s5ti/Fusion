@@ -3975,7 +3975,24 @@ export class TaskStore extends EventEmitter<TaskStoreEvents> {
     // When a project default workflow is configured, new tasks inherit it
     // (compiled to steps) ahead of the legacy default-on step behavior.
     let pendingWorkflowSelection: { workflowId: string; stepIds: string[] } | undefined;
-    if (input.enabledWorkflowSteps === undefined) {
+    // U6/R3/KTD-4: an explicit create-time workflowId beats the project default.
+    // `null` is an explicit opt-out (no workflow), `string` materializes that
+    // workflow, `undefined` falls through to the default-workflow behavior below.
+    // Explicit enabledWorkflowSteps still wins over workflowId for trusted callers.
+    const explicitWorkflowId =
+      input.enabledWorkflowSteps === undefined ? input.workflowId : undefined;
+    if (explicitWorkflowId !== undefined) {
+      if (explicitWorkflowId === null) {
+        // Explicit "No workflow": skip default materialization entirely.
+        resolvedWorkflowSteps = undefined;
+      } else {
+        // Compile + materialize up front so unknown/fragment ids throw BEFORE
+        // the task row is created (no orphaned steps, no half-created task).
+        const selected = await this.materializeExplicitWorkflowSteps(explicitWorkflowId);
+        resolvedWorkflowSteps = selected.stepIds;
+        pendingWorkflowSelection = selected;
+      }
+    } else if (input.enabledWorkflowSteps === undefined) {
       try {
         const inherited = await this.materializeDefaultWorkflowSteps();
         if (inherited) {
@@ -13443,6 +13460,25 @@ ${stepsSection}`;
     if (def.kind === "fragment") return undefined;
     // Compile (and validate) before creating any rows so a non-compilable
     // default falls back cleanly with nothing written.
+    const inputs = compileWorkflowToSteps(def.ir);
+    const stepIds = await this.materializeWorkflowSteps(workflowId, inputs);
+    return { workflowId, stepIds };
+  }
+
+  /** Resolve an EXPLICITLY requested workflow id (U6/R3/KTD-4) into materialized
+   *  step ids for the create-time `workflowId` parameter. Unlike
+   *  `materializeDefaultWorkflowSteps`, unknown ids and fragments are hard errors
+   *  (thrown BEFORE any task row is created) rather than silent fallbacks, since
+   *  the caller asked for a specific workflow. Compilation happens up front so a
+   *  non-compilable workflow aborts before any rows are written. */
+  private async materializeExplicitWorkflowSteps(
+    workflowId: string,
+  ): Promise<{ workflowId: string; stepIds: string[] }> {
+    const def = await this.getWorkflowDefinition(workflowId);
+    if (!def) throw new Error(`Workflow '${workflowId}' not found`);
+    if (def.kind === "fragment") {
+      throw new Error(`Workflow '${workflowId}' is a fragment and cannot be selected for a task`);
+    }
     const inputs = compileWorkflowToSteps(def.ir);
     const stepIds = await this.materializeWorkflowSteps(workflowId, inputs);
     return { workflowId, stepIds };

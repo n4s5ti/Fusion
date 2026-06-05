@@ -2291,6 +2291,23 @@ export interface TaskCreateInput {
   noCommitsExpected?: boolean;
   /** IDs of workflow steps to enable for this task */
   enabledWorkflowSteps?: string[];
+  /**
+   * Workflow selection applied atomically at task creation (U6/R3/KTD-4).
+   *
+   * Semantics:
+   *  - `undefined` → inherit the project default workflow (today's behavior:
+   *    `materializeDefaultWorkflowSteps` runs, falling back to default-on steps).
+   *  - `null` → explicitly NO workflow: skip default materialization entirely;
+   *    the task is created with no custom workflow steps.
+   *  - `string` → that workflow's compiled steps are materialized and selected
+   *    inside the creation flow, overriding any project default. Fragment IDs
+   *    and unknown IDs are rejected with a clear error BEFORE the task row is
+   *    created.
+   *
+   * Mutually exclusive with `enabledWorkflowSteps`: when `enabledWorkflowSteps`
+   * is provided, it takes precedence and `workflowId` materialization is skipped.
+   */
+  workflowId?: string | null;
   /** Model preset selected during task creation. Presets resolve to concrete model overrides at creation time. */
   modelPresetId?: string;
   /** AI model provider override for the executor agent (e.g., "anthropic").
