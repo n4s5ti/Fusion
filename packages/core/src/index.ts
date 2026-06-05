@@ -50,6 +50,8 @@ export {
   serializeWorkflowIr,
   WorkflowIrError,
   DEFAULT_WORKFLOW_COLUMN_IDS,
+  WORKFLOW_SETTING_TYPES,
+  SETTING_RENDER_WIDGETS,
 } from "./workflow-ir.js";
 export type {
   WorkflowIr,
@@ -70,9 +72,15 @@ export type {
   WorkflowFieldType,
   WorkflowFieldOption,
   WorkflowFieldRender,
+  // Workflow-settings (U1): typed setting declaration IR types.
+  WorkflowSettingDefinition,
+  WorkflowSettingType,
+  WorkflowSettingOption,
+  WorkflowSettingRender,
 } from "./workflow-ir-types.js";
 export { BUILTIN_CODING_WORKFLOW_IR } from "./builtin-coding-workflow-ir.js";
 export { BUILTIN_STEPWISE_CODING_WORKFLOW_IR } from "./builtin-stepwise-coding-workflow-ir.js";
+export { BUILTIN_WORKFLOW_SETTINGS } from "./builtin-workflow-settings.js";
 
 // ── Trait model (U2) ─────────────────────────────────────────────────
 export type {
