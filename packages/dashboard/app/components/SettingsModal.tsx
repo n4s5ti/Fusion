@@ -1,28 +1,37 @@
 import { useState, useEffect, useCallback, useRef, lazy, Suspense, type CSSProperties, type MouseEvent } from "react";
-import { Globe, Folder, RefreshCw, Star, HelpCircle, Loader2, CheckCircle, AlertTriangle } from "lucide-react";
+import { Globe, Folder, RefreshCw, Star, HelpCircle, Loader2 } from "lucide-react";
 import {
   AGENT_PERMISSION_POLICY_ACTION_CATEGORIES,
-  THINKING_LEVELS,
   getErrorMessage,
-  isGlobalSettingsKey,
-  isProjectSettingsKey,
   resolvePlanningSettingsModel,
-  resolvePersistAgentThinkingLog,
   resolveProjectDefaultModel,
   resolveTitleSummarizerSettingsModel,
   normalizeMergeIntegrationWorktreeMode,
   normalizeMergeAdvanceAutoSyncMode,
 } from "@fusion/core";
-import type { AgentPermissionPolicyRules, Settings, GlobalSettings, ThemeMode, ColorTheme, ModelPreset, NtfyNotificationEvent, AgentPromptsConfig, ThinkingLevel } from "@fusion/core";
-import { fetchSettings, fetchSettingsByScope, updateSettings, updateGlobalSettings, fetchAuthStatus, loginProvider, logoutProvider, cancelProviderLogin, saveApiKey, clearApiKey, fetchModels, testNotification, fetchBackups, createBackup, exportSettings, importSettings, fetchMemoryFile, fetchMemoryFiles, saveMemoryFile, compactMemory, fetchGlobalConcurrency, updateGlobalConcurrency, installQmd, testMemoryRetrieval, triggerMemoryDreams, fetchGitRemotes, fetchGitRemotesDetailed, fetchGitBranches, fetchProjects, fetchDashboardHealth, checkForUpdates, fetchRemoteSettings, updateRemoteSettings, fetchRemoteStatus, installCloudflared, startRemoteTunnel, stopRemoteTunnel, killExternalTunnel, regenerateRemotePersistentToken, generateShortLivedRemoteToken, fetchRemoteQr, fetchRemoteUrl, submitProviderManualCode } from "../api";
-import type { AuthProvider, ManualOAuthCodeInfo, ModelInfo, BackupListResponse, SettingsExportData, MemoryFileInfo, MemoryRetrievalTestResult, GitRemote, GitRemoteDetailed, ProjectInfo, RemoteSettings, RemoteStatus, UpdateCheckResponse, OAuthDeviceCodeInfo } from "../api";
+import type { AgentPermissionPolicyRules, Settings, GlobalSettings, ThemeMode, ColorTheme, ModelPreset, AgentPromptsConfig } from "@fusion/core";
+import { fetchSettings, fetchSettingsByScope, updateSettings, updateGlobalSettings, fetchAuthStatus, loginProvider, logoutProvider, cancelProviderLogin, saveApiKey, clearApiKey, fetchModels, testNotification, fetchBackups, createBackup, exportSettings, importSettings, fetchMemoryFile, fetchMemoryFiles, saveMemoryFile, compactMemory, fetchGlobalConcurrency, updateGlobalConcurrency, installQmd, testMemoryRetrieval, triggerMemoryDreams, fetchGitRemotes, fetchGitRemotesDetailed, fetchGitBranches, fetchProjects, fetchDashboardHealth, checkForUpdates, fetchRemoteSettings, fetchRemoteStatus, installCloudflared, fetchRemoteQr, fetchRemoteUrl, submitProviderManualCode } from "../api";
+import type { AuthProvider, ManualOAuthCodeInfo, ModelInfo, BackupListResponse, SettingsExportData, MemoryFileInfo, MemoryRetrievalTestResult, GitRemote, GitRemoteDetailed, ProjectInfo, RemoteStatus, UpdateCheckResponse, OAuthDeviceCodeInfo } from "../api";
+import { splitSettingsSave } from "./settings/save-split";
+import { AppearanceSection } from "./settings/sections/AppearanceSection";
+import { ExperimentalSection } from "./settings/sections/ExperimentalSection";
+import { NodeSyncSection } from "./settings/sections/NodeSyncSection";
+import { NotificationsSection } from "./settings/sections/NotificationsSection";
+import { GlobalGeneralSection } from "./settings/sections/GlobalGeneralSection";
+import { ResearchGlobalSection } from "./settings/sections/ResearchGlobalSection";
+import { RemoteSection } from "./settings/sections/RemoteSection";
+import { GlobalModelsSection } from "./settings/sections/GlobalModelsSection";
+import { AuthenticationSection } from "./settings/sections/AuthenticationSection";
+import {
+  HermesRuntimeSection,
+  OpenClawRuntimeSection,
+  PaperclipRuntimeSection,
+} from "./settings/sections/RuntimesSections";
 import { ProjectDefaultWorkflowField } from "./WorkflowSelector";
 import { useMemoryBackendStatus } from "../hooks/useMemoryBackendStatus";
 import { useOverlayDismiss } from "../hooks/useOverlayDismiss";
 import type { ToastType } from "../hooks/useToast";
 import { useTranslation } from "react-i18next";
-import { ThemeSelector } from "./ThemeSelector";
-import { LanguageSelector } from "./LanguageSelector";
 import { useSessionBannersHidden, setSessionBannersHidden } from "../hooks/useSessionBannerPref";
 import "./SettingsModal.css";
 import { CustomModelDropdown } from "./CustomModelDropdown";
@@ -32,19 +41,9 @@ import { useWorkspaceFileBrowser } from "../hooks/useWorkspaceFileBrowser";
 import { useModalResizePersist } from "../hooks/useModalResizePersist";
 const PluginManager = lazy(() => import("./PluginManager").then((m) => ({ default: m.PluginManager })));
 const PiExtensionsManager = lazy(() => import("./PiExtensionsManager").then((m) => ({ default: m.PiExtensionsManager })));
-import { ClaudeCliProviderCard } from "./ClaudeCliProviderCard";
-import { CursorCliProviderCard } from "./CursorCliProviderCard";
-import { CliBinaryPanel } from "./CliBinaryPanel";
-import { LlamaCppProviderCard } from "./LlamaCppProviderCard";
-import { HermesRuntimeCard } from "./HermesRuntimeCard";
-import { OpenClawRuntimeCard } from "./OpenClawRuntimeCard";
-import { PaperclipRuntimeCard } from "./PaperclipRuntimeCard";
 import { PluginSlot } from "./PluginSlot";
 import { AgentPromptsManager } from "./AgentPromptsManager";
-import { LoginInstructions } from "./LoginInstructions";
-import { OAuthManualCodeForm } from "./OAuthManualCodeForm";
 import { ProviderIcon } from "./ProviderIcon";
-import { CustomProvidersSection } from "./CustomProvidersSection";
 import { AgentPermissionPolicyEditor } from "./AgentPermissionPolicyEditor";
 import { AgentProvisioningPolicyEditor } from "./AgentProvisioningPolicyEditor";
 import { SecretsView } from "./SecretsView";
@@ -243,14 +242,6 @@ function formatMemoryFileOptionLabel(file: MemoryFileInfo): string {
   return truncateMiddle(fullLabel, MEMORY_FILE_OPTION_LABEL_MAX_CHARS);
 }
 
-function toCommaSeparatedInput(values?: string[]): string {
-  return values?.join(", ") ?? "";
-}
-
-function fromCommaSeparatedInput(value: string): string[] {
-  return value.split(",").map((item) => item.trim()).filter((item) => item.length > 0);
-}
-
 const SETTINGS_SECTIONS: SettingsSection[] = [
   // Account group (scope-less items — independent of settings storage)
   { id: "__account_header", label: "Account", labelKey: "settings.nav.accountHeader", scope: undefined, isGroupHeader: true },
@@ -294,39 +285,6 @@ const SETTINGS_SECTIONS: SettingsSection[] = [
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 const AUTO_ARCHIVE_DEFAULT_AFTER_DAYS = 2;
-const DEFAULT_NTFY_EVENTS: NtfyNotificationEvent[] = [
-  "in-review",
-  "merged",
-  "failed",
-  "awaiting-approval",
-  "awaiting-user-review",
-  "planning-awaiting-input",
-  "gridlock",
-  "fallback-used",
-  "memory-dreams-processed",
-  "message:agent-to-user",
-  "message:agent-to-agent",
-  "message:room",
-  "oauth-token-expired",
-];
-
-const NOTIFICATION_EVENT_OPTIONS: Array<{ event: NtfyNotificationEvent; label: string; description: string }> = [
-  { event: "in-review", label: "Task completed (in-review)", description: "When a task moves to In Review (ready for review)" },
-  { event: "merged", label: "Task merged", description: "When a task is successfully merged to main" },
-  { event: "failed", label: "Task failed", description: "When a task fails during execution (high priority)" },
-  { event: "awaiting-approval", label: "Plan needs approval", description: "When a task specification needs manual approval before execution" },
-  { event: "awaiting-user-review", label: "User review needed", description: "When an agent hands off a task for human review (high priority)" },
-  { event: "planning-awaiting-input", label: "Planning needs input", description: "When planning mode is waiting for your response to continue" },
-  { event: "gridlock", label: "Pipeline gridlocked", description: "When all schedulable todo tasks are blocked and work cannot advance" },
-  { event: "fallback-used", label: "Fallback model used (recovered)", description: "When Fusion recovers from a retryable model failure by switching to a fallback model" },
-  { event: "task-created", label: "Agent created a task", description: "When an agent files a new task on the board" },
-  { event: "memory-dreams-processed", label: "DREAMS.md entry added", description: "When manual dream processing writes a new entry to project or agent DREAMS.md" },
-  { event: "message:agent-to-user", label: "Agent → user message", description: "An agent sent you a direct message" },
-  { event: "message:agent-to-agent", label: "Agent → agent message", description: "Agents are talking to each other (including replies)" },
-  { event: "message:room", label: "Agent message in room", description: "An agent posted a reply in a chat room you're watching" },
-  { event: "oauth-token-expired", label: "OAuth token expired", description: "Notify when a provider OAuth token (Codex, Claude, etc.) expires." },
-];
-
 /** Well-known experimental feature flags with display labels.
  *  These always appear in the Experimental Features settings tab,
  *  regardless of whether they exist in the project's settings blob.
@@ -2022,90 +1980,17 @@ export function SettingsModal({
         experimentalFeatures: normalizeExperimentalFeaturesForSave(form.experimentalFeatures),
       };
 
-      // Always save both global and project settings with strict scope separation.
-      //
-      // SCOPE RULES:
-      // - Global lane keys (executionGlobalProvider, planningGlobalProvider, etc.)
-      //   go to updateGlobalSettings
-      // - Project override lane keys (executionProvider, planningProvider, etc.)
-      //   go to updateSettings ONLY when explicitly changed from initial state
-      // - Inherited project lanes (unset in project scope) are NOT written to project payload
-      // - Resetting a project lane sends null to delete it from project scope
-
-      const globalPatch: Partial<GlobalSettings> = {};
-      for (const [key, value] of Object.entries(payload)) {
-        if (key === "githubTrackingDefaultRepo" && activeSection !== "global-general") {
-          continue;
-        }
-        if (key === "persistAgentThinkingLog") {
-          continue;
-        }
-        if (isGlobalSettingsKey(key)) {
-          // Implement null-as-delete semantics for global settings:
-          // - undefined values are dropped during JSON serialization
-          // - To explicitly clear a field, send null instead
-          // - We detect explicit clears by comparing with initial values:
-          //   if current value is undefined AND initial was defined, use null
-          const initialValue = initialValues?.[key as keyof GlobalSettings];
-          if (value === undefined && initialValue !== undefined) {
-            (globalPatch as Record<string, unknown>)[key] = null; // null means "explicitly clear"
-          } else {
-            (globalPatch as Record<string, unknown>)[key] = value;
-          }
-        }
-      }
-
-      // Project settings: Only include keys that were explicitly changed.
-      // This prevents inherited effective values from being persisted as explicit overrides.
-      const projectPatch: Partial<Settings> = {};
-      for (const [key, value] of Object.entries(payload)) {
-        if (key === "githubTokenConfigured" || key === "prAuthAvailable") continue; // server-only fields
-        if (key === "githubTrackingDefaultRepo" && activeSection === "global-general") continue;
-        if (!isProjectSettingsKey(key)) continue;
-
-        // Get the initial project-scoped value (null if not set)
-        const initialProjectValue = initialScopedValues?.project?.[key as keyof Settings];
-
-        // Check if this value is a model lane key that tracks inheritance
-        const isModelLaneKey = [
-          "planningProvider", "planningModelId",
-          "validatorProvider", "validatorModelId",
-          "executionProvider", "executionModelId",
-          "titleSummarizerProvider", "titleSummarizerModelId",
-          "defaultProviderOverride", "defaultModelIdOverride",
-          "planningFallbackProvider", "planningFallbackModelId",
-          "validatorFallbackProvider", "validatorFallbackModelId",
-          "titleSummarizerFallbackProvider", "titleSummarizerFallbackModelId",
-        ].includes(key);
-
-        if (isModelLaneKey) {
-          // For model lanes: only write if explicitly changed from initial project state
-          if (value !== initialProjectValue) {
-            // Detect explicit reset: current is undefined/null but initial was set
-            if ((value === undefined || value === null) && initialProjectValue !== undefined && initialProjectValue !== null) {
-              (projectPatch as Record<string, unknown>)[key] = null; // null-as-delete
-            } else if (value !== undefined) {
-              (projectPatch as Record<string, unknown>)[key] = value;
-            }
-          }
-        } else {
-          // For non-model settings: only write keys the user actually
-          // changed, matching the model-lane gate above. Without this,
-          // every effective/inherited value in `payload` would be
-          // serialized as an explicit project override, silently breaking
-          // inheritance for every project setting on every save.
-          // Within the changed-set, apply null-as-delete so an explicit
-          // clear (e.g. unpinning `integrationBranch` back to auto-detect)
-          // survives `JSON.stringify` instead of being silently dropped.
-          if (value !== initialProjectValue) {
-            if (value === undefined && initialProjectValue !== undefined && initialProjectValue !== null) {
-              (projectPatch as Record<string, unknown>)[key] = null;
-            } else if (value !== undefined) {
-              (projectPatch as Record<string, unknown>)[key] = value;
-            }
-          }
-        }
-      }
+      // Always save both global and project settings with strict scope
+      // separation. The split (global vs project routing, null-as-delete, and
+      // changed-only project writes) lives in the pure `splitSettingsSave`
+      // helper so the regression-critical behavior is characterized in
+      // isolation; see settings/save-split.ts.
+      const { globalPatch, projectPatch } = splitSettingsSave({
+        payload,
+        initialValues,
+        initialScopedValues,
+        activeSection,
+      });
 
       // Save both scopes in parallel if they have changes.
       // Note: themeMode/colorTheme may also be write-through via useTheme callbacks
@@ -2627,548 +2512,30 @@ export function SettingsModal({
         );
       case "global-general":
         return (
-          <>
-            {renderScopeBanner()}
-            <h4 className="settings-section-heading">General</h4>
-            <div className="form-group">
-              <label htmlFor="globalGithubTrackingDefaultRepo">Global default tracking repo</label>
-              <TrackingRepoSelect
-                id="globalGithubTrackingDefaultRepo"
-                ariaLabel="Global default tracking repo"
-                value={form.githubTrackingDefaultRepo ?? ""}
-                options={globalTrackingRepoOptions}
-                loading={globalTrackingRepoLoading}
-                error={globalTrackingRepoError ?? undefined}
-                placeholder="owner/repo"
-                onChange={(nextValue) =>
-                  setForm((f) => ({ ...f, githubTrackingDefaultRepo: nextValue || undefined }))
-                }
-              />
-              <small>Projects inherit this value when they do not set a project default tracking repo.</small>
-            </div>
-            <CliBinaryPanel />
-            <div className="form-group">
-              <label htmlFor="persistAgentToolOutput" className="checkbox-label">
-                <input
-                  id="persistAgentToolOutput"
-                  type="checkbox"
-                  checked={form.persistAgentToolOutput !== false}
-                  onChange={(e) =>
-                    setForm((f) => ({ ...f, persistAgentToolOutput: e.target.checked }))
-                  }
-                />
-                Save tool output in agent logs
-              </label>
-              <small>
-                When disabled, tool rows are still logged but detailed tool payloads are omitted.
-                Very large tool payloads may still be clipped even when this stays enabled.
-              </small>
-            </div>
-            <div className="form-group">
-              <h5 className="settings-section-heading">Save AI thinking logs</h5>
-              <label htmlFor="persistAgentThinkingLogPermanent" className="checkbox-label">
-                <input
-                  id="persistAgentThinkingLogPermanent"
-                  type="checkbox"
-                  checked={resolvePersistAgentThinkingLog(form, { ephemeral: false })}
-                  onChange={(e) =>
-                    setForm((f) => ({ ...f, persistAgentThinkingLogPermanent: e.target.checked }))
-                  }
-                />
-                Save AI thinking for permanent agents
-              </label>
-              <label htmlFor="persistAgentThinkingLogEphemeral" className="checkbox-label">
-                <input
-                  id="persistAgentThinkingLogEphemeral"
-                  type="checkbox"
-                  checked={resolvePersistAgentThinkingLog(form, { ephemeral: true })}
-                  onChange={(e) =>
-                    setForm((f) => ({ ...f, persistAgentThinkingLogEphemeral: e.target.checked }))
-                  }
-                />
-                Save AI thinking for ephemeral / task-worker agents
-              </label>
-              <small>
-                Leave both thinking toggles off to keep the original default behavior.
-                This only controls persisted <code>thinking</code> rows and does not affect assistant text or tool rows.
-              </small>
-            </div>
-            <div className="form-group">
-              <label htmlFor="fnBinaryCheckEnabled" className="checkbox-label">
-                <input
-                  id="fnBinaryCheckEnabled"
-                  type="checkbox"
-                  checked={form.fnBinaryCheckEnabled !== false}
-                  onChange={(e) =>
-                    setForm((f) => ({ ...f, fnBinaryCheckEnabled: e.target.checked }))
-                  }
-                />
-                Check for the <code>fn</code> CLI binary on PATH
-              </label>
-              <small>
-                When enabled, the dashboard probes for a globally-installed{" "}
-                <code>fn</code> / <code>fusion</code> CLI by spawning{" "}
-                <code>&lt;bin&gt; --version</code>. Disable this if your local
-                dev process is the source of truth and you don&apos;t want any
-                outdated globally-installed binary executed during the probe.
-              </small>
-            </div>
-            <h4 className="settings-section-heading settings-section-heading--spaced">Updates</h4>
-            <div className="form-group">
-              <label htmlFor="updateCheckEnabled" className="checkbox-label">
-                <input
-                  id="updateCheckEnabled"
-                  type="checkbox"
-                  checked={form.updateCheckEnabled !== false}
-                  onChange={(e) =>
-                    setForm((f) => ({ ...f, updateCheckEnabled: e.target.checked }))
-                  }
-                />
-                Check for updates automatically
-              </label>
-              <small>
-                When enabled, Fusion checks npm for new versions of{" "}
-                <code>@runfusion/fusion</code> and shows update notices in the CLI and dashboard.
-                Cadence is governed by the frequency below.
-              </small>
-            </div>
-            <div className="form-group">
-              <label htmlFor="updateCheckFrequency">Frequency</label>
-              <select
-                id="updateCheckFrequency"
-                value={form.updateCheckFrequency ?? "daily"}
-                onChange={(e) =>
-                  setForm((f) => ({
-                    ...f,
-                    updateCheckFrequency: e.target.value as
-                      | "manual"
-                      | "on-startup"
-                      | "daily"
-                      | "weekly",
-                  }))
-                }
-                disabled={form.updateCheckEnabled === false}
-              >
-                <option value="manual">Manual only — never auto-check</option>
-                <option value="on-startup">On startup — once per server launch</option>
-                <option value="daily">Daily (recommended)</option>
-                <option value="weekly">Weekly</option>
-              </select>
-              <small>
-                Controls how often the dashboard re-fetches the npm registry.
-                Use the version + refresh control in the header to trigger an
-                immediate check at any time.
-              </small>
-            </div>
-            <div className="form-group">
-              <label htmlFor="autoReloadOnVersionChange" className="checkbox-label">
-                <input
-                  id="autoReloadOnVersionChange"
-                  type="checkbox"
-                  checked={form.autoReloadOnVersionChange !== false}
-                  onChange={(e) =>
-                    setForm((f) => ({ ...f, autoReloadOnVersionChange: e.target.checked }))
-                  }
-                />
-                Auto-reload dashboard on version change
-              </label>
-              <small>
-                When enabled (default), the dashboard automatically reloads when it
-                detects a new build version — either from server rebuilds or service
-                worker updates. Disable this to stay on the current version until you
-                manually refresh.
-              </small>
-            </div>
-          </>
+          <GlobalGeneralSection
+            scopeBanner={renderScopeBanner()}
+            form={form}
+            setForm={setForm}
+            globalTrackingRepoOptions={globalTrackingRepoOptions}
+            globalTrackingRepoLoading={globalTrackingRepoLoading}
+            globalTrackingRepoError={globalTrackingRepoError}
+          />
         );
-      case "global-models": {
-        const selectedValue = form.defaultProvider && form.defaultModelId
-          ? `${form.defaultProvider}/${form.defaultModelId}`
-          : "";
-        const globalModelLanes = MODEL_LANES.filter(
-          (lane) => lane.laneId !== "default",
-        );
-
+      case "global-models":
         return (
-          <>
-            {renderScopeBanner()}
-
-            {/* --- Default Model --- */}
-            <h4 className="settings-section-heading">Default Model</h4>
-            {modelsLoading ? (
-              <div className="settings-empty-state">{t("settings.models.loadingModels", "Loading available models…")}</div>
-            ) : availableModels.length === 0 ? (
-              <div className="settings-empty-state settings-muted">
-                {t("settings.models.noModels", "No models available. Configure authentication first.")}
-              </div>
-            ) : (
-              <>
-                <div className="form-group">
-                  <label htmlFor="defaultModel">Default Model</label>
-                  <CustomModelDropdown
-                    id="defaultModel"
-                    label="Default Model"
-                    models={availableModels}
-                    value={selectedValue}
-                    onChange={(val) => {
-                      if (!val) {
-                        setForm((f) => ({ ...f, defaultProvider: undefined, defaultModelId: undefined }));
-                      } else {
-                        const slashIdx = val.indexOf("/");
-                        setForm((f) => ({
-                          ...f,
-                          defaultProvider: val.slice(0, slashIdx),
-                          defaultModelId: val.slice(slashIdx + 1),
-                        }));
-                      }
-                    }}
-                    placeholder="Use default"
-                    favoriteProviders={favoriteProviders}
-                    onToggleFavorite={handleToggleFavorite}
-                    favoriteModels={favoriteModels}
-                    onToggleModelFavorite={handleToggleModelFavorite}
-                  />
-                  <small>Default AI model used for task execution when no per-task override is set. &quot;Use default&quot; lets the engine choose automatically.</small>
-                </div>
-
-                <div className="form-group">
-                  <label htmlFor="fallbackModel">Fallback Model</label>
-                  <CustomModelDropdown
-                    id="fallbackModel"
-                    label="Fallback Model"
-                    models={availableModels}
-                    value={form.fallbackProvider && form.fallbackModelId ? `${form.fallbackProvider}/${form.fallbackModelId}` : ""}
-                    onChange={(val) => {
-                      if (!val) {
-                        setForm((f) => ({ ...f, fallbackProvider: undefined, fallbackModelId: undefined }));
-                      } else {
-                        const slashIdx = val.indexOf("/");
-                        setForm((f) => ({
-                          ...f,
-                          fallbackProvider: val.slice(0, slashIdx),
-                          fallbackModelId: val.slice(slashIdx + 1),
-                        }));
-                      }
-                    }}
-                    placeholder="No fallback"
-                    favoriteProviders={favoriteProviders}
-                    onToggleFavorite={handleToggleFavorite}
-                    favoriteModels={favoriteModels}
-                    onToggleModelFavorite={handleToggleModelFavorite}
-                  />
-                  <small>Used automatically if the primary default model hits a retryable provider error like rate limiting or overload.</small>
-                </div>
-              </>
-            )}
-            {(() => {
-              const selectedModel = availableModels.find(
-                (m) => m.provider === form.defaultProvider && m.id === form.defaultModelId,
-              );
-              if (selectedModel && !selectedModel.reasoning) return null;
-              return (
-                <div className="form-group">
-                  <label htmlFor="defaultThinkingLevel">Thinking Effort</label>
-                  <select
-                    id="defaultThinkingLevel"
-                    value={form.defaultThinkingLevel || ""}
-                    onChange={(e) => {
-                      const val = e.target.value;
-                      setForm((f) => ({ ...f, defaultThinkingLevel: (val as ThinkingLevel) || undefined }));
-                    }}
-                  >
-                    <option value="">Default</option>
-                    {THINKING_LEVELS.map((level) => (
-                      <option key={level} value={level}>
-                        {level.charAt(0).toUpperCase() + level.slice(1)}
-                      </option>
-                    ))}
-                  </select>
-                  <small>Controls how much reasoning effort the AI model uses. Higher levels produce better results but cost more.</small>
-                </div>
-              );
-            })()}
-
-            {availableModels.length > 0 && (
-              <>
-                <h4 className="settings-section-heading settings-section-heading--spaced">Model Lanes</h4>
-                <p className="settings-description">
-                  Global baseline models for each AI role. Project settings can override these per-project.
-                </p>
-                {globalModelLanes.map((lane) => {
-                  const provider = form[lane.globalProviderKey as keyof Settings] as string | undefined;
-                  const model = form[lane.globalModelKey as keyof Settings] as string | undefined;
-                  const value = provider && model ? `${provider}/${model}` : "";
-
-                  return (
-                    <div className="form-group" key={`global-${lane.laneId}`}>
-                      <label htmlFor={`global-${lane.laneId}-model`}>{lane.label}</label>
-                      <CustomModelDropdown
-                        id={`global-${lane.laneId}-model`}
-                        label={lane.label}
-                        models={availableModels}
-                        value={value}
-                        onChange={(selected) => {
-                          if (!selected) {
-                            setForm((f) => ({
-                              ...f,
-                              [lane.globalProviderKey]: undefined,
-                              [lane.globalModelKey]: undefined,
-                            }));
-                            return;
-                          }
-
-                          const slashIdx = selected.indexOf("/");
-                          setForm((f) => ({
-                            ...f,
-                            [lane.globalProviderKey]: selected.slice(0, slashIdx),
-                            [lane.globalModelKey]: selected.slice(slashIdx + 1),
-                          }));
-                        }}
-                        placeholder="Use default"
-                        favoriteProviders={favoriteProviders}
-                        onToggleFavorite={handleToggleFavorite}
-                        favoriteModels={favoriteModels}
-                        onToggleModelFavorite={handleToggleModelFavorite}
-                      />
-                      <small>{lane.helperText}</small>
-                    </div>
-                  );
-                })}
-              </>
-            )}
-
-            {/* --- Startup Model Sync --- */}
-            <h4 className="settings-section-heading settings-section-heading--spaced">Startup Model Sync</h4>
-            <div className="form-group">
-              <label htmlFor="openrouterModelSync" className="checkbox-label">
-                <input
-                  id="openrouterModelSync"
-                  type="checkbox"
-                  checked={form.openrouterModelSync !== false}
-                  onChange={(e) => setForm((f) => ({ ...f, openrouterModelSync: e.target.checked }))}
-                />
-                Sync OpenRouter model list at startup
-              </label>
-              <small>
-                When enabled, startup fetches the latest available models from the OpenRouter API so
-                model pickers always include the newest catalog.
-              </small>
-            </div>
-            <div className="form-group">
-              <label htmlFor="opencodeGoModelSync" className="checkbox-label">
-                <input
-                  id="opencodeGoModelSync"
-                  type="checkbox"
-                  checked={form.opencodeGoModelSync !== false}
-                  onChange={(e) => setForm((f) => ({ ...f, opencodeGoModelSync: e.target.checked }))}
-                />
-                Sync opencode-go model list at startup
-              </label>
-              <small>
-                When enabled, startup refreshes models through the local <code>opencode models opencode --refresh</code>
-                flow and publishes them under the opencode-go provider in model pickers.
-              </small>
-            </div>
-            <details>
-              <summary>OpenRouter advanced</summary>
-              <div className="form-group">
-                <label htmlFor="openrouterAppAttributionReferer">OpenRouter HTTP-Referer</label>
-                <input
-                  id="openrouterAppAttributionReferer"
-                  className="input"
-                  placeholder="https://runfusion.ai"
-                  value={form.openrouterAppAttribution?.referer ?? ""}
-                  onChange={(e) => setForm((f) => ({
-                    ...f,
-                    openrouterAppAttribution: {
-                      ...(f.openrouterAppAttribution || {}),
-                      referer: e.target.value,
-                    },
-                  }))}
-                />
-                <small>Leave empty to omit this header. Default: https://runfusion.ai.</small>
-              </div>
-              <div className="form-group">
-                <label htmlFor="openrouterAppAttributionTitle">OpenRouter X-Title</label>
-                <input
-                  id="openrouterAppAttributionTitle"
-                  className="input"
-                  placeholder="Fusion"
-                  value={form.openrouterAppAttribution?.title ?? ""}
-                  onChange={(e) => setForm((f) => ({
-                    ...f,
-                    openrouterAppAttribution: {
-                      ...(f.openrouterAppAttribution || {}),
-                      title: e.target.value,
-                    },
-                  }))}
-                />
-                <small>Leave empty to omit this header. Default: Fusion.</small>
-              </div>
-              <div className="form-group">
-                <label htmlFor="openrouterModelFiltersSupportedParameters">OpenRouter supported_parameters filter</label>
-                <input
-                  id="openrouterModelFiltersSupportedParameters"
-                  className="input"
-                  placeholder="tools, structured_outputs"
-                  value={toCommaSeparatedInput(form.openrouterModelFilters?.supported_parameters)}
-                  onChange={(e) => {
-                    const parsed = fromCommaSeparatedInput(e.target.value);
-                    setForm((f) => ({
-                      ...f,
-                      openrouterModelFilters: {
-                        ...(f.openrouterModelFilters || {}),
-                        supported_parameters: parsed.length > 0 ? parsed : undefined,
-                      },
-                    }));
-                  }}
-                />
-                <small>Comma-separated values sent to OpenRouter model sync.</small>
-              </div>
-              <div className="form-group">
-                <label htmlFor="openrouterModelFiltersOutputModalities">OpenRouter output_modalities filter</label>
-                <input
-                  id="openrouterModelFiltersOutputModalities"
-                  className="input"
-                  placeholder="text"
-                  value={toCommaSeparatedInput(form.openrouterModelFilters?.output_modalities)}
-                  onChange={(e) => {
-                    const parsed = fromCommaSeparatedInput(e.target.value);
-                    setForm((f) => ({
-                      ...f,
-                      openrouterModelFilters: {
-                        ...(f.openrouterModelFilters || {}),
-                        output_modalities: parsed.length > 0 ? parsed : undefined,
-                      },
-                    }));
-                  }}
-                />
-                <small>Comma-separated values sent to OpenRouter model sync.</small>
-              </div>
-              <div className="form-group">
-                <label htmlFor="openrouterProviderPreferencesOrder">OpenRouter routing order</label>
-                <input
-                  id="openrouterProviderPreferencesOrder"
-                  className="input"
-                  placeholder="openai, anthropic"
-                  value={toCommaSeparatedInput(form.openrouterProviderPreferences?.order)}
-                  onChange={(e) => {
-                    const parsed = fromCommaSeparatedInput(e.target.value);
-                    setForm((f) => ({
-                      ...f,
-                      openrouterProviderPreferences: {
-                        ...(f.openrouterProviderPreferences || {}),
-                        order: parsed.length > 0 ? parsed : undefined,
-                      },
-                    }));
-                  }}
-                />
-              </div>
-              <div className="form-group">
-                <label htmlFor="openrouterProviderPreferencesIgnore">OpenRouter routing ignore</label>
-                <input
-                  id="openrouterProviderPreferencesIgnore"
-                  className="input"
-                  placeholder="provider-name"
-                  value={toCommaSeparatedInput(form.openrouterProviderPreferences?.ignore)}
-                  onChange={(e) => {
-                    const parsed = fromCommaSeparatedInput(e.target.value);
-                    setForm((f) => ({
-                      ...f,
-                      openrouterProviderPreferences: {
-                        ...(f.openrouterProviderPreferences || {}),
-                        ignore: parsed.length > 0 ? parsed : undefined,
-                      },
-                    }));
-                  }}
-                />
-              </div>
-              <div className="form-group">
-                <label htmlFor="openrouterProviderPreferencesOnly">OpenRouter routing only</label>
-                <input
-                  id="openrouterProviderPreferencesOnly"
-                  className="input"
-                  placeholder="provider-name"
-                  value={toCommaSeparatedInput(form.openrouterProviderPreferences?.only)}
-                  onChange={(e) => {
-                    const parsed = fromCommaSeparatedInput(e.target.value);
-                    setForm((f) => ({
-                      ...f,
-                      openrouterProviderPreferences: {
-                        ...(f.openrouterProviderPreferences || {}),
-                        only: parsed.length > 0 ? parsed : undefined,
-                      },
-                    }));
-                  }}
-                />
-              </div>
-              <div className="form-group">
-                <label htmlFor="openrouterProviderPreferencesAllowFallbacks">OpenRouter allow fallbacks</label>
-                <select
-                  id="openrouterProviderPreferencesAllowFallbacks"
-                  className="select"
-                  value={form.openrouterProviderPreferences?.allow_fallbacks === undefined ? "default" : form.openrouterProviderPreferences.allow_fallbacks ? "allow" : "deny"}
-                  onChange={(e) => {
-                    const value = e.target.value;
-                    setForm((f) => ({
-                      ...f,
-                      openrouterProviderPreferences: {
-                        ...(f.openrouterProviderPreferences || {}),
-                        allow_fallbacks: value === "default" ? undefined : value === "allow",
-                      },
-                    }));
-                  }}
-                >
-                  <option value="default">default</option>
-                  <option value="allow">allow</option>
-                  <option value="deny">deny</option>
-                </select>
-              </div>
-              <div className="form-group">
-                <label htmlFor="openrouterProviderPreferencesSort">OpenRouter routing sort</label>
-                <select
-                  id="openrouterProviderPreferencesSort"
-                  className="select"
-                  value={form.openrouterProviderPreferences?.sort ?? "default"}
-                  onChange={(e) => {
-                    const value = e.target.value;
-                    setForm((f) => ({
-                      ...f,
-                      openrouterProviderPreferences: {
-                        ...(f.openrouterProviderPreferences || {}),
-                        sort: value === "default" ? undefined : value as "price" | "throughput" | "latency",
-                      },
-                    }));
-                  }}
-                >
-                  <option value="default">default</option>
-                  <option value="price">price</option>
-                  <option value="throughput">throughput</option>
-                  <option value="latency">latency</option>
-                </select>
-              </div>
-              <div className="form-group">
-                <label htmlFor="openrouterProviderPreferencesRequireParameters" className="checkbox-label">
-                  <input
-                    id="openrouterProviderPreferencesRequireParameters"
-                    type="checkbox"
-                    checked={form.openrouterProviderPreferences?.require_parameters === true}
-                    onChange={(e) => setForm((f) => ({
-                      ...f,
-                      openrouterProviderPreferences: {
-                        ...(f.openrouterProviderPreferences || {}),
-                        require_parameters: e.target.checked,
-                      },
-                    }))}
-                  />
-                  Require parameters
-                </label>
-              </div>
-            </details>
-
-          </>
+          <GlobalModelsSection
+            scopeBanner={renderScopeBanner()}
+            form={form}
+            setForm={setForm}
+            availableModels={availableModels}
+            modelsLoading={modelsLoading}
+            globalModelLanes={MODEL_LANES.filter((lane) => lane.laneId !== "default")}
+            favoriteProviders={favoriteProviders}
+            favoriteModels={favoriteModels}
+            onToggleFavorite={handleToggleFavorite}
+            onToggleModelFavorite={handleToggleModelFavorite}
+          />
         );
-      }
 
       case "secrets":
         return (
@@ -3722,41 +3089,19 @@ export function SettingsModal({
 
       case "appearance":
         return (
-          <>
-            {renderScopeBanner()}
-            <h4 className="settings-section-heading">{t("settings.appearance.title", "Appearance")}</h4>
-            <ThemeSelector
-              themeMode={themeMode}
-              colorTheme={colorTheme}
-              dashboardFontScalePct={dashboardFontScalePct}
-              onThemeModeChange={(mode) => {
-                setForm((f) => ({ ...f, themeMode: mode }));
-                onThemeModeChange?.(mode);
-              }}
-              onColorThemeChange={(theme) => {
-                setForm((f) => ({ ...f, colorTheme: theme }));
-                onColorThemeChange?.(theme);
-              }}
-              onDashboardFontScaleChange={(scalePct) => {
-                setForm((f) => ({ ...f, dashboardFontScalePct: scalePct }));
-                onDashboardFontScaleChange?.(scalePct);
-              }}
-            />
-            <LanguageSelector />
-            <div className="form-group">
-              <label className="checkbox-label">
-                <input
-                  type="checkbox"
-                  checked={sessionBannersHidden}
-                  onChange={(e) => setSessionBannersHidden(e.target.checked)}
-                />
-                <span>Hide AI session notification banners</span>
-              </label>
-              <small className="form-text text-muted">
-                Suppress the &ldquo;needs your input&rdquo; banner that appears when AI sessions are awaiting input or have failed.
-              </small>
-            </div>
-          </>
+          <AppearanceSection
+            scopeBanner={renderScopeBanner()}
+            form={form}
+            setForm={setForm}
+            themeMode={themeMode}
+            colorTheme={colorTheme}
+            dashboardFontScalePct={dashboardFontScalePct}
+            onThemeModeChange={onThemeModeChange}
+            onColorThemeChange={onColorThemeChange}
+            onDashboardFontScaleChange={onDashboardFontScaleChange}
+            sessionBannersHidden={sessionBannersHidden}
+            setSessionBannersHidden={setSessionBannersHidden}
+          />
         );
       case "scheduling":
         return (
@@ -5601,245 +4946,16 @@ export function SettingsModal({
           </>
         );
       }
-      case "research-global": {
-        const resolvedProvider =
-          form.researchGlobalWebSearchProvider ??
-          form.researchGlobalDefaults?.searchProvider ??
-          "builtin";
-        const externalProvider =
-          resolvedProvider === "searxng" ||
-          resolvedProvider === "brave" ||
-          resolvedProvider === "google" ||
-          resolvedProvider === "tavily";
-        const selectedCredentialProvider =
-          resolvedProvider === "brave" || resolvedProvider === "tavily" ? resolvedProvider : null;
-        const hasMissingResearchCredential = selectedCredentialProvider
-          ? authProviders.some((provider) => provider.id === selectedCredentialProvider && !provider.authenticated)
-          : false;
-
-        const setSearchProvider = (provider: Settings["researchGlobalWebSearchProvider"]) => {
-          setForm((current) => ({
-            ...current,
-            researchGlobalWebSearchProvider: provider,
-            researchGlobalDefaults: {
-              ...(current.researchGlobalDefaults ?? {}),
-              searchProvider: provider,
-            },
-          }));
-        };
-
+      case "research-global":
         return (
-          <>
-            {renderScopeBanner()}
-            <h4 className="settings-section-heading">Research Defaults</h4>
-            <div className="form-group settings-research-provider-group">
-              <label htmlFor="research-global-provider-builtin" className="checkbox-label">
-                <input
-                  id="research-global-provider-builtin"
-                  type="radio"
-                  name="research-global-search-provider"
-                  checked={!externalProvider}
-                  onChange={() => setSearchProvider("builtin")}
-                />
-                Built-in (uses agent web tools)
-              </label>
-              <small>
-                Searches and fetches use the agent's native WebSearch/WebFetch tools. No API key required.
-              </small>
-              <details className="settings-option-details settings-research-provider-advanced-details">
-                <summary>Advanced — external search providers</summary>
-                <div className="settings-research-provider-advanced-body">
-                  <div className="form-group">
-                    <label htmlFor="research-global-search-provider-advanced">Search Provider</label>
-                    <select
-                      id="research-global-search-provider-advanced"
-                      className="input"
-                      value={externalProvider ? resolvedProvider : "searxng"}
-                      onChange={(event) =>
-                        setSearchProvider(event.target.value as Settings["researchGlobalWebSearchProvider"])
-                      }
-                    >
-                      <option value="searxng">SearXNG</option>
-                      <option value="brave">Brave</option>
-                      <option value="google">Google Custom Search</option>
-                      <option value="tavily">Tavily</option>
-                    </select>
-                  </div>
-                  <div className="form-group">
-                    <label htmlFor="research-global-searxng-url">SearXNG URL</label>
-                    <input
-                      id="research-global-searxng-url"
-                      className="input"
-                      value={form.researchGlobalSearxngUrl ?? ""}
-                      onChange={(event) =>
-                        setForm((current) => ({
-                          ...current,
-                          researchGlobalSearxngUrl: event.target.value || undefined,
-                        }))
-                      }
-                      placeholder="https://searx.example.com"
-                    />
-                  </div>
-                  <div className="form-group">
-                    <label htmlFor="research-global-google-cx">Google Search CX</label>
-                    <input
-                      id="research-global-google-cx"
-                      className="input"
-                      value={form.researchGlobalGoogleSearchCx ?? ""}
-                      onChange={(event) =>
-                        setForm((current) => ({
-                          ...current,
-                          researchGlobalGoogleSearchCx: event.target.value || undefined,
-                        }))
-                      }
-                      placeholder="custom-search-engine-id"
-                    />
-                  </div>
-                  <div className="settings-empty-state settings-research-empty-state" role="note">
-                    Configure Brave, Tavily, and Google API keys in Authentication.
-                    <button type="button" className="btn btn-sm" onClick={() => setActiveSection("authentication")}>
-                      Open Authentication Settings
-                    </button>
-                  </div>
-                </div>
-              </details>
-            </div>
-            <div className="form-group">
-              <div className="settings-research-limits-grid">
-                <div className="settings-research-limit-field">
-                  <label htmlFor="research-global-max-concurrent">Default Max Concurrent Runs</label>
-                  <input
-                    id="research-global-max-concurrent"
-                    className="input"
-                    type="number"
-                    min={1}
-                    value={form.researchGlobalMaxConcurrentRuns ?? 3}
-                    onChange={(event) =>
-                      setForm((current) => ({
-                        ...current,
-                        researchGlobalMaxConcurrentRuns: event.target.value === "" ? undefined : Number(event.target.value),
-                      }))
-                    }
-                  />
-                </div>
-                <div className="settings-research-limit-field">
-                  <label htmlFor="research-global-max-sources">Default Max Sources Per Run</label>
-                  <input
-                    id="research-global-max-sources"
-                    className="input"
-                    type="number"
-                    min={1}
-                    value={form.researchGlobalMaxSourcesPerRun ?? 20}
-                    onChange={(event) =>
-                      setForm((current) => ({
-                        ...current,
-                        researchGlobalMaxSourcesPerRun: event.target.value === "" ? undefined : Number(event.target.value),
-                        researchGlobalDefaults: {
-                          ...(current.researchGlobalDefaults ?? {}),
-                          maxSourcesPerRun: event.target.value === "" ? undefined : Number(event.target.value),
-                        },
-                      }))
-                    }
-                  />
-                </div>
-                <div className="settings-research-limit-field">
-                  <label htmlFor="research-global-default-timeout">Default Max Duration (ms)</label>
-                  <input
-                    id="research-global-default-timeout"
-                    className="input"
-                    type="number"
-                    min={1000}
-                    value={form.researchGlobalDefaultTimeout ?? 300000}
-                    onChange={(event) =>
-                      setForm((current) => ({
-                        ...current,
-                        researchGlobalDefaultTimeout: event.target.value === "" ? undefined : Number(event.target.value),
-                      }))
-                    }
-                  />
-                </div>
-                <div className="settings-research-limit-field">
-                  <label htmlFor="research-global-fetch-timeout">Request Timeout (ms)</label>
-                  <input
-                    id="research-global-fetch-timeout"
-                    className="input"
-                    type="number"
-                    min={1000}
-                    value={form.researchGlobalFetchTimeoutMs ?? 30000}
-                    onChange={(event) =>
-                      setForm((current) => ({
-                        ...current,
-                        researchGlobalFetchTimeoutMs: event.target.value === "" ? undefined : Number(event.target.value),
-                      }))
-                    }
-                  />
-                </div>
-                <div className="settings-research-limit-field">
-                  <label htmlFor="research-global-max-synthesis-rounds">Max Synthesis Rounds</label>
-                  <input
-                    id="research-global-max-synthesis-rounds"
-                    className="input"
-                    type="number"
-                    min={1}
-                    value={form.researchGlobalMaxSynthesisRounds ?? 2}
-                    onChange={(event) =>
-                      setForm((current) => ({
-                        ...current,
-                        researchGlobalMaxSynthesisRounds: event.target.value === "" ? undefined : Number(event.target.value),
-                      }))
-                    }
-                  />
-                </div>
-              </div>
-            </div>
-            <div className="form-group">
-              <label>Enabled Sources</label>
-              <label htmlFor="research-global-source-webSearch" className="checkbox-label settings-research-source-locked">
-                <input id="research-global-source-webSearch" type="checkbox" checked disabled readOnly />
-                Web Search <span className="settings-muted">Always on</span>
-              </label>
-              <div className="settings-research-source-grid">
-                <label htmlFor="research-global-source-github" className="checkbox-label">
-                  <input
-                    id="research-global-source-github"
-                    type="checkbox"
-                    checked={form.researchGlobalGitHubEnabled ?? false}
-                    onChange={(event) =>
-                      setForm((current) => ({
-                        ...current,
-                        researchGlobalGitHubEnabled: event.target.checked,
-                      }))
-                    }
-                  />
-                  GitHub
-                </label>
-                <label htmlFor="research-global-source-local-docs" className="checkbox-label">
-                  <input
-                    id="research-global-source-local-docs"
-                    type="checkbox"
-                    checked={form.researchGlobalLocalDocsEnabled ?? true}
-                    onChange={(event) =>
-                      setForm((current) => ({
-                        ...current,
-                        researchGlobalLocalDocsEnabled: event.target.checked,
-                      }))
-                    }
-                  />
-                  Local Docs
-                </label>
-              </div>
-            </div>
-            {hasMissingResearchCredential && (
-              <div className="settings-empty-state" role="alert">
-                Missing credentials for the selected research provider.
-                <button type="button" className="btn btn-sm" onClick={() => setActiveSection("authentication")}>
-                  Open Authentication
-                </button>
-              </div>
-            )}
-          </>
+          <ResearchGlobalSection
+            scopeBanner={renderScopeBanner()}
+            form={form}
+            setForm={setForm}
+            authProviders={authProviders}
+            onNavigateToSection={setActiveSection}
+          />
         );
-      }
       case "research-project": {
         const limits = form.researchSettings?.limits;
         const sources = form.researchSettings?.enabledSources;
@@ -6004,67 +5120,18 @@ export function SettingsModal({
           </>
         );
       }
-      case "experimental": {
-        const experimentalFeatures = form.experimentalFeatures ?? {};
-        // Merge known features (always shown) with custom features from settings,
-        // while canonicalizing legacy aliases (e.g. devServer → devServerView)
-        // so only one user-visible row is rendered per feature.
-        const allFeatureKeys = Array.from(
-          new Set([
-            ...Object.keys(KNOWN_EXPERIMENTAL_FEATURES),
-            ...Object.keys(experimentalFeatures).map(getCanonicalExperimentalFeatureKey),
-          ])
-        ).sort((a, b) => a.localeCompare(b));
-        const featureFlags = allFeatureKeys.map((key) => [key, isExperimentalFeatureEnabled(experimentalFeatures, key)] as const);
-
+      case "experimental":
         return (
-          <>
-            {renderScopeBanner()}
-            <h4 className="settings-section-heading">Experimental Features</h4>
-            <div className="form-group">
-              <small>
-                Experimental features are early capabilities that are not yet fully stable.
-                Enable them to test new functionality, but be aware they may change or be removed.
-              </small>
-            </div>
-
-            <div className="form-group">
-              <label>Feature Flags</label>
-              <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-sm)" }}>
-                {featureFlags.map(([key, enabled]) => (
-                  <label key={key} htmlFor={`experimental-${key}`} className="checkbox-label">
-                    <input
-                      id={`experimental-${key}`}
-                      type="checkbox"
-                      checked={enabled}
-                      onChange={(e) => {
-                        setForm((f) => {
-                          const nextExperimentalFeatures = {
-                            ...(f.experimentalFeatures ?? {}),
-                            [key]: e.target.checked,
-                          };
-
-                          for (const [legacyKey, canonicalKey] of Object.entries(EXPERIMENTAL_FEATURE_LEGACY_ALIASES)) {
-                            if (canonicalKey === key) {
-                              delete nextExperimentalFeatures[legacyKey];
-                            }
-                          }
-
-                          return {
-                            ...f,
-                            experimentalFeatures: nextExperimentalFeatures,
-                          };
-                        });
-                      }}
-                    />
-                    <span>{KNOWN_EXPERIMENTAL_FEATURES[key] ?? key}</span>
-                  </label>
-                ))}
-              </div>
-            </div>
-          </>
+          <ExperimentalSection
+            scopeBanner={renderScopeBanner()}
+            form={form}
+            setForm={setForm}
+            knownFeatures={KNOWN_EXPERIMENTAL_FEATURES}
+            legacyAliases={EXPERIMENTAL_FEATURE_LEGACY_ALIASES}
+            getCanonicalKey={getCanonicalExperimentalFeatureKey}
+            isFeatureEnabled={isExperimentalFeatureEnabled}
+          />
         );
-      }
       case "backups":
         return (
           <>
@@ -6271,785 +5338,53 @@ export function SettingsModal({
         );
       case "notifications":
         return (
-          <>
-            {renderScopeBanner()}
-            <h4 className="settings-section-heading">Notifications</h4>
-
-            <div className="notification-provider-card">
-              <div className="form-group">
-                <label htmlFor="failureNotificationMode">Failure notification mode</label>
-                <select
-                  id="failureNotificationMode"
-                  value={form.failureNotificationMode ?? "sticky-only"}
-                  onChange={(e) => {
-                    const value = e.target.value as "sticky-only" | "all" | "terminal-only";
-                    setForm((f) => ({ ...f, failureNotificationMode: value }));
-                  }}
-                >
-                  <option value="sticky-only">Sticky failures only (default)</option>
-                  <option value="terminal-only">Terminal failures only (suppress auto-retried)</option>
-                  <option value="all">All failures (legacy)</option>
-                </select>
-                <small>Sticky-only suppresses recovered failures; terminal-only waits for paused/in-review failed tasks; all restores legacy alerts.</small>
-              </div>
-              <div className="form-group">
-                <label htmlFor="failureNotificationDelayMs">Failure notification delay (ms)</label>
-                <input
-                  id="failureNotificationDelayMs"
-                  type="number"
-                  min={0}
-                  step={1000}
-                  disabled={(form.failureNotificationMode ?? "sticky-only") === "all"}
-                  value={form.failureNotificationDelayMs ?? 30000}
-                  onChange={(e) => {
-                    const parsed = Number(e.target.value);
-                    setForm((f) => ({
-                      ...f,
-                      failureNotificationDelayMs: Number.isFinite(parsed) && parsed >= 0 ? parsed : 0,
-                    }));
-                  }}
-                />
-                <small>
-                  How long a failure must persist before a push notification is sent. 0 = notify immediately.
-                </small>
-              </div>
-            </div>
-
-            <div className="notification-provider-card">
-              <div className="notification-provider-header">
-                <strong>ntfy</strong>
-                <label htmlFor="ntfyEnabled" className="checkbox-label">
-                  <input
-                    id="ntfyEnabled"
-                    type="checkbox"
-                    checked={form.ntfyEnabled || false}
-                    onChange={(e) =>
-                      setForm((f) => ({ ...f, ntfyEnabled: e.target.checked }))
-                    }
-                  />
-                  Enable
-                </label>
-              </div>
-              {form.ntfyEnabled && (
-                <div className="notification-provider-body">
-                  <div className="form-group">
-                    <label htmlFor="ntfyTopic">ntfy Topic</label>
-                    <input
-                      id="ntfyTopic"
-                      type="text"
-                      placeholder="my-topic-name"
-                      value={form.ntfyTopic || ""}
-                      onChange={(e) => {
-                        const val = e.target.value;
-                        setForm((f) => ({ ...f, ntfyTopic: val || undefined }));
-                      }}
-                    />
-                    <small>
-                      Your ntfy.sh topic name (1–64 alphanumeric/hyphen/underscore characters).{" "}
-                      <a
-                        href="https://ntfy.sh"
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="settings-inline-link"
-                      >
-                        Learn more about ntfy.sh
-                      </a>
-                    </small>
-                    {form.ntfyTopic && !/^[a-zA-Z0-9_-]{1,64}$/.test(form.ntfyTopic) && (
-                      <small className="field-error">
-                        Topic must be 1–64 alphanumeric, hyphen, or underscore characters
-                      </small>
-                    )}
-                    <details className="ntfy-advanced-disclosure">
-                      <summary>Advanced</summary>
-                      <div className="ntfy-advanced-content">
-                        <label htmlFor="ntfyBaseUrl">Custom ntfy server URL (optional)</label>
-                        <input
-                          id="ntfyBaseUrl"
-                          type="url"
-                          placeholder="https://ntfy.sh"
-                          value={form.ntfyBaseUrl || ""}
-                          onChange={(e) => {
-                            const value = e.target.value;
-                            setForm((f) => ({ ...f, ntfyBaseUrl: value || undefined }));
-                          }}
-                        />
-                        <small>
-                          Leave blank to keep the default server: https://ntfy.sh. Custom servers must use http:// or https://.
-                        </small>
-                        <label htmlFor="ntfyAccessToken">Access token (optional)</label>
-                        <input
-                          id="ntfyAccessToken"
-                          type="password"
-                          autoComplete="off"
-                          placeholder="tk_..."
-                          value={form.ntfyAccessToken || ""}
-                          onChange={(e) => {
-                            const value = e.target.value;
-                            setForm((f) => ({ ...f, ntfyAccessToken: value || undefined }));
-                          }}
-                        />
-                        <small>
-                          Leave blank to publish without authentication. When set, Fusion sends an Authorization Bearer header with ntfy requests.
-                        </small>
-                      </div>
-                    </details>
-                  </div>
-                  <div className="form-group">
-                    <label>Notify on events</label>
-                    <div className="ntfy-events-list">
-                      {NOTIFICATION_EVENT_OPTIONS.map(({ event, label, description }) => {
-                        const checked = form.ntfyEvents?.includes(event) ?? true;
-                        return (
-                          <div key={`ntfy-${event}`}>
-                            <label className="checkbox-label">
-                              <input
-                                type="checkbox"
-                                checked={checked}
-                                onChange={(e) => {
-                                  const current = form.ntfyEvents ?? [...DEFAULT_NTFY_EVENTS];
-                                  const newEvents = e.target.checked
-                                    ? (current.includes(event) ? current : [...current, event])
-                                    : current.filter((ev): ev is NtfyNotificationEvent => ev !== event);
-                                  setForm((f) => ({ ...f, ntfyEvents: newEvents.length > 0 ? newEvents : undefined }));
-                                }}
-                              />
-                              {label}
-                            </label>
-                            <small>{description}</small>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                  <div className="form-group">
-                    <label htmlFor="ntfyDashboardHost">Dashboard Hostname</label>
-                    <input
-                      id="ntfyDashboardHost"
-                      type="text"
-                      placeholder="http://localhost:3000"
-                      value={form.ntfyDashboardHost || ""}
-                      onChange={(e) => {
-                        const val = e.target.value;
-                        setForm((f) => ({ ...f, ntfyDashboardHost: val || undefined }));
-                      }}
-                    />
-                    <small>
-                      Base URL for deep links in notifications. When set, clicking a notification
-                      opens the dashboard directly to the task.
-                    </small>
-                    {form.ntfyDashboardHost && !/^https?:\/\/.+/.test(form.ntfyDashboardHost) && (
-                      <small className="field-error">
-                        Must be a valid URL starting with http:// or https://
-                      </small>
-                    )}
-                  </div>
-                  <div className="notification-provider-actions">
-                    <button
-                      type="button"
-                      className="btn btn-sm"
-                      onClick={() => handleTestProviderNotification("ntfy")}
-                      disabled={
-                        testNotificationLoading["ntfy"] ||
-                        testNotificationLoading["ntfy-message"] ||
-                        testNotificationLoading["ntfy-room"] ||
-                        !form.ntfyEnabled ||
-                        !form.ntfyTopic ||
-                        !/^[a-zA-Z0-9_-]{1,64}$/.test(form.ntfyTopic)
-                      }
-                    >
-                      {testNotificationLoading["ntfy"] ? t("settings.notifications.sending", "Sending…") : t("settings.notifications.testNotification", "Test notification")}
-                    </button>
-                    <button
-                      type="button"
-                      className="btn btn-sm"
-                      onClick={() => handleTestProviderNotification("ntfy-message")}
-                      disabled={
-                        testNotificationLoading["ntfy"] ||
-                        testNotificationLoading["ntfy-message"] ||
-                        testNotificationLoading["ntfy-room"] ||
-                        !form.ntfyEnabled ||
-                        !form.ntfyTopic ||
-                        !/^[a-zA-Z0-9_-]{1,64}$/.test(form.ntfyTopic)
-                      }
-                    >
-                      {testNotificationLoading["ntfy-message"] ? t("settings.notifications.sending", "Sending…") : t("settings.notifications.testMessageInbox", "Test message inbox")}
-                    </button>
-                    <button
-                      type="button"
-                      className="btn btn-sm"
-                      onClick={() => handleTestProviderNotification("ntfy-room")}
-                      disabled={
-                        testNotificationLoading["ntfy"] ||
-                        testNotificationLoading["ntfy-message"] ||
-                        testNotificationLoading["ntfy-room"] ||
-                        !form.ntfyEnabled ||
-                        !form.ntfyTopic ||
-                        !/^[a-zA-Z0-9_-]{1,64}$/.test(form.ntfyTopic)
-                      }
-                    >
-                      {testNotificationLoading["ntfy-room"] ? t("settings.notifications.sending", "Sending…") : t("settings.notifications.testRoomReply", "Test room reply")}
-                    </button>
-                  </div>
-                  {(testNotificationResult["ntfy"] || testNotificationResult["ntfy-message"] || testNotificationResult["ntfy-room"]) && (
-                    <div className="notification-test-feedback" aria-live="polite">
-                      {testNotificationResult["ntfy"] && (
-                        <small className={`notification-test-feedback-item notification-test-feedback-item--${testNotificationResult["ntfy"].status}`}>
-                          General: {testNotificationResult["ntfy"].message}
-                        </small>
-                      )}
-                      {testNotificationResult["ntfy-message"] && (
-                        <small className={`notification-test-feedback-item notification-test-feedback-item--${testNotificationResult["ntfy-message"].status}`}>
-                          Message inbox: {testNotificationResult["ntfy-message"].message}
-                        </small>
-                      )}
-                      {testNotificationResult["ntfy-room"] && (
-                        <small className={`notification-test-feedback-item notification-test-feedback-item--${testNotificationResult["ntfy-room"].status}`}>
-                          Room reply: {testNotificationResult["ntfy-room"].message}
-                        </small>
-                      )}
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-
-            <div className="notification-provider-card">
-              <div className="notification-provider-header">
-                <strong>Webhook</strong>
-                <label htmlFor="webhookEnabled" className="checkbox-label">
-                  <input
-                    id="webhookEnabled"
-                    type="checkbox"
-                    checked={form.webhookEnabled || false}
-                    onChange={(e) =>
-                      setForm((f) => ({ ...f, webhookEnabled: e.target.checked }))
-                    }
-                  />
-                  Webhook notifications
-                </label>
-              </div>
-              {form.webhookEnabled && (
-                <div className="notification-provider-body">
-                  <div className="form-group">
-                    <label htmlFor="webhookUrl">Webhook URL</label>
-                    <input
-                      id="webhookUrl"
-                      type="text"
-                      placeholder="https://hooks.example.com/..."
-                      value={form.webhookUrl || ""}
-                      onChange={(e) => {
-                        const val = e.target.value;
-                        setForm((f) => ({ ...f, webhookUrl: val || undefined }));
-                      }}
-                    />
-                  </div>
-                  <div className="form-group">
-                    <label htmlFor="webhookFormat">Format</label>
-                    <select
-                      id="webhookFormat"
-                      value={form.webhookFormat || "generic"}
-                      onChange={(e) => {
-                        const val = e.target.value as "slack" | "discord" | "generic";
-                        setForm((f) => ({ ...f, webhookFormat: val }));
-                      }}
-                    >
-                      <option value="slack">Slack</option>
-                      <option value="discord">Discord</option>
-                      <option value="generic">Generic</option>
-                    </select>
-                  </div>
-                  <div className="form-group">
-                    <label>Notify on events</label>
-                    <div className="ntfy-events-list">
-                      {NOTIFICATION_EVENT_OPTIONS.map(({ event, label, description }) => {
-                        const currentEvents = form.webhookEvents ?? [...DEFAULT_NTFY_EVENTS];
-                        const checked = currentEvents.includes(event);
-                        return (
-                          <div key={`webhook-${event}`}>
-                            <label className="checkbox-label">
-                              <input
-                                type="checkbox"
-                                checked={checked}
-                                onChange={(e) => {
-                                  const current = form.webhookEvents ?? [...DEFAULT_NTFY_EVENTS];
-                                  const newEvents = e.target.checked
-                                    ? (current.includes(event) ? current : [...current, event])
-                                    : current.filter((ev) => ev !== event);
-                                  setForm((f) => ({ ...f, webhookEvents: newEvents.length > 0 ? newEvents : undefined }));
-                                }}
-                              />
-                              {label}
-                            </label>
-                            <small>{description}</small>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                  <div className="notification-provider-actions">
-                    <button
-                      type="button"
-                      className="btn btn-sm"
-                      onClick={() => handleTestProviderNotification("webhook")}
-                      disabled={testNotificationLoading["webhook"] || !form.webhookUrl}
-                    >
-                      {testNotificationLoading["webhook"] ? t("settings.notifications.sending", "Sending…") : t("settings.notifications.testNotification", "Test notification")}
-                    </button>
-                  </div>
-                  {testNotificationResult["webhook"] && (
-                    <div className="notification-test-feedback" aria-live="polite">
-                      <small className={`notification-test-feedback-item notification-test-feedback-item--${testNotificationResult["webhook"].status}`}>
-                        {testNotificationResult["webhook"].message}
-                      </small>
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-          </>
+          <NotificationsSection
+            scopeBanner={renderScopeBanner()}
+            form={form}
+            setForm={setForm}
+            testNotificationLoading={testNotificationLoading}
+            testNotificationResult={testNotificationResult}
+            onTestProviderNotification={handleTestProviderNotification}
+          />
         );
       case "node-sync":
         return (
-          <>
-            {renderScopeBanner()}
-            <h4 className="settings-section-heading">Node Sync</h4>
-            <div className="form-group">
-              <label htmlFor="settingsSyncEnabled" className="checkbox-label">
-                <input
-                  id="settingsSyncEnabled"
-                  type="checkbox"
-                  checked={form.settingsSyncEnabled || false}
-                  onChange={(e) =>
-                    setForm((f) => ({ ...f, settingsSyncEnabled: e.target.checked }))
-                  }
-                />
-                Enable automatic settings sync
-              </label>
-              <small>Automatically synchronize settings between this node and connected remote nodes</small>
-            </div>
-            {form.settingsSyncEnabled && (
-              <>
-                <div className="form-group">
-                  <label htmlFor="settingsSyncAuth" className="checkbox-label">
-                    <input
-                      id="settingsSyncAuth"
-                      type="checkbox"
-                      checked={form.settingsSyncAuth || false}
-                      onChange={(e) =>
-                        setForm((f) => ({ ...f, settingsSyncAuth: e.target.checked }))
-                      }
-                    />
-                    Sync model auth credentials
-                  </label>
-                  <small>Include API keys and OAuth tokens in sync operations</small>
-                </div>
-                <div className="form-group">
-                  <label htmlFor="settingsSyncInterval">Sync interval</label>
-                  <select
-                    id="settingsSyncInterval"
-                    className="select"
-                    value={form.settingsSyncInterval || 900000}
-                    onChange={(e) =>
-                      setForm((f) => ({ ...f, settingsSyncInterval: parseInt(e.target.value, 10) }))
-                    }
-                  >
-                    <option value={300000}>Every 5 minutes</option>
-                    <option value={900000}>Every 15 minutes</option>
-                    <option value={1800000}>Every 30 minutes</option>
-                    <option value={3600000}>Every 1 hour</option>
-                  </select>
-                </div>
-                <div className="form-group">
-                  <label htmlFor="settingsSyncConflictResolution">Conflict resolution</label>
-                  <select
-                    id="settingsSyncConflictResolution"
-                    className="select"
-                    value={form.settingsSyncConflictResolution || "last-write-wins"}
-                    onChange={(e) =>
-                      setForm((f) => ({ ...f, settingsSyncConflictResolution: e.target.value as "last-write-wins" | "always-ask" | "keep-local" | "keep-remote" }))
-                    }
-                  >
-                    <option value="last-write-wins">Last write wins</option>
-                    <option value="always-ask">Always ask</option>
-                    <option value="keep-local">Keep local</option>
-                    <option value="keep-remote">Keep remote</option>
-                  </select>
-                </div>
-              </>
-            )}
-            {/* KTD-8: workflow settings are not yet part of the cross-node sync
-                channel. Non-dismissible, informational only, no action affordance. */}
-            <p className="settings-sync-workflow-note text-muted" role="note">
-              {t(
-                "settings.nodeSync.workflowSettingsNotSynced",
-                "Workflow settings are not synced across nodes yet.",
-              )}
-            </p>
-          </>
+          <NodeSyncSection
+            scopeBanner={renderScopeBanner()}
+            form={form}
+            setForm={setForm}
+          />
         );
-      case "remote": {
-        const remoteForm = form as Record<string, unknown>;
-        const activeProvider = (remoteForm.remoteActiveProvider as "tailscale" | "cloudflare" | null) ?? null;
-        const tunnelState = (remoteStatus?.state as RemoteStatus["state"] | "error" | undefined) ?? "stopped";
-        const statusColor = tunnelState === "running"
-          ? "running"
-          : tunnelState === "starting"
-            ? "starting"
-            : tunnelState === "failed" || tunnelState === "error"
-              ? "error"
-              : "stopped";
-
+      case "remote":
         return (
-          <>
-            {renderScopeBanner()}
-            <h4 className="settings-section-heading">Remote Access</h4>
-            <div className={`remote-status-bar remote-status-bar--${statusColor}`}>
-              <span className={`remote-status-dot remote-status-dot--${statusColor}`} />
-              <strong>{tunnelState}</strong>
-              {remoteStatus?.provider && <span> · {remoteStatus.provider}</span>}
-              {remoteStatus?.url && <code className="remote-status-url">{remoteStatus.url}</code>}
-              {remoteStatus?.lastError && <span className="field-error">{remoteStatus.lastError}</span>}
-            </div>
-            {tunnelState === "stopped" && externalTunnel && (
-              <div className="remote-external-tunnel-panel" role="status">
-                <div className="remote-external-tunnel-header">
-                  <Globe aria-hidden="true" />
-                  <strong>External {externalTunnel.provider} tunnel detected</strong>
-                </div>
-                {externalTunnel.url && <code className="settings-url-output">{externalTunnel.url}</code>}
-                {tunnelShareLink?.qrSvg && (
-                  <div className="remote-external-tunnel-qr">
-                    <small>Scan to open:</small>
-                    <img
-                      src={`data:image/svg+xml;utf8,${encodeURIComponent(tunnelShareLink.qrSvg)}`}
-                      alt="External tunnel QR code"
-                      className="settings-qr-preview-image"
-                    />
-                  </div>
-                )}
-              </div>
-            )}
-            {tunnelState === "running" && (remoteStatus?.url || tunnelShareLink) && (() => {
-              let accessCode: string | null = null;
-              let tailnetUrl: string | null = remoteStatus?.url ?? null;
-              if (tunnelShareLink?.url) {
-                try {
-                  const parsed = new URL(tunnelShareLink.url);
-                  accessCode = parsed.searchParams.get("rt");
-                  if (!tailnetUrl) tailnetUrl = `${parsed.origin}/`;
-                } catch {
-                  // fall through
-                }
-              }
-              return (
-                <div className="remote-share-block">
-                  {tailnetUrl && (
-                    <div className="remote-share-row">
-                      <small>Tailnet URL:</small>
-                      <code className="settings-url-output">{tailnetUrl}</code>
-                    </div>
-                  )}
-                  {accessCode && (
-                    <div className="remote-share-row">
-                      <small>Remote access code:</small>
-                      <code className="settings-url-output">{accessCode}</code>
-                    </div>
-                  )}
-                  {tunnelShareLink?.qrSvg && (
-                    <div className="remote-share-row">
-                      <small>Scan to connect:</small>
-                      <img
-                        src={`data:image/svg+xml;utf8,${encodeURIComponent(tunnelShareLink.qrSvg)}`}
-                        alt="Remote access QR code"
-                        className="settings-qr-preview-image"
-                      />
-                    </div>
-                  )}
-                </div>
-              );
-            })()}
-
-            <div className="form-group">
-              <div className="remote-provider-selector" role="radiogroup" aria-label="Remote provider">
-                <label className="remote-provider-option">
-                  <input type="radio" name="remoteProvider" value="tailscale" checked={activeProvider === "tailscale"} onChange={() => setForm((f) => ({ ...f, remoteActiveProvider: "tailscale" } as SettingsFormState))} />
-                  <span>
-                    <span className="remote-provider-option-content">
-                      <span data-testid="remote-provider-icon-tailscale" aria-hidden="true"><Globe size={16} /></span>
-                      <span>Tailscale</span>
-                    </span>
-                  </span>
-                </label>
-                <label className="remote-provider-option">
-                  <input type="radio" name="remoteProvider" value="cloudflare" checked={activeProvider === "cloudflare"} onChange={() => setForm((f) => ({ ...f, remoteActiveProvider: "cloudflare" } as SettingsFormState))} />
-                  <span>
-                    <span className="remote-provider-option-content">
-                      <span data-testid="remote-provider-icon-cloudflare" aria-hidden="true" className="remote-provider-option-icon">
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" data-testid="remote-cloudflare-option-icon">
-                          <path d="M7 16.5h10.8a2.9 2.9 0 0 0 .3-5.8 4.9 4.9 0 0 0-9.3-1.6A3.6 3.6 0 0 0 7 16.5m-1.9 0h3.2a2.5 2.5 0 0 0 .2-5 3.4 3.4 0 0 0-3.4 3.4c0 .6 0 1 .2 1.6" fill="var(--provider-cloudflare)" />
-                        </svg>
-                      </span>
-                      <span>Cloudflare</span>
-                    </span>
-                  </span>
-                </label>
-              </div>
-              {!activeProvider && <small>Select a provider above to configure remote access.</small>}
-            </div>
-
-            {activeProvider === "cloudflare" && remoteStatus?.cloudflaredAvailable === true && (
-              <div className="remote-cli-detection remote-cli-detection--available" role="status">
-                <CheckCircle aria-hidden="true" />
-                <span>cloudflared is installed</span>
-              </div>
-            )}
-
-            {activeProvider === "cloudflare" && remoteStatus?.cloudflaredAvailable === false && (
-              <div className="remote-cli-detection remote-cli-detection--missing" role="status">
-                <AlertTriangle aria-hidden="true" />
-                <div className="remote-cli-detection-content">
-                  <span>cloudflared is not installed</span>
-                  <button
-                    type="button"
-                    className="btn btn-sm"
-                    disabled={cloudflaredInstalling || remoteBusyAction !== null}
-                    onClick={() => void handleInstallCloudflared()}
-                  >
-                    {cloudflaredInstalling ? "Installing…" : "Install cloudflared"}
-                  </button>
-                  {cloudflaredInstallError && <small className="remote-cli-install-error">{cloudflaredInstallError}</small>}
-                  <small className="remote-cli-manual">Manual install: <code>{cloudflaredManualInstallCommand()}</code></small>
-                  {cloudflaredMacFallbackCommand()
-                    ? <small className="remote-cli-manual">If Homebrew is unavailable: <code>{cloudflaredMacFallbackCommand()}</code></small>
-                    : null}
-                </div>
-              </div>
-            )}
-
-            {activeProvider && (
-              <div className="form-group remote-provider-settings">
-                {activeProvider === "tailscale" ? (
-                  <>
-                    <small>Tailscale Funnel will expose this dashboard on your tailnet's public {`https://<machine>.<tailnet>.ts.net/`} URL — no hostname or port configuration needed.</small>
-                    <label htmlFor="remoteTailscaleAcceptRoutes" className="checkbox-label">
-                      <input id="remoteTailscaleAcceptRoutes" type="checkbox" checked={Boolean(remoteForm.remoteTailscaleAcceptRoutes)} onChange={(e) => setForm((f) => ({ ...f, remoteTailscaleAcceptRoutes: e.target.checked } as SettingsFormState))} />
-                      Accept routes
-                    </label>
-                  </>
-                ) : (
-                  <>
-                    <small>
-                      {(remoteForm.remoteCloudflareQuickTunnel ?? true)
-                        ? "Using Quick Tunnel — automatically creates a random trycloudflare.com URL, no account needed."
-                        : "Named Tunnel mode enabled — configure tunnel name, token, and ingress URL below."}
-                    </small>
-                    <details
-                      className="remote-cf-advanced-details"
-                      open={!(remoteForm.remoteCloudflareQuickTunnel ?? true)}
-                      onToggle={(event) => {
-                        const detailsOpen = event.currentTarget.open;
-                        setForm((f) => {
-                          const currentQuickTunnel = Boolean((f as Record<string, unknown>).remoteCloudflareQuickTunnel ?? true);
-                          const nextQuickTunnel = !detailsOpen;
-                          if (currentQuickTunnel === nextQuickTunnel) {
-                            return f;
-                          }
-                          return { ...f, remoteCloudflareQuickTunnel: nextQuickTunnel } as SettingsFormState;
-                        });
-                      }}
-                    >
-                      <summary>Advanced (Named Tunnel)</summary>
-                      {!(remoteForm.remoteCloudflareQuickTunnel ?? true) ? (
-                        <div className="remote-cf-advanced-fields">
-                          <label htmlFor="remoteCloudflareTunnelName">Tunnel name</label>
-                          <input id="remoteCloudflareTunnelName" type="text" placeholder="Tunnel name" value={String(remoteForm.remoteCloudflareTunnelName ?? "")} onChange={(e) => setForm((f) => ({ ...f, remoteCloudflareTunnelName: e.target.value } as SettingsFormState))} />
-                          <label htmlFor="remoteCloudflareTunnelToken">Tunnel token</label>
-                          <input id="remoteCloudflareTunnelToken" type="password" placeholder="Tunnel token" value={String(remoteForm.remoteCloudflareTunnelToken ?? "")} onChange={(e) => setForm((f) => ({ ...f, remoteCloudflareTunnelToken: e.target.value } as SettingsFormState))} />
-                          <label htmlFor="remoteCloudflareIngressUrl">Ingress URL</label>
-                          <input id="remoteCloudflareIngressUrl" type="text" placeholder="https://your-domain.example" value={String(remoteForm.remoteCloudflareIngressUrl ?? "")} onChange={(e) => setForm((f) => ({ ...f, remoteCloudflareIngressUrl: e.target.value } as SettingsFormState))} />
-                        </div>
-                      ) : null}
-                    </details>
-                  </>
-                )}
-              </div>
-            )}
-
-            <div className="form-group remote-tunnel-actions">
-              {tunnelState === "running" || tunnelState === "starting" ? (
-                <button type="button" className="btn btn-danger" disabled={remoteBusyAction !== null} onClick={() => void runRemoteAction("stop", async () => {
-                  await stopRemoteTunnel(projectId);
-                  addToast(t("settings.remote.tunnelStopped", "Remote tunnel stopped"), "success");
-                })}>
-                  {remoteBusyAction === "stop" ? t("settings.remote.stopping", "Stopping…") : t("settings.remote.stopTunnel", "Stop Tunnel")}
-                </button>
-              ) : (
-                <>
-                  {externalTunnel ? (
-                    <div className="remote-external-tunnel-actions">
-                      <button type="button" className="btn" disabled={!activeProvider || remoteBusyAction !== null} onClick={() => void runRemoteAction("start fresh", async () => {
-                        const formState = form as Record<string, unknown>;
-                        const savePayload: Partial<RemoteSettings> = {
-                          remoteActiveProvider: activeProvider,
-                          remoteTailscaleEnabled: activeProvider === "tailscale",
-                          remoteTailscaleHostname: String(formState.remoteTailscaleHostname ?? ""),
-                          remoteTailscaleTargetPort: Number(formState.remoteTailscaleTargetPort ?? 4040),
-                          remoteTailscaleAcceptRoutes: Boolean(formState.remoteTailscaleAcceptRoutes),
-                          remoteCloudflareEnabled: activeProvider === "cloudflare",
-                          remoteCloudflareQuickTunnel: Boolean(formState.remoteCloudflareQuickTunnel ?? true),
-                          remoteCloudflareTunnelName: String(formState.remoteCloudflareTunnelName ?? ""),
-                          remoteCloudflareTunnelToken: (formState.remoteCloudflareTunnelToken as string | null) || null,
-                          remoteCloudflareIngressUrl: String(formState.remoteCloudflareIngressUrl ?? ""),
-                          remoteShortLivedEnabled: Boolean(formState.remoteShortLivedEnabled),
-                          remoteShortLivedTtlMs: Number(formState.remoteShortLivedTtlMs ?? 900000),
-                          remoteRememberLastRunning: Boolean(formState.remoteRememberLastRunning),
-                        };
-                        await updateRemoteSettings(savePayload, projectId);
-                        await killExternalTunnel(projectId);
-                        await startRemoteTunnel(projectId);
-                        addToast(t("settings.remote.tunnelRestarted", "Remote tunnel restarted"), "success");
-                      })}>
-                        {remoteBusyAction === "start fresh" ? t("settings.remote.restarting", "Restarting…") : t("settings.remote.startFresh", "Start Fresh")}
-                      </button>
-                      <button type="button" className="btn btn-primary" disabled={!activeProvider || remoteBusyAction !== null} onClick={() => void runRemoteAction("use existing", async () => {
-                        const formState = form as Record<string, unknown>;
-                        const savePayload: Partial<RemoteSettings> = {
-                          remoteActiveProvider: activeProvider,
-                          remoteTailscaleEnabled: activeProvider === "tailscale",
-                          remoteTailscaleHostname: String(formState.remoteTailscaleHostname ?? ""),
-                          remoteTailscaleTargetPort: Number(formState.remoteTailscaleTargetPort ?? 4040),
-                          remoteTailscaleAcceptRoutes: Boolean(formState.remoteTailscaleAcceptRoutes),
-                          remoteCloudflareEnabled: activeProvider === "cloudflare",
-                          remoteCloudflareQuickTunnel: Boolean(formState.remoteCloudflareQuickTunnel ?? true),
-                          remoteCloudflareTunnelName: String(formState.remoteCloudflareTunnelName ?? ""),
-                          remoteCloudflareTunnelToken: (formState.remoteCloudflareTunnelToken as string | null) || null,
-                          remoteCloudflareIngressUrl: String(formState.remoteCloudflareIngressUrl ?? ""),
-                          remoteShortLivedEnabled: Boolean(formState.remoteShortLivedEnabled),
-                          remoteShortLivedTtlMs: Number(formState.remoteShortLivedTtlMs ?? 900000),
-                          remoteRememberLastRunning: Boolean(formState.remoteRememberLastRunning),
-                        };
-                        await updateRemoteSettings(savePayload, projectId);
-                        await startRemoteTunnel(projectId);
-                        addToast(t("settings.remote.tunnelStarted", "Remote tunnel started"), "success");
-                      })}>
-                        {remoteBusyAction === "use existing" ? t("settings.remote.starting", "Starting…") : t("settings.remote.useExisting", "Use Existing")}
-                      </button>
-                    </div>
-                  ) : (
-                  <button type="button" className="btn btn-primary" disabled={!activeProvider || remoteBusyAction !== null} onClick={() => void runRemoteAction("start", async () => {
-                    const formState = form as Record<string, unknown>;
-                    const savePayload: Partial<RemoteSettings> = {
-                      remoteActiveProvider: activeProvider,
-                      remoteTailscaleEnabled: activeProvider === "tailscale",
-                      remoteTailscaleHostname: String(formState.remoteTailscaleHostname ?? ""),
-                      // Server overrides this with req.socket.localPort
-                      // when starting the tunnel; the value sent here is
-                      // only a fallback if that override doesn't fire.
-                      remoteTailscaleTargetPort: Number(formState.remoteTailscaleTargetPort ?? 4040),
-                      remoteTailscaleAcceptRoutes: Boolean(formState.remoteTailscaleAcceptRoutes),
-                      remoteCloudflareEnabled: activeProvider === "cloudflare",
-                      remoteCloudflareQuickTunnel: Boolean(formState.remoteCloudflareQuickTunnel ?? true),
-                      remoteCloudflareTunnelName: String(formState.remoteCloudflareTunnelName ?? ""),
-                      remoteCloudflareTunnelToken: (formState.remoteCloudflareTunnelToken as string | null) || null,
-                      remoteCloudflareIngressUrl: String(formState.remoteCloudflareIngressUrl ?? ""),
-                      remoteShortLivedEnabled: Boolean(formState.remoteShortLivedEnabled),
-                      remoteShortLivedTtlMs: Number(formState.remoteShortLivedTtlMs ?? 900000),
-                      remoteRememberLastRunning: Boolean(formState.remoteRememberLastRunning),
-                    };
-                    await updateRemoteSettings(savePayload, projectId);
-                    await startRemoteTunnel(projectId);
-                    addToast(t("settings.remote.tunnelStarted", "Remote tunnel started"), "success");
-                  })}>
-                    {remoteBusyAction === "start" ? t("settings.remote.starting", "Starting…") : t("settings.remote.startTunnel", "Start Tunnel")}
-                  </button>
-                  )}
-                  {activeProvider === "cloudflare" && remoteStatus?.cloudflaredAvailable === false ? (
-                    <small className="field-error">cloudflared must be installed to start the tunnel</small>
-                  ) : null}
-                </>
-              )}
-            </div>
-
-            <details className="remote-advanced-details">
-              <summary>Advanced Settings</summary>
-              <div className="form-group">
-                <label htmlFor="remoteShortLivedEnabled" className="checkbox-label">
-                  <input id="remoteShortLivedEnabled" type="checkbox" checked={Boolean(remoteForm.remoteShortLivedEnabled)} onChange={(e) => setForm((f) => ({ ...f, remoteShortLivedEnabled: e.target.checked } as SettingsFormState))} />
-                  Enable short-lived tokens
-                </label>
-                <label htmlFor="remoteShortLivedTtlMs">Short-lived TTL (ms)</label>
-                <input id="remoteShortLivedTtlMs" type="number" min={60000} max={86400000} value={Number(remoteForm.remoteShortLivedTtlMs ?? 900000)} onChange={(e) => setForm((f) => ({ ...f, remoteShortLivedTtlMs: Number(e.target.value || 900000) } as SettingsFormState))} />
-                {remoteShortLivedToken && <small>Last short-lived token expires at {new Date(remoteShortLivedToken.expiresAt).toLocaleString()} ({remoteShortLivedToken.ttlMs}ms)</small>}
-              </div>
-              <div className="form-group">
-                <label htmlFor="remoteRememberLastRunning" className="checkbox-label">
-                  <input id="remoteRememberLastRunning" type="checkbox" checked={Boolean(remoteForm.remoteRememberLastRunning)} onChange={(e) => setForm((f) => ({ ...f, remoteRememberLastRunning: e.target.checked } as SettingsFormState))} />
-                  Remember last running state
-                </label>
-                <small>Automatically restore tunnel on startup if it was running when last stopped.</small>
-              </div>
-              <div className="form-group">
-                <label>Auth Links</label>
-                <div className="settings-button-row">
-                  <button type="button" className="btn btn-sm" disabled={remoteBusyAction !== null} onClick={() => void runRemoteAction("regenerate persistent token", async () => {
-                    await regenerateRemotePersistentToken(projectId);
-                    addToast(t("settings.remote.persistentTokenRegenerated", "Persistent token regenerated"), "success");
-                  })}>Regenerate persistent token</button>
-                  <button type="button" className="btn btn-sm" disabled={remoteBusyAction !== null} onClick={() => void runRemoteAction("generate short-lived token", async () => {
-                    const ttlMs = Number(remoteForm.remoteShortLivedTtlMs ?? 900000);
-                    const generated = await generateShortLivedRemoteToken(ttlMs, projectId);
-                    setRemoteShortLivedToken(generated);
-                    addToast(t("settings.remote.shortLivedTokenGenerated", "Short-lived token generated"), "success");
-                  })}>Generate short-lived token</button>
-                  <button type="button" className="btn btn-sm" disabled={remoteBusyAction !== null} onClick={() => void runRemoteAction("fetch remote url", async () => {
-                    const ttlMs = Number(remoteForm.remoteShortLivedTtlMs ?? 900000);
-                    const nextUrl = await fetchRemoteUrl({ projectId, tokenType: remoteAuthLinkTokenType, ttlMs: remoteAuthLinkTokenType === "short-lived" ? ttlMs : undefined });
-                    setRemoteUrlPreview(nextUrl);
-                    setRemoteQrSvg(null);
-                  })}>Show URL</button>
-                  <button type="button" className="btn btn-sm" disabled={remoteBusyAction !== null} onClick={() => void runRemoteAction("generate QR", async () => {
-                    const ttlMs = Number(remoteForm.remoteShortLivedTtlMs ?? 900000);
-                    const qr = await fetchRemoteQr("image/svg", { projectId, tokenType: remoteAuthLinkTokenType, ttlMs: remoteAuthLinkTokenType === "short-lived" ? ttlMs : undefined });
-                    setRemoteUrlPreview({ url: qr.url, expiresAt: qr.expiresAt, tokenType: qr.tokenType });
-                    setRemoteQrSvg(qr.data ?? null);
-                  })}>Generate QR</button>
-                </div>
-                <label htmlFor="remoteAuthLinkTokenType">Auth link token type</label>
-                <select id="remoteAuthLinkTokenType" value={remoteAuthLinkTokenType} onChange={(e) => setRemoteAuthLinkTokenType(e.target.value as "persistent" | "short-lived")}>
-                  <option value="persistent">Persistent token</option>
-                  <option value="short-lived">Short-lived token</option>
-                </select>
-                <small>
-                  URL and QR generation use the selected token type.
-                  {remoteAuthLinkTokenType === "short-lived" ? ` TTL: ${Number(remoteForm.remoteShortLivedTtlMs ?? 900000)}ms.` : ""}
-                </small>
-                {remoteUrlPreview?.url && (
-                  <>
-                    <small>Authenticated URL:<code className="settings-url-output">{remoteUrlPreview.url}</code></small>
-                    <small>
-                      Token type: <strong>{remoteUrlPreview.tokenType}</strong>
-                      {remoteUrlPreview.expiresAt ? ` · Expires at ${new Date(remoteUrlPreview.expiresAt).toLocaleString()}` : " · No expiry"}
-                    </small>
-                  </>
-                )}
-                {remoteQrSvg && (
-                  <div className="settings-qr-preview" aria-live="polite">
-                    <p className="settings-qr-preview-label">Scan this QR code on your phone</p>
-                    <div className="settings-qr-preview-image-wrap">
-                      <img src={`data:image/svg+xml;utf8,${encodeURIComponent(remoteQrSvg)}`} alt="Remote access QR code" className="settings-qr-preview-image" />
-                    </div>
-                    <details>
-                      <summary>QR SVG markup</summary>
-                      <pre className="settings-raw-output">{remoteQrSvg}</pre>
-                    </details>
-                  </div>
-                )}
-              </div>
-            </details>
-          </>
+          <RemoteSection
+            scopeBanner={renderScopeBanner()}
+            form={form}
+            setForm={setForm}
+            remote={{
+              projectId,
+              addToast,
+              remoteStatus,
+              externalTunnel,
+              tunnelShareLink,
+              remoteBusyAction,
+              cloudflaredInstalling,
+              cloudflaredInstallError,
+              cloudflaredManualInstallCommand,
+              cloudflaredMacFallbackCommand,
+              handleInstallCloudflared,
+              runRemoteAction,
+              remoteShortLivedToken,
+              setRemoteShortLivedToken,
+              remoteAuthLinkTokenType,
+              setRemoteAuthLinkTokenType,
+              remoteUrlPreview,
+              setRemoteUrlPreview,
+              remoteQrSvg,
+              setRemoteQrSvg,
+            }}
+          />
         );
-      }
       case "prompts":
         return (
           <>
@@ -7135,374 +5470,42 @@ export function SettingsModal({
             </div>
           </>
         );
-      case "authentication": {
-        // CLI-backed providers (currently just claude-cli) render their own
-        // compact card with Enable/Disable + Test actions — bypassing the
-        // OAuth/API-key rendering below. Filter them out of the standard
-        // sort and render alongside.
-        const cliAuthProviders = authProviders.filter((p) => p.type === "cli");
-        const nonCliProviders = authProviders.filter((p) => p.type !== "cli");
-        // Sort providers: authenticated first, then unauthenticated. Within each bucket, sort alphabetically by name.
-        const sortedProviders = [...nonCliProviders].sort((a, b) => {
-          if (a.authenticated !== b.authenticated) {
-            return a.authenticated ? -1 : 1;
-          }
-          return a.name.localeCompare(b.name);
-        });
-        const authenticatedProviders = sortedProviders.filter(p => p.authenticated);
-        const unauthenticatedProviders = sortedProviders.filter(p => !p.authenticated);
-
-        // CLI-backed providers live in whichever bucket matches their current
-        // auth state (Authenticated when signed in, Available otherwise).
-        const claudeCliProvider = cliAuthProviders.find((p) => p.id === "claude-cli");
-        const cursorCliProvider = cliAuthProviders.find((p) => p.id === "cursor-cli");
-        const llamaCppProvider = cliAuthProviders.find((p) => p.id === "llama-cpp");
-        const claudeCliCard = claudeCliProvider ? (
-          <ClaudeCliProviderCard
-            compact
-            authenticated={claudeCliProvider.authenticated}
-            onToggled={() => {
-              void loadAuthStatus();
-            }}
-          />
-        ) : null;
-        const cursorCliCard = cursorCliProvider ? (
-          <CursorCliProviderCard
-            compact
-            authenticated={cursorCliProvider.authenticated}
-            onToggled={() => {
-              void loadAuthStatus();
-            }}
-          />
-        ) : null;
-        const llamaCppCard = llamaCppProvider ? (
-          <LlamaCppProviderCard
-            compact
-            authenticated={llamaCppProvider.authenticated}
-            onToggled={() => {
-              void loadAuthStatus();
-            }}
-          />
-        ) : null;
-        const showAuthenticatedGroup =
-          authenticatedProviders.length > 0
-          || (claudeCliProvider?.authenticated ?? false)
-          || (cursorCliProvider?.authenticated ?? false)
-          || (llamaCppProvider?.authenticated ?? false);
-        const showAvailableGroup =
-          unauthenticatedProviders.length > 0
-          || (claudeCliProvider && !claudeCliProvider.authenticated)
-          || (cursorCliProvider && !cursorCliProvider.authenticated)
-          || (llamaCppProvider && !llamaCppProvider.authenticated);
+      case "authentication":
         return (
-          <>
-            <h4 className="settings-section-heading">{t("settings.auth.title", "Authentication")}</h4>
-            {authLoading ? (
-              <div className="settings-empty-state">{t("settings.auth.loadingStatus", "Loading authentication status…")}</div>
-            ) : authProviders.length === 0 ? (
-              <div className="settings-empty-state settings-muted">
-                {t("settings.auth.noProviders", "No providers available")}
-              </div>
-            ) : (
-              <div className="auth-panel-body">
-              <PluginSlot
-                slotId="settings-provider-card"
-                projectId={projectId}
-                renderPlaceholder={false}
-                actions={{ refreshAuthProviders: () => { void loadAuthStatus(); } }}
-              />
-              <PluginSlot
-                slotId="settings-integration-card"
-                projectId={projectId}
-                renderPlaceholder={false}
-                actions={{ refreshAuthProviders: () => { void loadAuthStatus(); } }}
-              />
-              {!showAuthenticatedGroup && (
-                <div className="auth-section-hint">
-                  {t("settings.auth.signInHint", "Sign in to at least one provider to get started with AI models.")}
-                </div>
-              )}
-              {showAuthenticatedGroup && (
-                <div className="auth-provider-group">
-                  <div className="auth-group-label">{t("settings.auth.groupAuthenticated", "Authenticated")}</div>
-                  {claudeCliProvider?.authenticated && claudeCliCard}
-                  {cursorCliProvider?.authenticated && cursorCliCard}
-                  {llamaCppProvider?.authenticated && llamaCppCard}
-                  {authenticatedProviders.map((provider) => (
-                    <div key={provider.id} className="auth-provider-card auth-provider-card--authenticated">
-                      <div className="auth-provider-header">
-                        <div className="auth-provider-info">
-                          {/* Stable icon wrapper contract for auth card tests: auth-provider-icon-<providerId> */}
-                          <span
-                            className="auth-provider-icon-slot"
-                            data-testid={`auth-provider-icon-${provider.id}`}
-                            aria-hidden="true"
-                          >
-                            <ProviderIcon provider={provider.id} size="md" />
-                          </span>
-                          <strong>{provider.name}</strong>
-                          <span
-                            data-testid={`auth-status-${provider.id}`}
-                            className={`auth-status-badge ${provider.authenticated ? "authenticated" : "not-authenticated"}`}
-                          >
-                            {t("settings.auth.statusActive", "✓ Active")}
-                          </span>
-                          {provider.authenticated && provider.keyHint && (
-                            <span className="auth-key-hint">Key: {provider.keyHint}</span>
-                          )}
-                        </div>
-                        {provider.type === "api_key" ? (
-                          <div className="auth-apikey-section">
-                            <div className="auth-apikey-input-row">
-                              <input
-                                type="password"
-                                className="auth-apikey-input"
-                                placeholder="Enter API key"
-                                value={apiKeyInputs[provider.id] ?? ""}
-                                onChange={(e) => setApiKeyInputs((prev) => ({ ...prev, [provider.id]: e.target.value }))}
-                                disabled={authActionInProgress === provider.id}
-                              />
-                              {provider.authenticated && !apiKeyInputs[provider.id] ? (
-                                <button
-                                  className="btn btn-sm"
-                                  onClick={() => handleClearApiKey(provider.id)}
-                                  disabled={authActionInProgress === provider.id}
-                                >
-                                  {t("settings.auth.clearKey", "Clear")}
-                                </button>
-                              ) : (
-                                <button
-                                  className="btn btn-primary btn-sm"
-                                  onClick={() => handleSaveApiKey(provider.id)}
-                                  disabled={authActionInProgress === provider.id}
-                                >
-                                  {t("settings.actions.save", "Save")}
-                                </button>
-                              )}
-                            </div>
-                            {authActionInProgress === provider.id && (
-                              <small className="auth-apikey-progress">{t("settings.auth.savingKey", "Saving…")}</small>
-                            )}
-                            {apiKeyErrors[provider.id] && (
-                              <small className="auth-apikey-error">{apiKeyErrors[provider.id]}</small>
-                            )}
-                            {(provider.id === "opencode" || provider.id === "opencode-go") && opencodeApiKeyRefreshStatus[provider.id] && (
-                              <small className={opencodeApiKeyRefreshStatus[provider.id].tone === "error" ? "form-error" : "text-muted"}>
-                                {opencodeApiKeyRefreshStatus[provider.id].message}
-                              </small>
-                            )}
-                          </div>
-                        ) : (
-                          <div>
-                            {authActionInProgress === provider.id ? (
-                              <button className="btn btn-sm" disabled>
-                                {t("settings.auth.loggingOut", "Logging out…")}
-                              </button>
-                            ) : provider.loginInProgress ? (
-                              <div className="auth-provider-actions-row">
-                                <button className="btn btn-sm" disabled>
-                                  {t("settings.auth.waitingForLogin", "Waiting for login…")}
-                                </button>
-                                <button className="btn btn-sm" onClick={() => handleCancelLogin(provider.id)}>
-                                  {t("settings.actions.cancel", "Cancel")}
-                                </button>
-                              </div>
-                            ) : (
-                              <button
-                                className="btn btn-sm"
-                                onClick={() => handleLogout(provider.id)}
-                              >
-                                {t("settings.auth.logout", "Logout")}
-                              </button>
-                            )}
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-              {showAvailableGroup && (
-                <div className="auth-provider-group">
-                  <div className="auth-group-label">{t("settings.auth.groupAvailable", "Available")}</div>
-                  {claudeCliProvider && !claudeCliProvider.authenticated && claudeCliCard}
-                  {cursorCliProvider && !cursorCliProvider.authenticated && cursorCliCard}
-                  {llamaCppProvider && !llamaCppProvider.authenticated && llamaCppCard}
-                  {unauthenticatedProviders.map((provider) => (
-                    <div key={provider.id} className="auth-provider-card">
-                      <div className="auth-provider-header">
-                        <div className="auth-provider-info">
-                          {/* Stable icon wrapper contract for auth card tests: auth-provider-icon-<providerId> */}
-                          <span
-                            className="auth-provider-icon-slot"
-                            data-testid={`auth-provider-icon-${provider.id}`}
-                            aria-hidden="true"
-                          >
-                            <ProviderIcon provider={provider.id} size="md" />
-                          </span>
-                          <strong>{provider.name}</strong>
-                          <span
-                            data-testid={`auth-status-${provider.id}`}
-                            className={`auth-status-badge ${provider.authenticated ? "authenticated" : "not-authenticated"}`}
-                          >
-                            {t("settings.auth.statusNotConnected", "✗ Not connected")}
-                          </span>
-                        </div>
-                        {provider.type === "api_key" ? (
-                          <div className="auth-apikey-section">
-                            <div className="auth-apikey-input-row">
-                              <input
-                                type="password"
-                                className="auth-apikey-input"
-                                placeholder="Enter API key"
-                                value={apiKeyInputs[provider.id] ?? ""}
-                                onChange={(e) => setApiKeyInputs((prev) => ({ ...prev, [provider.id]: e.target.value }))}
-                                disabled={authActionInProgress === provider.id}
-                              />
-                              <button
-                                className="btn btn-primary btn-sm"
-                                onClick={() => handleSaveApiKey(provider.id)}
-                                disabled={authActionInProgress === provider.id}
-                              >
-                                {t("settings.actions.save", "Save")}
-                              </button>
-                            </div>
-                            {authActionInProgress === provider.id && (
-                              <small className="auth-apikey-progress">{t("settings.auth.savingKey", "Saving…")}</small>
-                            )}
-                            {apiKeyErrors[provider.id] && (
-                              <small className="auth-apikey-error">{apiKeyErrors[provider.id]}</small>
-                            )}
-                            {(provider.id === "opencode" || provider.id === "opencode-go") && opencodeApiKeyRefreshStatus[provider.id] && (
-                              <small className={opencodeApiKeyRefreshStatus[provider.id].tone === "error" ? "form-error" : "text-muted"}>
-                                {opencodeApiKeyRefreshStatus[provider.id].message}
-                              </small>
-                            )}
-                          </div>
-                        ) : (
-                          <div>
-                            {authActionInProgress === provider.id ? (
-                              <button className="btn btn-sm" disabled>
-                                {t("settings.auth.waitingForLogin", "Waiting for login…")}
-                              </button>
-                            ) : provider.loginInProgress ? (
-                              <div className="auth-provider-actions-row">
-                                <button className="btn btn-sm" disabled>
-                                  {t("settings.auth.waitingForLogin", "Waiting for login…")}
-                                </button>
-                                <button className="btn btn-sm" onClick={() => handleCancelLogin(provider.id)}>
-                                  {t("settings.actions.cancel", "Cancel")}
-                                </button>
-                              </div>
-                            ) : (
-                              <button
-                                className="btn btn-primary btn-sm"
-                                onClick={() => handleLogin(provider.id)}
-                              >
-                                {t("settings.auth.login", "Login")}
-                              </button>
-                            )}
-                            {provider.id === "github-copilot" && deviceCodes[provider.id] && (provider.loginInProgress || authActionInProgress === provider.id) && (
-                              <div className="auth-device-code-panel" data-testid={`auth-device-code-${provider.id}`}>
-                                <strong>{t("settings.auth.enterCodeOnGitHub", "Enter this code on GitHub")}</strong>
-                                <div className="auth-device-code-pill">{deviceCodes[provider.id].userCode}</div>
-                                <div className="auth-provider-actions-row">
-                                  <button
-                                    className="btn btn-sm"
-                                    onClick={() => {
-                                      void (async () => {
-                                        const copied = await copyTextToClipboard(deviceCodes[provider.id].userCode);
-                                        if (copied) {
-                                          addToast(t("settings.auth.copiedCodeToClipboard", "Copied code to clipboard"), "success");
-                                          return;
-                                        }
-                                        addToast(t("settings.auth.failedToCopyCode", "Failed to copy code — copy it manually from the box above"), "error");
-                                      })();
-                                    }}
-                                  >
-                                    {t("settings.auth.copyCode", "Copy code")}
-                                  </button>
-                                  <button
-                                    className="btn btn-sm"
-                                    onClick={() => window.open(appendTokenQuery(deviceCodes[provider.id].verificationUri), "_blank")}
-                                  >
-                                    {t("settings.auth.openGitHub", "Open GitHub")}
-                                  </button>
-                                </div>
-                              </div>
-                            )}
-                            {loginInstructions[provider.id] && (provider.loginInProgress || authActionInProgress === provider.id) && (
-                              <LoginInstructions
-                                instructions={loginInstructions[provider.id]}
-                                data-testid={`auth-login-instructions-${provider.id}`}
-                              />
-                            )}
-                            {manualCodeConfigs[provider.id] && (provider.loginInProgress || authActionInProgress === provider.id) && (
-                              <OAuthManualCodeForm
-                                value={manualCodeInputs[provider.id] ?? ""}
-                                onChange={(value) => setManualCodeInputs((prev) => ({ ...prev, [provider.id]: value }))}
-                                onSubmit={() => void handleSubmitManualCode(provider.id)}
-                                prompt={manualCodeConfigs[provider.id].prompt}
-                                placeholder={manualCodeConfigs[provider.id].placeholder}
-                                helpText={manualCodeConfigs[provider.id].helpText}
-                                disabled={manualCodeSubmitInProgress === provider.id}
-                                submitLabel={manualCodeSubmitInProgress === provider.id ? "Submitting…" : "Submit code"}
-                                data-testid={`auth-manual-code-${provider.id}`}
-                              />
-                            )}
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-              </div>
-            )}
-            <small className="auth-hint">
-              {t("settings.auth.hint", "Authentication changes take effect immediately — no need to save.")}
-            </small>
-            {onReopenOnboarding && (
-              <div className="form-group" style={{ marginTop: "var(--space-md)" }}>
-                <button
-                  type="button"
-                  className="btn btn-sm"
-                  onClick={onReopenOnboarding}
-                >
-                  {t("settings.auth.reopenOnboarding", "Reopen onboarding guide")}
-                </button>
-                <small className="settings-muted">
-                  {t("settings.auth.reopenOnboardingHint", "Re-run the setup wizard to review or update your AI provider and model configuration.")}
-                </small>
-              </div>
-            )}
-
-            <CustomProvidersSection />
-
-          </>
+          <AuthenticationSection
+            auth={{
+              projectId,
+              addToast,
+              authProviders,
+              authLoading,
+              authActionInProgress,
+              apiKeyInputs,
+              setApiKeyInputs,
+              apiKeyErrors,
+              opencodeApiKeyRefreshStatus,
+              deviceCodes,
+              loginInstructions,
+              manualCodeConfigs,
+              manualCodeInputs,
+              setManualCodeInputs,
+              manualCodeSubmitInProgress,
+              loadAuthStatus,
+              handleLogin,
+              handleLogout,
+              handleCancelLogin,
+              handleSaveApiKey,
+              handleClearApiKey,
+              handleSubmitManualCode,
+              onReopenOnboarding,
+            }}
+          />
         );
-      }
       case "hermes-runtime":
-        return (
-          <>
-            <h4 className="settings-section-heading">Hermes Runtime</h4>
-            <HermesRuntimeCard />
-          </>
-        );
+        return <HermesRuntimeSection />;
       case "openclaw-runtime":
-        return (
-          <>
-            <h4 className="settings-section-heading">OpenClaw Runtime</h4>
-            <OpenClawRuntimeCard />
-          </>
-        );
+        return <OpenClawRuntimeSection />;
       case "paperclip-runtime":
-        return (
-          <>
-            <h4 className="settings-section-heading">Paperclip Runtime</h4>
-            <PaperclipRuntimeCard />
-          </>
-        );
+        return <PaperclipRuntimeSection />;
     }
   };
 
