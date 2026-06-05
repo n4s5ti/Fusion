@@ -1,5 +1,20 @@
-import type { WorkflowIr, WorkflowIrNode } from "@fusion/core";
-import { ColumnTraitValidationError, OccupiedColumnsError, InvalidRehomeTargetError, WorkflowCompileError, WorkflowIrError, compileWorkflowToSteps, listTraits, listStepParsers } from "@fusion/core";
+import type { WorkflowIr, WorkflowIrNode, WorkflowSettingDefinition, TaskStore } from "@fusion/core";
+import {
+  ColumnTraitValidationError,
+  OccupiedColumnsError,
+  InvalidRehomeTargetError,
+  WorkflowCompileError,
+  WorkflowIrError,
+  WorkflowSettingRejectionError,
+  compileWorkflowToSteps,
+  listTraits,
+  listStepParsers,
+  resolveWorkflowIrById,
+  resolveEffectiveSettingValues,
+  findOrphanedSettingValues,
+  isBuiltinWorkflowId,
+  BUILTIN_WORKFLOW_SETTINGS,
+} from "@fusion/core";
 import { validateCodeNodeSources } from "@fusion/engine";
 import { ApiError, badRequest, conflict, notFound } from "../api-error.js";
 import { emitWorkflowSseEvent } from "../sse.js";
@@ -39,6 +54,23 @@ export function registerWorkflowRoutes(ctx: ApiRoutesContext): void {
         { codeNodeErrors: failures },
       );
     }
+  }
+
+  /**
+   * Resolve the setting DECLARATIONS for a workflow (U6). Mirrors the store's
+   * private `resolveWorkflowSettingDeclarations`: the resolved IR's `settings`
+   * when present, else the built-in catalog for built-in ids (the defensive belt
+   * for graphs that predate the embedded declarations).
+   */
+  async function resolveSettingDeclarations(
+    store: TaskStore,
+    workflowId: string,
+  ): Promise<WorkflowSettingDefinition[] | undefined> {
+    const ir = await resolveWorkflowIrById(store, workflowId);
+    const declared = ir.version === "v2" ? ir.settings : undefined;
+    if (declared && declared.length > 0) return declared;
+    if (isBuiltinWorkflowId(workflowId)) return BUILTIN_WORKFLOW_SETTINGS;
+    return declared;
   }
 
   // GET /api/traits — trait catalog for the node editor's trait picker (U10).
@@ -210,6 +242,72 @@ export function registerWorkflowRoutes(ctx: ApiRoutesContext): void {
           throw new ApiError(422, compileErr.message);
         }
         throw compileErr;
+      }
+    } catch (err: unknown) {
+      if (err instanceof ApiError) throw err;
+      rethrowAsApiError(err);
+    }
+  });
+
+  // GET /api/workflows/:id/setting-values — read the per-`(workflowId, project)`
+  // setting values for the workflow node editor's Values tab (U6, R5). Returns
+  // the raw `stored` map, the `effective` map (stored ?? declaration default,
+  // drop-on-orphan KTD-6), and the `orphaned` entries (stored values that no
+  // longer validate against the current declarations) for the disclosure.
+  router.get("/workflows/:id/setting-values", async (req, res) => {
+    try {
+      const { store } = await getProjectContext(req);
+      const workflowId = req.params.id;
+      const projectId = store.getWorkflowSettingsProjectId();
+      const declarations = await resolveSettingDeclarations(store, workflowId);
+      const stored = store.getWorkflowSettingValues(workflowId, projectId);
+      res.json({
+        stored,
+        effective: resolveEffectiveSettingValues(declarations, stored),
+        orphaned: findOrphanedSettingValues(declarations, stored),
+      });
+    } catch (err: unknown) {
+      if (err instanceof ApiError) throw err;
+      rethrowAsApiError(err);
+    }
+  });
+
+  // PATCH /api/workflows/:id/setting-values — write the per-`(workflowId,
+  // project)` setting values (U6, R5). Body: { values: Record<string, unknown> }
+  // where a `null` value deletes that key. The store authority validates the
+  // patch against the NAMED workflow's declarations; on rejection it throws a
+  // typed WorkflowSettingRejectionError → 400 carrying the structured
+  // rejections array so the client renders per-field errors. This write path is
+  // SEPARATE from the IR save (PATCH /workflows/:id): declarations and values
+  // are two distinct authorities (KTD-2).
+  router.patch("/workflows/:id/setting-values", async (req, res) => {
+    try {
+      const { store } = await getProjectContext(req);
+      const workflowId = req.params.id;
+      const values = (req.body ?? {}).values;
+      if (!values || typeof values !== "object" || Array.isArray(values)) {
+        throw badRequest("values is required and must be an object map of setting id → value (null to delete)");
+      }
+      const projectId = store.getWorkflowSettingsProjectId();
+      try {
+        const stored = await store.updateWorkflowSettingValues(
+          workflowId,
+          projectId,
+          values as Record<string, unknown>,
+        );
+        const declarations = await resolveSettingDeclarations(store, workflowId);
+        res.json({
+          stored,
+          effective: resolveEffectiveSettingValues(declarations, stored),
+          orphaned: findOrphanedSettingValues(declarations, stored),
+        });
+      } catch (writeErr: unknown) {
+        // Typed rejection → 400 with the structured rejections so the client can
+        // render per-field errors and keep the accepted edits applied.
+        if (writeErr instanceof WorkflowSettingRejectionError) {
+          throw badRequest(writeErr.message, { rejections: writeErr.rejections });
+        }
+        throw writeErr;
       }
     } catch (err: unknown) {
       if (err instanceof ApiError) throw err;

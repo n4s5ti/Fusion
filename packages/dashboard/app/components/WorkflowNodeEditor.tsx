@@ -42,6 +42,7 @@ import {
   emptyWorkflowLayout,
   columnsOf,
   fieldsOf,
+  settingsOf,
   columnsToBandNodes,
   strictColumnForY,
   validateColumnsClient,
@@ -57,7 +58,8 @@ import {
 import { fetchTraits, fetchStepParsers, type TraitCatalogEntry } from "../api";
 import { WorkflowColumnPanel } from "./WorkflowColumnPanel";
 import { WorkflowFieldsPanel } from "./WorkflowFieldsPanel";
-import type { WorkflowFieldDefinition } from "../api";
+import { WorkflowSettingsPanel } from "./WorkflowSettingsPanel";
+import type { WorkflowFieldDefinition, WorkflowSettingDefinition } from "../api";
 import { CustomModelDropdown } from "./CustomModelDropdown";
 
 type ExecutorKind = "model" | "agent" | "skill" | "cli";
@@ -85,6 +87,10 @@ interface WorkflowNodeEditorProps {
   onClose: () => void;
   addToast: (message: string, type?: ToastType) => void;
   projectId?: string;
+  /** When "settings" the editor scrolls the WorkflowSettingsPanel into view on
+   *  mount (U6/U9: redirect stubs link here via a `?panel=settings` param read by
+   *  the editor's mount site). */
+  initialPanel?: "settings";
 }
 
 let nodeSeq = 0;
@@ -122,6 +128,7 @@ function InnerEditor({
   onClose,
   addToast,
   projectId,
+  initialPanel,
   modalRef,
 }: Omit<WorkflowNodeEditorProps, "isOpen"> & { modalRef: React.RefObject<HTMLDivElement | null> }) {
   const [workflows, setWorkflows] = useState<WorkflowDefinition[]>([]);
@@ -138,6 +145,13 @@ function InnerEditor({
   const [columns, setColumns] = useState<WorkflowIrColumn[]>([]);
   // v2 custom field definitions the editor is authoring (KTD-13/14, U13).
   const [fields, setFields] = useState<WorkflowFieldDefinition[]>([]);
+  // v2 typed setting declarations the editor is authoring (U6, KTD-1). Setting
+  // VALUES live per-project in the workflow_settings table (KTD-2) and are
+  // managed by the panel's Values tab, not this declaration array.
+  const [settings, setSettings] = useState<WorkflowSettingDefinition[]>([]);
+  // Ref to the settings panel so a `?panel=settings` deep link can scroll it
+  // into view on mount (U6/U9 redirect stubs).
+  const settingsPanelRef = useRef<HTMLDivElement | null>(null);
   const [traitCatalog, setTraitCatalog] = useState<TraitCatalogEntry[]>([]);
   // Step-parser ids for the parse-steps inspector (KTD-12). Seeded with the
   // built-in pair so the select is never empty; replaced by the live catalog
@@ -213,6 +227,7 @@ function InnerEditor({
       setEdges([]);
       setColumns([]);
       setFields([]);
+      setSettings([]);
       return;
     }
     const flow = irToFlow(activeWorkflow);
@@ -220,10 +235,24 @@ function InnerEditor({
     setEdges(flow.edges);
     setColumns(columnsOf(activeWorkflow));
     setFields(fieldsOf(activeWorkflow));
+    setSettings(settingsOf(activeWorkflow));
     setSelectedNodeId(null);
     setSelectedEdgeId(null);
     setValidationError(null);
   }, [activeWorkflow, setNodes, setEdges]);
+
+  // `?panel=settings` deep link (U6/U9 redirect stubs): once the active workflow
+  // has loaded, scroll the settings panel into view. Runs once per editor open.
+  const didScrollToSettings = useRef(false);
+  useEffect(() => {
+    if (initialPanel !== "settings" || didScrollToSettings.current) return;
+    if (!activeWorkflow) return;
+    const el = settingsPanelRef.current;
+    if (el) {
+      didScrollToSettings.current = true;
+      el.scrollIntoView({ behavior: "smooth", inline: "end", block: "nearest" });
+    }
+  }, [initialPanel, activeWorkflow]);
 
   // Server-reported node error (e.g. seam-in-branch) attributed to a node id.
   const [serverNodeError, setServerNodeError] = useState<{ nodeId: string; message: string } | null>(null);
@@ -465,6 +494,7 @@ function InnerEditor({
         edges,
         columns.length ? columns : undefined,
         fields.length ? fields : undefined,
+        settings.length ? settings : undefined,
       );
       const updated = await updateWorkflow(activeWorkflow.id, { ir, layout }, projectId);
       setWorkflows((ws) => ws.map((w) => (w.id === updated.id ? updated : w)));
@@ -491,7 +521,7 @@ function InnerEditor({
     } finally {
       setSaving(false);
     }
-  }, [activeWorkflow, nodes, edges, columns, fields, unplaced, blockingViolationCount, projectId, addToast, t]);
+  }, [activeWorkflow, nodes, edges, columns, fields, settings, unplaced, blockingViolationCount, projectId, addToast, t]);
 
   // Stamp the shared error-state badge onto offending nodes: unplaced step
   // nodes and any node the server flagged (seam-in-branch). One component
@@ -732,6 +762,19 @@ function InnerEditor({
               readOnly={isBuiltin}
               addToast={addToast}
             />
+          )}
+
+          {activeWorkflow && (
+            <div ref={settingsPanelRef} className="wf-settings-panel-wrap">
+              <WorkflowSettingsPanel
+                workflowId={activeWorkflow.id}
+                settings={settings}
+                onChange={setSettings}
+                readOnly={isBuiltin}
+                projectId={projectId}
+                addToast={addToast}
+              />
+            </div>
           )}
 
           {selectedNode && selectedNode.data.kind !== "start" && selectedNode.data.kind !== "end" && (
