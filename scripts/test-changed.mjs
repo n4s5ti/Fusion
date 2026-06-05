@@ -113,7 +113,7 @@ const HASH_VERSION_PREFIX = "v2";
  *     alone would miss those, so we fold the tree in globally — the simplest
  *     provably-correct choice (mirrors the tsconfig.base.json treatment).
  *
- * NOTE: this list intentionally overlaps `shouldForceFullSuite`'s
+ * NOTE: this list intentionally overlaps `isSharedInfraChange`'s
  * `fullSuitePaths` (which decides full-suite mode, a different axis than cache
  * busting). When adding a new shared root config input, consider both lists.
  */
@@ -428,12 +428,13 @@ function isTestIrrelevantRootPath(file) {
   return ["README", "CHANGELOG.md", "LICENSE", "LICENSE.md"].includes(file);
 }
 
-export function shouldForceFullSuite(changedFiles) {
+export function isSharedInfraChange(changedFiles) {
   // NOTE: overlaps SHARED_HASH_INPUT_PATHS by intent (different axis: this list
   // signals shared-infra changes; that one busts every package's cache hash).
   // When adding a new shared root config input, consider both lists.
   //
-  // HISTORY: this signal used to escalate `pnpm test` to an implicit full
+  // HISTORY: previously named `shouldForceFullSuite` — this signal used to
+  // escalate `pnpm test` to an implicit full
   // recursive run — which was the local OOM path (two concurrent heavy
   // packages, 6GB dashboard heaps). Since the merge-gate redesign
   // (docs/plans/2026-06-04-001-refactor-fast-trusted-test-gate-plan.md) it
@@ -1026,7 +1027,7 @@ export function decideExecutionPlan({
   if (!comparisonBase) return { mode: "gate", reason: "missing-comparison-base" };
   if (!changedFiles) return { mode: "gate", reason: "diff-failed" };
   if (changedFiles.length === 0) return { mode: "gate", reason: "no-changes" };
-  if (shouldForceFullSuite(changedFiles)) return { mode: "gate", reason: "shared-infra-changed" };
+  if (isSharedInfraChange(changedFiles)) return { mode: "gate", reason: "shared-infra-changed" };
 
   const affectedPackages = resolveAffectedPackages(changedFiles, packageNameByDir);
   if (!affectedPackages || affectedPackages.length === 0) return { mode: "gate", reason: "no-affected-package" };
@@ -1234,7 +1235,10 @@ export function main(argv = process.argv.slice(2)) {
   // affected expansion preserves changed-code coverage. Overlap (engine in the
   // affected set re-runs the engine-core files) is accepted by design.
   console.log("[test-changed] running merge-gate suite (pnpm test:gate) before affected packages.");
-  run("pnpm", ["test:gate"], { env: isolatedHomeEnv });
+  // Run the gate under the same isolation guard as the affected set — a gate
+  // suite leak must trip the checker, not silently become the "before" state
+  // of the later run.
+  runMaybeIsolated("pnpm", ["test:gate"], { env: isolatedHomeEnv });
 
   const filterArgs = activePackages.flatMap((pkg) => ["--filter", pkg]);
   console.log(`[test-changed] running tests for changed packages: ${activePackages.join(", ")}`);

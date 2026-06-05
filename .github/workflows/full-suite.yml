@@ -20,6 +20,11 @@ concurrency:
   group: full-suite-${{ github.sha }}
   cancel-in-progress: false
 
+# Least-privilege token: jobs only read the repo (checkout + cache) and upload
+# workflow artifacts (timings), which needs no extra permission scope.
+permissions:
+  contents: read
+
 # FN-4863: Opt JavaScript actions into Node 24 ahead of GitHub's forced cutover on 2026-06-02.
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"

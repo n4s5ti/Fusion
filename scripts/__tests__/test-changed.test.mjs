@@ -10,7 +10,7 @@ import assert from "node:assert/strict";
 import {
   buildPackageDirByName,
   buildReverseDependencyMap,
-  shouldForceFullSuite,
+  isSharedInfraChange,
   resolveAffectedPackages,
   decideExecutionPlan,
   computePackageHash,
@@ -101,72 +101,72 @@ function hashWithFakeGit(pkgDir, blobSha) {
 }
 
 // ---------------------------------------------------------------------------
-// shouldForceFullSuite
+// isSharedInfraChange
 // ---------------------------------------------------------------------------
 
-test("shouldForceFullSuite: returns false for pure package changes", () => {
+test("isSharedInfraChange: returns false for pure package changes", () => {
   assert.equal(
-    shouldForceFullSuite(["packages/engine/src/foo.ts", "packages/core/src/bar.ts"]),
+    isSharedInfraChange(["packages/engine/src/foo.ts", "packages/core/src/bar.ts"]),
     false,
   );
 });
 
-test("shouldForceFullSuite: returns true when pnpm-lock.yaml changed", () => {
-  assert.equal(shouldForceFullSuite(["pnpm-lock.yaml"]), true);
+test("isSharedInfraChange: returns true when pnpm-lock.yaml changed", () => {
+  assert.equal(isSharedInfraChange(["pnpm-lock.yaml"]), true);
 });
 
-test("shouldForceFullSuite: returns true when scripts/test-changed.mjs changed", () => {
-  assert.equal(shouldForceFullSuite(["scripts/test-changed.mjs"]), true);
+test("isSharedInfraChange: returns true when scripts/test-changed.mjs changed", () => {
+  assert.equal(isSharedInfraChange(["scripts/test-changed.mjs"]), true);
 });
 
-test("shouldForceFullSuite: returns true when scripts/check-test-isolation.mjs changed", () => {
-  assert.equal(shouldForceFullSuite(["scripts/check-test-isolation.mjs"]), true);
+test("isSharedInfraChange: returns true when scripts/check-test-isolation.mjs changed", () => {
+  assert.equal(isSharedInfraChange(["scripts/check-test-isolation.mjs"]), true);
 });
 
-test("shouldForceFullSuite: returns true when a GitHub workflow changed", () => {
-  assert.equal(shouldForceFullSuite([".github/workflows/pr-checks.yml"]), true);
+test("isSharedInfraChange: returns true when a GitHub workflow changed", () => {
+  assert.equal(isSharedInfraChange([".github/workflows/pr-checks.yml"]), true);
 });
 
-test("shouldForceFullSuite: returns false for .changeset/*.md summary files", () => {
-  assert.equal(shouldForceFullSuite([".changeset/fn-5157-test-changed-allowlist.md"]), false);
+test("isSharedInfraChange: returns false for .changeset/*.md summary files", () => {
+  assert.equal(isSharedInfraChange([".changeset/fn-5157-test-changed-allowlist.md"]), false);
 });
 
-test("shouldForceFullSuite: still returns true for .changeset/config.json", () => {
-  assert.equal(shouldForceFullSuite([".changeset/config.json"]), true);
+test("isSharedInfraChange: still returns true for .changeset/config.json", () => {
+  assert.equal(isSharedInfraChange([".changeset/config.json"]), true);
 });
 
-test("shouldForceFullSuite: returns false for allowlisted root markdown files", () => {
+test("isSharedInfraChange: returns false for allowlisted root markdown files", () => {
   for (const file of ["AGENTS.md", "README.md", "CHANGELOG.md", "CONTRIBUTING.md", "SECURITY.md"]) {
-    assert.equal(shouldForceFullSuite([file]), false, `${file} should stay on changed-only mode`);
+    assert.equal(isSharedInfraChange([file]), false, `${file} should stay on changed-only mode`);
   }
 });
 
-test("shouldForceFullSuite: returns false for .fusion artifacts", () => {
-  assert.equal(shouldForceFullSuite([".fusion/memory/MEMORY.md"]), false);
-  assert.equal(shouldForceFullSuite([".fusion/tasks/FN-5157/PROMPT.md"]), false);
+test("isSharedInfraChange: returns false for .fusion artifacts", () => {
+  assert.equal(isSharedInfraChange([".fusion/memory/MEMORY.md"]), false);
+  assert.equal(isSharedInfraChange([".fusion/tasks/FN-5157/PROMPT.md"]), false);
 });
 
-test("shouldForceFullSuite: still returns true for root config edges", () => {
+test("isSharedInfraChange: still returns true for root config edges", () => {
   for (const file of ["tsconfig.json", ".npmrc", "Dockerfile"]) {
-    assert.equal(shouldForceFullSuite([file]), true, `${file} should still force the full suite`);
+    assert.equal(isSharedInfraChange([file]), true, `${file} should still force the full suite`);
   }
 });
 
-test("shouldForceFullSuite: mixed diff with only allowlisted root paths returns false", () => {
+test("isSharedInfraChange: mixed diff with only allowlisted root paths returns false", () => {
   assert.equal(
-    shouldForceFullSuite(["AGENTS.md", ".changeset/foo.md", ".fusion/tasks/FN-5154/task.json"]),
+    isSharedInfraChange(["AGENTS.md", ".changeset/foo.md", ".fusion/tasks/FN-5154/task.json"]),
     false,
   );
 });
 
-test("shouldForceFullSuite: mixed diff with allowlisted root path plus explicit trigger returns true", () => {
-  assert.equal(shouldForceFullSuite(["AGENTS.md", "pnpm-lock.yaml"]), true);
+test("isSharedInfraChange: mixed diff with allowlisted root path plus explicit trigger returns true", () => {
+  assert.equal(isSharedInfraChange(["AGENTS.md", "pnpm-lock.yaml"]), true);
 });
 
-test("shouldForceFullSuite: FN-5157 reproduction keeps FN-5154 diff in changed-only mode", () => {
+test("isSharedInfraChange: FN-5157 reproduction keeps FN-5154 diff in changed-only mode", () => {
   // FN-5157: AGENTS.md + changeset summaries previously tripped the root catch-all and forced a full suite for the FN-5154 diff.
   assert.equal(
-    shouldForceFullSuite([
+    isSharedInfraChange([
       "AGENTS.md",
       ".changeset/FN-5136-quick-entry-submit-lock.md",
       ".changeset/FN-5141-soft-delete-terminology.md",

@@ -40,6 +40,9 @@ const cliBin = path.join(repoRoot, "packages/cli/bin.mjs");
 
 const HEALTH_TIMEOUT_MS = 60_000;
 const SHUTDOWN_TIMEOUT_MS = 15_000;
+// Ephemeral-port TOCTOU: retry the whole boot with a fresh port when the
+// child loses the bind race (EADDRINUSE).
+const BOOT_ATTEMPTS = 3;
 
 function parsePortList(raw) {
   return String(raw ?? "")
@@ -110,6 +113,36 @@ async function main() {
   console.log("boot-smoke: `fn --help` OK");
 
   // 2. Real server boot on an ephemeral port with an isolated HOME.
+  // The ephemeral-port probe is inherently TOCTOU (probe closes before the
+  // server binds), so an EADDRINUSE loss on a busy machine retries with a
+  // fresh port instead of failing the gate.
+  let cleanup = () => {};
+  process.on("exit", () => cleanup());
+  // Node does NOT fire 'exit' on signals by default. A cancelled CI job
+  // (timeout, manual cancel, runner eviction) sends SIGTERM — without these
+  // handlers the serve child would be orphaned.
+  for (const sig of ["SIGTERM", "SIGINT"]) {
+    process.on(sig, () => {
+      cleanup();
+      process.exit(sig === "SIGINT" ? 130 : 143);
+    });
+  }
+
+  for (let attempt = 1; attempt <= BOOT_ATTEMPTS; attempt++) {
+    const result = await bootAndVerify(attempt, (fn) => (cleanup = fn));
+    if (result === "retry-port") continue;
+    console.log("boot-smoke: PASS");
+    return;
+  }
+  fail(`could not bind a server port after ${BOOT_ATTEMPTS} attempts (EADDRINUSE each time)`);
+}
+
+/**
+ * One boot attempt: spawn, poll health, verify SIGTERM shutdown.
+ * Returns "retry-port" when the child lost the ephemeral-port race
+ * (EADDRINUSE); calls fail() (which exits) on any real failure.
+ */
+async function bootAndVerify(attempt, registerCleanup) {
   const port = await getEphemeralPort();
   const isolatedHome = mkdtempSync(path.join(tmpdir(), "fusion-boot-smoke-"));
   let stderrBuf = "";
@@ -132,7 +165,7 @@ async function main() {
   child.stderr.on("data", (d) => (stderrBuf += d));
   child.stdout.on("data", (d) => (stderrBuf += d));
 
-  const cleanup = () => {
+  registerCleanup(() => {
     // 'exit' handlers cannot await: escalate straight to SIGKILL so a child
     // that ignores SIGTERM is never orphaned holding the port/tmpdir. The
     // graceful SIGTERM path below runs before this on the success path.
@@ -142,17 +175,7 @@ async function main() {
       // ESRCH: child already reaped between the check and the kill — fine.
     }
     rmSync(isolatedHome, { recursive: true, force: true });
-  };
-  process.on("exit", cleanup);
-  // Node does NOT fire 'exit' on signals by default. A cancelled CI job
-  // (timeout, manual cancel, runner eviction) sends SIGTERM — without these
-  // handlers the serve child would be orphaned.
-  for (const sig of ["SIGTERM", "SIGINT"]) {
-    process.on(sig, () => {
-      cleanup();
-      process.exit(sig === "SIGINT" ? 130 : 143);
-    });
-  }
+  });
 
   const exitedEarly = new Promise((resolve) => {
     child.once("exit", (code, signal) => resolve({ code, signal }));
@@ -166,16 +189,25 @@ async function main() {
       }),
     ]);
   } catch (err) {
+    if (/EADDRINUSE/.test(stderrBuf) && attempt < BOOT_ATTEMPTS) {
+      console.log(`boot-smoke: port :${port} lost to another process (EADDRINUSE), retrying with a fresh port (attempt ${attempt}/${BOOT_ATTEMPTS})`);
+      await exitedEarly; // child is already dead or dying; wait so cleanup is race-free
+      rmSync(isolatedHome, { recursive: true, force: true });
+      return "retry-port";
+    }
     fail(err.message, stderrBuf);
   }
   console.log(`boot-smoke: GET /api/health 200 on :${port}`);
 
-  // 3. Clean shutdown of OUR child only.
+  // 3. Clean shutdown of OUR child only. The verdict requires BOTH that
+  // SIGTERM was actually delivered (a server that died between the health
+  // check and here is a failure, not a pass) AND that the exit was clean
+  // (SIGTERM or exit code 0) — a crash after serving is a broken boot path.
+  let sigtermSent = false;
   try {
-    child.kill("SIGTERM");
+    sigtermSent = child.kill("SIGTERM");
   } catch {
-    // ESRCH: server exited between the health check and the kill — the
-    // exitedEarly promise below already carries its exit code.
+    // ESRCH: server already exited — sigtermSent stays false and fails below.
   }
   const { code, signal } = await Promise.race([
     exitedEarly,
@@ -183,12 +215,18 @@ async function main() {
       setTimeout(() => resolve({ code: null, signal: "timeout" }), SHUTDOWN_TIMEOUT_MS),
     ),
   ]);
+  if (!sigtermSent) {
+    fail(`server exited on its own after the health check (${code ?? `signal ${signal}`}) — SIGTERM shutdown could not be verified`, stderrBuf);
+  }
   if (signal === "timeout") {
     child.kill("SIGKILL");
     fail("server did not shut down within 15s of SIGTERM", stderrBuf);
   }
+  if (signal !== "SIGTERM" && code !== 0) {
+    fail(`server exited uncleanly on SIGTERM (${code ?? `signal ${signal}`})`, stderrBuf);
+  }
   console.log(`boot-smoke: clean shutdown (${code ?? signal})`);
-  console.log("boot-smoke: PASS");
+  return "ok";
 }
 
 main().catch((err) => fail(err.message ?? String(err)));

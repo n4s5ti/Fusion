@@ -3,7 +3,7 @@ import {
   decideExecutionPlan,
   normalizeForwardedArgs,
   resolveAffectedPackages,
-  shouldForceFullSuite,
+  isSharedInfraChange,
 } from "../../../../scripts/test-changed.mjs";
 import { computeSplitPlan, parseShardArgs, planShardAssignments, selectShardPackages } from "../../../../scripts/ci-test-shard.mjs";
 
@@ -52,9 +52,9 @@ describe("root test command changed-only planning", () => {
   });
 
   it("marks root workflow/config changes as shared-infra (gate-mode) triggers", () => {
-    expect(shouldForceFullSuite([".github/workflows/pr-checks.yml"])).toBe(true);
-    expect(shouldForceFullSuite(["package.json"])).toBe(true);
-    expect(shouldForceFullSuite(["packages/core/src/store.ts"])).toBe(false);
+    expect(isSharedInfraChange([".github/workflows/pr-checks.yml"])).toBe(true);
+    expect(isSharedInfraChange(["package.json"])).toBe(true);
+    expect(isSharedInfraChange(["packages/core/src/store.ts"])).toBe(false);
   });
 
   it("strips forwarded silent flags so package vitest scripts do not receive duplicates", () => {
