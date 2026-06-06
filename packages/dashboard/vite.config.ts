@@ -128,6 +128,14 @@ export default defineConfig({
       "@fusion/dashboard/app/plugins/types": resolve(__dirname, "app/plugins/types.ts"),
       "@fusion/dashboard/app/utils/projectStorage": resolve(__dirname, "app/utils/projectStorage.ts"),
       "@fusion/dashboard/app/utils/taskStuck": resolve(__dirname, "app/utils/taskStuck.ts"),
+      "@fusion-plugin-examples/compound-engineering/dashboard-view": resolve(
+        __dirname,
+        "../../plugins/fusion-plugin-compound-engineering/src/dashboard-view.tsx",
+      ),
+      "@fusion-plugin-examples/compound-engineering": resolve(
+        __dirname,
+        "../../plugins/fusion-plugin-compound-engineering/src/index.ts",
+      ),
       "@fusion-plugin-examples/dependency-graph/dashboard-view": resolve(
         __dirname,
         "../../plugins/fusion-plugin-dependency-graph/src/dashboard-view.tsx",
