@@ -55,6 +55,7 @@ import {
   createGroupPrCallback,
   syncGroupPrCallback,
   createPrNodeGithubOps,
+  createPrReconcileGithubOps,
 } from "./task-lifecycle.js";
 import { promptForPort } from "./port-prompt.js";
 import { ensureCwdProjectRegistered } from "./ensure-project-registered.js";
@@ -1616,6 +1617,7 @@ export async function runDashboard(port: number, opts: { paused?: boolean; dev?:
       createGroupPr: createGroupPrCallback(githubClient),
       syncGroupPr: syncGroupPrCallback(githubClient),
       prNodeGithubOps: createPrNodeGithubOps(githubClient),
+      prReconcileGithubOps: createPrReconcileGithubOps(githubClient),
       getTaskMergeBlocker,
     });
 

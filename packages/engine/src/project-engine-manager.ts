@@ -39,6 +39,7 @@ export interface EngineManagerOptions {
   createGroupPr?: ProjectEngineOptions["createGroupPr"];
   syncGroupPr?: ProjectEngineOptions["syncGroupPr"];
   prNodeGithubOps?: ProjectEngineOptions["prNodeGithubOps"];
+  prReconcileGithubOps?: ProjectEngineOptions["prReconcileGithubOps"];
   getTaskMergeBlocker?: ProjectEngineOptions["getTaskMergeBlocker"];
   onInsightRunProcessed?: ProjectEngineOptions["onInsightRunProcessed"];
 }
@@ -487,6 +488,7 @@ export class ProjectEngineManager {
       createGroupPr: this.options.createGroupPr,
       syncGroupPr: this.options.syncGroupPr,
       prNodeGithubOps: this.options.prNodeGithubOps,
+      prReconcileGithubOps: this.options.prReconcileGithubOps,
       getTaskMergeBlocker: this.options.getTaskMergeBlocker,
       onInsightRunProcessed: this.options.onInsightRunProcessed,
       ...overrides,

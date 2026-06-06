@@ -45,6 +45,7 @@ import {
   createGroupPrCallback,
   syncGroupPrCallback,
   createPrNodeGithubOps,
+  createPrReconcileGithubOps,
 } from "./task-lifecycle.js";
 import { promptForPort } from "./port-prompt.js";
 import { createReadOnlyProviderSettingsView } from "./provider-settings.js";
@@ -340,6 +341,7 @@ export async function runDaemon(opts: DaemonOptions = {}) {
     createGroupPr: createGroupPrCallback(githubClient),
     syncGroupPr: syncGroupPrCallback(githubClient),
     prNodeGithubOps: createPrNodeGithubOps(githubClient),
+    prReconcileGithubOps: createPrReconcileGithubOps(githubClient),
     getTaskMergeBlocker,
     onInsightRunProcessed: (s: unknown, r: unknown) => onMemoryInsightRunProcessed(s as ScheduledTask, r as AutomationRunResult),
   });

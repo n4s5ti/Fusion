@@ -61,6 +61,18 @@ export {
   type PrRespondCallResult,
 } from "./pr-nodes.js";
 export {
+  PrReconciler,
+  deriveTransitions,
+  type PrReconcileGithubOps,
+  type PrReconcileFetchResult,
+  type PrReconcileStore,
+  type PrReconcilerOptions,
+  type PrReconcileIntervals,
+  type PrReconcileTransition,
+  type PrReleaseByEventFn,
+  type ResolveGroupReleaseTaskFn,
+} from "./pr-reconcile.js";
+export {
   WorkflowGraphTaskRunner,
   type WorkflowGraphRunDisposition,
   type WorkflowGraphRunnerStore,

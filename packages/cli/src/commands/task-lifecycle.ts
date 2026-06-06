@@ -27,7 +27,14 @@ import type { TaskStore } from "@fusion/core";
 import { resolveTaskMergeTarget, getCurrentRepo, isBranchGroupMemberLanded } from "@fusion/core";
 import type { Settings, TaskDetail, PrInfo, MergeResult, BranchGroup, BranchGroupPrState, Task } from "@fusion/core";
 import { activeSessionRegistry, resolveIntegrationBranch } from "@fusion/engine";
-import type { CreateGroupPrFn, SyncGroupPrFn, WorktreePool, PrNodeGithubOps } from "@fusion/engine";
+import type {
+  CreateGroupPrFn,
+  SyncGroupPrFn,
+  WorktreePool,
+  PrNodeGithubOps,
+  PrReconcileGithubOps,
+  PrReconcileFetchResult,
+} from "@fusion/engine";
 
 /**
  * Minimal interface for GitHub operations needed by the PR merge workflow.
@@ -47,6 +54,13 @@ interface GitHubOperations {
   getPrStatus(owner: string, repo: string, number: number): Promise<PrInfo>;
   updatePr(params: { owner?: string; repo?: string; number: number; title?: string; body?: string }): Promise<PrInfo>;
   closePr(params: { number: number }): Promise<PrInfo>;
+  /** ETag-conditional change probe (U2/U4); 304 ⇒ unchanged, rate-limit-free. */
+  probePrChanged(
+    owner: string | undefined,
+    repo: string | undefined,
+    number: number,
+    etag?: string,
+  ): Promise<{ changed: boolean; etag?: string }>;
 }
 
 /**
@@ -383,6 +397,67 @@ export function createPrNodeGithubOps(
         if (isStaleHeadError(err)) return { status: "stale-head" };
         throw err;
       }
+    },
+  };
+}
+
+/**
+ * Parse the entity's `owner/repo` repo slug into its components, tolerating an
+ * empty/single-segment value (returns undefined owner/repo so the client falls
+ * back to its configured repo).
+ */
+function splitRepoSlug(repo: string): { owner: string | undefined; name: string | undefined } {
+  const [owner, name] = repo.split("/");
+  return { owner: owner || undefined, name: name || undefined };
+}
+
+/** Map a GitHub `PrStatus` to the reconcile fetch result's coarse PR state. */
+function mapPrStatusToFetchState(status: PrInfo["status"]): "open" | "merged" | "closed" {
+  if (status === "merged") return "merged";
+  if (status === "closed") return "closed";
+  // "open" and "draft" both reconcile as open.
+  return "open";
+}
+
+/**
+ * Build the `prReconcileGithubOps` engine callbacks (U4) backing the
+ * node-agnostic {@link PrReconciler}. Closes over the dashboard `GitHubClient`
+ * so the engine never imports it (FN-3049), exactly like
+ * {@link createPrNodeGithubOps}. Wired at the same three CLI composition sites.
+ *
+ * - probe: ETag-conditional change probe (304 ⇒ unchanged ⇒ skip deep-fetch).
+ * - fetchPrState: deep-fetch the GitHub-corroborated mirror. A 404 (PR not
+ *   found) maps to `{ exists: false }` so the reconcile clears fictional
+ *   unverified entities (R19).
+ */
+export function createPrReconcileGithubOps(
+  github: Pick<GitHubOperations, "probePrChanged" | "getPrStatus">,
+): PrReconcileGithubOps {
+  return {
+    probe: (repo, prNumber, etag) => {
+      const { owner, name } = splitRepoSlug(repo);
+      return github.probePrChanged(owner, name, prNumber, etag);
+    },
+    fetchPrState: async (repo, prNumber): Promise<PrReconcileFetchResult> => {
+      const { owner, name } = splitRepoSlug(repo);
+      let info: PrInfo;
+      try {
+        info = await github.getPrStatus(owner ?? "", name ?? "", prNumber);
+      } catch (err) {
+        // A 404 / "not found" means there is no PR behind this entity.
+        const message = err instanceof Error ? err.message : String(err);
+        if (/not found|404/i.test(message)) return { exists: false };
+        throw err;
+      }
+      return {
+        exists: true,
+        prState: mapPrStatusToFetchState(info.status),
+        prNumber: info.number,
+        prUrl: info.url,
+        mergeable: info.mergeable,
+        checksRollup: info.checkRollup,
+        reviewDecision: info.lastReviewDecision ?? null,
+      };
     },
   };
 }
