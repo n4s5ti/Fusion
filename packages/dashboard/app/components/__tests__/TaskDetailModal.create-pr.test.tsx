@@ -4,6 +4,7 @@ import type { PrInfo } from "@fusion/core";
 
 const prPanelState = vi.hoisted(() => ({
   latestPrInfo: undefined as PrInfo | undefined,
+  latestAutoMerge: undefined as boolean | undefined,
 }));
 
 const prCreateModalState = vi.hoisted(() => ({
@@ -17,6 +18,7 @@ const taskReviewTabState = vi.hoisted(() => ({
 vi.mock("../PrPanel", () => ({
   PrPanel: (props: any) => {
     prPanelState.latestPrInfo = props.prInfo;
+    prPanelState.latestAutoMerge = props.autoMerge;
     return (
       <div>
         <button type="button" onClick={() => props.onRequestCreatePr?.()}>
@@ -80,6 +82,7 @@ import {
   noopOpenDetail,
   setupTaskDetailModalHooks,
 } from "./TaskDetailModal.test-helpers";
+import { fetchSettings } from "../../api";
 import { TaskDetailModal } from "../TaskDetailModal";
 
 setupTaskDetailModalHooks();
@@ -88,6 +91,7 @@ describe("TaskDetailModal create-PR wiring", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     prPanelState.latestPrInfo = undefined;
+    prPanelState.latestAutoMerge = undefined;
     prCreateModalState.latestProps = null;
     taskReviewTabState.latestProps = null;
   });
@@ -138,7 +142,63 @@ describe("TaskDetailModal create-PR wiring", () => {
     }));
   });
 
+  it("passes effective auto-merge on to PrPanel for per-task override-on with project default off", async () => {
+    (fetchSettings as ReturnType<typeof vi.fn>).mockResolvedValue({
+      modelPresets: [],
+      autoSelectModelPreset: false,
+      defaultPresetBySize: {},
+      autoMerge: false,
+    });
+
+    render(
+      <TaskDetailModal
+        task={makeTask({ id: "FN-5953-A", prInfo: undefined, column: "in-review", autoMerge: true })}
+        projectId="project-123"
+        onClose={noop}
+        onMoveTask={noopMove}
+        onDeleteTask={noopDelete}
+        onMergeTask={noopMerge}
+        onOpenDetail={noopOpenDetail}
+        addToast={vi.fn()}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Pull Request" }));
+    await waitFor(() => expect(prPanelState.latestAutoMerge).toBe(true));
+  });
+
+  it("passes effective auto-merge off to PrPanel for per-task override-off with project default on", async () => {
+    (fetchSettings as ReturnType<typeof vi.fn>).mockResolvedValue({
+      modelPresets: [],
+      autoSelectModelPreset: false,
+      defaultPresetBySize: {},
+      autoMerge: true,
+    });
+
+    render(
+      <TaskDetailModal
+        task={makeTask({ id: "FN-5953-B", prInfo: undefined, column: "in-review", autoMerge: false })}
+        projectId="project-123"
+        onClose={noop}
+        onMoveTask={noopMove}
+        onDeleteTask={noopDelete}
+        onMergeTask={noopMerge}
+        onOpenDetail={noopOpenDetail}
+        addToast={vi.fn()}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Pull Request" }));
+    await waitFor(() => expect(prPanelState.latestAutoMerge).toBe(false));
+  });
+
   it("opens the same PrCreateModal from TaskReviewTab without leaving the Review tab and closes via onClose", async () => {
+    (fetchSettings as ReturnType<typeof vi.fn>).mockResolvedValue({
+      modelPresets: [],
+      autoSelectModelPreset: false,
+      defaultPresetBySize: {},
+      autoMerge: false,
+    });
     const task = makeTask({ id: "FN-5021", prInfo: undefined, column: "in-review" });
 
     render(

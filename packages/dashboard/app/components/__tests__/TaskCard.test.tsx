@@ -646,32 +646,54 @@ describe("TaskCard", () => {
     expect(screen.queryByRole("button", { name: "Create pull request" })).toBeNull();
   });
 
-  it("does not render Create PR quick action when autoMergeEnabled is true", () => {
+  it.each([
+    {
+      name: "hides when task override turns auto-merge on while project default is off",
+      taskAutoMerge: true,
+      autoMergeEnabled: false,
+      shouldShow: false,
+    },
+    {
+      name: "hides when task follows an enabled project default",
+      taskAutoMerge: undefined,
+      autoMergeEnabled: true,
+      shouldShow: false,
+    },
+    {
+      name: "shows when task override turns auto-merge off while project default is on",
+      taskAutoMerge: false,
+      autoMergeEnabled: true,
+      shouldShow: true,
+    },
+    {
+      name: "shows when task follows a disabled project default",
+      taskAutoMerge: undefined,
+      autoMergeEnabled: false,
+      shouldShow: true,
+    },
+  ])("Create PR quick action $name", ({ taskAutoMerge, autoMergeEnabled, shouldShow }) => {
     render(
       <TaskCard
-        task={makeTask({ column: "in-review", paused: false, userPaused: false, prInfo: undefined as any })}
+        task={makeTask({
+          column: "in-review",
+          paused: false,
+          userPaused: false,
+          prInfo: undefined as any,
+          autoMerge: taskAutoMerge,
+        })}
         onOpenDetail={noop}
         addToast={noop}
         prAuthAvailable={true}
-        autoMergeEnabled={true}
+        autoMergeEnabled={autoMergeEnabled}
       />,
     );
+
+    if (shouldShow) {
+      expect(screen.getByRole("button", { name: "Create pull request" })).toBeDefined();
+      return;
+    }
 
     expect(screen.queryByRole("button", { name: "Create pull request" })).toBeNull();
-  });
-
-  it("renders Create PR quick action when autoMergeEnabled is false", () => {
-    render(
-      <TaskCard
-        task={makeTask({ column: "in-review", paused: false, userPaused: false, prInfo: undefined as any })}
-        onOpenDetail={noop}
-        addToast={noop}
-        prAuthAvailable={true}
-        autoMergeEnabled={false}
-      />,
-    );
-
-    expect(screen.getByRole("button", { name: "Create pull request" })).toBeDefined();
   });
 
   it("does not render Create PR quick action when task already has prInfo", () => {

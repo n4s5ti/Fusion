@@ -61,10 +61,22 @@ describe("PrPanel", () => {
     });
   });
 
-  it("renders create button and calls onRequestCreatePr", () => {
+  it.each([
+    {
+      name: "hides the button and shows the auto-merge hint when effective auto-merge is on",
+      autoMerge: true,
+      shouldShowCreateButton: false,
+    },
+    {
+      name: "shows the button when effective auto-merge is off",
+      autoMerge: false,
+      shouldShowCreateButton: true,
+    },
+  ])("empty PR state $name", ({ autoMerge, shouldShowCreateButton }) => {
     render(
       <PrPanel
         taskId="FN-001"
+        autoMerge={autoMerge}
         prAuthAvailable={true}
         onRequestCreatePr={mockOnRequestCreatePr}
         onPrUpdated={mockOnPrUpdated}
@@ -72,7 +84,14 @@ describe("PrPanel", () => {
       />
     );
 
-    fireEvent.click(screen.getByRole("button", { name: /Create PR/i }));
+    if (!shouldShowCreateButton) {
+      expect(screen.getByText(/Auto-merge will handle this task automatically./i)).toBeInTheDocument();
+      expect(screen.queryByTestId("pr-panel-create-pr")).toBeNull();
+      expect(mockOnRequestCreatePr).not.toHaveBeenCalled();
+      return;
+    }
+
+    fireEvent.click(screen.getByTestId("pr-panel-create-pr"));
     expect(mockOnRequestCreatePr).toHaveBeenCalledTimes(1);
   });
 
@@ -95,9 +114,21 @@ describe("PrPanel", () => {
     expect(screen.queryByRole("button", { name: /Create PR/i })).toBeNull();
   });
 
-  it("shows autoMerge hint in no-PR state", () => {
-    render(<PrPanel taskId="FN-001" autoMerge={true} prAuthAvailable={true} onPrUpdated={mockOnPrUpdated} addToast={mockAddToast} />);
-    expect(screen.getByText(/Auto-merge will handle this task automatically./i)).toBeInTheDocument();
+  it("shows create button when auto-merge is off even if manual PR flow hint is shown", () => {
+    render(
+      <PrPanel
+        taskId="FN-001"
+        autoMerge={false}
+        isManualPrFlow
+        prAuthAvailable={true}
+        onRequestCreatePr={mockOnRequestCreatePr}
+        onPrUpdated={mockOnPrUpdated}
+        addToast={mockAddToast}
+      />
+    );
+
+    expect(screen.getByTestId("pr-panel-create-pr")).toBeInTheDocument();
+    expect(screen.getByText(/Use the footer action to run PR-first completion for this task./i)).toBeInTheDocument();
   });
 
   it("renders PR details when prInfo exists", () => {

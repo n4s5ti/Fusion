@@ -11,6 +11,7 @@ import {
   VALID_TRANSITIONS,
   getErrorMessage,
 } from "@fusion/core";
+import { resolveEffectiveAutoMerge } from "../../../core/src/task-merge";
 import { fetchTaskDetail, uploadAttachment, fetchMission, fetchAgent, type WorkflowFieldDefinition } from "../api";
 import { GitHubBadge } from "./GitHubBadge";
 import { PrCreateModal } from "./PrCreateModal";
@@ -402,7 +403,7 @@ interface TaskCardProps {
   fanout?: BlockerFanoutEntry;
   /** Whether GitHub CLI auth is available for creating PRs from task cards. */
   prAuthAvailable?: boolean;
-  /** Whether project-level auto-merge is enabled (hides manual Create PR quick action when true). */
+  /** Project default auto-merge setting; per-task overrides are applied via resolveEffectiveAutoMerge. */
   autoMergeEnabled?: boolean;
   /** Card-placed custom field definitions for this task's workflow (U13/KTD-14).
    *  Empty/undefined → no field badges render (card byte-identical to today). */
@@ -1264,9 +1265,10 @@ function TaskCardComponent({
   }, [liveBadgeData, batchData, task.issueInfo, task.updatedAt]);
 
   const showInReviewMoveControl = task.column === "in-review" && Boolean(onMoveTask);
+  const effectiveAutoMerge = resolveEffectiveAutoMerge({ autoMerge: task.autoMerge }, { autoMerge: autoMergeEnabled ?? false });
   const showCreatePrQuickAction =
     task.column === "in-review"
-    && autoMergeEnabled !== true
+    && !effectiveAutoMerge
     && !livePrInfo
     && prAuthAvailable === true
     && !isPaused

@@ -501,10 +501,11 @@ describe("TaskReviewTab", () => {
 
   it("keeps mobile actions wrapping contract, stacks header groups, and prevents body overflow regressions", async () => {
     const css = await loadAllAppCss();
-    const mobileMediaStart = css.indexOf("@media (max-width: 768px)");
+    const taskReviewCss = css.slice(css.indexOf(".task-review-tab"));
+    const mobileMediaStart = taskReviewCss.indexOf("@media (max-width: 768px)");
     expect(mobileMediaStart).toBeGreaterThanOrEqual(0);
-    const mobileCss = css.slice(mobileMediaStart);
-    const baseSummaryWrapRule = css.match(/\.task-review-tab__summary-wrap\s*\{[^}]*\}/)?.[0] ?? "";
+    const mobileCss = taskReviewCss.slice(mobileMediaStart);
+    const baseSummaryWrapRule = taskReviewCss.match(/\.task-review-tab__summary-wrap\s*\{[^}]*\}/)?.[0] ?? "";
 
     expect(baseSummaryWrapRule).toMatch(/flex\s*:\s*1\s+1\s+20rem\s*;/);
     expect(baseSummaryWrapRule).not.toMatch(/flex\s*:\s*0\s+0\s+auto\s*;/);
@@ -516,8 +517,8 @@ describe("TaskReviewTab", () => {
     expect(mobileCss).toMatch(/\.task-review-tab__body\s*\{[^}]*padding\s*:\s*var\(--space-sm\)\s*;[^}]*\}/);
     expect(mobileCss).not.toMatch(/\.task-review-tab__actions\s+\.btn\s*\{[^}]*flex\s*:\s*1\s*;[^}]*\}/);
 
-    expect(css).toMatch(/\.task-review-tab__body\s*\{[^}]*overflow-x\s*:\s*auto\s*;[^}]*overflow-wrap\s*:\s*anywhere\s*;[^}]*\}/);
-    expect(css).toMatch(/\.task-review-tab__item\s*\{[^}]*padding\s*:\s*var\(--card-padding\)\s*;[^}]*\}/);
+    expect(taskReviewCss).toMatch(/\.task-review-tab__body\s*\{[^}]*overflow-wrap\s*:\s*anywhere\s*;[^}]*overflow-x\s*:\s*auto\s*;[^}]*\}/);
+    expect(taskReviewCss).toMatch(/\.task-review-tab__item\s*\{[^}]*padding\s*:\s*var\(--card-padding\)\s*;[^}]*\}/);
   });
 
   it("preserves review header structure across sources and empty or populated states", async () => {
@@ -608,14 +609,39 @@ describe("TaskReviewTab", () => {
       }
 
       if (testCase.itemText) {
-        expect(screen.getByText(testCase.itemText)).toBeInTheDocument();
+        expect(screen.getAllByText(testCase.itemText).length).toBeGreaterThan(0);
       }
     }
   });
 
-  it("shows create PR action when in-review without prInfo and auth is available", async () => {
+  it.each([
+    {
+      name: "shows when task override turns auto-merge off while project default is on",
+      taskAutoMerge: false,
+      autoMergeEnabled: true,
+      shouldShow: true,
+    },
+    {
+      name: "hides when task override turns auto-merge on while project default is off",
+      taskAutoMerge: true,
+      autoMergeEnabled: false,
+      shouldShow: false,
+    },
+    {
+      name: "hides when task follows an enabled project default",
+      taskAutoMerge: undefined,
+      autoMergeEnabled: true,
+      shouldShow: false,
+    },
+    {
+      name: "shows when task follows a disabled project default",
+      taskAutoMerge: undefined,
+      autoMergeEnabled: false,
+      shouldShow: true,
+    },
+  ])("create PR action $name", async ({ taskAutoMerge, autoMergeEnabled, shouldShow }) => {
     const onRequestCreatePr = vi.fn();
-    const task = makeTask({ column: "in-review", prInfo: undefined });
+    const task = makeTask({ column: "in-review", prInfo: undefined, autoMerge: taskAutoMerge });
     apiMocks.fetchTaskReview.mockResolvedValue({ reviewState: task.reviewState, automationStatus: null, emptyMessage: null });
 
     render(
@@ -624,10 +650,19 @@ describe("TaskReviewTab", () => {
         addToast={vi.fn()}
         prAuthAvailable
         onRequestCreatePr={onRequestCreatePr}
+        autoMergeEnabled={autoMergeEnabled}
       />,
     );
 
-    fireEvent.click(await screen.findByTestId("task-review-create-pr"));
+    await screen.findByRole("button", { name: "Refresh" });
+
+    if (!shouldShow) {
+      expect(screen.queryByTestId("task-review-create-pr")).toBeNull();
+      expect(onRequestCreatePr).not.toHaveBeenCalled();
+      return;
+    }
+
+    fireEvent.click(screen.getByTestId("task-review-create-pr"));
     expect(onRequestCreatePr).toHaveBeenCalledTimes(1);
   });
 
@@ -671,8 +706,8 @@ describe("TaskReviewTab", () => {
     expect(screen.queryByTestId("task-review-create-pr")).toBeNull();
   });
 
-  it("hides create PR action when auto-merge is enabled", async () => {
-    const task = makeTask({ column: "in-review", prInfo: undefined });
+  it("hides create PR action when task follows an enabled project default", async () => {
+    const task = makeTask({ column: "in-review", prInfo: undefined, autoMerge: undefined });
     apiMocks.fetchTaskReview.mockResolvedValue({ reviewState: task.reviewState, automationStatus: null, emptyMessage: null });
 
     render(<TaskReviewTab task={task} addToast={vi.fn()} prAuthAvailable onRequestCreatePr={vi.fn()} autoMergeEnabled />);

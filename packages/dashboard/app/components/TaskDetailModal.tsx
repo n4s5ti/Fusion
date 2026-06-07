@@ -21,6 +21,7 @@ import {
   resolveTaskPlanningModel,
   resolveTaskValidatorModel,
 } from "@fusion/core";
+import { resolveEffectiveAutoMerge } from "../../../core/src/task-merge";
 import { uploadAttachment, deleteAttachment, updateTask, pauseTask, unpauseTask, fetchTaskDetail, fetchSettings, fetchGlobalSettings, requestSpecRevision, rebuildTaskSpec, approvePlan, rejectPlan, refineTask, fetchWorkflowResults, assignTask, fetchAgents, fetchAgent, recoverBranchBinding, refreshPrStatus, fetchBoardWorkflows, updateTaskCustomFields, api } from "../api";
 import type { RecoverBranchBindingOutcome, WorkflowFieldDefinition, CustomFieldRejection } from "../api";
 import { ApiRequestError } from "../api";
@@ -2571,6 +2572,7 @@ export function TaskDetailContent({
   const prAutomationLabel = task.status ? prAutomationStatusLabels[task.status] : undefined;
   const mergeStrategy = settings?.mergeStrategy ?? "direct";
   const autoMergeEnabled = settings?.autoMerge ?? false;
+  const effectiveAutoMerge = resolveEffectiveAutoMerge({ autoMerge: task.autoMerge }, { autoMerge: autoMergeEnabled });
   const isManualPrFlow = mergeStrategy === "pull-request" && !autoMergeEnabled;
 
   const isCheckPrStatusAction = isManualPrFlow && !prAutomationLabel && task.prInfo?.status === "open";
@@ -3247,7 +3249,7 @@ export function TaskDetailContent({
                       prInfos={task.prInfos}
                       automationStatus={task.status ?? null}
                       taskColumn={task.column}
-                      autoMerge={settings?.autoMerge ?? false}
+                      autoMerge={effectiveAutoMerge}
                       isManualPrFlow={isManualPrFlow}
                       directMergeCommitStrategy={settings?.directMergeCommitStrategy}
                       prAuthAvailable={prAuthAvailable ?? false}

@@ -346,7 +346,7 @@ export function TaskReviewTab({
                 : t("taskReview.effective", "Effective: {{label}}", { label: effectiveAutoMergeLabel })}
             </div>
           </div>
-          {task.column === "in-review" && !task.prInfo && prAuthAvailable === true && autoMergeEnabled !== true && typeof onRequestCreatePr === "function" ? (
+          {task.column === "in-review" && !task.prInfo && prAuthAvailable === true && !effectiveAutoMerge && typeof onRequestCreatePr === "function" ? (
             <button className="btn btn-sm" onClick={() => onRequestCreatePr?.()} data-testid="task-review-create-pr">
               <GitPullRequest />
               {t("taskReview.createPr", "Create PR")}
