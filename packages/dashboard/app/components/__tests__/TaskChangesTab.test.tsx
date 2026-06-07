@@ -1053,7 +1053,7 @@ describe("TaskChangesTab — expand button", () => {
     expect(screen.getByTestId("changes-diff-modal")).toBeTruthy();
   });
 
-  it("does not render expand button when no files are loaded", async () => {
+  it("keeps the expand button available when no files are loaded", async () => {
     mockFetchTaskDiff.mockResolvedValue({
       files: [],
       stats: { filesChanged: 0, additions: 0, deletions: 0 },
@@ -1072,7 +1072,7 @@ describe("TaskChangesTab — expand button", () => {
       expect(screen.getByText("No files modified.")).toBeTruthy();
     });
 
-    expect(screen.queryByLabelText("Expand diff view")).toBeNull();
+    expect(screen.getByLabelText("Expand diff view")).toBeTruthy();
   });
 });
 
@@ -1221,6 +1221,105 @@ describe("TaskChangesTab — file path display", () => {
     const rule = ruleMatch![1];
     expect(rule).toContain("direction: rtl;");
     expect(rule).toContain("text-overflow: ellipsis;");
+  });
+});
+
+describe("TaskChangesTab — header toolbar structure", () => {
+  it("keeps nav and controls grouped inside the header actions wrapper for populated diffs", async () => {
+    mockFetchTaskDiff.mockResolvedValue(DONE_TASK_DIFF);
+    const { container } = render(
+      <TaskChangesTab
+        taskId="FN-001"
+        worktree={undefined}
+        column="done"
+        mergeDetails={MERGE_DETAILS}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText("Files Changed (2)")).toBeTruthy();
+    });
+
+    const header = container.querySelector(".task-changes-tab .changes-header");
+    const actionsWrapper = header?.querySelector(".changes-header-actions-wrapper");
+    const primaryActions = actionsWrapper?.querySelector(".changes-header-actions");
+    const secondaryActions = actionsWrapper?.querySelector(".changes-header-actions-secondary");
+    const nav = primaryActions?.querySelector(".changes-nav");
+
+    expect(actionsWrapper).toBeTruthy();
+    expect(primaryActions).toBeTruthy();
+    expect(secondaryActions).toBeTruthy();
+    expect(nav).toBeTruthy();
+    expect(nav?.querySelector('[aria-label="Previous file"]')).toBeTruthy();
+    expect(nav?.querySelector('[aria-label="Next file"]')).toBeTruthy();
+    expect(nav?.querySelector(".changes-nav-indicator")?.textContent).toBe("1/2");
+    expect(screen.getByLabelText("Toggle word wrap").closest(".changes-header-actions")).toBe(primaryActions ?? null);
+    expect(screen.getByText("Refresh").closest(".changes-header-actions-secondary")).toBe(secondaryActions ?? null);
+    expect(screen.getByLabelText("Expand diff view").closest(".changes-header-actions-secondary")).toBe(secondaryActions ?? null);
+  });
+
+  it("renders the header controls without nav when the diff is empty", async () => {
+    mockFetchTaskDiff.mockResolvedValue({
+      files: [],
+      stats: { filesChanged: 0, additions: 0, deletions: 0 },
+    });
+
+    const { container } = render(
+      <TaskChangesTab
+        taskId="FN-001"
+        worktree="/path/to/worktree"
+        column="in-progress"
+      />,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText("No files modified.")).toBeTruthy();
+    });
+
+    const header = container.querySelector(".task-changes-tab .changes-header");
+    const actionsWrapper = header?.querySelector(".changes-header-actions-wrapper");
+
+    expect(header).toBeTruthy();
+    expect(actionsWrapper).toBeTruthy();
+    expect(header?.querySelector(".changes-nav")).toBeNull();
+    expect(screen.getByLabelText("Toggle word wrap")).toBeTruthy();
+    expect(screen.getByText("Refresh")).toBeTruthy();
+    expect(screen.getByLabelText("Expand diff view")).toBeTruthy();
+  });
+
+  it("keeps commit metadata above the header while preserving the actions structure", async () => {
+    mockFetchTaskDiff.mockResolvedValue(DONE_TASK_DIFF);
+    const { container } = render(
+      <TaskChangesTab
+        taskId="FN-001"
+        worktree={undefined}
+        column="done"
+        mergeDetails={MERGE_DETAILS}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText("Files Changed (2)")).toBeTruthy();
+    });
+
+    const taskTab = container.querySelector(".task-changes-tab");
+    const header = taskTab?.querySelector(":scope > .changes-header");
+    const commitMeta = taskTab?.querySelector(":scope > .commit-diff-meta");
+
+    expect(commitMeta).toBeTruthy();
+    expect(header).toBeTruthy();
+    expect(commitMeta?.nextElementSibling).toBe(header ?? null);
+    expect(header?.querySelector(".changes-header-actions-wrapper .changes-header-actions-secondary")).toBeTruthy();
+  });
+
+  it("defines task-scoped mobile toolbar overrides without changing shared desktop rules", () => {
+    const css = loadAllAppCss();
+    const mobileToolbarRule = css.match(/@media\s*\(max-width:\s*768px\)\s*\{[\s\S]*?\.task-changes-tab\s+\.changes-header-actions-wrapper\s*\{([\s\S]*?)\}/);
+
+    expect(mobileToolbarRule).toBeTruthy();
+    expect(mobileToolbarRule![1]).toContain("flex-direction: row;");
+    expect(mobileToolbarRule![1]).toContain("flex-wrap: wrap;");
+    expect(mobileToolbarRule![1]).toContain("width: 100%;");
   });
 });
 

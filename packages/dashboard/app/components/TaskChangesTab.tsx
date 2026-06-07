@@ -217,6 +217,75 @@ export function TaskChangesTab({ taskId, worktree, projectId, column, mergeDetai
   const canGoPrev = currentFileIndex !== null && currentFileIndex > 0;
   const canGoNext = currentFileIndex !== null && currentFileIndex < files.length - 1;
 
+  const renderChangesHeader = () => (
+    <div className="changes-header">
+      <div className="task-changes-header-title">
+        <h4>
+          <FileCode size={16} />
+          {t("taskChanges.filesChangedHeading", "Files Changed ({{count}})", { count: stats.filesChanged })}
+        </h4>
+        <span className="task-changes-stats changes-stat-summary">
+          <span className="diff-add">+{stats.additions}</span>{" "}
+          <span className="diff-del">-{stats.deletions}</span>
+        </span>
+      </div>
+      <div className="changes-header-actions-wrapper">
+        <div className="changes-header-actions">
+          {files.length > 0 && (
+            <div className="changes-nav">
+              <button
+                className="btn btn-sm btn-icon"
+                onClick={() => canGoPrev && navigateToFile(currentFileIndex! - 1)}
+                disabled={!canGoPrev}
+                title={t("taskChanges.previousFile", "Previous file")}
+                aria-label={t("taskChanges.previousFile", "Previous file")}
+              >
+                <ChevronLeft />
+              </button>
+              <span className="changes-nav-indicator" aria-live="polite">
+                {currentFileIndex !== null ? `${currentFileIndex + 1}/${files.length}` : `—/${files.length}`}
+              </span>
+              <button
+                className="btn btn-sm btn-icon"
+                onClick={() => canGoNext && navigateToFile(currentFileIndex! + 1)}
+                disabled={!canGoNext}
+                title={t("taskChanges.nextFile", "Next file")}
+                aria-label={t("taskChanges.nextFile", "Next file")}
+              >
+                <ChevronRight />
+              </button>
+            </div>
+          )}
+          <button
+            className={`btn btn-sm ${wordWrap ? "btn-primary" : ""}`}
+            onClick={() => setWordWrap((prev) => !prev)}
+            title={t(`taskChanges.${wordWrap ? "disableWordWrap" : "enableWordWrap"}`, wordWrap ? "Disable word wrap" : "Enable word wrap")}
+            aria-label={t("taskChanges.toggleWordWrap", "Toggle word wrap")}
+          >
+            <WrapText size={14} />
+          </button>
+        </div>
+        <div className="changes-header-actions-secondary">
+          <button
+            className="btn btn-sm"
+            onClick={loadDiff}
+            disabled={loading}
+          >
+            {t("common.refresh", "Refresh")}
+          </button>
+          <button
+            className="btn btn-sm btn-icon"
+            onClick={() => setExpandedViewOpen(true)}
+            title={t("taskChanges.expandDiff", "Expand to full-screen diff view")}
+            aria-label={t("taskChanges.expandDiffView", "Expand diff view")}
+          >
+            <Maximize2 />
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+
   if (loading) {
     return (
       <div className="detail-section">
@@ -294,6 +363,7 @@ export function TaskChangesTab({ taskId, worktree, projectId, column, mergeDetai
 
     return (
       <div className="detail-section task-changes-tab">
+        {renderChangesHeader()}
         <div className="task-changes-state task-changes-state--empty">
           <FileCode size={24} />
           <p>{t("taskChanges.noFilesModified", "No files modified.")}</p>
@@ -335,72 +405,7 @@ export function TaskChangesTab({ taskId, worktree, projectId, column, mergeDetai
         </div>
       )}
 
-      <div className="changes-header">
-        <div className="task-changes-header-title">
-          <h4>
-            <FileCode size={16} />
-            {t("taskChanges.filesChangedHeading", "Files Changed ({{count}})", { count: stats.filesChanged })}
-          </h4>
-          <span className="task-changes-stats changes-stat-summary">
-            <span className="diff-add">+{stats.additions}</span>{" "}
-            <span className="diff-del">-{stats.deletions}</span>
-          </span>
-        </div>
-        <div className="changes-header-actions-wrapper">
-          <div className="changes-header-actions">
-            {files.length > 0 && (
-              <div className="changes-nav">
-                <button
-                  className="btn btn-sm btn-icon"
-                  onClick={() => canGoPrev && navigateToFile(currentFileIndex! - 1)}
-                  disabled={!canGoPrev}
-                  title={t("taskChanges.previousFile", "Previous file")}
-                  aria-label={t("taskChanges.previousFile", "Previous file")}
-                >
-                  <ChevronLeft />
-                </button>
-                <span className="changes-nav-indicator" aria-live="polite">
-                  {currentFileIndex !== null ? `${currentFileIndex + 1}/${files.length}` : `—/${files.length}`}
-                </span>
-                <button
-                  className="btn btn-sm btn-icon"
-                  onClick={() => canGoNext && navigateToFile(currentFileIndex! + 1)}
-                  disabled={!canGoNext}
-                  title={t("taskChanges.nextFile", "Next file")}
-                  aria-label={t("taskChanges.nextFile", "Next file")}
-                >
-                  <ChevronRight />
-                </button>
-              </div>
-            )}
-            <button
-              className={`btn btn-sm ${wordWrap ? "btn-primary" : ""}`}
-              onClick={() => setWordWrap((prev) => !prev)}
-              title={t(`taskChanges.${wordWrap ? "disableWordWrap" : "enableWordWrap"}`, wordWrap ? "Disable word wrap" : "Enable word wrap")}
-              aria-label={t("taskChanges.toggleWordWrap", "Toggle word wrap")}
-            >
-              <WrapText size={14} />
-            </button>
-          </div>
-          <div className="changes-header-actions-secondary">
-            <button
-              className="btn btn-sm"
-              onClick={loadDiff}
-              disabled={loading}
-            >
-              {t("common.refresh", "Refresh")}
-            </button>
-            <button
-              className="btn btn-sm btn-icon"
-              onClick={() => setExpandedViewOpen(true)}
-              title={t("taskChanges.expandDiff", "Expand to full-screen diff view")}
-              aria-label={t("taskChanges.expandDiffView", "Expand diff view")}
-            >
-              <Maximize2 />
-            </button>
-          </div>
-        </div>
-      </div>
+      {renderChangesHeader()}
 
       <div className="changes-file-list task-changes-file-list--compact">
         {files.map((file) => {

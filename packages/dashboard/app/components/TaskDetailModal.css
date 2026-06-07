@@ -1166,6 +1166,45 @@
   margin-left: calc(var(--space-lg) + var(--space-sm)); /* align with text after icon + gap */
 }
 
+@media (max-width: 768px) {
+  .task-changes-tab .changes-header {
+    align-items: stretch;
+    gap: var(--space-sm);
+  }
+
+  .task-changes-tab .changes-header-actions-wrapper {
+    width: 100%;
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: flex-start;
+    gap: var(--space-sm);
+  }
+
+  .task-changes-tab .changes-header-actions,
+  .task-changes-tab .changes-header-actions-secondary {
+    flex-wrap: wrap;
+    gap: var(--space-sm);
+  }
+
+  .task-changes-tab .changes-header-actions {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+
+  .task-changes-tab .changes-header-actions-secondary {
+    margin-left: auto;
+  }
+
+  .task-changes-tab .task-changes-header-title {
+    gap: var(--space-xs);
+  }
+
+  .task-changes-tab .task-changes-stats {
+    margin-left: calc(var(--space-lg) + var(--space-xs));
+  }
+}
+
 /* Truncate parent dirs from the LEFT so the filename stays visible. JSX
  * wraps the path in `<bdo dir="ltr">` to preserve readable left-to-right
  * display while `direction: rtl` flips the ellipsis to the start. */
