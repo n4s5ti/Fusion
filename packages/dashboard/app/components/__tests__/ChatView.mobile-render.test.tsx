@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { act, cleanup, render, screen } from "@testing-library/react";
+import { act, cleanup, render, screen, within } from "@testing-library/react";
 import { ChatView } from "../ChatView";
 import { loadAllAppCss } from "../../test/cssFixture";
 import * as useChatModule from "../../hooks/useChat";
@@ -139,7 +139,23 @@ function setupRooms(overrides: Partial<UseChatRoomsResult> = {}) {
   mockUseChatRooms.mockReturnValue({ ...defaultRoomsState, ...overrides });
 }
 
-describe("FN-5948 mobile chat message pane rendering", () => {
+function expectMobileEmptyStateToSpanMessagePane(text: string) {
+  const emptyState = screen.getByText(text).closest(".chat-empty-state") as HTMLElement | null;
+  expect(emptyState).toBeTruthy();
+  expect(emptyState?.parentElement?.classList.contains("chat-messages")).toBe(true);
+
+  const messagesStyle = getComputedStyle(emptyState?.parentElement as HTMLElement);
+  const emptyStateStyle = getComputedStyle(emptyState as HTMLElement);
+
+  expect(messagesStyle.paddingLeft).toBe(messagesStyle.paddingRight);
+  expect(emptyStateStyle.width).toBe("100%");
+  expect(emptyStateStyle.display).toBe("flex");
+  expect(emptyStateStyle.justifyContent).toBe("center");
+  expect(emptyStateStyle.textAlign).toBe("center");
+  expect(emptyStateStyle.boxSizing).toBe("border-box");
+}
+
+describe("FN-5997 mobile chat message pane rendering", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     document.head.innerHTML = "";
@@ -149,7 +165,7 @@ describe("FN-5948 mobile chat message pane rendering", () => {
     setupRooms();
   });
 
-  it("keeps the regular mobile empty message pane centered and framed while preserving other direct-thread states", async () => {
+  it("lets the direct-thread mobile empty states span the message pane without mobile card chrome while preserving other states", async () => {
     const restoreMatchMedia = mockViewportMode("mobile");
     try {
       setupChat({
@@ -160,12 +176,16 @@ describe("FN-5948 mobile chat message pane rendering", () => {
 
       await renderWithCss(<ChatView projectId="proj-123" addToast={vi.fn()} />);
 
-      const emptyState = screen.getByText("No messages yet. Start the conversation!").closest(".chat-empty-state");
-      expect(emptyState).toBeTruthy();
-      expect(getComputedStyle(emptyState as HTMLElement).display).toBe("flex");
-      expect(getComputedStyle(emptyState as HTMLElement).justifyContent).toBe("center");
-      expect(getComputedStyle(emptyState as HTMLElement).textAlign).toBe("center");
-      expect(css).toMatch(/\.chat-messages\s*>\s*\.chat-empty-state\s*\{[\s\S]*border:\s*1px solid var\(--border\);[\s\S]*background:\s*var\(--surface\);/);
+      expectMobileEmptyStateToSpanMessagePane("No messages yet. Start the conversation!");
+      expect(css).toMatch(/@media \(max-width: 768px\)\s*\{[\s\S]*\.chat-messages\s*\{[\s\S]*padding:\s*var\(--space-lg\) var\(--space-sm\);[\s\S]*\.chat-messages\s*>\s*\.chat-empty-state\s*\{[\s\S]*border:\s*none;[\s\S]*border-radius:\s*0;[\s\S]*background:\s*transparent;/);
+
+      cleanup();
+      document.head.innerHTML = "";
+      setupChat();
+      await renderWithCss(<ChatView projectId="proj-123" addToast={vi.fn()} />);
+      expectMobileEmptyStateToSpanMessagePane("Start a new conversation");
+      const startConversationEmptyState = screen.getByText("Start a new conversation").closest(".chat-empty-state") as HTMLElement;
+      expect(within(startConversationEmptyState).getByRole("button", { name: "New Chat" })).toBeInTheDocument();
 
       cleanup();
       document.head.innerHTML = "";
@@ -206,7 +226,7 @@ describe("FN-5948 mobile chat message pane rendering", () => {
     }
   });
 
-  it("keeps the rooms mobile empty pane centered and framed while preserving room loading and populated states", async () => {
+  it("lets the rooms mobile empty pane span the message pane without mobile card chrome while preserving room loading and populated states", async () => {
     const restoreMatchMedia = mockViewportMode("mobile");
     try {
       localStorage.setItem("fusion:chat-scope", "rooms");
@@ -225,11 +245,7 @@ describe("FN-5948 mobile chat message pane rendering", () => {
       });
       await renderWithCss(<ChatView projectId="proj-123" addToast={vi.fn()} experimentalFeatures={{ chatRooms: true }} />);
 
-      const emptyState = screen.getByText("No messages yet. Start the conversation!").closest(".chat-empty-state");
-      expect(emptyState).toBeTruthy();
-      expect(getComputedStyle(emptyState as HTMLElement).display).toBe("flex");
-      expect(getComputedStyle(emptyState as HTMLElement).justifyContent).toBe("center");
-      expect(css).toMatch(/\.chat-messages\s*>\s*\.chat-empty-state\s*\{[\s\S]*border:\s*1px solid var\(--border\);[\s\S]*background:\s*var\(--surface\);/);
+      expectMobileEmptyStateToSpanMessagePane("No messages yet. Start the conversation!");
 
       cleanup();
       document.head.innerHTML = "";

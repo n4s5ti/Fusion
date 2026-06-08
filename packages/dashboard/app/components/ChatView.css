@@ -1775,8 +1775,17 @@
   .chat-messages {
     min-height: 0;
     overflow-y: auto;
+    padding: var(--space-lg) var(--space-sm);
     -webkit-overflow-scrolling: touch;
     touch-action: pan-y;
+  }
+
+  .chat-messages > .chat-empty-state {
+    padding: var(--space-xl) var(--space-sm);
+    border: none;
+    border-radius: 0;
+    background: transparent;
+    box-sizing: border-box;
   }
 
   .chat-thread-header-identity {
