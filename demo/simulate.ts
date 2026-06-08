@@ -47,6 +47,7 @@ async function main() {
     const planning = tasks.filter((t) => t.column === "triage" && !t.paused);
     const inProgress = tasks.filter((t) => t.column === "in-progress" && !t.paused);
     const inReview = tasks.filter((t) => t.column === "in-review" && !t.paused);
+    const qa = tasks.filter((t) => t.column === "qa" && !t.paused);
     const todo = tasks.filter((t) => t.column === "todo" && !t.paused);
 
     // Roll dice for what happens this tick
@@ -137,19 +138,31 @@ async function main() {
         }
       }
       await sleep(3000 + Math.random() * 5000);
-    } else if (roll < 0.95 && inReview.length > 0) {
-      // Auto-merge a reviewed task
+    } else if (roll < 0.9 && inReview.length > 0) {
       const task = pick(inReview);
-      await store.logEntry(task.id, "Auto-merged into main");
-      // Can't use mergeTask (no real branch), so just move directly
-      const dir = `${root}/.fusion/tasks/${task.id}`;
-      // Read, update, write manually to move to done
-      const detail = await store.getTask(task.id);
-      await store.updateTask(task.id, { status: undefined, worktree: undefined });
-      // Use moveTask for the column transition
-      await store.moveTask(task.id, "done");
-      console.log(`  ✓ Merged: ${task.id} → done`);
+      let movedToQa = false;
+      try {
+        await store.moveTask(task.id, "qa", { moveSource: "user", allowDirectInReviewMove: true });
+        await store.logEntry(task.id, "Review complete — moved to QA", "awaiting browser smoke test");
+        console.log(`  ✓ Review complete: ${task.id} → qa`);
+        movedToQa = true;
+      } catch {
+        // Not every workflow defines QA; fall back to the legacy merge path.
+      }
+
+      if (!movedToQa) {
+        await store.logEntry(task.id, "Auto-merged into main");
+        await store.updateTask(task.id, { status: undefined, worktree: undefined });
+        await store.moveTask(task.id, "done");
+        console.log(`  ✓ Merged: ${task.id} → done`);
+      }
       await sleep(4000 + Math.random() * 3000);
+    } else if (roll < 0.97 && qa.length > 0) {
+      const task = pick(qa);
+      await store.moveTask(task.id, "publish", { moveSource: "user" });
+      await store.logEntry(task.id, "QA verification complete", "ready to publish");
+      console.log(`  ✓ QA passed: ${task.id} → publish`);
+      await sleep(3000 + Math.random() * 3000);
     } else {
       // Quiet tick
       await sleep(2000 + Math.random() * 2000);

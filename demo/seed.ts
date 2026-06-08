@@ -10,14 +10,49 @@
  * - Planning: raw ideas just landing
  */
 import { TaskStore } from "../packages/core/src/index.js";
+import type { WorkflowIr } from "../packages/core/src/workflow-ir-types.js";
 import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
 const root = process.argv[2] || process.cwd();
 
+function browserDemoLifecycleIr(): WorkflowIr {
+  return {
+    version: "v2",
+    name: "browser-demo-lifecycle",
+    columns: [
+      { id: "todo", name: "Todo", traits: [{ trait: "intake" }] },
+      { id: "in-progress", name: "In Progress", traits: [{ trait: "wip" }] },
+      { id: "in-review", name: "In Review", traits: [{ trait: "merge-blocker" }] },
+      { id: "qa", name: "QA", traits: [] },
+      { id: "publish", name: "Publish", traits: [{ trait: "complete" }] },
+    ],
+    nodes: [
+      { id: "start", kind: "start", column: "todo" },
+      { id: "implement", kind: "prompt", column: "in-progress", config: { prompt: "Implement the change" } },
+      { id: "review", kind: "prompt", column: "in-review", config: { prompt: "Review the implementation" } },
+      { id: "qa-check", kind: "gate", column: "qa", config: { scriptName: "test", name: "QA" } },
+      { id: "end", kind: "end", column: "publish" },
+    ],
+    edges: [
+      { from: "start", to: "implement", condition: "success" },
+      { from: "implement", to: "review", condition: "success" },
+      { from: "review", to: "qa-check", condition: "success" },
+      { from: "qa-check", to: "end", condition: "success" },
+    ],
+  };
+}
+
 async function main() {
   const store = new TaskStore(root);
   await store.init();
+  await store.updateSettings({ maxConcurrent: 10 } as any);
+  await store.updateGlobalSettings({ experimentalFeatures: { workflowColumns: true } });
+  const browserDemoWorkflow = await store.createWorkflowDefinition({
+    name: "Browser Demo Lifecycle",
+    description: "Simple board lifecycle for browser demos: Todo → In Progress → In Review → QA → Publish.",
+    ir: browserDemoLifecycleIr(),
+  });
 
   // ── Done ──────────────────────────────────────────────────────────
 
@@ -221,6 +256,67 @@ async function main() {
     await writePrompt(store, task.id, t.title, t.desc, steps, t.deps);
   }
 
+  // ── Browser demo lifecycle ───────────────────────────────────────
+
+  const browserDemo = [
+    {
+      title: "Demo: seed browser board task in Todo",
+      desc: "Simple browser demo task waiting in Todo for the board walkthrough.",
+      column: "todo",
+      currentStep: null,
+    },
+    {
+      title: "Demo: browser task actively implementing",
+      desc: "Shows a demo task in active implementation with one step currently running.",
+      column: "in-progress",
+      currentStep: 1,
+    },
+    {
+      title: "Demo: browser task awaiting review",
+      desc: "Shows a demo task that finished implementation and is waiting in review.",
+      column: "in-review",
+      currentStep: 4,
+    },
+    {
+      title: "Demo: browser task in QA",
+      desc: "Shows a demo task that passed review and is waiting on QA verification.",
+      column: "qa",
+      currentStep: 4,
+    },
+    {
+      title: "Demo: browser task ready to publish",
+      desc: "Shows a demo task that cleared QA and is sitting in the Publish column.",
+      column: "publish",
+      currentStep: 4,
+    },
+  ] as const;
+
+  for (const t of browserDemo) {
+    const task = await store.createTask({ description: t.desc, title: t.title });
+    await store.updateTask(task.id, { size: "S", reviewLevel: 0 });
+    await store.selectTaskWorkflowAndReconcile(task.id, browserDemoWorkflow.id);
+
+    const steps = generateSteps(t.title);
+    await writePrompt(store, task.id, t.title, t.desc, steps);
+
+    if (t.currentStep !== null) {
+      for (let i = 0; i < Math.min(t.currentStep, steps.length); i++) {
+        await store.updateStep(task.id, i, "done");
+      }
+      if (t.currentStep < steps.length) {
+        await store.updateStep(task.id, t.currentStep, "in-progress");
+      }
+    }
+
+    const lifecyclePath = ["todo", "in-progress", "in-review", "qa", "publish"] as const;
+    const targetIndex = lifecyclePath.indexOf(t.column);
+    for (const column of lifecyclePath.slice(1, targetIndex + 1)) {
+      await store.moveTask(task.id, column, { moveSource: "user", allowDirectInReviewMove: true });
+    }
+
+    await addLogs(store, task.id, t.column);
+  }
+
   // ── Planning ──────────────────────────────────────────────────────
 
   const planning = [
@@ -256,13 +352,15 @@ async function main() {
   console.log(`  Todo:        ${byColumn["todo"] || 0}`);
   console.log(`  In Progress: ${byColumn["in-progress"] || 0}`);
   console.log(`  In Review:   ${byColumn["in-review"] || 0}`);
+  console.log(`  QA:          ${byColumn["qa"] || 0}`);
+  console.log(`  Publish:     ${byColumn["publish"] || 0}`);
   console.log(`  Done:        ${byColumn["done"] || 0}`);
-  console.log(`\nRun "kb dashboard" to see the board.`);
+  console.log(`\nRun "kb dashboard" to see the board, including the browser demo lifecycle columns.`);
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────
 
-function generateSteps(title: string): string[] {
+function generateSteps(_title: string): string[] {
   return [
     "Analyze requirements and plan implementation",
     "Implement core logic",
@@ -271,7 +369,7 @@ function generateSteps(title: string): string[] {
   ];
 }
 
-function generateStepsDetailed(title: string, count: number): string[] {
+function generateStepsDetailed(_title: string, count: number): string[] {
   const pools: Record<number, string[]> = {
     3: [
       "Set up infrastructure and dependencies",
@@ -340,6 +438,33 @@ ${stepsSection}
 
 async function addLogs(store: TaskStore, id: string, targetColumn: string) {
   const actions: Record<string, string[][]> = {
+    publish: [
+      ["Planning complete — plan written", "approved"],
+      ["Scheduled for execution", "worktree created"],
+      ["Step 0 started", "in-progress"],
+      ["Review: step 0", "approved"],
+      ["Step 1 started", "in-progress"],
+      ["Review: step 1", "approved"],
+      ["Step 2 started", "in-progress"],
+      ["Review: step 2", "approved"],
+      ["Step 3 started", "in-progress"],
+      ["Review: step 3", "approved"],
+      ["QA verification complete", "approved"],
+      ["Ready to publish", "awaiting release window"],
+    ],
+    qa: [
+      ["Planning complete — plan written", "approved"],
+      ["Scheduled for execution", "worktree created"],
+      ["Step 0 started", "in-progress"],
+      ["Review: step 0", "approved"],
+      ["Step 1 started", "in-progress"],
+      ["Review: step 1", "approved"],
+      ["Step 2 started", "in-progress"],
+      ["Review: step 2", "approved"],
+      ["Step 3 started", "in-progress"],
+      ["Review: step 3", "approved"],
+      ["Review complete — moved to QA", "awaiting browser smoke test"],
+    ],
     done: [
       ["Planning complete — plan written", "approved"],
       ["Scheduled for execution", "worktree created"],
