@@ -701,6 +701,33 @@ describe("POST /github/issues/import", () => {
     expect(store.createTask).not.toHaveBeenCalled();
   });
 
+  it("returns 409 when sourceIssue matches even if description URL was edited away", async () => {
+    (store.listTasks as ReturnType<typeof vi.fn>).mockResolvedValueOnce([
+      {
+        id: "FN-002",
+        description: "Edited description without source URL",
+        column: "triage",
+        sourceIssue: {
+          provider: "github",
+          repository: "owner/repo",
+          externalIssueId: "1",
+          issueNumber: 1,
+          url: "https://github.com/owner/repo/issues/1",
+        },
+      },
+    ]);
+
+    getIssueSpy.mockResolvedValueOnce(mockGitHubIssue);
+
+    const res = await REQUEST(buildApp(), "POST", "/api/github/issues/import", JSON.stringify({ owner: "owner", repo: "repo", issueNumber: 1 }), {
+      "Content-Type": "application/json",
+    });
+
+    expect(res.status).toBe(409);
+    expect(res.body.details?.existingTaskId).toBe("FN-002");
+    expect(store.createTask).not.toHaveBeenCalled();
+  });
+
   it("truncates long titles to 200 chars", async () => {
     const longTitleIssue = {
       ...mockGitHubIssue,
@@ -886,6 +913,52 @@ describe("POST /github/issues/batch-import", () => {
     expect(res2.body.results[0].success).toBe(true);
     expect(res2.body.results[0].skipped).toBe(true);
     expect(res2.body.results[0].taskId).toBe(createdTaskId);
+  });
+
+  it("skips batch issues whose sourceIssue already matches even if description URL was edited away", async () => {
+    (store.listTasks as ReturnType<typeof vi.fn>).mockResolvedValue([
+      {
+        id: "FN-200",
+        description: "Edited description without source URL",
+        column: "triage",
+        sourceIssue: {
+          provider: "github",
+          repository: "owner/repo",
+          externalIssueId: "1",
+          issueNumber: 1,
+          url: "https://github.com/owner/repo/issues/1",
+        },
+      },
+    ]);
+
+    const throttledSpy = vi.spyOn(GitHubClient.prototype, "fetchThrottled")
+      .mockResolvedValueOnce({
+        success: true,
+        data: mockGitHubIssue(1, "Already Imported Issue"),
+      } as Awaited<ReturnType<GitHubClient["fetchThrottled"]>>)
+      .mockResolvedValueOnce({
+        success: true,
+        data: mockGitHubIssue(2, "Fresh Issue"),
+      } as Awaited<ReturnType<GitHubClient["fetchThrottled"]>>);
+
+    const res = await REQUEST(
+      buildApp(),
+      "POST",
+      "/api/github/issues/batch-import",
+      JSON.stringify({ owner: "owner", repo: "repo", issueNumbers: [1, 2], delayMs: 1 }),
+      { "Content-Type": "application/json" }
+    );
+
+    expect(res.status).toBe(200);
+    expect(res.body.results).toEqual([
+      { issueNumber: 1, success: true, skipped: true, taskId: "FN-200" },
+      { issueNumber: 2, success: true, taskId: expect.any(String) },
+    ]);
+    expect(store.createTask).toHaveBeenCalledTimes(1);
+    expect(store.createTask).toHaveBeenCalledWith(expect.objectContaining({
+      sourceIssue: expect.objectContaining({ issueNumber: 2 }),
+    }));
+    expect(throttledSpy).toHaveBeenCalledTimes(2);
   });
 
   it("returns 400 for empty issueNumbers array", async () => {

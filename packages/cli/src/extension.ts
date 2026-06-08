@@ -442,6 +442,20 @@ function buildGitHubIssueSource(owner: string, repo: string, issue: { number: nu
   };
 }
 
+function isIssueAlreadyImported(
+  task: Pick<Task, "description" | "sourceIssue">,
+  owner: string,
+  repo: string,
+  issueNumber: number,
+  sourceUrl: string,
+): boolean {
+  const sourceIssue = task.sourceIssue;
+  return task.description.includes(sourceUrl)
+    || (sourceIssue?.provider === "github"
+      && sourceIssue.repository === `${owner}/${repo}`
+      && sourceIssue.issueNumber === issueNumber);
+}
+
 async function fetchGitHubIssueViaGh(
   owner: string,
   repo: string,
@@ -1274,12 +1288,12 @@ export default function kbExtension(pi: ExtensionAPI) {
       }
 
       const store = await getStore(ctx.cwd);
-      const existingTasks = await store.listTasks({ slim: true });
+      const existingTasks = await store.listTasks({ slim: false });
       const createdTasks: Array<{ id: string; title: string }> = [];
 
       for (const issue of issues) {
         const sourceUrl = issue.html_url;
-        const alreadyImported = existingTasks.some((task) => task.description.includes(sourceUrl));
+        const alreadyImported = existingTasks.some((task) => isIssueAlreadyImported(task, owner, repo, issue.number, sourceUrl));
         if (alreadyImported) {
           continue;
         }
@@ -1304,7 +1318,7 @@ export default function kbExtension(pi: ExtensionAPI) {
         await store.logEntry(task.id, "Imported from GitHub", sourceUrl);
         createdTasks.push({ id: task.id, title: task.title || issue.title });
 
-        existingTasks.push({ ...task, description });
+        existingTasks.push(task);
       }
 
       const summary = `✓ Imported ${createdTasks.length} tasks from ${owner}/${repo}`;
@@ -1358,11 +1372,11 @@ export default function kbExtension(pi: ExtensionAPI) {
 
       // Check if already imported
       const store = await getStore(ctx.cwd);
-      const existingTasks = await store.listTasks({ slim: true });
+      const existingTasks = await store.listTasks({ slim: false });
       const sourceUrl = issue.html_url;
 
       for (const task of existingTasks) {
-        if (task.description.includes(sourceUrl)) {
+        if (isIssueAlreadyImported(task, owner, repo, issueNumber, sourceUrl)) {
           return {
             content: [
               {

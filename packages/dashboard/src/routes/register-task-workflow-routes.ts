@@ -1736,15 +1736,6 @@ export function registerTaskWorkflowRoutes(ctx: ApiRoutesContext, deps: TaskWork
     try {
       const { store: scopedStore } = await getProjectContext(req);
       const newTask = await scopedStore.duplicateTask(req.params.id);
-      // Fire github tracking explicitly so duplicates created through the
-      // route (which may not pass through TaskStore.createTask's hook
-      // invocation in mocked test setups) still produce a tracking issue
-      // when the source task had tracking enabled. Best-effort.
-      try {
-        await createTrackingIssueForTask(scopedStore, newTask, { githubToken: options?.githubToken });
-      } catch {
-        // never block duplicate response
-      }
       res.status(201).json(newTask);
     } catch (err: unknown) {
       if (err instanceof ApiError) {
@@ -1772,13 +1763,6 @@ export function registerTaskWorkflowRoutes(ctx: ApiRoutesContext, deps: TaskWork
 
       const refinedTask = await scopedStore.refineTask(req.params.id, trimmedFeedback);
       await scopedStore.logEntry(req.params.id, "Refinement requested", trimmedFeedback);
-      // Fire github tracking explicitly so refinements get a tracking issue
-      // when the source task had tracking enabled. Best-effort.
-      try {
-        await createTrackingIssueForTask(scopedStore, refinedTask, { githubToken: options?.githubToken });
-      } catch {
-        // never block refine response
-      }
       res.status(201).json(refinedTask);
     } catch (err: unknown) {
       if (err instanceof ApiError) {

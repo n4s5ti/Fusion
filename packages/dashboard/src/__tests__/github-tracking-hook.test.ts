@@ -470,6 +470,74 @@ describe("registerGithubTrackingHook", () => {
     expect(mockCreateIssue).toHaveBeenCalledTimes(2);
   });
 
+  it("creates exactly one tracking issue when duplicating a tracked task", async () => {
+    registerGithubTrackingHook();
+
+    await store.updateSettings({
+      githubTrackingEnabledByDefault: true,
+      githubTrackingDefaultRepo: "owner/repo",
+      githubAuthMode: "token",
+      githubAuthToken: "tok",
+    });
+
+    const sourceTask = await store.createTask({
+      title: "Tracked source task",
+      description: "source task for duplication",
+      githubTracking: { enabled: true },
+    });
+
+    await vi.waitFor(() => {
+      expect(mockCreateIssue).toHaveBeenCalledTimes(1);
+    });
+    mockCreateIssue.mockClear();
+
+    const duplicatedTask = await store.duplicateTask(sourceTask.id);
+
+    expect(duplicatedTask.id).not.toBe(sourceTask.id);
+    expect(mockCreateIssue).toHaveBeenCalledTimes(1);
+    expect(mockCreateIssue).toHaveBeenCalledWith(
+      expect.objectContaining({
+        owner: "owner",
+        repo: "repo",
+        title: expect.stringContaining(duplicatedTask.id),
+      }),
+    );
+  });
+
+  it("creates exactly one tracking issue when refining a tracked task", async () => {
+    registerGithubTrackingHook();
+
+    await store.updateSettings({
+      githubTrackingDefaultRepo: "owner/repo",
+      githubAuthMode: "token",
+      githubAuthToken: "tok",
+    });
+
+    const sourceTask = await store.createTask({
+      title: "Tracked refinement source",
+      description: "source task for refinement",
+      column: "done",
+      githubTracking: { enabled: true },
+    });
+
+    await vi.waitFor(() => {
+      expect(mockCreateIssue).toHaveBeenCalledTimes(1);
+    });
+    mockCreateIssue.mockClear();
+
+    const refinedTask = await store.refineTask(sourceTask.id, "Follow-up work needed");
+
+    expect(refinedTask.id).not.toBe(sourceTask.id);
+    expect(mockCreateIssue).toHaveBeenCalledTimes(1);
+    expect(mockCreateIssue).toHaveBeenCalledWith(
+      expect.objectContaining({
+        owner: "owner",
+        repo: "repo",
+        title: expect.stringContaining(refinedTask.id),
+      }),
+    );
+  });
+
   it("creates issue during createTask await when summarization is disabled", async () => {
     registerGithubTrackingHook();
 

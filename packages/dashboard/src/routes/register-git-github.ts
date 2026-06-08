@@ -2115,6 +2115,20 @@ function buildGitHubIssueSource(owner: string, repo: string, issue: { number: nu
   };
 }
 
+function isIssueAlreadyImported(
+  task: Pick<Task, "description" | "sourceIssue">,
+  owner: string,
+  repo: string,
+  issueNumber: number,
+  sourceUrl: string,
+): boolean {
+  const sourceIssue = task.sourceIssue;
+  return task.description.includes(sourceUrl)
+    || (sourceIssue?.provider === "github"
+      && sourceIssue.repository === `${owner}/${repo}`
+      && sourceIssue.issueNumber === issueNumber);
+}
+
 export function getDefaultGitHubRepo(store: TaskStore): { owner: string; repo: string } | null {
   const envRepo = process.env.GITHUB_REPOSITORY;
   if (envRepo) {
@@ -3868,10 +3882,10 @@ export function registerGitGitHubRoutes(ctx: ApiRoutesContext): void {
       }
 
       // Check if already imported
-      const existingTasks = await scopedStore.listTasks({ slim: true, includeArchived: false });
+      const existingTasks = await scopedStore.listTasks({ slim: false, includeArchived: false });
       const sourceUrl = issue.html_url;
       for (const existingTask of existingTasks) {
-        if (existingTask.description.includes(sourceUrl)) {
+        if (isIssueAlreadyImported(existingTask, owner, repo, issueNumber, sourceUrl)) {
           throw new ApiError(409, `Issue #${issueNumber} already imported as ${existingTask.id}`, {
             existingTaskId: existingTask.id,
           });
@@ -3953,7 +3967,7 @@ export function registerGitGitHubRoutes(ctx: ApiRoutesContext): void {
       const { store: scopedStore } = await getProjectContext(req);
 
       // Get existing tasks to check for duplicates
-      const existingTasks = await scopedStore.listTasks({ slim: true, includeArchived: false });
+      const existingTasks = await scopedStore.listTasks({ slim: false, includeArchived: false });
 
       // Process issues sequentially with throttling
       const results: Array<{
@@ -4001,7 +4015,7 @@ export function registerGitGitHubRoutes(ctx: ApiRoutesContext): void {
 
         // Check if already imported
         const sourceUrl = issue.html_url;
-        const existingTask = existingTasks.find((t) => t.description.includes(sourceUrl));
+        const existingTask = existingTasks.find((t) => isIssueAlreadyImported(t, owner, repo, issueNumber, sourceUrl));
         if (existingTask) {
           results.push({
             issueNumber,
@@ -4041,7 +4055,7 @@ export function registerGitGitHubRoutes(ctx: ApiRoutesContext): void {
           });
 
           // Add to existingTasks to avoid duplicate imports within the same batch
-          existingTasks.push({ ...task, description });
+          existingTasks.push(task);
         } catch (err: unknown) {
       if (err instanceof ApiError) {
         throw err;

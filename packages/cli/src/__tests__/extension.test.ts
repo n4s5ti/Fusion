@@ -2234,6 +2234,74 @@ describe.skipIf(!SHOULD_RUN_LEGACY_EXTENSION_INTEGRATION)("fn pi extension (lega
       });
     });
 
+    it("fn_task_import_github skips issues already imported via sourceIssue even when description was edited", async () => {
+      const store = new TaskStore(tmpDir);
+      await store.init();
+      await store.createTask({
+        title: "Existing imported issue",
+        description: "Edited description without source URL",
+        sourceIssue: {
+          provider: "github",
+          repository: "acme/demo",
+          externalIssueId: "1",
+          issueNumber: 1,
+          url: "https://github.com/acme/demo/issues/1",
+        },
+      });
+      store.close();
+
+      const tool = api.tools.get("fn_task_import_github")!;
+      vi.mocked(runGhJsonAsync).mockResolvedValueOnce([
+        {
+          number: 1,
+          title: "Issue one",
+          body: "First issue body",
+          html_url: "https://github.com/acme/demo/issues/1",
+        },
+      ] as never);
+
+      const result = await tool.execute("gh-2b", { ownerRepo: "acme/demo" }, undefined, undefined, makeCtx(tmpDir));
+
+      expect(result.content[0].text).toContain("Imported 0 tasks from acme/demo");
+      expect(result.details.createdTasks).toHaveLength(0);
+    });
+
+    it("fn_task_import_github_issue skips issues already imported via sourceIssue even when description was edited", async () => {
+      const store = new TaskStore(tmpDir);
+      await store.init();
+      const existing = await store.createTask({
+        title: "Existing imported issue",
+        description: "Edited description without source URL",
+        sourceIssue: {
+          provider: "github",
+          repository: "acme/demo",
+          externalIssueId: "1",
+          issueNumber: 1,
+          url: "https://github.com/acme/demo/issues/1",
+        },
+      });
+      store.close();
+
+      const tool = api.tools.get("fn_task_import_github_issue")!;
+      vi.mocked(runGhJsonAsync).mockResolvedValueOnce({
+        number: 1,
+        title: "Issue one",
+        body: "First issue body",
+        html_url: "https://github.com/acme/demo/issues/1",
+      } as never);
+
+      const result = await tool.execute(
+        "gh-2c",
+        { owner: "acme", repo: "demo", issueNumber: 1 },
+        undefined,
+        undefined,
+        makeCtx(tmpDir),
+      );
+
+      expect(result.details).toMatchObject({ skipped: true, existingTaskId: existing.id });
+      expect(result.content[0].text).toContain(existing.id);
+    });
+
     it("fn_task_browse_github_issues lists issues via gh api", async () => {
       const tool = api.tools.get("fn_task_browse_github_issues")!;
       vi.mocked(runGhJsonAsync).mockResolvedValueOnce([
