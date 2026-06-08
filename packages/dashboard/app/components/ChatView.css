@@ -1499,8 +1499,8 @@
 }
 
 .chat-input-stop {
-  width: calc(var(--space-xl) * 2);
-  height: calc(var(--space-xl) * 2);
+  width: 36px;
+  height: 36px;
   border-radius: var(--radius-md);
   border: none;
   background: color-mix(in srgb, var(--color-error) 15%, transparent);

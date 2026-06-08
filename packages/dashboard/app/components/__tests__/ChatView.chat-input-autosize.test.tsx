@@ -15,6 +15,18 @@ describe("ChatView chat input autosize", () => {
     expect(textareaRule?.[0]).toContain("overflow-y: hidden");
   });
 
+  it("keeps the stop button dimensions aligned with the send button", () => {
+    const sendRule = chatViewCss.match(/\.chat-input-send\s*\{[^}]*\}/);
+    const stopRule = chatViewCss.match(/\.chat-input-stop\s*\{[^}]*\}/);
+
+    expect(sendRule).not.toBeNull();
+    expect(stopRule).not.toBeNull();
+    expect(sendRule?.[0]).toContain("width: 36px");
+    expect(sendRule?.[0]).toContain("height: 36px");
+    expect(stopRule?.[0]).toContain("width: 36px");
+    expect(stopRule?.[0]).toContain("height: 36px");
+  });
+
   it("clamps oversized textarea growth to the new max height", () => {
     expect(clampChatInputHeight(600)).toBe(600);
     expect(clampChatInputHeight(800)).toBe(640);
