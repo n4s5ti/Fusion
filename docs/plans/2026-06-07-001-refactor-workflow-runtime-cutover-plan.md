@@ -1,7 +1,7 @@
 ---
 title: "refactor: Workflow engine subsumes execution"
 type: refactor
-status: active
+status: completed
 date: 2026-06-07
 depth: deep
 origin: none (solo planning bootstrap; supersedes docs/plans/2026-06-03-002-feat-workflow-interpreter-cutover-plan.md direction)
