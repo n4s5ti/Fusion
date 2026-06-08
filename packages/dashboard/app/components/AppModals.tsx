@@ -385,6 +385,7 @@ export function AppModals({
               addToast={addToast}
               projectId={projectId}
               initialPanel={modalManager.workflowEditorInitialPanel}
+              initialAction={modalManager.workflowEditorInitialAction}
             />
           </Suspense>
         </ModalErrorBoundary>

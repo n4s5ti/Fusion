@@ -20,7 +20,7 @@ vi.mock("../WorktreeGroup", () => ({
   ),
 }));
 vi.mock("../QuickEntryBox", () => ({
-  QuickEntryBox: ({ favoriteProviders, favoriteModels, onToggleFavorite, onToggleModelFavorite, autoExpand }: { favoriteProviders?: string[]; favoriteModels?: string[]; onToggleFavorite?: (provider: string) => void; onToggleModelFavorite?: (modelId: string) => void; autoExpand?: boolean }) => (
+  QuickEntryBox: ({ favoriteProviders, favoriteModels, onToggleFavorite, onToggleModelFavorite, autoExpand, onCreate }: { favoriteProviders?: string[]; favoriteModels?: string[]; onToggleFavorite?: (provider: string) => void; onToggleModelFavorite?: (modelId: string) => void; autoExpand?: boolean; onCreate?: (input: { description: string }) => void }) => (
     <div
       data-testid="quick-entry-box"
       data-favorite-providers={JSON.stringify(favoriteProviders ?? [])}
@@ -28,7 +28,9 @@ vi.mock("../QuickEntryBox", () => ({
       data-has-toggle-favorite={onToggleFavorite ? "yes" : "no"}
       data-has-toggle-model-favorite={onToggleModelFavorite ? "yes" : "no"}
       data-auto-expand={autoExpand === false ? "false" : "true"}
-    />
+    >
+      <button type="button" onClick={() => onCreate?.({ description: "Quick task" })}>create</button>
+    </div>
   ),
 }));
 vi.mock("lucide-react", () => ({
@@ -408,6 +410,28 @@ describe("Column QuickEntryBox", () => {
     render(<Column {...defaultProps} tasks={tasks} onQuickCreate={vi.fn()} />);
     const quickEntry = screen.getByTestId("quick-entry-box");
     expect(quickEntry.getAttribute("data-auto-expand")).toBe("false");
+  });
+
+  it("preserves selected built-in workflow id when quick-creating in workflow mode", async () => {
+    const onQuickCreate = vi.fn().mockResolvedValue({});
+    render(
+      <Column
+        {...defaultProps}
+        column="triage"
+        workflowMode
+        workflowId="builtin:coding"
+        tasks={[]}
+        onQuickCreate={onQuickCreate}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "create" }));
+
+    await waitFor(() => expect(onQuickCreate).toHaveBeenCalledWith({
+      description: "Quick task",
+      column: "triage",
+      workflowId: "builtin:coding",
+    }));
   });
 });
 

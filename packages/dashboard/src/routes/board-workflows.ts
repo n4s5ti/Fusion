@@ -68,16 +68,30 @@ export interface BoardWorkflowsPayload {
   taskWorkflowIds: Record<string, string>;
 }
 
+const BUILTIN_WORKFLOW_COLUMN_LABELS: Record<string, string> = {
+  triage: "Triage",
+  todo: "Todo",
+  "in-progress": "In Progress",
+  "in-review": "In Review",
+  done: "Done",
+  archived: "Archived",
+};
+
 function toV2(ir: WorkflowIr): WorkflowIrV2 | undefined {
   return ir.version === "v2" ? ir : undefined;
 }
 
-function describeColumns(ir: WorkflowIr): BoardWorkflowColumn[] {
+function displayColumnName(id: string, name: string, canonicalizeLifecycle: boolean): string {
+  if (!canonicalizeLifecycle) return name;
+  return BUILTIN_WORKFLOW_COLUMN_LABELS[id] ?? name;
+}
+
+function describeColumns(ir: WorkflowIr, canonicalizeLifecycle = false): BoardWorkflowColumn[] {
   const v2 = toV2(ir);
   if (!v2) return [];
   return v2.columns.map((col) => ({
     id: col.id,
-    name: col.name,
+    name: displayColumnName(col.id, col.name, canonicalizeLifecycle),
     flags: resolveColumnFlags(col),
   }));
 }
@@ -102,7 +116,7 @@ async function describeWorkflow(
     const ir = await resolveWorkflowIrById(store, workflowId);
     const name = getBuiltinWorkflow(workflowId)?.name ?? ir.name;
     const fields = describeFields(ir);
-    return { id: workflowId, name, columns: describeColumns(ir), ...(fields ? { fields } : {}) };
+    return { id: workflowId, name, columns: describeColumns(ir, true), ...(fields ? { fields } : {}) };
   }
   // Custom workflow: fetch the definition once and derive both IR and name from
   // it (previously getWorkflowDefinition was called twice per workflow).
@@ -129,7 +143,7 @@ async function describeWorkflow(
  * can return early and the client renders the legacy board.
  */
 export async function buildBoardWorkflowsPayload(
-  store: Pick<TaskStore, "getWorkflowDefinition" | "getTaskWorkflowSelection" | "getSettings">,
+  store: Pick<TaskStore, "getWorkflowDefinition" | "getTaskWorkflowSelection" | "getSettings" | "listWorkflowDefinitions">,
   taskIds: string[],
   settingsOverride?: Pick<Settings, "experimentalFeatures">,
 ): Promise<BoardWorkflowsPayload> {
@@ -162,6 +176,19 @@ export async function buildBoardWorkflowsPayload(
   // The default workflow lane is always describable so a no-task board still
   // resolves it (and the client's default-lane-first ordering is stable).
   referenced.add(DEFAULT_WORKFLOW_LANE_ID);
+
+  try {
+    const definitions = await store.listWorkflowDefinitions();
+    for (const definition of definitions) {
+      if (definition.kind === "fragment") continue;
+      referenced.add(definition.id);
+    }
+  } catch (err) {
+    // Older/partial test stores may not expose definition listing; the referenced
+    // workflow set above is still sufficient for task rendering. Production
+    // failures are logged so empty workflow definitions do not disappear silently.
+    console.warn("[board-workflows] listWorkflowDefinitions failed; using referenced workflows only", err);
+  }
 
   const workflows: BoardWorkflowDefinition[] = [];
   for (const workflowId of referenced) {

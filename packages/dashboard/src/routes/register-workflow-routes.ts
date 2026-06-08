@@ -23,12 +23,14 @@ export function __resetCreateFnAgentForDesign(): void {
   createFnAgentForDesign = engineCreateFnAgent;
 }
 
-/** Minimal session shape used by the one-shot design turn (mirrors the refine
- *  route's RefineAgentSession): subscribe to text deltas, prompt once, dispose. */
+/** Minimal session shape used by the one-shot design turn. Some agent backends
+ *  stream text deltas, while CLI-agent-backed sessions only expose messages on
+ *  state after prompt() resolves. */
 interface DesignAgentSession {
-  on(event: "text", listener: (delta: string) => void): void;
+  on?: (event: "text", listener: (delta: string) => void) => void;
   prompt(text: string): Promise<void>;
-  dispose(): void;
+  dispose?: () => void;
+  state?: { messages?: unknown };
 }
 
 /** Max design prompt length (chars). Over → 400 (mirrors the bounded prompts on
@@ -824,7 +826,7 @@ export function registerWorkflowRoutes(ctx: ApiRoutesContext): void {
 
       const designSession = session as unknown as DesignAgentSession;
       let output = "";
-      designSession.on("text", (delta: string) => {
+      designSession.on?.("text", (delta: string) => {
         output += delta;
       });
 
@@ -834,7 +836,11 @@ export function registerWorkflowRoutes(ctx: ApiRoutesContext): void {
       try {
         await designSession.prompt(userPrompt);
       } finally {
-        designSession.dispose();
+        designSession.dispose?.();
+      }
+
+      if (!output.trim()) {
+        output = extractLastAssistantText(designSession.state?.messages);
       }
 
       // Extract JSON (handles fences/prose) → JSON.parse → parseWorkflowIr.
@@ -886,6 +892,39 @@ export function registerWorkflowRoutes(ctx: ApiRoutesContext): void {
       rethrowAsApiError(err);
     }
   });
+}
+
+function extractLastAssistantText(messages: unknown): string {
+  interface AgentMessage {
+    role?: unknown;
+    type?: unknown;
+    content?: unknown;
+  }
+
+  const lastMessage = (Array.isArray(messages) ? messages : [])
+    .filter((message): message is AgentMessage => Boolean(message) && typeof message === "object")
+    .filter((message) => message.role === "assistant" || message.type === "assistant")
+    .pop();
+
+  const content = lastMessage?.content;
+  if (typeof content === "string") {
+    return content.trim();
+  }
+
+  if (Array.isArray(content)) {
+    return content
+      .filter((part): part is { type: "text"; text: string } => (
+        Boolean(part) &&
+        typeof part === "object" &&
+        (part as { type?: unknown }).type === "text" &&
+        typeof (part as { text?: unknown }).text === "string"
+      ))
+      .map((part) => part.text)
+      .join("")
+      .trim();
+  }
+
+  return "";
 }
 
 /** Validate trait availability for an imported IR exactly as the store does on

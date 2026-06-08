@@ -44,6 +44,23 @@ function makeFakeAgent(text: string) {
   return { factory, captured };
 }
 
+function makeNonStreamingFakeAgent(text: string) {
+  const captured: { systemPrompt?: string; userPrompt?: string } = {};
+  const factory: any = async (opts: any) => {
+    captured.systemPrompt = opts.systemPrompt;
+    const session = {
+      state: { messages: [] as Array<{ role: string; content: string }> },
+      async prompt(userPrompt: string) {
+        captured.userPrompt = userPrompt;
+        this.state.messages.push({ role: "assistant", content: text });
+      },
+      dispose() {},
+    };
+    return { session };
+  };
+  return { factory, captured };
+}
+
 /** A fake agent whose prompt rejects; tracks whether dispose() was called so we
  *  can assert the route releases the session even when the model turn throws. */
 function makeRejectingAgent() {
@@ -159,6 +176,17 @@ describe("POST /api/workflows/design (U7/R11/KTD-6)", () => {
     expect(res.body.layout).toBeTruthy();
     expect(Object.keys(res.body.layout).length).toBeGreaterThan(0);
     expect(res.body.strippedApprovalFlags).toBe(false);
+  });
+
+  it("non-streaming agent session without .on() → reads last assistant message", async () => {
+    const { factory, captured } = makeNonStreamingFakeAgent(JSON.stringify(linearIr()));
+    __setCreateFnAgentForDesign(factory);
+
+    const res = await postJson("/api/workflows/design", { prompt: "a coding flow" });
+    expect(res.status).toBe(200);
+    expect(res.body.interpreterOnly).toBe(false);
+    expect(res.body.ir.nodes).toHaveLength(3);
+    expect(captured.userPrompt).toContain("Design a workflow");
   });
 
   it("fenced + prose-wrapped JSON → still extracted and 200", async () => {

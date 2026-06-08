@@ -32,6 +32,30 @@
   gap: var(--space-sm);
 }
 
+.list-workflow-control {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-xs);
+  min-width: 0;
+}
+
+.list-workflow-selector {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-xs);
+  min-width: 0;
+  color: var(--text-muted);
+  font-size: calc(var(--space-sm) + var(--space-xs) * 0.75);
+}
+
+.list-workflow-select {
+  min-width: 160px;
+  max-width: 240px;
+  min-height: 30px;
+  font-size: 12px;
+  border-radius: var(--radius-sm);
+}
+
 .list-sidebar-controls__actions .list-new-task-action {
   margin-left: auto;
 }
@@ -1129,4 +1153,3 @@
     min-height: 36px;
   }
 }
-

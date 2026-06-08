@@ -1,5 +1,5 @@
 import type { Settings, TaskDetail, WorkflowDefinition } from "@fusion/core";
-import { isExperimentalFeatureEnabled } from "@fusion/core";
+import { getBuiltinWorkflow, isBuiltinWorkflowId, isExperimentalFeatureEnabled } from "@fusion/core";
 
 import { WorkflowGraphExecutor, type WorkflowNodeOutcome } from "./workflow-graph-executor.js";
 import type {
@@ -146,7 +146,9 @@ export class WorkflowGraphTaskRunner {
 
     let definition: WorkflowDefinition | undefined;
     try {
-      definition = await this.deps.store.getWorkflowDefinition(selection.workflowId);
+      definition = isBuiltinWorkflowId(selection.workflowId)
+        ? getBuiltinWorkflow(selection.workflowId)
+        : await this.deps.store.getWorkflowDefinition(selection.workflowId);
     } catch (err) {
       return this.fallBack(task.id, `workflow-load-error: ${err instanceof Error ? err.message : String(err)}`);
     }

@@ -500,7 +500,7 @@ export function useTasks(options?: UseTasksOptions) {
 
   const moveTask = useCallback(async (
     id: string,
-    column: Column,
+    column: ColumnId,
     optionsOrPosition?: { preserveProgress?: boolean } | number,
   ): Promise<Task> => {
     return normalizeTask(await api.moveTask(id, column, projectId, optionsOrPosition));

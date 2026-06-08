@@ -15,7 +15,7 @@ import {
   type Edge as FlowEdge,
 } from "@xyflow/react";
 import { useTranslation } from "react-i18next";
-import { X, Plus, Trash2, Save, MessageSquare, Terminal, Shield, GitMerge, Loader2, HelpCircle, PauseCircle, Split, Merge, Repeat, ClipboardCheck, ListChecks, Code2, LayoutGrid, Workflow, Download, Upload, ChevronDown, ChevronRight, Library, Sparkles } from "lucide-react";
+import { X, Plus, Trash2, Save, MessageSquare, Terminal, Shield, GitMerge, Loader2, HelpCircle, PauseCircle, Split, Merge, Repeat, ClipboardCheck, ListChecks, Code2, LayoutGrid, Workflow, Download, Upload, ChevronDown, ChevronRight, ChevronLeft, Library, Sparkles } from "lucide-react";
 import type { WorkflowDefinition, WorkflowIrColumn, TraitViolation, WorkflowStepTemplate } from "@fusion/core";
 import { getErrorMessage } from "@fusion/core";
 import {
@@ -83,6 +83,24 @@ import type { WorkflowFieldDefinition, WorkflowSettingDefinition } from "../api"
 import { CustomModelDropdown } from "./CustomModelDropdown";
 
 type ExecutorKind = "model" | "agent" | "skill" | "cli" | "cli-agent";
+
+function builtinSeamPrompt(config: Record<string, unknown> | undefined): string {
+  const seam = typeof config?.seam === "string" ? config.seam : "";
+  switch (seam) {
+    case "planning":
+      return "Generate the task plan and write the planning artifact that downstream workflow nodes consume.";
+    case "execute":
+      return "Run Fusion's standard implementation prompt for this task, generated from the task spec, current project context, workflow fields, and available tools.";
+    case "step-execute":
+      return "Run Fusion's step implementation prompt for the active planned step in the task worktree.";
+    case "review":
+      return "Run Fusion's review boundary for completed implementation work and route the task based on the review result.";
+    case "merge":
+      return "Run Fusion's merge boundary: verify merge readiness, apply the configured merge strategy, and update the final task state.";
+    default:
+      return "";
+  }
+}
 
 /** Adapter descriptor served by GET /api/cli-agents (U15). */
 interface CliAdapterDescriptorView {
@@ -152,6 +170,8 @@ interface WorkflowNodeEditorProps {
    *  mount (U6/U9: redirect stubs link here via a `?panel=settings` param read by
    *  the editor's mount site). */
   initialPanel?: "settings";
+  /** When "create" the editor opens with the new-workflow dialog active. */
+  initialAction?: "create";
 }
 
 let nodeSeq = 0;
@@ -633,10 +653,15 @@ function InnerEditor({
   addToast,
   projectId,
   initialPanel,
+  initialAction,
   modalRef,
 }: Omit<WorkflowNodeEditorProps, "isOpen"> & { modalRef: React.RefObject<HTMLDivElement | null> }) {
   const [workflows, setWorkflows] = useState<WorkflowDefinition[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
+  const [workflowListStageOpen, setWorkflowListStageOpen] = useState(() => {
+    if (typeof window === "undefined" || typeof window.matchMedia !== "function") return false;
+    return window.matchMedia("(max-width: 768px)").matches;
+  });
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [validationError, setValidationError] = useState<string | null>(null);
@@ -652,7 +677,7 @@ function InnerEditor({
   const { confirm } = useConfirm();
   // Create-workflow dialog (KTD-7) open state + focus-return ref to the
   // "New workflow" button (NewTaskModal focus pattern).
-  const [createOpen, setCreateOpen] = useState(false);
+  const [createOpen, setCreateOpen] = useState(initialAction === "create");
   const newWorkflowBtnRef = useRef<HTMLButtonElement>(null);
   // Inline-editable name/description (KTD-10). `name`/`description` mirror the
   // active workflow and are persisted through handleSave; `editingName`/
@@ -1784,6 +1809,13 @@ function InnerEditor({
 
   const selectedNode = nodes.find((n) => n.id === selectedNodeId) ?? null;
   const selectedEdge = edges.find((e) => e.id === selectedEdgeId) ?? null;
+  const selectedNodePromptValue =
+    selectedNode && (selectedNode.data.kind === "prompt" || selectedNode.data.kind === "gate")
+      ? String(
+          selectedNode.data.config?.prompt
+            ?? (isBuiltin ? builtinSeamPrompt(selectedNode.data.config as Record<string, unknown> | undefined) : ""),
+        )
+      : "";
   // The edge inspector renders different controls per source-node kind (KTD-2):
   // step-review → verdict controls; prompt/script/gate/code/foreach →
   // success/failure select; everything else → a read-only condition note.
@@ -1975,8 +2007,14 @@ function InnerEditor({
   // before the active workflow changes (cancel keeps the current selection).
   const requestSwitch = useCallback(
     (id: string) => {
-      if (id === activeId) return;
-      guardedDismiss(() => setActiveId(id));
+      if (id === activeId) {
+        setWorkflowListStageOpen(false);
+        return;
+      }
+      guardedDismiss(() => {
+        setActiveId(id);
+        setWorkflowListStageOpen(false);
+      });
     },
     [guardedDismiss, activeId],
   );
@@ -2050,7 +2088,7 @@ function InnerEditor({
           </div>
         ) : null}
 
-        <div className="wf-editor-body">
+        <div className={`wf-editor-body${workflowListStageOpen ? " wf-editor-body--list-stage" : " wf-editor-body--editor-stage"}`}>
           <aside className="wf-editor-sidebar">
             <button
               className="wf-editor-new"
@@ -2190,6 +2228,7 @@ function InnerEditor({
                         readOnly={isBuiltin}
                         projectId={projectId}
                         addToast={addToast}
+                        initialTab="values"
                       />
                     </div>
                   )}
@@ -2199,6 +2238,15 @@ function InnerEditor({
           </aside>
 
           <section className="wf-editor-canvas-wrap">
+            <button
+              type="button"
+              className="wf-editor-mobile-back"
+              onClick={() => setWorkflowListStageOpen(true)}
+              aria-label={t("workflows.backToWorkflowList", "Back to workflows")}
+            >
+              <ChevronLeft size={16} />
+              <span>{t("common.back", "Back")}</span>
+            </button>
             {activeWorkflow ? (
               <>
                 {/* Inline name + description strip (KTD-10). Built-ins render as
@@ -2681,7 +2729,7 @@ function InnerEditor({
                   <span>Prompt</span>
                   <textarea
                     rows={5}
-                    value={String(selectedNode.data.config?.prompt ?? "")}
+                    value={selectedNodePromptValue}
                     onChange={(e) => updateSelectedData({ config: { prompt: e.target.value } })}
                   />
                 </label>

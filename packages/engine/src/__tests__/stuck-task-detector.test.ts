@@ -1154,6 +1154,42 @@ describe("StuckTaskDetector", () => {
       vi.useRealTimers();
     });
 
+    it("suppresses another loop classification while accepted recovery is pending", async () => {
+      const onLoopDetected = vi.fn().mockResolvedValue(true);
+      const onStuck = vi.fn();
+      const customStore = createMockStore({
+        getSettings: vi.fn().mockResolvedValue({ taskStuckTimeoutMs: 60000 }),
+      });
+      const customDetector = new StuckTaskDetector(customStore, { onLoopDetected, onStuck });
+      const session = createMockSession();
+
+      vi.useFakeTimers({ shouldAdvanceTime: true });
+      customDetector.trackTask("FN-201", session);
+      vi.advanceTimersByTime(61000);
+      for (let i = 0; i < 80; i++) {
+        customDetector.recordActivity("FN-201");
+      }
+
+      expect(customDetector.classifyStuckReason("FN-201", 60000)).toBe("loop");
+      await customDetector.killAndRetry("FN-201", 60000);
+
+      expect(customDetector.classifyStuckReason("FN-201", 60000)).toBeNull();
+
+      customDetector.markLoopObserved("FN-201");
+      for (let i = 0; i < 25; i++) {
+        customDetector.recordIgnoredStepUpdate("FN-201");
+      }
+      expect(customDetector.classifyStuckReason("FN-201", 60000)).toBe("no-progress-churn");
+
+      await customDetector.checkNow();
+      expect(onStuck).toHaveBeenCalledWith(expect.objectContaining({
+        taskId: "FN-201",
+        reason: "no-progress-churn",
+      }));
+
+      vi.useRealTimers();
+    });
+
     it("does NOT call onLoopDetected when reason is inactivity", async () => {
       const onLoopDetected = vi.fn().mockResolvedValue(true);
       const onStuck = vi.fn();

@@ -10,13 +10,64 @@
   min-height: 0;
   min-width: 0;
   overflow-y: auto;
+  overflow-x: hidden;
   padding: var(--board-padding, 12px);
   box-sizing: border-box;
+}
+
+.board-workflow-view {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  width: 100%;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--bg);
+}
+
+.board-workflow-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-md);
+  padding: var(--space-md) var(--space-xl);
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+}
+
+.board-workflow-selector {
+  margin-left: auto;
+}
+
+.board-workflow-create-btn,
+.board-workflow-edit-btn {
+  flex: 0 0 auto;
+}
+
+.board.board-workflow-columns {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: row;
+  align-items: stretch;
+  width: 100%;
+  min-height: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scroll-snap-type: x proximity;
+}
+
+.board.board-workflow-columns > .column {
+  flex: 1 0 300px;
+  min-width: 300px;
+  scroll-snap-align: center;
 }
 
 .lane {
   display: flex;
   flex-direction: column;
+  flex: 0 0 auto;
+  width: 100%;
   min-width: 0;
   border: 1px solid var(--border);
   border-radius: var(--radius-lg, 10px);
@@ -95,4 +146,26 @@
 .column-hold-card {
   display: flex;
   flex-direction: column;
+}
+
+@media (max-width: 1024px) {
+  .board.board-lanes {
+    flex-direction: column;
+    overflow-x: hidden;
+    overflow-y: auto;
+    scroll-snap-type: none;
+  }
+
+  .board.board-lanes > .lane {
+    width: 100%;
+    min-width: 0;
+    flex-shrink: 0;
+  }
+
+  .board.board-workflow-columns {
+    flex-direction: row;
+    overflow-x: auto;
+    overflow-y: hidden;
+    scroll-snap-type: x proximity;
+  }
 }

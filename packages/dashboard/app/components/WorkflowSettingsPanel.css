@@ -19,6 +19,7 @@
   padding: var(--space-md);
   border-left: 1px solid var(--border);
   overflow-y: auto;
+  color: var(--text);
 }
 
 .wf-settings-panel-header {
@@ -46,7 +47,7 @@
 }
 
 .wf-settings-tab.is-active {
-  color: var(--text-primary, #fff);
+  color: var(--text);
   border-bottom-color: var(--accent, #4f7cff);
 }
 
@@ -137,7 +138,7 @@
 .wf-setting-id-static {
   font-family: var(--font-mono, monospace);
   font-size: 0.7rem;
-  color: var(--text-tertiary);
+  color: var(--text-muted);
   background: var(--surface-2, rgba(255, 255, 255, 0.04));
   padding: 1px 6px;
   border-radius: var(--radius-sm);
@@ -181,7 +182,7 @@
 .wf-setting-sub > span {
   font-size: 0.65rem;
   text-transform: uppercase;
-  color: var(--text-tertiary);
+  color: var(--text-muted);
 }
 
 .wf-setting--checkbox {
@@ -203,7 +204,7 @@
 .wf-setting-options-label {
   font-size: 0.65rem;
   text-transform: uppercase;
-  color: var(--text-tertiary);
+  color: var(--text-muted);
 }
 
 .wf-setting-option-row {
@@ -233,7 +234,7 @@
 }
 
 .wf-setting-color-swatch.is-active {
-  outline: 2px solid var(--text-primary, #fff);
+  outline: 2px solid var(--text);
   outline-offset: 1px;
 }
 
@@ -333,7 +334,7 @@
 .wf-settings-orphan-id {
   font-family: var(--font-mono, monospace);
   font-size: 0.7rem;
-  color: var(--text-tertiary);
+  color: var(--text-muted);
 }
 
 .wf-settings-orphan-value {

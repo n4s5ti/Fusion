@@ -6,7 +6,7 @@ import type {
   TaskComment,
   TaskCreateInput,
   AgentLogEntry,
-  Column,
+  ColumnId,
   MergeResult,
   Settings,
   GlobalSettings,
@@ -527,7 +527,7 @@ export function batchUpdateTaskModels(
 
 export function moveTask(
   id: string,
-  column: Column,
+  column: ColumnId,
   projectId?: string,
   optionsOrPosition?: { preserveProgress?: boolean } | number,
 ): Promise<Task> {

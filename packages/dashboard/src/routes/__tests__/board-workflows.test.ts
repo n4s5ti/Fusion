@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { buildBoardWorkflowsPayload, DEFAULT_WORKFLOW_LANE_ID } from "../board-workflows.js";
 import type { WorkflowDefinition } from "@fusion/core";
 import { parseWorkflowIr } from "@fusion/core";
@@ -42,6 +42,9 @@ function makeStore(opts: {
     async getWorkflowDefinition(id: string) {
       return opts.defs?.[id];
     },
+    async listWorkflowDefinitions() {
+      return Object.values(opts.defs ?? {});
+    },
   };
 }
 
@@ -71,6 +74,45 @@ describe("buildBoardWorkflowsPayload", () => {
       "done",
       "archived",
     ]);
+    expect(defaultWf!.columns.map((c) => c.name)).toEqual([
+      "Triage",
+      "Todo",
+      "In Progress",
+      "In Review",
+      "Done",
+      "Archived",
+    ]);
+  });
+
+  it("includes user-defined workflows even when no visible task references them", async () => {
+    const store = makeStore({
+      flagOn: true,
+      selections: {},
+      defs: { "wf-custom": CUSTOM },
+    });
+    const payload = await buildBoardWorkflowsPayload(store as never, ["FN-1"]);
+    expect(payload.workflows.map((w) => w.id).sort()).toEqual([DEFAULT_WORKFLOW_LANE_ID, "wf-custom"]);
+  });
+
+  it("logs when workflow definition listing fails and falls back to referenced workflows", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const store = {
+      ...makeStore({ flagOn: true, selections: {} }),
+      async listWorkflowDefinitions() {
+        throw new Error("db unavailable");
+      },
+    };
+
+    try {
+      const payload = await buildBoardWorkflowsPayload(store as never, ["FN-1"]);
+      expect(payload.workflows.map((w) => w.id)).toContain(DEFAULT_WORKFLOW_LANE_ID);
+      expect(warnSpy).toHaveBeenCalledWith(
+        expect.stringContaining("[board-workflows] listWorkflowDefinitions failed"),
+        expect.any(Error),
+      );
+    } finally {
+      warnSpy.mockRestore();
+    }
   });
 
   it("describes a custom workflow's columns with resolved trait flags", async () => {

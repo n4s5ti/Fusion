@@ -69,9 +69,6 @@ jobs:
       - name: Setup Node.js and pnpm
         uses: ./.github/actions/setup-node-pnpm
 
-      - name: Install Bun
-        uses: oven-sh/setup-bun@v2
-
       - name: Build
         run: pnpm build
 
@@ -93,9 +90,6 @@ jobs:
 
       - name: Setup Node.js and pnpm
         uses: ./.github/actions/setup-node-pnpm
-
-      - name: Install Bun
-        uses: oven-sh/setup-bun@v2
 
       # Dist-artifact cache (same contract as full-suite.yml): exact-match
       # key only, NO restore-keys (stale dist is the known failure mode,

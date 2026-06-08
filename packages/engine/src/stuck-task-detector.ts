@@ -419,6 +419,15 @@ export class StuckTaskDetector {
       return "no-progress-churn";
     }
 
+    // After onLoopDetected accepts compact-and-resume, the executor owns the
+    // recovery prompt. Do not immediately classify the same stale timestamps as
+    // another loop before the executor has a chance to emit fresh progress. The
+    // deterministic no-progress-churn terminal path above still has to fire if
+    // the recovered session keeps hammering rejected step updates.
+    if (entry.recoveryInProgress) {
+      return null;
+    }
+
     // Check loop — active but not making progress, with enough activity to be a real loop
     if (noProgressMs >= timeoutMs && entry.activitySinceProgress >= LOOP_ACTIVITY_THRESHOLD) {
       return "loop";
@@ -640,9 +649,6 @@ export class StuckTaskDetector {
     const stuckTasks: string[] = [];
 
     for (const [taskId, entry] of this.tracked) {
-      if (entry.recoveryInProgress) {
-        continue;
-      }
       const reason = this.classifyStuckReason(taskId, timeoutMs);
       if (reason !== null) {
         // U8: suppress flagging while the CLI session is waitingOnInput

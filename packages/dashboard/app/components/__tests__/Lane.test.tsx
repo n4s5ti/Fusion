@@ -91,6 +91,15 @@ describe("Lane", () => {
     expect(headings).not.toContain("Archived");
   });
 
+  it("renders creation controls only in the first visible column", () => {
+    render(<Lane {...baseProps()} onQuickCreate={vi.fn()} onNewTask={vi.fn()} />);
+
+    expect(screen.getAllByTestId("quick-entry-box")).toHaveLength(1);
+    expect(screen.getAllByText("+ New Task")).toHaveLength(1);
+    expect(screen.getByTestId("quick-entry-box").closest("[data-column]")?.getAttribute("data-column")).toBe("triage");
+    expect(screen.getByText("+ New Task").closest("[data-column]")?.getAttribute("data-column")).toBe("triage");
+  });
+
   it("collapses the lane (hides columns) when collapsed", () => {
     render(<Lane {...baseProps()} collapsed />);
     expect(screen.queryByText("Triage")).toBeNull();

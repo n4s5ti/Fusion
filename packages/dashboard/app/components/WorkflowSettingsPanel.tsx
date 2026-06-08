@@ -69,6 +69,7 @@ interface WorkflowSettingsPanelProps {
    *  no active project (Values tab shows a requires-project state). */
   projectId?: string;
   addToast: (message: string, type?: ToastType) => void;
+  initialTab?: "definitions" | "values";
 }
 
 const SETTING_TYPES: WorkflowSettingType[] = [
@@ -816,9 +817,12 @@ export function WorkflowSettingsPanel({
   readOnly,
   projectId,
   addToast,
+  initialTab,
 }: WorkflowSettingsPanelProps) {
   const { t } = useTranslation("app");
-  const [tab, setTab] = useState<"definitions" | "values">(() => (settings.length > 0 ? "values" : "definitions"));
+  const [tab, setTab] = useState<"definitions" | "values">(
+    () => initialTab ?? (settings.length > 0 ? "values" : "definitions"),
+  );
 
   // Bind the projectId active when the panel first mounted for this workflow.
   // The Values tab uses this bound id; a later change to `projectId` surfaces a

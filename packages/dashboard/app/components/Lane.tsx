@@ -84,6 +84,10 @@ function LaneComponent(props: LaneProps) {
     () => workflow.columns.filter((col) => !col.flags.archived && !col.flags.hiddenFromBoard),
     [workflow.columns],
   );
+  const createColumnId = useMemo(() => (
+    visibleColumns.find((col) => col.flags.intake && !col.flags.archived)?.id
+      ?? visibleColumns.find((col) => !col.flags.archived)?.id
+  ), [visibleColumns]);
 
   // Group + sort tasks by column id (stable per render).
   const tasksByColumn = useMemo(() => {
@@ -157,11 +161,14 @@ function LaneComponent(props: LaneProps) {
       </div>
       {!collapsed && (
         <div className="lane-columns" ref={laneRef}>
-          {visibleColumns.map((col) => (
+          {visibleColumns.map((col) => {
+            const isCreateColumn = col.id === createColumnId;
+            return (
             <Column
               key={col.id}
               column={col.id as ColumnType}
               workflowMode
+              workflowId={workflow.id}
               columnDisplayName={col.name}
               columnFlags={col.flags}
               tasks={tasksByColumn[col.id] ?? []}
@@ -197,10 +204,11 @@ function LaneComponent(props: LaneProps) {
               blockerFanoutMap={props.blockerFanoutMap}
               prAuthAvailable={props.prAuthAvailable}
               autoMerge={props.autoMerge}
-              {...(col.flags.intake ? { onQuickCreate: props.onQuickCreate, onNewTask: props.onNewTask, onPlanningMode: props.onPlanningMode, onSubtaskBreakdown: props.onSubtaskBreakdown } : {})}
+              {...(isCreateColumn ? { onQuickCreate: props.onQuickCreate, onNewTask: props.onNewTask, onPlanningMode: props.onPlanningMode, onSubtaskBreakdown: props.onSubtaskBreakdown } : {})}
               {...(col.flags.mergeBlocker ? { onToggleAutoMerge: props.onToggleAutoMerge } : {})}
             />
-          ))}
+            );
+          })}
         </div>
       )}
     </section>

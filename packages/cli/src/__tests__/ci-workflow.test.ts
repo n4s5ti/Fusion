@@ -131,15 +131,16 @@ describe("Merge gate (.github/workflows/pr-checks.yml)", () => {
     ).toBe(false);
   });
 
-  it("keeps build coverage as an explicit PR gate", () => {
+  it("keeps build coverage as an explicit Node/pnpm PR gate", () => {
     const buildSteps = workflow.jobs?.build?.steps ?? [];
+    expect(findCompositeSetupStep(buildSteps)).toBeDefined();
     expect(
       buildSteps.some(
         (step: any) =>
           step.name === "Install Bun" ||
           (typeof step.uses === "string" && step.uses.includes("oven-sh/setup-bun")),
       ),
-    ).toBe(true);
+    ).toBe(false);
     expect(
       buildSteps.some(
         (step: any) => step.name === "Build" && typeof step.run === "string" && step.run.includes("pnpm build"),

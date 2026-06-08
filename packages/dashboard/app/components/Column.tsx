@@ -151,6 +151,8 @@ interface ColumnProps {
    *  column behavior (label, bulk actions, archived detection) from legacy
    *  literals to trait-flag predicates. Flag OFF leaves all behavior legacy. */
   workflowMode?: boolean;
+  /** Workflow id for column-aware task creation in workflow mode. */
+  workflowId?: string;
   /** Display name for this column, from the workflow definition. */
   columnDisplayName?: string;
   /** Resolved trait flags for this column (workflow mode). */
@@ -170,7 +172,7 @@ interface ColumnProps {
   getDraggingTaskId?: () => string | null;
 }
 
-function ColumnComponent({ column, tasks, projectId, maxConcurrent, onMoveTask, onPauseTask, onOpenDetail, onOpenGroupModal, addToast, onQuickCreate, onNewTask, autoMerge, onToggleAutoMerge, globalPaused, onUpdateTask, onRetryTask, onArchiveTask, onUnarchiveTask, onDeleteTask, onArchiveAllDone, collapsed, onToggleCollapse, allTasks, availableModels, onPlanningMode, onSubtaskBreakdown, onOpenDetailWithTab, favoriteProviders, favoriteModels, onToggleFavorite, onToggleModelFavorite, isSearchActive, taskStuckTimeoutMs, onOpenMission, lastFetchTimeMs, workflowStepNameLookup, taskCardFieldDefs, blockerFanoutMap, prAuthAvailable, workflowMode, columnDisplayName, columnFlags, onPromote, canDropTask, getDraggingTaskId }: ColumnProps) {
+function ColumnComponent({ column, tasks, projectId, maxConcurrent, onMoveTask, onPauseTask, onOpenDetail, onOpenGroupModal, addToast, onQuickCreate, onNewTask, autoMerge, onToggleAutoMerge, globalPaused, onUpdateTask, onRetryTask, onArchiveTask, onUnarchiveTask, onDeleteTask, onArchiveAllDone, collapsed, onToggleCollapse, allTasks, availableModels, onPlanningMode, onSubtaskBreakdown, onOpenDetailWithTab, favoriteProviders, favoriteModels, onToggleFavorite, onToggleModelFavorite, isSearchActive, taskStuckTimeoutMs, onOpenMission, lastFetchTimeMs, workflowStepNameLookup, taskCardFieldDefs, blockerFanoutMap, prAuthAvailable, workflowMode, workflowId, columnDisplayName, columnFlags, onPromote, canDropTask, getDraggingTaskId }: ColumnProps) {
   const { t } = useTranslation("app");
   // Anchor the board.rejection.* catalog keys for the i18next extractor (it
   // scopes `t` to the useTranslation binding, so the shared translateRejection
@@ -374,6 +376,26 @@ function ColumnComponent({ column, tasks, projectId, maxConcurrent, onMoveTask, 
   }, [shouldPaginate, tasks, visibleTaskCount]);
 
   const hiddenTaskCount = Math.max(0, tasks.length - visibleTasks.length);
+  const canCreateInColumn = Boolean(
+    onQuickCreate &&
+    !isArchived &&
+    (workflowMode || column === "triage"),
+  );
+
+  const handleQuickCreate = useCallback(
+    (input: TaskCreateInput) => {
+      if (!onQuickCreate) return Promise.resolve();
+      if (workflowMode) {
+        return onQuickCreate({
+          ...input,
+          column,
+          ...(workflowId ? { workflowId } : {}),
+        });
+      }
+      return onQuickCreate(input);
+    },
+    [column, onQuickCreate, workflowId, workflowMode],
+  );
 
   const handleLoadMore = useCallback(() => {
     setVisibleTaskCount((current) => Math.min(current + VISIBLE_TASKS_INCREMENT, tasks.length));
@@ -420,6 +442,7 @@ function ColumnComponent({ column, tasks, projectId, maxConcurrent, onMoveTask, 
   const isReviewColumn = workflowMode ? Boolean(columnFlags?.mergeBlocker || columnFlags?.humanReview) : column === "in-review";
   const hasColumnBulkActions = isTodoLikeColumn || isProcessingColumn || isReviewColumn;
   const isMenuBusy = isReplanning || isPausingAll || isMovingAllToTodo;
+  const columnLabelText = workflowMode ? (columnDisplayName ?? COLUMN_LABELS[column] ?? column) : COLUMN_LABELS[column];
 
   const handlePauseAll = useCallback(async () => {
     if (!onPauseTask) return;
@@ -429,7 +452,7 @@ function ColumnComponent({ column, tasks, projectId, maxConcurrent, onMoveTask, 
 
     const confirmed = await confirm({
       title: t("column.stopAllTitle", "Stop All Tasks"),
-      message: t("column.stopAllMessage", "Stop all {{count}} {{columnLabel}} task{{plural}}?", { count: pauseEligibleCount, columnLabel: COLUMN_LABELS[column].toLowerCase(), plural: pauseEligibleCount === 1 ? "" : "s" }),
+      message: t("column.stopAllMessage", "Stop all {{count}} {{columnLabel}} task{{plural}}?", { count: pauseEligibleCount, columnLabel: columnLabelText.toLowerCase(), plural: pauseEligibleCount === 1 ? "" : "s" }),
       danger: true,
     });
     if (!confirmed) return;
@@ -449,7 +472,7 @@ function ColumnComponent({ column, tasks, projectId, maxConcurrent, onMoveTask, 
     } finally {
       setIsPausingAll(false);
     }
-  }, [onPauseTask, pauseEligibleCount, column, pauseEligibleTasks, addToast, confirm]);
+  }, [onPauseTask, pauseEligibleCount, columnLabelText, pauseEligibleTasks, addToast, confirm, t]);
 
   const handleMoveAllToTodo = useCallback(async () => {
     setIsMenuOpen(false);
@@ -457,7 +480,7 @@ function ColumnComponent({ column, tasks, projectId, maxConcurrent, onMoveTask, 
 
     const confirmed = await confirm({
       title: t("column.moveAllToTodoTitle", "Move All to Todo"),
-      message: t("column.moveAllToTodoMessage", "Move all {{count}} {{columnLabel}} task{{plural}} to Todo?", { count: tasks.length, columnLabel: COLUMN_LABELS[column].toLowerCase(), plural: tasks.length === 1 ? "" : "s" }),
+      message: t("column.moveAllToTodoMessage", "Move all {{count}} {{columnLabel}} task{{plural}} to Todo?", { count: tasks.length, columnLabel: columnLabelText.toLowerCase(), plural: tasks.length === 1 ? "" : "s" }),
     });
     if (!confirmed) return;
 
@@ -502,7 +525,7 @@ function ColumnComponent({ column, tasks, projectId, maxConcurrent, onMoveTask, 
     } finally {
       setIsMovingAllToTodo(false);
     }
-  }, [tasks, column, onMoveTask, addToast, confirm]);
+  }, [tasks, columnLabelText, onMoveTask, addToast, confirm, t]);
 
   const handleArchiveAll = useCallback(async () => {
     if (!onArchiveAllDone) return;
@@ -650,9 +673,9 @@ function ColumnComponent({ column, tasks, projectId, maxConcurrent, onMoveTask, 
       )}
       {!isCollapsed && (
         <div className="column-body">
-          {(workflowMode ? Boolean(columnFlags?.intake) : column === "triage") && onQuickCreate && (
+          {canCreateInColumn && (
             <QuickEntryBox 
-              onCreate={onQuickCreate} 
+              onCreate={handleQuickCreate}
               addToast={addToast} 
               tasks={allTasks ?? []}
               availableModels={availableModels}

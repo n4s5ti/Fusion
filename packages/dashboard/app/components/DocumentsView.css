@@ -3,6 +3,9 @@
   display: flex;
   flex-direction: column;
   height: 100%;
+  width: 100%;
+  flex: 1 1 auto;
+  min-width: 0;
   min-height: 0;
 }
 
@@ -303,8 +306,7 @@
   display: flex;
   flex-direction: column;
   gap: var(--space-md);
-  margin: 0 auto;
-  width: min(100%, 880px);
+  width: 100%;
 }
 
 .documents-content-header {
@@ -354,8 +356,7 @@
 }
 
 .documents-task-list-wrap {
-  width: min(100%, 960px);
-  margin: 0 auto;
+  width: 100%;
 }
 
 .documents-view-list {
@@ -732,4 +733,3 @@
     min-height: 36px;
   }
 }
-

@@ -1244,6 +1244,11 @@ function AppInner() {
     pushNav({ type: "modal", close: modalManager.closeWorkflowEditor });
   }, [modalManager, pushNav]);
 
+  const openCreateWorkflowWithNav = useCallback(() => {
+    modalManager.openWorkflowEditor("create");
+    pushNav({ type: "modal", close: modalManager.closeWorkflowEditor });
+  }, [modalManager, pushNav]);
+
   const openUsageWithNav = useCallback((anchorRect?: DOMRect | null) => {
     modalManager.openUsage(anchorRect);
     pushNav({ type: "modal", close: modalManager.closeUsage });
@@ -1742,6 +1747,8 @@ function AppInner() {
             onOpenMission={handleOpenMission}
             lastFetchTimeMs={lastFetchTimeMs}
             prAuthAvailable={prAuthAvailable}
+            onOpenWorkflowEditor={openWorkflowEditorWithNav}
+            onCreateWorkflow={openCreateWorkflowWithNav}
           />
         </PageErrorBoundary>
       );
@@ -1778,6 +1785,7 @@ function AppInner() {
           searchQuery={searchQuery}
           lastFetchTimeMs={lastFetchTimeMs}
           prAuthAvailable={prAuthAvailable}
+          onCreateWorkflow={openCreateWorkflowWithNav}
         />
       </PageErrorBoundary>
     );

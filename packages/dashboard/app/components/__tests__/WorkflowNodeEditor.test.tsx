@@ -3,7 +3,7 @@ import { render, screen, waitFor, cleanup, within } from "@testing-library/react
 import type { WorkflowDefinition, Settings } from "@fusion/core";
 import type { Agent } from "../../api";
 import { irToFlow, flowToIr, emptyWorkflowIr, emptyWorkflowLayout, foreachChildFlowId } from "../workflow-flow-mapping";
-import { BUILTIN_STEPWISE_CODING_WORKFLOW_IR } from "@fusion/core";
+import { BUILTIN_CODING_WORKFLOW_IR, BUILTIN_STEPWISE_CODING_WORKFLOW_IR } from "@fusion/core";
 
 vi.mock("../../api", () => ({
   fetchWorkflows: vi.fn(),
@@ -39,6 +39,8 @@ vi.mock("../../api", () => ({
   fetchSettings: vi.fn(),
   updateSettings: vi.fn(),
   updateGlobalSettings: vi.fn(),
+  fetchWorkflowSettingValues: vi.fn().mockResolvedValue({ stored: {}, effective: {}, orphaned: [] }),
+  updateWorkflowSettingValues: vi.fn().mockResolvedValue({ stored: {}, effective: {}, orphaned: [] }),
 }));
 
 import { fireEvent } from "@testing-library/react";
@@ -119,8 +121,16 @@ function v2Def(): WorkflowDefinition {
 }
 
 function builtinDef(): WorkflowDefinition {
-  const d = v2Def();
-  return { ...d, id: "builtin:coding", name: "Default coding workflow", description: "Ships with Fusion" };
+  return {
+    id: "builtin:coding",
+    kind: "workflow",
+    name: "Default coding workflow",
+    description: "Ships with Fusion",
+    ir: BUILTIN_CODING_WORKFLOW_IR,
+    layout: {},
+    createdAt: "2026-06-03T00:00:00.000Z",
+    updatedAt: "2026-06-03T00:00:00.000Z",
+  };
 }
 
 function fragmentDef(): WorkflowDefinition {
@@ -203,6 +213,7 @@ describe("WorkflowNodeEditor", () => {
   });
 
   afterEach(() => {
+    localStorage.removeItem("fusion:wf-sidebar-settings-collapsed");
     cleanup();
     vi.clearAllMocks();
   });
@@ -840,6 +851,31 @@ describe("WorkflowNodeEditor — built-in stepwise selection render path", () =>
     expect(approve).toMatchObject({ from: "step-review", to: "step-done" });
     expect(approve?.kind).toBeUndefined();
   });
+
+  it("shows the built-in seam prompt text in the read-only node inspector", async () => {
+    vi.mocked(fetchWorkflows).mockResolvedValue([builtinDef()]);
+    render(<WorkflowNodeEditor isOpen onClose={() => {}} addToast={() => {}} />);
+
+    await screen.findByTestId("wf-readonly-banner");
+    const promptNodes = await screen.findAllByTestId("wf-node-prompt");
+    const executeNode = promptNodes.find((node) => within(node).queryByText("Execute"));
+    expect(executeNode).toBeTruthy();
+
+    fireEvent.click(executeNode!);
+
+    expect((screen.getByLabelText("Prompt") as HTMLTextAreaElement).value).toContain(
+      "Fusion's standard implementation prompt",
+    );
+  });
+
+  it("opens workflow settings on the Values tab from the editor sidebar", async () => {
+    localStorage.setItem("fusion:wf-sidebar-settings-collapsed", "0");
+    vi.mocked(fetchWorkflows).mockResolvedValue([builtinDef()]);
+    render(<WorkflowNodeEditor isOpen onClose={() => {}} addToast={() => {}} projectId="p1" />);
+
+    await screen.findByTestId("wf-settings-values");
+    expect(screen.getByTestId("wf-settings-tab-values")).toHaveAttribute("aria-selected", "true");
+  });
 });
 
 // ── U2: edge-condition authoring (compile-banner split) ─────────────────────
@@ -930,6 +966,13 @@ describe("WorkflowNodeEditor — U4 create dialog / delete / inline rename / dir
     expect(await screen.findByTestId("wf-create-error")).toBeInTheDocument();
     expect(createWorkflow).not.toHaveBeenCalled();
     expect(screen.getByTestId("wf-create-dialog")).toBeInTheDocument();
+  });
+
+  it("can open directly into the create dialog", async () => {
+    vi.mocked(fetchWorkflows).mockResolvedValue([]);
+    render(<WorkflowNodeEditor isOpen onClose={() => {}} addToast={() => {}} initialAction="create" />);
+
+    expect(await screen.findByTestId("wf-create-dialog")).toBeInTheDocument();
   });
 
   it("creates and activates a workflow on a valid submit", async () => {

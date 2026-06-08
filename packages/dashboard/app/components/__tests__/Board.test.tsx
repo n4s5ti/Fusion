@@ -7,6 +7,8 @@ import { COLUMNS } from "@fusion/core";
 import type { Task } from "@fusion/core";
 
 const fetchBatchMock = vi.fn();
+const pendingWorkflowSteps = () => new Promise<never>(() => {});
+const fetchWorkflowStepsMock = vi.fn().mockImplementation(pendingWorkflowSteps);
 
 vi.mock("../../hooks/useBatchBadgeFetch", () => ({
   useBatchBadgeFetch: vi.fn(() => ({
@@ -17,18 +19,12 @@ vi.mock("../../hooks/useBatchBadgeFetch", () => ({
   })),
 }));
 
-const fetchBoardWorkflowsMock = vi.fn().mockResolvedValue({
-  flagEnabled: false,
-  defaultWorkflowId: "builtin:coding",
-  workflows: [],
-  taskWorkflowIds: {},
-});
+const pendingBoardWorkflows = () => new Promise<never>(() => {});
+const fetchBoardWorkflowsMock = vi.fn().mockImplementation(pendingBoardWorkflows);
 const promoteTaskMock = vi.fn().mockResolvedValue({});
 
 vi.mock("../../api", () => ({
-  fetchWorkflowSteps: vi.fn().mockResolvedValue([
-    { id: "WS-003", name: "Accessibility Audit", enabled: true },
-  ]),
+  fetchWorkflowSteps: (...args: unknown[]) => fetchWorkflowStepsMock(...args),
   fetchBoardWorkflows: (...args: unknown[]) => fetchBoardWorkflowsMock(...args),
   promoteTask: (...args: unknown[]) => promoteTaskMock(...args),
 }));
@@ -52,10 +48,10 @@ const columnRenderCounts: Record<string, number> = {};
 
 // Mock child components so we only test Board's own rendering
 vi.mock("../Column", () => ({
-  Column: React.memo(({ column, tasks, onToggleCollapse, favoriteProviders, favoriteModels, onToggleFavorite, onToggleModelFavorite, isSearchActive, workflowStepNameLookup }: { column: string; tasks: Task[]; onToggleCollapse?: () => void; favoriteProviders?: string[]; favoriteModels?: string[]; onToggleFavorite?: (provider: string) => void; onToggleModelFavorite?: (modelId: string) => void; isSearchActive?: boolean; workflowStepNameLookup?: ReadonlyMap<string, string> }) => {
+  Column: React.memo(({ column, tasks, onToggleCollapse, onQuickCreate, onNewTask, favoriteProviders, favoriteModels, onToggleFavorite, onToggleModelFavorite, isSearchActive, workflowStepNameLookup }: { column: string; tasks: Task[]; onToggleCollapse?: () => void; onQuickCreate?: unknown; onNewTask?: unknown; favoriteProviders?: string[]; favoriteModels?: string[]; onToggleFavorite?: (provider: string) => void; onToggleModelFavorite?: (modelId: string) => void; isSearchActive?: boolean; workflowStepNameLookup?: ReadonlyMap<string, string> }) => {
     columnRenderCounts[column] = (columnRenderCounts[column] ?? 0) + 1;
     return (
-      <div data-testid={`column-${column}`} data-tasks={JSON.stringify(tasks)} data-favorite-providers={JSON.stringify(favoriteProviders ?? [])} data-favorite-models={JSON.stringify(favoriteModels ?? [])} data-has-toggle-favorite={onToggleFavorite ? "yes" : "no"} data-has-toggle-model-favorite={onToggleModelFavorite ? "yes" : "no"} data-is-search-active={isSearchActive ? "true" : "false"} data-workflow-lookup-size={String(workflowStepNameLookup?.size ?? 0)}>
+      <div data-testid={`column-${column}`} data-tasks={JSON.stringify(tasks)} data-has-quick-create={onQuickCreate ? "yes" : "no"} data-has-new-task={onNewTask ? "yes" : "no"} data-favorite-providers={JSON.stringify(favoriteProviders ?? [])} data-favorite-models={JSON.stringify(favoriteModels ?? [])} data-has-toggle-favorite={onToggleFavorite ? "yes" : "no"} data-has-toggle-model-favorite={onToggleModelFavorite ? "yes" : "no"} data-is-search-active={isSearchActive ? "true" : "false"} data-workflow-lookup-size={String(workflowStepNameLookup?.size ?? 0)}>
         {onToggleCollapse && <button onClick={onToggleCollapse}>toggle-{column}</button>}
       </div>
     );
@@ -94,16 +90,13 @@ const noopAsync = () => Promise.resolve({} as any);
 
 beforeEach(() => {
   fetchBatchMock.mockReset();
+  fetchWorkflowStepsMock.mockReset();
+  fetchWorkflowStepsMock.mockImplementation(pendingWorkflowSteps);
   promoteTaskMock.mockClear();
   subscribeSseMock.mockClear();
   for (const key of Object.keys(sseHandlers)) delete sseHandlers[key];
   fetchBoardWorkflowsMock.mockReset();
-  fetchBoardWorkflowsMock.mockResolvedValue({
-    flagEnabled: false,
-    defaultWorkflowId: "builtin:coding",
-    workflows: [],
-    taskWorkflowIds: {},
-  });
+  fetchBoardWorkflowsMock.mockImplementation(pendingBoardWorkflows);
   try {
     window.localStorage.clear();
   } catch {
@@ -219,6 +212,9 @@ describe("Board", () => {
   });
 
   it("forwards board-level workflow name lookup to columns", async () => {
+    fetchWorkflowStepsMock.mockResolvedValue([
+      { id: "WS-003", name: "Accessibility Audit", enabled: true },
+    ]);
     renderBoard();
 
     await waitFor(() => {
@@ -926,7 +922,12 @@ describe("Board", () => {
     }
 
     it("flag OFF renders the legacy single-lane board byte-identically", async () => {
-      // Default mock: flagEnabled false.
+      fetchBoardWorkflowsMock.mockResolvedValue({
+        flagEnabled: false,
+        defaultWorkflowId: "builtin:coding",
+        workflows: [],
+        taskWorkflowIds: {},
+      });
       renderBoard({ tasks: [mkTask({ id: "FN-1" })] });
       // Let the board-workflows fetch resolve (flagEnabled:false) so the async
       // state settle is wrapped and the legacy board stays the rendered output.
@@ -940,16 +941,58 @@ describe("Board", () => {
       expect(screen.queryByTestId(/^lane-/)).toBeNull();
     });
 
-    it("tasks with no selection render in the default lane (R16)", async () => {
+    it("tasks with no selection render in the default selected workflow", async () => {
       enableFlag({ "FN-1": "builtin:coding", "FN-2": "builtin:coding" });
       renderBoard({ tasks: [mkTask({ id: "FN-1" }), mkTask({ id: "FN-2", column: "in-progress" })] });
-      await waitFor(() => expect(screen.getByTestId("lane-builtin:coding")).toBeDefined());
-      const lane = screen.getByTestId("lane-builtin:coding");
-      expect(JSON.parse(lane.getAttribute("data-lane-task-ids") || "[]").sort()).toEqual(["FN-1", "FN-2"]);
-      expect(lane.getAttribute("data-lane-count")).toBe("2");
+      await waitFor(() => expect(screen.getByTestId("column-todo")).toBeDefined());
+      expect(JSON.parse(screen.getByTestId("column-todo").getAttribute("data-tasks") || "[]").map((task: Task) => task.id)).toEqual(["FN-1"]);
+      expect(JSON.parse(screen.getByTestId("column-in-progress").getAttribute("data-tasks") || "[]").map((task: Task) => task.id)).toEqual(["FN-2"]);
+      expect(screen.queryByLabelText("Select workflow")).toBeNull();
     });
 
-    it("each card appears in exactly one lane over a mixed fixture", async () => {
+    it("puts create controls on the workflow intake column instead of the first visible column", async () => {
+      const workflow = {
+        id: "wf-intake-second",
+        name: "Intake second",
+        columns: [
+          { id: "queue", name: "Queue", flags: { hold: true } },
+          { id: "idea", name: "Idea", flags: { intake: true } },
+          { id: "shipped", name: "Shipped", flags: { complete: true } },
+        ],
+      };
+      enableFlag({ "FN-1": workflow.id }, [workflow]);
+      renderBoard({ tasks: [mkTask({ id: "FN-1", column: "queue" })] });
+
+      await waitFor(() => expect(screen.getByTestId("column-queue")).toBeDefined());
+
+      expect(screen.getByTestId("column-queue").getAttribute("data-has-new-task")).toBe("no");
+      expect(screen.getByTestId("column-queue").getAttribute("data-has-quick-create")).toBe("no");
+      expect(screen.getByTestId("column-idea").getAttribute("data-has-new-task")).toBe("yes");
+      expect(screen.getByTestId("column-idea").getAttribute("data-has-quick-create")).toBe("yes");
+    });
+
+    it("keeps workflow create and edit actions visible when only one workflow exists", async () => {
+      const onCreateWorkflow = vi.fn();
+      const onOpenWorkflowEditor = vi.fn();
+      enableFlag({ "FN-1": "builtin:coding" }, [DEFAULT_WORKFLOW]);
+
+      renderBoard({
+        tasks: [mkTask({ id: "FN-1", column: "triage" })],
+        onCreateWorkflow,
+        onOpenWorkflowEditor,
+      });
+
+      await waitFor(() => expect(screen.getByTestId("column-triage")).toBeDefined());
+      expect(screen.queryByLabelText("Select workflow")).toBeNull();
+
+      fireEvent.click(screen.getByRole("button", { name: "New workflow" }));
+      fireEvent.click(screen.getByRole("button", { name: "Edit workflows" }));
+      expect(onCreateWorkflow).toHaveBeenCalledTimes(1);
+      expect(onOpenWorkflowEditor).toHaveBeenCalledTimes(1);
+    });
+
+    it("renders one selected workflow at a time and switches workflows from the dropdown", async () => {
+      const onCreateWorkflow = vi.fn();
       enableFlag(
         { "FN-1": "builtin:coding", "FN-2": "wf-custom", "FN-3": "wf-custom" },
         [DEFAULT_WORKFLOW, CUSTOM_WORKFLOW],
@@ -960,57 +1003,75 @@ describe("Board", () => {
           mkTask({ id: "FN-2", column: "intake" }),
           mkTask({ id: "FN-3", column: "intake" }),
         ],
+        onCreateWorkflow,
       });
-      await waitFor(() => expect(screen.getByTestId("lane-wf-custom")).toBeDefined());
-      const defaultLaneIds = JSON.parse(screen.getByTestId("lane-builtin:coding").getAttribute("data-lane-task-ids") || "[]");
-      const customLaneIds = JSON.parse(screen.getByTestId("lane-wf-custom").getAttribute("data-lane-task-ids") || "[]");
-      const all = [...defaultLaneIds, ...customLaneIds].sort();
-      expect(all).toEqual(["FN-1", "FN-2", "FN-3"]);
-      // No id appears twice.
-      expect(new Set(all).size).toBe(all.length);
+      const selector = await screen.findByLabelText("Select workflow") as HTMLSelectElement;
+      expect(selector.value).toBe("builtin:coding");
+      fireEvent.click(screen.getByRole("button", { name: "New workflow" }));
+      expect(onCreateWorkflow).toHaveBeenCalledTimes(1);
+      expect(JSON.parse(screen.getByTestId("column-todo").getAttribute("data-tasks") || "[]").map((task: Task) => task.id)).toEqual(["FN-1"]);
+      expect(screen.queryByTestId("column-intake")).toBeNull();
+
+      fireEvent.change(selector, { target: { value: "wf-custom" } });
+      await waitFor(() => expect(screen.getByTestId("column-intake")).toBeDefined());
+      expect(JSON.parse(screen.getByTestId("column-intake").getAttribute("data-tasks") || "[]").map((task: Task) => task.id).sort()).toEqual(["FN-2", "FN-3"]);
+      expect(screen.queryByTestId("column-todo")).toBeNull();
     });
 
-    it("hides zero-card lanes and puts the default lane first", async () => {
+    it("keeps the default workflow first in the dropdown even when another workflow has cards", async () => {
       enableFlag(
         { "FN-2": "wf-custom" },
         [DEFAULT_WORKFLOW, CUSTOM_WORKFLOW],
       );
-      // Only the custom workflow has a card; the default lane has none → hidden.
       renderBoard({ tasks: [mkTask({ id: "FN-2", column: "intake" })] });
-      await waitFor(() => expect(screen.getByTestId("lane-wf-custom")).toBeDefined());
-      expect(screen.queryByTestId("lane-builtin:coding")).toBeNull();
+      const selector = await screen.findByLabelText("Select workflow") as HTMLSelectElement;
+      const options = [...selector.options].map((option) => option.value);
+      expect(options).toEqual(["builtin:coding", "wf-custom"]);
+      expect(selector.value).toBe("builtin:coding");
+      expect(screen.queryByTestId("column-intake")).toBeNull();
     });
 
-    it("orders the default lane first when both have cards", async () => {
+    it("orders the default workflow first when workflow payload order differs", async () => {
       enableFlag(
         { "FN-1": "builtin:coding", "FN-2": "wf-custom" },
         [CUSTOM_WORKFLOW, DEFAULT_WORKFLOW],
       );
       renderBoard({ tasks: [mkTask({ id: "FN-1" }), mkTask({ id: "FN-2", column: "intake" })] });
-      await waitFor(() => expect(screen.getByTestId("lane-builtin:coding")).toBeDefined());
-      const lanes = screen.getAllByTestId(/^lane-/);
-      expect(lanes[0].getAttribute("data-testid")).toBe("lane-builtin:coding");
+      const selector = await screen.findByLabelText("Select workflow") as HTMLSelectElement;
+      expect([...selector.options].map((option) => option.value)).toEqual(["builtin:coding", "wf-custom"]);
     });
 
-    it("excludes archived cards from lanes", async () => {
+    it("excludes archived cards from the selected workflow board", async () => {
       enableFlag({ "FN-1": "builtin:coding", "FN-9": "builtin:coding" });
       renderBoard({ tasks: [mkTask({ id: "FN-1" }), mkTask({ id: "FN-9", column: "archived" })] });
-      await waitFor(() => expect(screen.getByTestId("lane-builtin:coding")).toBeDefined());
-      const ids = JSON.parse(screen.getByTestId("lane-builtin:coding").getAttribute("data-lane-task-ids") || "[]");
+      await waitFor(() => expect(screen.getByTestId("column-todo")).toBeDefined());
+      const ids = JSON.parse(screen.getByTestId("column-todo").getAttribute("data-tasks") || "[]").map((task: Task) => task.id);
       expect(ids).toEqual(["FN-1"]);
+      expect(screen.queryByTestId("column-archived")).toBeNull();
     });
 
-    it("persists lane collapse state to localStorage", async () => {
-      window.localStorage.setItem("kb-dashboard-lane-collapsed", JSON.stringify(["builtin:coding"]));
-      enableFlag({ "FN-1": "builtin:coding" });
+    it("renders selected workflow columns as direct children of the horizontal board", async () => {
+      enableFlag({ "FN-1": "builtin:coding" }, [DEFAULT_WORKFLOW, CUSTOM_WORKFLOW]);
       renderBoard({ tasks: [mkTask({ id: "FN-1" })] });
-      await waitFor(() => expect(screen.getByTestId("lane-builtin:coding")).toBeDefined());
-      expect(screen.getByTestId("lane-builtin:coding").getAttribute("data-lane-collapsed")).toBe("true");
+      await waitFor(() => expect(screen.getByRole("main").className).toContain("board-workflow-columns"));
+      expect([...screen.getByRole("main").children].map((child) => child.getAttribute("data-testid"))).toEqual([
+        "column-triage",
+        "column-todo",
+        "column-in-progress",
+        "column-in-review",
+        "column-done",
+      ]);
     });
   });
 
   describe("workflow:updated SSE invalidation (#1406)", () => {
     it("re-fetches board-workflows when a workflow:updated SSE event arrives", async () => {
+      fetchBoardWorkflowsMock.mockResolvedValue({
+        flagEnabled: false,
+        defaultWorkflowId: "builtin:coding",
+        workflows: [],
+        taskWorkflowIds: {},
+      });
       renderBoard({ projectId: "proj-1" });
       // Initial mount fetch.
       await waitFor(() => expect(fetchBoardWorkflowsMock).toHaveBeenCalledTimes(1));
