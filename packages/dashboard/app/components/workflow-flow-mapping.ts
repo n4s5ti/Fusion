@@ -87,6 +87,10 @@ export const COLUMN_BAND_HEIGHT = 220;
 export const COLUMN_BAND_WIDTH = 5000;
 export const COLUMN_BAND_X = -40;
 export const COLUMN_BAND_TOP = 0;
+/** Layering: swimlane/template groups sit below routed edges; step cards sit above. */
+const WF_BACKGROUND_GROUP_Z_INDEX = 0;
+const WF_EDGE_Z_INDEX = 1;
+const WF_STEP_NODE_Z_INDEX = 2;
 /** React Flow node id for a column band group node. */
 export const columnBandNodeId = (columnId: string): string => `__col__:${columnId}`;
 export const isColumnBandNode = (id: string): boolean => id.startsWith("__col__:");
@@ -153,8 +157,8 @@ export function columnsToBandNodes(columns: WorkflowIrColumn[]): FlowNode<Workfl
     draggable: false,
     selectable: false,
     deletable: false,
-    // Bands sit behind step nodes so steps remain clickable/draggable.
-    zIndex: -1,
+    // Bands sit behind routed edges and step nodes so built-in topology stays visible.
+    zIndex: WF_BACKGROUND_GROUP_Z_INDEX,
     style: {
       width: COLUMN_BAND_WIDTH,
       height: COLUMN_BAND_HEIGHT,
@@ -212,6 +216,7 @@ function irEdgeToFlow(edge: WorkflowIrEdge, index: number, idScope = ""): FlowEd
     className: edgeClassName(condition, isRework),
     interactionWidth: WF_EDGE_INTERACTION_WIDTH,
     markerEnd: undefined,
+    zIndex: WF_EDGE_Z_INDEX,
   };
 }
 
@@ -269,6 +274,7 @@ export function irToFlow(def: WorkflowDefinition): {
           extent: "parent",
           data: { kind: innerKind, label: nodeLabel(inner), config: { ...(inner.config ?? {}) } },
           deletable: true,
+          zIndex: WF_STEP_NODE_Z_INDEX,
         });
       });
       template.edges.forEach((edge, eIdx) => {
@@ -289,6 +295,7 @@ export function irToFlow(def: WorkflowDefinition): {
         },
         style: { width: FOREACH_GROUP_WIDTH, height: FOREACH_GROUP_HEIGHT },
         deletable: true,
+        zIndex: WF_BACKGROUND_GROUP_Z_INDEX,
       };
     }
 
@@ -303,6 +310,7 @@ export function irToFlow(def: WorkflowDefinition): {
         column,
       },
       deletable: node.kind !== "start" && node.kind !== "end",
+      zIndex: WF_STEP_NODE_Z_INDEX,
     };
   });
 
@@ -941,6 +949,7 @@ function irNodeToFlowNode(
     position,
     data: { kind, label: nodeLabel(node), config: { ...(node.config ?? {}) } },
     deletable: node.kind !== "start" && node.kind !== "end",
+    zIndex: WF_STEP_NODE_Z_INDEX,
   };
 }
 
@@ -1018,6 +1027,7 @@ export function insertFragment(
           extent: "parent",
           data: { kind: innerKind, label: nodeLabel(inner), config: { ...(inner.config ?? {}) } },
           deletable: true,
+          zIndex: WF_STEP_NODE_Z_INDEX,
         });
       });
       template.edges.forEach((edge, eIdx) => {
@@ -1037,6 +1047,7 @@ export function insertFragment(
         },
         style: { width: FOREACH_GROUP_WIDTH, height: FOREACH_GROUP_HEIGHT },
         deletable: true,
+        zIndex: WF_BACKGROUND_GROUP_Z_INDEX,
       };
     }
     return irNodeToFlowNode(node, id, pos);

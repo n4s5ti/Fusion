@@ -2,8 +2,20 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, waitFor, cleanup, within } from "@testing-library/react";
 import type { WorkflowDefinition, Settings } from "@fusion/core";
 import type { Agent } from "../../api";
-import { irToFlow, flowToIr, emptyWorkflowIr, emptyWorkflowLayout, foreachChildFlowId } from "../workflow-flow-mapping";
-import { BUILTIN_CODING_WORKFLOW_IR, BUILTIN_STEPWISE_CODING_WORKFLOW_IR } from "@fusion/core";
+import {
+  irToFlow,
+  flowToIr,
+  emptyWorkflowIr,
+  emptyWorkflowLayout,
+  foreachChildFlowId,
+  WF_EDGE_INTERACTION_WIDTH,
+} from "../workflow-flow-mapping";
+import {
+  BUILTIN_CODING_WORKFLOW_IR,
+  BUILTIN_PR_WORKFLOW_IR,
+  BUILTIN_STEPWISE_CODING_WORKFLOW_IR,
+  BUILTIN_WORKFLOWS,
+} from "@fusion/core";
 
 vi.mock("../../api", () => ({
   fetchWorkflows: vi.fn(),
@@ -133,6 +145,36 @@ function builtinDef(): WorkflowDefinition {
   };
 }
 
+function builtinPrDef(): WorkflowDefinition {
+  return {
+    id: "builtin:pr-workflow",
+    kind: "workflow",
+    name: "PR lifecycle (built-in)",
+    description: "Ships with Fusion",
+    ir: BUILTIN_PR_WORKFLOW_IR,
+    layout: {},
+    createdAt: "2026-06-03T00:00:00.000Z",
+    updatedAt: "2026-06-03T00:00:00.000Z",
+  };
+}
+
+function edgeRenderableAssertion(definition: WorkflowDefinition) {
+  const flow = irToFlow(definition);
+  const nodeIds = new Set(flow.nodes.map((node) => node.id));
+  expect(flow.edges.length, `${definition.id} should project edges`).toBeGreaterThan(0);
+  for (const edge of flow.edges) {
+    expect(nodeIds.has(edge.source), `${definition.id} edge ${edge.id} source ${edge.source}`).toBe(true);
+    expect(nodeIds.has(edge.target), `${definition.id} edge ${edge.id} target ${edge.target}`).toBe(true);
+    expect(edge.interactionWidth, `${definition.id} edge ${edge.id} interaction width`).toBe(
+      WF_EDGE_INTERACTION_WIDTH,
+    );
+    expect(edge.zIndex, `${definition.id} edge ${edge.id} z-index`).toBeGreaterThan(0);
+    expect(edge.sourceHandle, `${definition.id} edge ${edge.id} source handle`).toBeUndefined();
+    expect(edge.targetHandle, `${definition.id} edge ${edge.id} target handle`).toBeUndefined();
+  }
+  return flow;
+}
+
 function fragmentDef(): WorkflowDefinition {
   return {
     id: "WF-FRAG",
@@ -202,6 +244,37 @@ describe("workflow-flow-mapping", () => {
     expect(ir.nodes.map((n) => n.kind)).toEqual(["start", "end"]);
     expect(ir.edges).toEqual([{ from: "start", to: "end", condition: "success" }]);
     expect(emptyWorkflowLayout().start).toBeDefined();
+  });
+
+  it("projects every built-in workflow to connected, clickable React Flow edges", () => {
+    expect(BUILTIN_WORKFLOWS.map((workflow) => workflow.id).sort()).toEqual(
+      expect.arrayContaining(["builtin:coding", "builtin:stepwise-coding", "builtin:pr-workflow"]),
+    );
+
+    for (const workflow of BUILTIN_WORKFLOWS) {
+      edgeRenderableAssertion(workflow);
+    }
+  });
+
+  it("keeps built-in edge endpoints connected when layout is empty, undefined, or populated", () => {
+    const populated = BUILTIN_WORKFLOWS.find((workflow) => workflow.id === "builtin:pr-workflow");
+    expect(populated).toBeDefined();
+    edgeRenderableAssertion(populated!);
+    edgeRenderableAssertion({ ...populated!, layout: {} });
+    edgeRenderableAssertion({ ...populated!, layout: undefined });
+  });
+
+  it("projects custom v1 and v2 workflows to the same connected edge contract", () => {
+    edgeRenderableAssertion(def());
+    edgeRenderableAssertion(v2Def());
+  });
+
+  it("preserves duplicate and parallel built-in edges with valid endpoints and hit targets", () => {
+    const { edges } = edgeRenderableAssertion(builtinDef());
+    const failuresToEnd = edges.filter((edge) => edge.target === "end" && edge.data?.condition === "failure");
+    expect(failuresToEnd.map((edge) => edge.source).sort()).toEqual(["execute", "merge", "review"]);
+    expect(new Set(failuresToEnd.map((edge) => edge.id)).size).toBe(failuresToEnd.length);
+    expect(failuresToEnd.every((edge) => edge.interactionWidth === WF_EDGE_INTERACTION_WIDTH)).toBe(true);
   });
 });
 
@@ -767,6 +840,7 @@ describe("WorkflowNodeEditor — built-in stepwise selection render path", () =>
   beforeEach(() => {
     vi.mocked(fetchTraits).mockResolvedValue(TRAIT_CATALOG);
     vi.mocked(fetchStepParsers).mockResolvedValue(["step-headings", "json-steps"]);
+    vi.mocked(fetchModels).mockResolvedValue({ models: [] });
   });
   afterEach(() => {
     cleanup();
@@ -799,6 +873,31 @@ describe("WorkflowNodeEditor — built-in stepwise selection render path", () =>
     expect(flowNodeIds).toContain(foreachChildFlowId("steps", "step-done"));
   });
 
+  it("renders built-in and custom workflow nodes with handles matching projected edges", async () => {
+    vi.mocked(fetchWorkflows).mockResolvedValue([builtinPrDef(), v2Def()]);
+    const { container } = render(<WorkflowNodeEditor isOpen onClose={() => {}} addToast={() => {}} />);
+
+    await screen.findByTestId("wf-readonly-banner");
+    await waitFor(() => expect(screen.getAllByTestId("wf-node-hold").length).toBeGreaterThan(0));
+    const builtInFlow = irToFlow(builtinPrDef());
+    for (const edge of builtInFlow.edges.filter((candidate) => candidate.source === "pr-create")) {
+      expect(container.querySelector(`.react-flow__handle[data-nodeid="${edge.source}"][data-handlepos="right"]`)).toBeInTheDocument();
+      expect(container.querySelector(`.react-flow__handle[data-nodeid="${edge.target}"][data-handlepos="left"]`)).toBeInTheDocument();
+    }
+    expect(builtInFlow.edges.some((edge) => edge.label === "open")).toBe(true);
+    expect(builtInFlow.edges.some((edge) => edge.label === "failed")).toBe(true);
+    expect(builtInFlow.edges.some((edge) => edge.label === "failure")).toBe(true);
+
+    fireEvent.click(screen.getByText("Custom"));
+    await waitFor(() => expect(screen.queryByTestId("wf-readonly-banner")).not.toBeInTheDocument());
+    const customFlow = irToFlow(v2Def());
+    for (const edge of customFlow.edges) {
+      expect(container.querySelector(`.react-flow__handle[data-nodeid="${edge.source}"][data-handlepos="right"]`)).toBeInTheDocument();
+      expect(container.querySelector(`.react-flow__handle[data-nodeid="${edge.target}"][data-handlepos="left"]`)).toBeInTheDocument();
+    }
+    expect(customFlow.edges.every((edge) => edge.label === "success")).toBe(true);
+  });
+
   it("irToFlow on the built-in stepwise IR yields a foreach group + rework-styled template edge (editor load path)", () => {
     // Mirrors exactly what the editor's load effect feeds React Flow:
     //   const flow = irToFlow(activeWorkflow)
@@ -817,6 +916,7 @@ describe("WorkflowNodeEditor — built-in stepwise selection render path", () =>
     // its rework styling so the editor shows the bounded loop-back.
     const reworkEdges = edges.filter((e) => e.data?.kind === "rework");
     expect(reworkEdges.length).toBeGreaterThan(0);
+    expect(group?.zIndex).toBeLessThan(reworkEdges[0]?.zIndex ?? 0);
     expect(reworkEdges.every((e) => e.animated === true && e.className === "wf-edge-rework")).toBe(true);
     expect(reworkEdges.some((e) => e.source === foreachChildFlowId("steps", "step-review"))).toBe(true);
   });
@@ -864,7 +964,7 @@ describe("WorkflowNodeEditor — built-in stepwise selection render path", () =>
     fireEvent.click(executeNode!);
 
     expect((screen.getByLabelText("Prompt") as HTMLTextAreaElement).value).toContain(
-      "Fusion's standard implementation prompt",
+      "task execution agent",
     );
   });
 

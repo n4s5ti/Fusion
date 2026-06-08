@@ -107,6 +107,7 @@ Navigation:
 
 Behavior:
 - Opens a workflow node editor with a workflow list/sidebar, canvas, inspector, and settings/authoring panels
+- Read-only built-in workflows are inspectable in the same canvas as custom workflows, including connected success, failure, and rework edges for their graph topology.
 - The Settings panel is value-first for built-in workflows and groups workflow settings by Models, Review & Approval, Step Execution, and Advanced. Definitions remain available for custom workflow schema authoring.
 - The main Settings modal also exposes the default workflow's Plan/Triage, Executor, and Reviewer model lanes from **Project Models**; those controls write workflow setting values for the active default workflow.
 - On desktop, the editor uses a multi-panel layout for editing the graph and adjacent workflow metadata

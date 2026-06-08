@@ -802,7 +802,7 @@
 
 .wf-column-band {
   border: 1px dashed var(--border);
-  background: var(--bg-secondary);
+  background: color-mix(in srgb, var(--bg-secondary) 65%, transparent);
   border-radius: var(--radius-md);
   pointer-events: none;
 }

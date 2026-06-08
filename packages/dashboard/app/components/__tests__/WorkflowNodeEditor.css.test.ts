@@ -30,10 +30,29 @@ function extractMediaBlocks(css: string, query: string): string[] {
 }
 
 function findRule(blocks: string[], selector: RegExp): string {
-  const rule = blocks.map((block) => block.match(selector)?.[0] ?? "").find(Boolean) ?? "";
+  const globalSelector = new RegExp(selector.source, selector.flags.includes("g") ? selector.flags : `${selector.flags}g`);
+  const matches = blocks.flatMap((block) => [...block.matchAll(globalSelector)].map((match) => match[0]));
+  const rule = matches.at(-1) ?? "";
   expect(rule).toBeTruthy();
   return rule;
 }
+
+describe("WorkflowNodeEditor edge visibility CSS contract", () => {
+  it("keeps swimlane bands translucent so built-in workflow edges remain visible", () => {
+    const editorCss = readComponentCss("WorkflowNodeEditor.css");
+    const columnBandRule = findRule([editorCss], /\.wf-column-band\s*\{[^}]*\}/);
+    expect(columnBandRule).toMatch(/background\s*:\s*color-mix\(in srgb, var\(--bg-secondary\) 65%, transparent\)\s*;/);
+    expect(columnBandRule).toMatch(/pointer-events\s*:\s*none\s*;/);
+
+    const reworkRule = findRule([editorCss], /\.wf-edge-rework \.react-flow__edge-path\s*\{[^}]*\}/);
+    expect(reworkRule).toMatch(/stroke\s*:\s*var\(--accent, var\(--ws-info\)\)\s*;/);
+    expect(reworkRule).toMatch(/stroke-dasharray\s*:\s*5 4\s*;/);
+
+    const failureRule = findRule([editorCss], /\.react-flow__edge\.wf-edge-failure \.react-flow__edge-path\s*\{[^}]*\}/);
+    expect(failureRule).toMatch(/stroke\s*:\s*var\(--ws-error\)\s*;/);
+    expect(failureRule).toMatch(/stroke-dasharray\s*:\s*2 4\s*;/);
+  });
+});
 
 describe("WorkflowNodeEditor mobile CSS contract", () => {
   it("FN-5992 preserves desktop editor min-width while adding full-screen mobile overrides", () => {
@@ -49,7 +68,7 @@ describe("WorkflowNodeEditor mobile CSS contract", () => {
     expect(editorModalRule).toMatch(/border-radius\s*:\s*0\s*;/);
     expect(editorModalRule).toMatch(/resize\s*:\s*none\s*;/);
 
-    const sidebarRule = findRule(mobileBlocks, /\.wf-editor-sidebar\s*\{[^}]*\}/);
+    const sidebarRule = findRule(mobileBlocks, /\.wf-editor-body--list-stage \.wf-editor-sidebar\s*\{[^}]*\}/);
     expect(sidebarRule).toMatch(/width\s*:\s*100%\s*;/);
 
     const inspectorRule = findRule(mobileBlocks, /\.wf-editor-inspector\s*\{[^}]*\}/);
@@ -60,7 +79,7 @@ describe("WorkflowNodeEditor mobile CSS contract", () => {
     expect(settingsRule).toMatch(/min-width\s*:\s*0\s*;/);
 
     const canvasWrapRule = findRule(mobileBlocks, /\.wf-editor-canvas-wrap\s*\{[^}]*\}/);
-    expect(canvasWrapRule).toMatch(/min-height\s*:\s*40vh\s*;/);
+    expect(canvasWrapRule).toMatch(/min-height\s*:\s*0\s*;/);
   });
 
   it("FN-5992 covers create dialog and AI panel mobile overlays", () => {
