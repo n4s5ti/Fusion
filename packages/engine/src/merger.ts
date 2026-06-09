@@ -514,7 +514,7 @@ export function shouldSyncDependenciesForMerge(
   );
 }
 
-function getConfiguredWorktreeInitCommand(settings?: Settings | null): string | null {
+function getConfiguredWorktreeInitCommand(settings?: Pick<Settings, "worktreeInitCommand"> | null): string | null {
   const trimmed = settings?.worktreeInitCommand?.trim();
   return trimmed ? trimmed : null;
 }
@@ -529,6 +529,44 @@ function getDependencySyncCommand(rootDir: string, settings?: Settings | null): 
     return "bun install --frozen-lockfile";
   }
   return null;
+}
+
+type MergeWorktreeCommandResult = Awaited<ReturnType<typeof runConfiguredMergeWorktreeCommand>>;
+
+const POST_MERGE_INIT_OUTCOME_MAX_CHARS = 2_000;
+
+function mergeWorktreeCommandErrorMessage(result: { spawnError?: string | Error; timedOut?: boolean; exitCode?: number | null }): string {
+  if (result.spawnError) return `Failed to start command: ${result.spawnError}`;
+  if (result.timedOut) return "Command timed out";
+  return `Command exited with code ${result.exitCode ?? "unknown"}`;
+}
+
+function truncatePostMergeInitOutput(output: string): string {
+  if (output.length <= POST_MERGE_INIT_OUTCOME_MAX_CHARS) return output;
+  return `... output truncated to last ${POST_MERGE_INIT_OUTCOME_MAX_CHARS} chars ...\n${output.slice(-POST_MERGE_INIT_OUTCOME_MAX_CHARS)}`;
+}
+
+function formatPostMergeInitFailureOutcome(initResult: MergeWorktreeCommandResult | undefined, err: unknown): string {
+  const stderr = initResult?.stderr?.trim();
+  if (stderr) return truncatePostMergeInitOutput(stderr);
+
+  const stdout = initResult?.stdout?.trim();
+  if (stdout) return truncatePostMergeInitOutput(stdout);
+
+  if (initResult?.spawnError) {
+    return typeof initResult.spawnError === "string" ? initResult.spawnError : initResult.spawnError.message;
+  }
+
+  const parts: string[] = [];
+  if (initResult?.timedOut) parts.push("Command timed out");
+  if (initResult?.exitCode !== undefined && initResult.exitCode !== null) parts.push(`exit code: ${initResult.exitCode}`);
+  if (initResult?.signal) parts.push(`signal: ${initResult.signal}`);
+  if (parts.length > 0) return parts.join("; ");
+
+  if (err instanceof Error && err.message.trim().length > 0) return err.message;
+
+  const fallback = String(err).trim();
+  return fallback.length > 0 ? fallback : "Command failed";
 }
 
 const INSTALL_MARKER_RELPATH = join("node_modules", ".fusion-install-marker");
@@ -7236,6 +7274,36 @@ async function createPostMergeWorktree(
   }
 }
 
+async function runPostMergeWorktreeInitCommand(
+  store: TaskStore,
+  taskId: string,
+  postMergeWorktree: string,
+  settings: Partial<Settings>,
+  audit?: RunAuditor,
+): Promise<void> {
+  const initCommand = getConfiguredWorktreeInitCommand(settings);
+  if (!initCommand) return;
+
+  const initStartedAt = Date.now();
+  let initResult: MergeWorktreeCommandResult | undefined;
+  try {
+    initResult = await runConfiguredMergeWorktreeCommand(initCommand, postMergeWorktree, 300_000, undefined, audit);
+    if (initResult.spawnError || initResult.timedOut || initResult.exitCode !== 0) {
+      throw new Error(mergeWorktreeCommandErrorMessage(initResult));
+    }
+    await store.logEntry(taskId, `[timing] Post-merge worktree init command completed in ${Date.now() - initStartedAt}ms`, initCommand);
+  } catch (err: unknown) {
+    if (err instanceof Error && err.name === "AbortError") {
+      throw err;
+    }
+    await store.logEntry(taskId, `[timing] Post-merge worktree init command failed after ${Date.now() - initStartedAt}ms`);
+    const message = err instanceof Error ? err.message : String(err);
+    const outcome = formatPostMergeInitFailureOutcome(initResult, err);
+    mergerLog.warn(`${taskId}: post-merge worktree init command failed — post-merge workflow steps will still run: ${message}`);
+    await store.logEntry(taskId, `Post-merge worktree init command failed (post-merge workflow steps will still run): ${message}`, outcome);
+  }
+}
+
 /**
  * Remove a temporary worktree created for post-merge step execution.
  * Non-fatal: logs and swallows errors.
@@ -10440,6 +10508,7 @@ export async function aiMergeTask(
     const postMergeWorktree = await createPostMergeWorktree(rootDir, taskId, settings);
     const postMergeCwd = postMergeWorktree || rootDir;
     if (postMergeWorktree) {
+      await runPostMergeWorktreeInitCommand(store, taskId, postMergeWorktree, settings, audit);
       mergerLog.log(`${taskId}: running post-merge workflow steps in isolated worktree: ${postMergeWorktree}`);
     } else {
       mergerLog.warn(`${taskId}: could not create post-merge worktree — falling back to rootDir`);
