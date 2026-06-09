@@ -1,5 +1,12 @@
 import { describe, it, expect, vi } from "vitest";
-import { AgentSemaphore, PRIORITY_MERGE, PRIORITY_EXECUTE, PRIORITY_SPECIFY } from "../concurrency.js";
+import type { Task } from "@fusion/core";
+import {
+  AgentSemaphore,
+  PRIORITY_MERGE,
+  PRIORITY_EXECUTE,
+  PRIORITY_SPECIFY,
+  recoverIdleSemaphoreLeakCandidate,
+} from "../concurrency.js";
 
 describe("AgentSemaphore", () => {
   it("allows immediate acquire when under limit", async () => {
@@ -138,6 +145,103 @@ describe("AgentSemaphore", () => {
     sem.release();
     expect(sem.activeCount).toBe(0);
     expect(sem.availableCount).toBe(3);
+  });
+
+  it("reports waitingCount and diagnostic snapshot", async () => {
+    const sem = new AgentSemaphore(1);
+    await sem.acquire();
+
+    const waiter = sem.acquire();
+    await Promise.resolve();
+
+    expect(sem.waitingCount).toBe(1);
+    expect(sem.snapshot()).toEqual({
+      activeCount: 1,
+      waitingCount: 1,
+      availableCount: 0,
+      limit: 1,
+    });
+
+    sem.release();
+    await waiter;
+    expect(sem.waitingCount).toBe(0);
+    sem.release();
+  });
+
+  it("reconciles stale active counts down to persisted active work", async () => {
+    const sem = new AgentSemaphore(2);
+    await sem.acquire();
+    await sem.acquire();
+
+    const result = sem.reconcileActiveCount(0);
+
+    expect(result).toEqual({ before: 2, after: 0, changed: true });
+    expect(sem.activeCount).toBe(0);
+    expect(sem.availableCount).toBe(2);
+  });
+
+  it("does not increase active counts during reconciliation", async () => {
+    const sem = new AgentSemaphore(2);
+    await sem.acquire();
+
+    const result = sem.reconcileActiveCount(3);
+
+    expect(result).toEqual({ before: 1, after: 1, changed: false });
+    expect(sem.activeCount).toBe(1);
+    sem.release();
+  });
+
+  it("recovers idle semaphore leaks only after a stable persisted-idle window", async () => {
+    const sem = new AgentSemaphore(2);
+    await sem.acquire();
+    const tasks: Task[] = [];
+
+    const first = recoverIdleSemaphoreLeakCandidate({
+      semaphore: sem,
+      tasks,
+      candidateSinceMs: null,
+      nowMs: 1_000,
+    });
+    expect(first).toEqual({ candidateSinceMs: 1_000 });
+    expect(sem.activeCount).toBe(1);
+
+    const early = recoverIdleSemaphoreLeakCandidate({
+      semaphore: sem,
+      tasks,
+      candidateSinceMs: first.candidateSinceMs,
+      nowMs: 5_000,
+    });
+    expect(early).toEqual({ candidateSinceMs: 1_000 });
+    expect(sem.activeCount).toBe(1);
+
+    const repaired = recoverIdleSemaphoreLeakCandidate({
+      semaphore: sem,
+      tasks,
+      candidateSinceMs: early.candidateSinceMs,
+      nowMs: 6_001,
+    });
+    expect(repaired).toEqual({
+      candidateSinceMs: null,
+      reconciliation: { before: 1, after: 0, changed: true },
+    });
+    expect(sem.activeCount).toBe(0);
+  });
+
+  it("does not recover while callers report in-flight work not yet persisted", async () => {
+    const sem = new AgentSemaphore(2);
+    await sem.acquire();
+
+    const result = recoverIdleSemaphoreLeakCandidate({
+      semaphore: sem,
+      tasks: [],
+      candidateSinceMs: Date.now() - 6_000,
+      inFlightCount: 1,
+      nowMs: Date.now(),
+    });
+
+    expect(result).toEqual({ candidateSinceMs: null });
+    expect(sem.activeCount).toBe(1);
+    sem.release();
   });
 
   it("run() gates concurrent calls", async () => {

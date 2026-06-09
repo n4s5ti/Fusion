@@ -1,3 +1,5 @@
+import type { Task } from "@fusion/core";
+
 /** Priority level for merge agents — served first. */
 export const PRIORITY_MERGE = 2;
 /** Priority level for execution agents — served after merge, before specify. */
@@ -9,6 +11,59 @@ export const PRIORITY_SPECIFY = 0;
 interface PriorityWaiter {
   priority: number;
   resolve: () => void;
+}
+
+export const IDLE_SEMAPHORE_LEAK_REPAIR_MS = 5_000;
+
+export function persistedTopLevelAgentSlots(tasks: Task[]): number {
+  return tasks.filter((task) => (
+    task.column === "in-progress"
+    || (task.column === "triage" && task.status === "planning" && !task.paused)
+    || (task.column === "in-review" && ["merging", "reviewing", "fixing"].includes(String(task.status ?? "")))
+  )).length;
+}
+
+export interface IdleSemaphoreLeakRecoveryResult {
+  candidateSinceMs: number | null;
+  reconciliation?: { before: number; after: number; changed: boolean };
+}
+
+export function recoverIdleSemaphoreLeakCandidate(params: {
+  semaphore: AgentSemaphore | undefined;
+  tasks: Task[];
+  candidateSinceMs: number | null;
+  inFlightCount?: number;
+  nowMs?: number;
+  repairAfterMs?: number;
+}): IdleSemaphoreLeakRecoveryResult {
+  const {
+    semaphore,
+    tasks,
+    candidateSinceMs,
+    inFlightCount = 0,
+    nowMs = Date.now(),
+    repairAfterMs = IDLE_SEMAPHORE_LEAK_REPAIR_MS,
+  } = params;
+
+  if (!semaphore) return { candidateSinceMs: null };
+
+  const persistedActive = persistedTopLevelAgentSlots(tasks);
+  if (persistedActive !== 0 || semaphore.activeCount <= 0 || inFlightCount > 0) {
+    return { candidateSinceMs: null };
+  }
+
+  if (candidateSinceMs === null) {
+    return { candidateSinceMs: nowMs };
+  }
+
+  if (nowMs - candidateSinceMs < repairAfterMs) {
+    return { candidateSinceMs };
+  }
+
+  return {
+    candidateSinceMs: null,
+    reconciliation: semaphore.reconcileActiveCount(0),
+  };
 }
 
 /**
@@ -64,6 +119,38 @@ export class AgentSemaphore {
   /** Number of slots currently held by running agents. */
   get activeCount(): number {
     return this._active;
+  }
+
+  /** Number of callers currently queued for a semaphore slot. */
+  get waitingCount(): number {
+    return this._waiters.length;
+  }
+
+  /** Snapshot of current semaphore pressure for diagnostics. */
+  snapshot(): { activeCount: number; waitingCount: number; availableCount: number; limit: number } {
+    return {
+      activeCount: this.activeCount,
+      waitingCount: this.waitingCount,
+      availableCount: this.availableCount,
+      limit: this.limit,
+    };
+  }
+
+  /**
+   * Clamp stale active-slot accounting to a persisted upper bound.
+   *
+   * This is a recovery valve for crash/abort paths where the task/session that
+   * acquired a slot is gone but the in-memory semaphore did not observe its
+   * normal `finally` release. The caller owns the persisted-state judgment.
+   */
+  reconcileActiveCount(maxActive: number): { before: number; after: number; changed: boolean } {
+    const bounded = Math.max(0, Math.floor(maxActive));
+    const before = this._active;
+    if (before > bounded) {
+      this._active = bounded;
+      this._drain();
+    }
+    return { before, after: this._active, changed: before !== this._active };
   }
 
   /** Number of slots available for immediate acquisition. May be 0 or negative

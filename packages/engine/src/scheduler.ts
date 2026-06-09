@@ -17,7 +17,7 @@ import {
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
-import type { AgentSemaphore } from "./concurrency.js";
+import { recoverIdleSemaphoreLeakCandidate, type AgentSemaphore } from "./concurrency.js";
 import { planTaskWorktreePath, resolveTaskWorkingBranch } from "./worktree-names.js";
 import { schedulerLog } from "./logger.js";
 import { type PrMonitor, type PrComment } from "./pr-monitor.js";
@@ -315,6 +315,26 @@ interface ConcurrencyGateDiagnostic {
   perColumnGates?: PerColumnCapacityGate[];
 }
 
+function recoverIdleSemaphoreLeak(
+  semaphore: AgentSemaphore | undefined,
+  tasks: Task[],
+  source: string,
+  candidateSinceMs: number | null,
+): number | null {
+  const result = recoverIdleSemaphoreLeakCandidate({
+    semaphore,
+    tasks,
+    candidateSinceMs,
+  });
+  if (result.reconciliation?.changed) {
+    schedulerLog.warn(
+      `${source}: recovered stale semaphore active count ${result.reconciliation.before} -> ${result.reconciliation.after} ` +
+      "(no persisted in-progress/planning/review agent work)",
+    );
+  }
+  return result.candidateSinceMs;
+}
+
 function computeConcurrencyGateDiagnostic(params: {
   agentSlots: number;
   maxConcurrent: number;
@@ -495,6 +515,7 @@ export class Scheduler {
   private lastStaleTaskReportAt = 0;
   private lastBacklogPressureReportAt = 0;
   private lastUnlinkedMissionsAdvisoryReportAt = 0;
+  private idleSemaphoreLeakCandidateSince: number | null = null;
   private readonly lastHighOverlapFanoutWarningKey = new Map<string, string>();
 
   /**
@@ -1208,6 +1229,12 @@ export class Scheduler {
       const settings = await this.store.getSettings();
       const maxConcurrent = settings.maxConcurrent ?? this.options.maxConcurrent ?? 2;
       const maxWorktrees = settings.maxWorktrees ?? this.options.maxWorktrees ?? 4;
+      this.idleSemaphoreLeakCandidateSince = recoverIdleSemaphoreLeak(
+        this.options.semaphore,
+        tasks,
+        "scheduler",
+        this.idleSemaphoreLeakCandidateSince,
+      );
 
       // Refresh the poll interval if the persisted setting has changed
       this.refreshPollInterval(settings.pollIntervalMs);
