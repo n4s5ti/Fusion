@@ -175,6 +175,7 @@ function createMockStore(overrides: Record<string, unknown> = {}): TaskStore & E
     moveTask: vi.fn().mockResolvedValue(undefined),
     handoffToReview: vi.fn().mockResolvedValue(undefined),
     enqueueMergeQueue: vi.fn().mockResolvedValue(undefined),
+    peekMergeQueue: vi.fn().mockReturnValue([]),
     mergeTask: vi.fn().mockResolvedValue(undefined),
     archiveTaskAndCleanup: vi.fn().mockResolvedValue({} as Task),
     walCheckpoint: vi.fn().mockReturnValue({ busy: 0, log: 5, checkpointed: 5 }),
@@ -3278,6 +3279,58 @@ describe("SelfHealingManager", () => {
       expect(result).toBe(1);
       expect(enqueueMerge).toHaveBeenCalledWith("FN-352-pr");
       expect(store.mergeTask).not.toHaveBeenCalled();
+
+      managerWithRecovery.stop();
+    });
+
+    it("does not re-enqueue mergeable review tasks already held by the merge queue", async () => {
+      const enqueueMerge = vi.fn().mockReturnValue(true);
+      const managerWithRecovery = new SelfHealingManager(store, {
+        rootDir: "/tmp/test-project",
+        enqueueMerge,
+      });
+      (store.getSettings as ReturnType<typeof vi.fn>).mockResolvedValue({
+        autoMerge: true,
+        globalPause: false,
+        enginePaused: false,
+      });
+      (store.peekMergeQueue as ReturnType<typeof vi.fn>).mockReturnValue([
+        {
+          taskId: "FN-6088",
+          enqueuedAt: "2026-06-09T16:03:19.080Z",
+          priority: "normal",
+          leasedBy: null,
+          leasedAt: null,
+          leaseExpiresAt: null,
+          attemptCount: 0,
+          lastError: null,
+        },
+      ]);
+
+      (store.listTasks as ReturnType<typeof vi.fn>).mockResolvedValue([
+        {
+          id: "FN-6088",
+          column: "in-review",
+          paused: false,
+          status: null,
+          error: null,
+          worktree: "/tmp/test-project/.worktrees/fn-6088",
+          steps: [{ name: "Ship it", status: "done" }],
+          workflowStepResults: [{ id: "ws-1", status: "passed", phase: "pre-merge" }],
+          mergeDetails: undefined,
+          log: [],
+        },
+      ]);
+
+      const result = await managerWithRecovery.recoverMergeableReviewTasks();
+
+      expect(result).toBe(0);
+      expect(enqueueMerge).not.toHaveBeenCalled();
+      expect(store.mergeTask).not.toHaveBeenCalled();
+      expect(store.logEntry).not.toHaveBeenCalledWith(
+        "FN-6088",
+        expect.stringContaining("re-enqueued for merge"),
+      );
 
       managerWithRecovery.stop();
     });

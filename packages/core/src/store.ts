@@ -4833,7 +4833,7 @@ ${TASK_UPSERT_SQL_ASSIGNMENTS}
           engineActiveSinceMs: settings.engineActiveSinceMs,
           engineActivationGraceMs: settings.engineActivationGraceMs,
         });
-      task.stalledReview = detectStalledReview(task, { now });
+      task.stalledReview = mergeQueuedTaskIds.has(task.id) ? undefined : detectStalledReview(task, { now });
       // Derived at read time only; retrySummary is never persisted to SQLite.
       task.retrySummary = computeRetrySummary(task);
 
@@ -5384,7 +5384,7 @@ ${TASK_UPSERT_SQL_ASSIGNMENTS}
           }
         }
       }
-      task.stalledReview = detectStalledReview(task, { now });
+      task.stalledReview = isMergeQueued ? undefined : detectStalledReview(task, { now });
       // Derived at read time only; retrySummary is never persisted to SQLite.
       task.retrySummary = computeRetrySummary(task);
 
@@ -5907,7 +5907,7 @@ ${TASK_UPSERT_SQL_ASSIGNMENTS}
         }
       }
       task.timedExecutionMs = this.computeTimedExecutionMs(task.log);
-      task.stalledReview = detectStalledReview(task, { now });
+      task.stalledReview = isMergeQueued ? undefined : detectStalledReview(task, { now });
       // Derived at read time only; retrySummary is never persisted to SQLite.
       task.retrySummary = computeRetrySummary(task);
       task.log = [];

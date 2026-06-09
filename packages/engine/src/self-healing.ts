@@ -5100,25 +5100,26 @@ export class SelfHealingManager {
         (t.mergeRetries ?? 0) < MAX_AUTO_MERGE_RETRIES &&
         getTaskMergeBlocker(t) === undefined,
       );
+      const unownedMergeable = mergeable.filter((task) => !this.isMergeLaneOwned(task.id));
 
       const inReviewIds = new Set(tasks.map((task) => task.id));
-      const mergeableIds = new Set(mergeable.map((task) => task.id));
+      const mergeableIds = new Set(unownedMergeable.map((task) => task.id));
       for (const taskId of [...this.mergeStarvationDrops.keys()]) {
         if (!inReviewIds.has(taskId) || !mergeableIds.has(taskId)) {
           this.mergeStarvationDrops.delete(taskId);
         }
       }
 
-      if (mergeable.length === 0) return 0;
+      if (unownedMergeable.length === 0) return 0;
 
-      log.warn(`Found ${mergeable.length} mergeable review task(s) stuck in in-review`);
+      log.warn(`Found ${unownedMergeable.length} mergeable review task(s) stuck in in-review`);
 
       // Prefer the engine's merge queue so `mergeStrategy` (direct vs.
       // pull-request) is honored. Fall back to a direct store merge only
       // when no enqueue callback is wired (standalone/tests).
       const enqueueMerge = this.options.enqueueMerge;
       let recovered = 0;
-      for (const task of mergeable) {
+      for (const task of unownedMergeable) {
         try {
           if (enqueueMerge) {
             const queued = enqueueMerge(task.id);
