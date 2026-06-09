@@ -98,10 +98,10 @@ export function QuickEntryBox({ onCreate, addToast, tasks = [], availableModels,
   });
   const [isSubmitting, setIsSubmitting] = useState(false);
   // isExpanded controls textarea height styling (auto-resize)
-  const [isExpanded, setIsExpanded] = useState(false);
+  const [isExpanded, setIsExpanded] = useState(true);
   // isDisclosureExpanded controls visibility of the controls panel (Deps, Models, etc.)
-  // Always starts collapsed — user must explicitly toggle each session
-  const [isDisclosureExpanded, setIsDisclosureExpanded] = useState(false);
+  // Starts expanded by default — controls visible immediately
+  const [isDisclosureExpanded, setIsDisclosureExpanded] = useState(true);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const justResetRef = useRef(false);

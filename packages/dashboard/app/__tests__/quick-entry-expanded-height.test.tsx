@@ -93,7 +93,7 @@ function renderQuickEntryBox(props = {}) {
   return render(<QuickEntryBox {...defaultProps} {...props} />);
 }
 
-function expandQuickEntry() {
+function toggleQuickEntry() {
   const toggleButton = screen.getByTestId("quick-entry-toggle");
   fireEvent.click(toggleButton);
 }
@@ -147,25 +147,24 @@ describe("quick-entry-expanded-height CSS contract (FN-1631)", () => {
    * (`.quick-entry-box--expanded .quick-entry-input`) inadvertently override the
    * expanded-height rules set by `.quick-entry-input--expanded`.
    */
-  it("expanded class applies when quick-entry is expanded via toggle", () => {
+  it("expanded class applies by default and toggle collapses quick-entry", () => {
     mockDesktopViewport();
     renderQuickEntryBox();
 
     const textarea = screen.getByTestId("quick-entry-input");
     const box = screen.getByTestId("quick-entry-box");
 
-    // Initially collapsed
-    expect(box.classList.contains("quick-entry-box--collapsed")).toBe(true);
-    expect(box.classList.contains("quick-entry-box--expanded")).toBe(false);
-    expect(textarea.classList.contains("quick-entry-input--expanded")).toBe(false);
-
-    // Expand via toggle
-    expandQuickEntry();
-
-    // Verify expanded state
+    // Initially expanded
     expect(box.classList.contains("quick-entry-box--expanded")).toBe(true);
     expect(box.classList.contains("quick-entry-box--collapsed")).toBe(false);
     expect(textarea.classList.contains("quick-entry-input--expanded")).toBe(true);
+
+    // Collapse via toggle
+    toggleQuickEntry();
+
+    expect(box.classList.contains("quick-entry-box--collapsed")).toBe(true);
+    expect(box.classList.contains("quick-entry-box--expanded")).toBe(false);
+    expect(textarea.classList.contains("quick-entry-input--expanded")).toBe(false);
   });
 
   /**
@@ -251,7 +250,8 @@ describe("quick-entry-expanded-height CSS contract (FN-1631)", () => {
     const textarea = screen.getByTestId("quick-entry-input");
     const box = screen.getByTestId("quick-entry-box");
 
-    // Collapsed state
+    // Collapse from the expanded default
+    toggleQuickEntry();
     expect(box.classList.contains("quick-entry-box--collapsed")).toBe(true);
     expect(textarea.classList.contains("quick-entry-input--expanded")).toBe(false);
 

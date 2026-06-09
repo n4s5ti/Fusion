@@ -3610,8 +3610,8 @@ describe("App onboarding reopen", () => {
     // Onboarding should NOT be open initially
     expect(screen.queryByText("Set Up AI")).toBeNull();
 
-    // Open Settings via header
-    const settingsBtn = screen.getByRole("button", { name: /settings/i });
+    // Open Settings via header (quick-entry controls also mention Settings in labels)
+    const settingsBtn = screen.getByTitle("Settings");
     fireEvent.click(settingsBtn);
 
     await waitFor(() => {
@@ -3667,8 +3667,8 @@ describe("App onboarding reopen", () => {
 
     await waitForAppShell();
 
-    // Open Settings via header
-    const settingsBtn = screen.getByRole("button", { name: /settings/i });
+    // Open Settings via header (quick-entry controls also mention Settings in labels)
+    const settingsBtn = screen.getByTitle("Settings");
     fireEvent.click(settingsBtn);
 
     await waitFor(() => {
