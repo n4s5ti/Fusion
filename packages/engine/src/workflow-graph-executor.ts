@@ -717,9 +717,6 @@ export class WorkflowGraphExecutor {
     const source = { nodeId: node.id, nodeKind: node.kind };
     try {
       await this.deps.publishTaskProjection?.(taskId, patch, source);
-      if (patch.modifiedFiles && patch.modifiedFiles.length > 0) {
-        await this.deps.publishTouchedFiles?.(taskId, patch.modifiedFiles, source);
-      }
     } catch (error) {
       return {
         outcome: "failure",
@@ -729,6 +726,13 @@ export class WorkflowGraphExecutor {
           [`node:${node.id}:projectionError`]: error instanceof Error ? error.message : String(error),
         },
       };
+    }
+    if (patch.modifiedFiles && patch.modifiedFiles.length > 0) {
+      try {
+        await this.deps.publishTouchedFiles?.(taskId, patch.modifiedFiles, source);
+      } catch {
+        // Deprecated compatibility hook; primary projection persistence owns node outcome.
+      }
     }
     return result;
   }

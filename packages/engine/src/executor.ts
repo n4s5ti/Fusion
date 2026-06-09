@@ -3752,19 +3752,18 @@ export class TaskExecutor {
         runCustomNode: (node, nodeTask) =>
           this.runGraphCustomNode(node, nodeTask, settings, resolveBindingForNode(node.id)),
         publishTaskProjection: async (taskId, patch) => {
-          const liveTask = await this.store.getTask(taskId);
-          const update: Parameters<TaskStore["updateTask"]>[1] = {};
-          if (patch.modifiedFiles) {
-            const merged = [...new Set([...(liveTask?.modifiedFiles ?? []), ...patch.modifiedFiles])].sort();
-            if (merged.length > 0) update.modifiedFiles = merged;
-          }
-          if (patch.mergeDetails) {
-            update.mergeDetails = { ...(liveTask?.mergeDetails ?? {}), ...patch.mergeDetails };
-          }
-          if (patch.summary !== undefined) update.summary = patch.summary;
-          if (Object.keys(update).length > 0) {
-            await this.store.updateTask(taskId, update);
-          }
+          await this.store.updateTaskAtomic(taskId, (liveTask) => {
+            const update: Parameters<TaskStore["updateTask"]>[1] = {};
+            if (patch.modifiedFiles) {
+              const merged = [...new Set([...(liveTask.modifiedFiles ?? []), ...patch.modifiedFiles])].sort();
+              if (merged.length > 0) update.modifiedFiles = merged;
+            }
+            if (patch.mergeDetails) {
+              update.mergeDetails = { ...(liveTask.mergeDetails ?? {}), ...patch.mergeDetails };
+            }
+            if (patch.summary !== undefined) update.summary = patch.summary;
+            return update;
+          });
         },
         onEvent: (event) => executorLog.log(`[workflow-graph] ${event.type} ${event.taskId}: ${event.detail}`),
         // Wire SQLite-backed per-branch persistence in production (#1407): the

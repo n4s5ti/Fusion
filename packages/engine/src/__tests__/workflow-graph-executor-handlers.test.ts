@@ -297,6 +297,43 @@ describe("WorkflowGraphExecutor traversal", () => {
     expect(result.context["node:a:projectionError"]).toBe("store unavailable");
   });
 
+  it("does not fail the node when the deprecated touched-files hook fails", async () => {
+    const ir: WorkflowIr = {
+      version: "v1",
+      name: "legacy-touched-files-failure",
+      nodes: [
+        { id: "start", kind: "start" },
+        { id: "a", kind: "prompt" },
+        { id: "end", kind: "end" },
+      ],
+      edges: [
+        { from: "start", to: "a" },
+        { from: "a", to: "end", condition: "success" },
+      ],
+    };
+    const publishTaskProjection = vi.fn();
+    const publishTouchedFiles = vi.fn(async () => {
+      throw new Error("legacy sink unavailable");
+    });
+    const executor = new WorkflowGraphExecutor({
+      handlers: {
+        prompt: async () => ({
+          outcome: "success",
+          contextPatch: { modifiedFiles: ["src/projected.ts"] },
+        }),
+      },
+      publishTaskProjection,
+      publishTouchedFiles,
+    });
+
+    const result = await executor.run(task, settingsOn(), ir);
+
+    expect(publishTaskProjection).toHaveBeenCalledTimes(1);
+    expect(publishTouchedFiles).toHaveBeenCalledTimes(1);
+    expect(result.outcome).toBe("success");
+    expect(result.context["node:a:projectionError"]).toBeUndefined();
+  });
+
   it("caps retries and converts exceptions to failure", async () => {
     const ir: WorkflowIr = {
       version: "v1",
