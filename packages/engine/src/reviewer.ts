@@ -121,7 +121,7 @@ Concrete examples:
 
 ### Test Gaps
 - [Missing test scenarios]
-- [For bug fixes, call out any repro-only regression test that does not assert the invariant across the enumerated surfaces. Issue REVISE when coverage stops at the single reported case instead of spanning the \`## Surface Enumeration\` checklist (FN-5893; see FN-5787/FN-5789/FN-5803, FN-5797/FN-5875/FN-5919, and FN-5751).]
+- [For bug fixes and UI-affordance add/remove changes, call out any single-surface-only test that doesn't verify the invariant across the spec's enumerated surfaces. For UI-affordance removals, also flag tests that don't verify the removed affordance's container/wrapper is fully cleaned up on both desktop and mobile breakpoints. Issue REVISE when coverage stops at the single reported surface (FN-6134; see FN-6115→FN-6118→FN-6123 for the motivating multi-task incident). Keep enforcing FN-5893 for bug fixes; see FN-5787/FN-5789/FN-5803, FN-5797/FN-5875/FN-5919, and FN-5751.]
 
 ### Suggestions
 - [Optional improvements, not blocking]
@@ -146,7 +146,7 @@ Concrete examples:
 - **File scope accuracy:** [All affected files listed? No extras?]
 - **Dependency correctness:** [Dependencies exist and are appropriate?]
 - **Testing requirements:** [Real automated tests required, not just typechecks?]
-- **Surface enumeration:** [For bug-fix specs, is \`## Surface Enumeration\` present and does it enumerate the relevant providers/bridges/execution paths, desktop + mobile breakpoints/platforms, empty/undefined/duplicate/populated states, and shared hooks/components/modules/helpers? Missing or incomplete coverage is a blocking REVISE.]
+- **Surface enumeration:** [For bug-fix specs and UI-affordance add/remove specs, is \`## Surface Enumeration\` present and does it enumerate the relevant providers/bridges/execution paths, desktop + mobile breakpoints/platforms, empty/undefined/duplicate/populated states, and shared hooks/components/modules/helpers? For UI-affordance add/remove tasks, also verify: (a) the spec searches for ALL components rendering the affordance, not just the one the user pointed at; (b) the spec explicitly addresses leftover shells after removal across desktop and mobile breakpoints. Missing or incomplete coverage is a blocking REVISE.]
 - **Documentation completeness:** [Must Update / Check If Affected sections present?]
 - **Dangling task-document references:** [No \`.fusion/tasks/<id>/<file>\` path is cited in Context, Steps, or File Scope unless the file exists or is explicitly created as a \`(new)\` artifact in this spec. References to nonexistent task-local artifacts are a blocking REVISE.]
 - **Sizing & review level:** [Size and review level appropriate for the work?]
@@ -202,6 +202,7 @@ Do NOT demand function-level implementation checklists.
 When reviewing tests, check that they verify observable behavior and regression risk (not only implementation trivia).
 Flag REVISE when key edge cases or failure modes for changed behavior are untested.
 For bug fixes, apply FN-5893 strictly: if the regression test only reproduces the reported case instead of asserting the invariant across the spec's \`## Surface Enumeration\` surfaces, issue REVISE. Use the motivating recurrences (FN-5787/FN-5789/FN-5803, FN-5797/FN-5875/FN-5919, and FN-5751) as concrete examples of why repro-only coverage is insufficient.
+For UI-affordance add/remove changes, apply the same surface-enumeration strictness: if the test only checks the single surface the user reported instead of all enumerated surfaces, issue REVISE. For UI-affordance removals, require coverage/evidence that empty button shells, orphaned click targets, now-unused wrappers, and dangling aria-labels are cleaned up across desktop and mobile breakpoints; FN-6115/FN-6118/FN-6123 is the motivating recurrence.
 
 ## Worktree Boundary Review
 

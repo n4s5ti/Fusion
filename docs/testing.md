@@ -289,9 +289,13 @@ Prefer `it.each` over copy-pasted `it()` blocks. When trimming, keep: first case
 
 ### Surface Enumeration checklist
 
-Copy this checklist into a bug-fix task's `## Surface Enumeration` section and make the regression tests prove the invariant across every checked surface. See `AGENTS.md` → **Standing Rule: Fix the Invariant, Not the Repro (FN-5893)** for the enforced planning/review contract.
+Copy this checklist into a bug-fix or UI-affordance add/remove task's `## Surface Enumeration` section and make the implementation tests prove the invariant across every checked surface. This checklist applies to bug-fix tasks and UI-affordance add/remove tasks that add, remove, or restructure icons, buttons, chevrons/arrows, toggles, badges, menu entries, or click targets. See `AGENTS.md` → **Standing Rule: Fix the Invariant, Not the Repro (FN-5893)** for the enforced planning/review contract.
 
 - [ ] Providers / bridges / execution paths touched by the invariant
 - [ ] Desktop + mobile breakpoints / platforms that exercise the behavior
 - [ ] Empty / undefined / duplicate / populated data states
 - [ ] Shared hooks / components / modules / helpers reusing the logic
+- [ ] Every component that renders the affordance (search the codebase for the icon/class/testid, not just the one the user pointed at)
+- [ ] Leftover shells after removal — empty buttons, orphaned click targets, now-unused wrappers, dangling aria-labels — are explicitly checked and fixed/hidden
+
+Motivating incident: FN-6115/FN-6118/FN-6123 — a single workflow-row chevron required three tasks to fully remove because the affordance rendered across multiple components and one mobile surface kept an empty `btn-icon` button shell.

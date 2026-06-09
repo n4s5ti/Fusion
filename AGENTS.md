@@ -103,9 +103,12 @@ pnpm verify:workspace  # deep opt-in verification (lint -> test:full -> build); 
 
 - When fixing a bug, the regression test must assert the general invariant across ALL known surfaces — not only the single reported reproduction.
 - Surface enumeration is now an enforced bug-fix artifact: the spec must include a `## Surface Enumeration` section, planning must REVISE when that section is missing, and review must REVISE any repro-only regression test.
+- The Surface Enumeration gate also applies to tasks that add or remove UI affordances (icons, buttons, chevrons, toggles, badges, menu entries, click targets), including Review Level 0 cosmetic tasks.
 - Enumerate the surfaces before filing or closing the fix: every provider/bridge for streaming and agent paths, both desktop and mobile breakpoints for UI behavior, empty/undefined/duplicate/populated data states, and every shared hook/component/module/helper that reuses the affected logic.
+- After removing a UI affordance, explicitly check for and clean up empty button shells, orphaned click targets, now-unused wrappers, and dangling aria-labels across both desktop and mobile breakpoints.
 - Use the canonical checklist in `docs/testing.md` → **Surface Enumeration checklist** so planning and review enumerate the same surfaces.
 - Motivating incidents: streamed-response spacing was fixed three times before the invariant was fully covered (FN-5787, FN-5789, FN-5803), the usage "Show hidden" button regressed three times before broader coverage stuck (FN-5797, FN-5875, FN-5919), and the auto-merge blank-dashboard fix re-opened after desktop-only coverage missed mobile Android (FN-5751).
+- Motivating incident for UI affordances: the workflow-row drop-down arrow removal took three tasks (FN-6115 → FN-6118 → FN-6123) because the affordance rendered in two components and mobile kept an empty 36×36 `btn-icon` button shell.
 - If a regression test only proves the exact reported case, it is incomplete; extend it until the invariant holds across all known surfaces.
 
 ### Port 4040 is Reserved

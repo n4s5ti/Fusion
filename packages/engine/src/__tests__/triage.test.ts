@@ -676,6 +676,11 @@ describe("FN-5893 invariant regression wording", () => {
       expect(prompt).toContain("docs/testing.md");
       expect(prompt).toContain("duplicate / populated data states");
       expect(prompt).toContain("shared hooks/components/modules/helpers");
+      expect(prompt).toContain("UI-affordance add/remove");
+      expect(prompt).toContain("For bug fixes and UI-affordance add/remove tasks");
+      expect(prompt).toContain(
+        "For bug-fix and UI-affordance add/remove tasks, paste and fill in this checklist",
+      );
     }
 
     expect(corePromptSource).toContain("## Surface Enumeration");
@@ -692,9 +697,21 @@ describe("FN-5893 invariant regression wording", () => {
         "Run targeted tests for changed files, asserting the invariant across all known surfaces",
       );
       expect(prompt).toContain(
-        "For bug-fix tasks, paste and fill in this checklist in the `## Surface Enumeration` section",
+        "For bug-fix and UI-affordance add/remove tasks, paste and fill in this checklist in the `## Surface Enumeration` section",
       );
     }
+  });
+
+  it("requires Surface Enumeration for UI-affordance add/remove tasks regardless of review-level analysis", () => {
+    for (const prompt of [TRIAGE_SYSTEM_PROMPT, FAST_TRIAGE_SYSTEM_PROMPT]) {
+      expect(prompt).toContain("bug-fix tasks and UI-affordance add/remove tasks");
+      expect(prompt).toContain("every component that renders the affordance");
+      expect(prompt).toContain("searching the codebase for the icon/class/testid");
+      expect(prompt).toContain("leftover shells after removal");
+      expect(prompt).toContain("empty buttons");
+    }
+
+    expect(FAST_TRIAGE_SYSTEM_PROMPT).not.toContain("## Review Level");
   });
 
   it("pins the canonical docs checklist heading", () => {

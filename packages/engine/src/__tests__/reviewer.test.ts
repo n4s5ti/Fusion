@@ -297,14 +297,36 @@ describe("FN-5928 surface-enumeration review-gate wording", () => {
     expect(REVIEWER_SYSTEM_PROMPT).toContain("Missing or incomplete coverage is a blocking REVISE");
     expect(REVIEWER_SYSTEM_PROMPT).toContain("desktop + mobile breakpoints/platforms");
     expect(REVIEWER_SYSTEM_PROMPT).toContain("shared hooks/components/modules/helpers");
+    expect(REVIEWER_SYSTEM_PROMPT).toContain("bug-fix specs and UI-affordance add/remove specs");
   });
 
   it("requires code reviews to reject repro-only regression tests for bug fixes", () => {
-    expect(REVIEWER_SYSTEM_PROMPT).toContain("repro-only regression test");
-    expect(REVIEWER_SYSTEM_PROMPT).toContain("spanning the `## Surface Enumeration` checklist");
+    expect(REVIEWER_SYSTEM_PROMPT).toContain("single-surface-only test");
+    expect(REVIEWER_SYSTEM_PROMPT).toContain("doesn't verify the invariant across the spec's enumerated surfaces");
+    expect(REVIEWER_SYSTEM_PROMPT).toContain("Keep enforcing FN-5893 for bug fixes");
     expect(REVIEWER_SYSTEM_PROMPT).toContain("FN-5787/FN-5789/FN-5803");
     expect(REVIEWER_SYSTEM_PROMPT).toContain("FN-5797/FN-5875/FN-5919");
     expect(REVIEWER_SYSTEM_PROMPT).toContain("FN-5751");
+  });
+
+  it("requires spec/code reviews to enforce surface enumeration for UI-affordance add/remove tasks", () => {
+    expect(REVIEWER_SYSTEM_PROMPT).toContain("leftover shells after removal");
+    expect(REVIEWER_SYSTEM_PROMPT).toContain("For bug fixes and UI-affordance add/remove changes");
+    expect(REVIEWER_SYSTEM_PROMPT).toContain("UI-affordance removals");
+    expect(REVIEWER_SYSTEM_PROMPT).toContain("For UI-affordance add/remove changes, apply the same surface-enumeration strictness");
+    expect(REVIEWER_SYSTEM_PROMPT).toContain("FN-6115/FN-6118/FN-6123");
+  });
+
+  it("demonstrates the gate firing on a single-component UI-removal spec", () => {
+    const singleComponentRemovalSpec =
+      "## Mission\nRemove the workflow-row chevron from WorkflowRow.tsx only.";
+
+    expect(singleComponentRemovalSpec).toContain("WorkflowRow.tsx only");
+    expect(REVIEWER_SYSTEM_PROMPT).toContain("searches for ALL components rendering the affordance");
+    expect(REVIEWER_SYSTEM_PROMPT).toContain("not just the one the user pointed at");
+    expect(REVIEWER_SYSTEM_PROMPT).toContain("leftover shells after removal");
+    expect(REVIEWER_SYSTEM_PROMPT).toContain("empty button shells");
+    expect(REVIEWER_SYSTEM_PROMPT).toContain("Issue REVISE when coverage stops at the single reported surface");
   });
 });
 
