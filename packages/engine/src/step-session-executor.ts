@@ -416,6 +416,10 @@ export function buildStepPrompt(
         lines.push(`- **${att.originalName}** (${att.mimeType}): \`${absPath}\` — read for context`);
       }
     }
+    lines.push(
+      "",
+      `> **Note:** Attachment files are at the project root under \`.fusion/tasks/${id}/attachments/\` — you may read them even when working in a worktree.`,
+    );
     attachmentsSection = "\n" + lines.join("\n") + "\n";
   }
 
@@ -553,11 +557,12 @@ function escapeRegex(str: string): string {
  * @param stepIndex - The 0-based step index.
  * @returns A reduced prompt string focused on the current step only.
  */
-function buildReducedStepPrompt(taskDetail: TaskDetail, stepIndex: number): string {
-  const { prompt, id, title } = taskDetail;
+export function buildReducedStepPrompt(taskDetail: TaskDetail, stepIndex: number): string {
+  const { prompt, id, title, attachments } = taskDetail;
 
   // Extract the step-specific section
   const stepSection = extractStepSection(prompt, stepIndex);
+  const hasAttachments = Boolean(attachments && attachments.length > 0);
 
   // Build a minimal prompt that focuses on the step without excessive context
   const parts: string[] = [
@@ -567,6 +572,10 @@ function buildReducedStepPrompt(taskDetail: TaskDetail, stepIndex: number): stri
     "Focus on completing this step efficiently:",
     "",
     stepSection,
+    "",
+    hasAttachments
+      ? `${attachments?.length ?? 0} attachment(s) available at .fusion/tasks/${id}/attachments/ — ask for context if needed.`
+      : "",
     "",
     "IMPORTANT: Your previous attempt hit the context window limit.",
     "Do NOT repeat work that's already been done.",
