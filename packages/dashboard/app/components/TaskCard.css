@@ -800,6 +800,7 @@
   gap: var(--space-xs);
   flex-shrink: 0;
   padding: var(--space-xs) var(--space-sm);
+  margin-left: auto;
   height: var(--card-chip-height);
   min-height: var(--card-chip-height);
   white-space: nowrap;

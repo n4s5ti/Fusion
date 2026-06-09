@@ -4366,6 +4366,27 @@ describe("TaskCard mission badge", () => {
     }
   });
 
+  it("right-aligns the promote action inside the card action row", () => {
+    const onPromote = vi.fn().mockResolvedValue(undefined);
+    const css = loadAllAppCssBaseOnly();
+
+    render(
+      <TaskCard
+        task={makeTask({ id: "FN-781", column: "todo" })}
+        onOpenDetail={noop}
+        addToast={noop}
+        onPromote={onPromote}
+      />,
+    );
+
+    const promoteButton = screen.getByTestId("card-promote-FN-781");
+    const actionRow = promoteButton.closest(".card-action-row");
+
+    expect(actionRow).not.toBeNull();
+    expect(actionRow?.contains(promoteButton)).toBe(true);
+    expect(css).toMatch(/\.card-promote-action\s*\{[^}]*margin-left:\s*auto;[^}]*\}/);
+  });
+
   it("calls onPromote without opening the card when promote is clicked", () => {
     const onPromote = vi.fn().mockResolvedValue(undefined);
     const onOpenDetail = vi.fn();
