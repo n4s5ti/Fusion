@@ -1,9 +1,11 @@
 .reliability-view {
   display: flex;
+  flex: 1 1 auto;
   flex-direction: column;
   gap: var(--space-lg);
   height: 100%;
   min-height: 0;
+  min-width: 0;
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
 }
@@ -17,20 +19,24 @@
 
 .reliability-loading {
   display: flex;
+  flex: 1 1 auto;
   flex-direction: column;
   align-items: center;
   justify-content: center;
   gap: var(--space-md);
+  min-width: 0;
   padding: var(--space-2xl);
   color: var(--text-muted);
 }
 
 .reliability-error {
   display: flex;
+  flex: 1 1 auto;
   flex-direction: column;
   align-items: center;
   justify-content: center;
   gap: var(--space-md);
+  min-width: 0;
   padding: var(--space-2xl);
   text-align: center;
 }

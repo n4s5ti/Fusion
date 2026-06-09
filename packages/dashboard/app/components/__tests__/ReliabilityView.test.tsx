@@ -32,6 +32,27 @@ const baseResponse = {
   mergeAttempts: { mean: 1.2, max: 2, histogram: { "1": 1 } },
 };
 
+function renderInProjectContent() {
+  return render(
+    <div data-testid="project-content" style={{ display: "flex", width: "100%" }}>
+      <ReliabilityView />
+    </div>,
+  );
+}
+
+function setViewportWidth(width: number) {
+  Object.defineProperty(window, "innerWidth", { configurable: true, value: width });
+  window.dispatchEvent(new Event("resize"));
+}
+
+function expectFlexFill(element: HTMLElement) {
+  const computed = getComputedStyle(element);
+  expect(computed.flexGrow).toBe("1");
+  expect(computed.flexShrink).toBe("1");
+  expect(computed.flexBasis).toBe("auto");
+  expect(computed.minWidth).toBe("0px");
+}
+
 describe("ReliabilityView", () => {
   afterEach(() => {
     vi.useRealTimers();
@@ -56,6 +77,44 @@ describe("ReliabilityView", () => {
     await waitFor(() => expect(screen.getByTestId("reliability-error")).toBeInTheDocument());
     expect(screen.getByRole("alert")).toHaveTextContent("Network unavailable");
     expect(screen.queryByRole("heading", { name: "Reliability" })).not.toBeInTheDocument();
+  });
+
+  it.each([
+    ["desktop", 1024],
+    ["mobile", 375],
+  ])("fills flex parent width in %s loading state", (_label, width) => {
+    setViewportWidth(width);
+    vi.spyOn(globalThis, "fetch").mockReturnValue(new Promise<Response>(() => {}));
+
+    renderInProjectContent();
+
+    expectFlexFill(screen.getByTestId("reliability-loading"));
+  });
+
+  it.each([
+    ["desktop", 1024],
+    ["mobile", 375],
+  ])("fills flex parent width in %s populated state", async (_label, width) => {
+    setViewportWidth(width);
+    vi.spyOn(globalThis, "fetch").mockResolvedValue({ ok: true, json: async () => baseResponse } as Response);
+
+    const { container } = renderInProjectContent();
+
+    await waitFor(() => expect(container.querySelector(".reliability-view")).not.toBeNull());
+    expectFlexFill(container.querySelector(".reliability-view") as HTMLElement);
+  });
+
+  it.each([
+    ["desktop", 1024],
+    ["mobile", 375],
+  ])("fills flex parent width in %s error state", async (_label, width) => {
+    setViewportWidth(width);
+    vi.spyOn(globalThis, "fetch").mockRejectedValue(new Error("Network unavailable"));
+
+    renderInProjectContent();
+
+    await waitFor(() => expect(screen.getByTestId("reliability-error")).toBeInTheDocument());
+    expectFlexFill(screen.getByTestId("reliability-error"));
   });
 
   it("shows data after successful load even if loading refresh is pending", async () => {
