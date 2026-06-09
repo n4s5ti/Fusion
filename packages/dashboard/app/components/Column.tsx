@@ -732,44 +732,32 @@ function ColumnComponent({ column, tasks, projectId, maxConcurrent, onMoveTask, 
           ) : (
             <>
               {visibleTasks.map((task) => (
-                <div key={task.id} className={isHoldColumn ? "column-hold-card" : undefined}>
-                  <TaskCard
-                    task={task}
-                    projectId={projectId}
-                    onOpenDetail={onOpenDetail}
-                    onOpenGroupModal={onOpenGroupModal}
-                    addToast={addToast}
-                    globalPaused={globalPaused}
-                    onUpdateTask={onUpdateTask}
-                    onRetryTask={onRetryTask}
-                    onArchiveTask={onArchiveTask}
-                    onUnarchiveTask={onUnarchiveTask}
-                    onDeleteTask={onDeleteTask}
-                    onOpenDetailWithTab={onOpenDetailWithTab}
-                    taskStuckTimeoutMs={taskStuckTimeoutMs}
-                    onOpenMission={onOpenMission}
-                    onMoveTask={onMoveTask}
-                    lastFetchTimeMs={lastFetchTimeMs}
-                    workflowStepNameLookup={workflowStepNameLookup}
-                    cardFieldDefs={taskCardFieldDefs?.get(task.id)}
-                    fanout={blockerFanoutMap?.get(task.id)}
-                    prAuthAvailable={prAuthAvailable}
-                    autoMergeEnabled={Boolean(autoMerge)}
-                  />
-                  {isHoldColumn && onPromote && (
-                    <button
-                      type="button"
-                      className="btn btn-secondary btn-sm column-promote-btn"
-                      onClick={() => void handlePromote(task.id)}
-                      disabled={promotingIds.has(task.id)}
-                      data-testid={`promote-${task.id}`}
-                    >
-                      {promotingIds.has(task.id)
-                        ? t("column.promoting", "Promoting…")
-                        : t("column.promote", "Promote")}
-                    </button>
-                  )}
-                </div>
+                <TaskCard
+                  key={task.id}
+                  task={task}
+                  projectId={projectId}
+                  onOpenDetail={onOpenDetail}
+                  onOpenGroupModal={onOpenGroupModal}
+                  addToast={addToast}
+                  globalPaused={globalPaused}
+                  onUpdateTask={onUpdateTask}
+                  onRetryTask={onRetryTask}
+                  onArchiveTask={onArchiveTask}
+                  onUnarchiveTask={onUnarchiveTask}
+                  onDeleteTask={onDeleteTask}
+                  onOpenDetailWithTab={onOpenDetailWithTab}
+                  taskStuckTimeoutMs={taskStuckTimeoutMs}
+                  onOpenMission={onOpenMission}
+                  onMoveTask={onMoveTask}
+                  onPromote={isHoldColumn && onPromote ? handlePromote : undefined}
+                  isPromoting={isHoldColumn && onPromote ? promotingIds.has(task.id) : undefined}
+                  lastFetchTimeMs={lastFetchTimeMs}
+                  workflowStepNameLookup={workflowStepNameLookup}
+                  cardFieldDefs={taskCardFieldDefs?.get(task.id)}
+                  fanout={blockerFanoutMap?.get(task.id)}
+                  prAuthAvailable={prAuthAvailable}
+                  autoMergeEnabled={Boolean(autoMerge)}
+                />
               ))}
               {shouldPaginate && hiddenTaskCount > 0 && (
                 <button

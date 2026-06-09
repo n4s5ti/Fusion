@@ -9,9 +9,17 @@ import type { Task, Column as ColumnType } from "@fusion/core";
 const taskCardRenderSpy = vi.fn();
 
 vi.mock("../TaskCard", () => ({
-  TaskCard: React.memo(({ task, workflowStepNameLookup }: { task: Task; workflowStepNameLookup?: ReadonlyMap<string, string> }) => {
+  TaskCard: React.memo(({ task, workflowStepNameLookup, onPromote, isPromoting }: { task: Task; workflowStepNameLookup?: ReadonlyMap<string, string>; onPromote?: (taskId: string) => Promise<void>; isPromoting?: boolean }) => {
     taskCardRenderSpy(task.id);
-    return <div data-testid={`task-${task.id}`} data-workflow-lookup-size={String(workflowStepNameLookup?.size ?? 0)} />;
+    return (
+      <div data-testid={`task-${task.id}`} data-workflow-lookup-size={String(workflowStepNameLookup?.size ?? 0)}>
+        {onPromote && (
+          <button type="button" data-testid={`card-promote-${task.id}`} disabled={isPromoting} onClick={() => void onPromote(task.id)}>
+            {isPromoting ? "Promoting…" : "Promote"}
+          </button>
+        )}
+      </div>
+    );
   }),
 }));
 vi.mock("../WorktreeGroup", () => ({
@@ -192,7 +200,7 @@ describe("Column workflow mode (U9)", () => {
         tasks={[{ ...makeTask("FN-7"), column: "hold-col" as ColumnType }]}
       />,
     );
-    expect(screen.getByTestId("promote-FN-7")).toBeDefined();
+    expect(screen.getByTestId("card-promote-FN-7")).toBeDefined();
   });
 
   it("#1410: clears the inline capacity banner when the task list changes via SSE", async () => {
@@ -213,7 +221,7 @@ describe("Column workflow mode (U9)", () => {
     );
 
     // Trigger a capacity-exhausted promote → inline banner appears.
-    fireEvent.click(screen.getByTestId("promote-FN-7"));
+    fireEvent.click(screen.getByTestId("card-promote-FN-7"));
     await waitFor(() => expect(screen.getByTestId("column-inline-feedback")).toBeDefined());
     expect(screen.getByTestId("column-inline-feedback").textContent).toContain("capacity");
 

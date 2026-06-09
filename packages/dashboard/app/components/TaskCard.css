@@ -794,6 +794,20 @@
   flex-shrink: 0;
 }
 
+.card-promote-action {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+  height: var(--card-chip-height);
+  min-height: var(--card-chip-height);
+  white-space: nowrap;
+}
+
+.card-promote-action svg {
+  display: block;
+  flex-shrink: 0;
+}
+
 .card-github-tracking-chip {
   border-color: color-mix(in srgb, var(--text-muted) 30%, transparent);
   background: color-mix(in srgb, var(--text-muted) 12%, transparent);
@@ -1277,6 +1291,29 @@
   opacity: 1;
   outline: 1px solid var(--todo);
   outline-offset: 1px;
+}
+
+.card-promote-action.card-send-back-btn {
+  border: var(--btn-border-width) solid color-mix(in srgb, var(--text-muted) 30%, transparent);
+  background: color-mix(in srgb, var(--text-muted) 12%, transparent);
+  color: var(--text);
+}
+
+.card-promote-action.card-send-back-btn:hover:not(:disabled) {
+  background: var(--card-hover);
+  color: var(--text);
+}
+
+.card-promote-action.card-send-back-btn:focus-visible {
+  box-shadow: var(--focus-ring-strong);
+  outline: none;
+}
+
+.card-promote-action.card-send-back-btn:disabled {
+  cursor: not-allowed;
+  color: var(--text-muted);
+  background: color-mix(in srgb, var(--text-muted) 8%, transparent);
+  border-color: color-mix(in srgb, var(--text-muted) 24%, transparent);
 }
 
 .card-send-back-menu {

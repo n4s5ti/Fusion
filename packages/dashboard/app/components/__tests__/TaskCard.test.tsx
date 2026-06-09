@@ -24,6 +24,7 @@ vi.mock("lucide-react", () => ({
   RotateCw: () => null,
   Zap: () => <svg data-testid="icon-zap" />,
   AlertTriangle: () => null,
+  ArrowUpRight: () => null,
 }));
 
 vi.mock("../ProviderIcon", () => ({
@@ -4334,6 +4335,75 @@ describe("TaskCard mission badge", () => {
     await waitFor(() => {
       expect(badge?.textContent).toContain("M-ERR99");
     });
+  });
+
+  it("renders a promote action when onPromote is provided", () => {
+    const onPromote = vi.fn().mockResolvedValue(undefined);
+
+    render(
+      <TaskCard
+        task={makeTask({ id: "FN-777", column: "todo" })}
+        onOpenDetail={noop}
+        addToast={noop}
+        onPromote={onPromote}
+      />,
+    );
+
+    const promoteButton = screen.getByTestId("card-promote-FN-777");
+    expect(promoteButton).toBeDefined();
+    expect(promoteButton.textContent).toContain("Promote");
+  });
+
+  it("calls onPromote without opening the card when promote is clicked", () => {
+    const onPromote = vi.fn().mockResolvedValue(undefined);
+    const onOpenDetail = vi.fn();
+
+    render(
+      <TaskCard
+        task={makeTask({ id: "FN-778", column: "todo" })}
+        onOpenDetail={onOpenDetail}
+        addToast={noop}
+        onPromote={onPromote}
+      />,
+    );
+
+    fireEvent.click(screen.getByTestId("card-promote-FN-778"));
+
+    expect(onPromote).toHaveBeenCalledWith("FN-778");
+    expect(onOpenDetail).not.toHaveBeenCalled();
+  });
+
+  it("disables the promote action and shows loading copy while promoting", () => {
+    const onPromote = vi.fn().mockResolvedValue(undefined);
+
+    render(
+      <TaskCard
+        task={makeTask({ id: "FN-779", column: "todo" })}
+        onOpenDetail={noop}
+        addToast={noop}
+        onPromote={onPromote}
+        isPromoting
+      />,
+    );
+
+    const promoteButton = screen.getByTestId("card-promote-FN-779") as HTMLButtonElement;
+    expect(promoteButton.disabled).toBe(true);
+    expect(promoteButton.textContent).toContain("Promoting…");
+
+    fireEvent.click(promoteButton);
+    expect(onPromote).not.toHaveBeenCalled();
+  });
+
+  it("does not render a promote action when onPromote is omitted", () => {
+    render(
+      <TaskCard
+        task={makeTask({ id: "FN-780", column: "todo" })}
+        onOpenDetail={noop}
+        addToast={noop}
+      />,
+    );
+
+    expect(screen.queryByTestId("card-promote-FN-780")).toBeNull();
   });
 
   it("shows mission title in title attribute", async () => {

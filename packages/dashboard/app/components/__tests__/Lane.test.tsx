@@ -8,7 +8,15 @@ import type { BoardWorkflowDefinition } from "../../api";
 // Keep the test focused on Lane + Column (real) — mock the leaf TaskCard and
 // the confirm hook, matching the Column test harness.
 vi.mock("../TaskCard", () => ({
-  TaskCard: ({ task }: { task: Task }) => <div data-testid={`task-${task.id}`} data-id={task.id} />,
+  TaskCard: ({ task, onPromote, isPromoting }: { task: Task; onPromote?: (taskId: string) => Promise<void>; isPromoting?: boolean }) => (
+    <div data-testid={`task-${task.id}`} data-id={task.id}>
+      {onPromote && (
+        <button type="button" data-testid={`card-promote-${task.id}`} disabled={isPromoting} onClick={() => void onPromote(task.id)}>
+          {isPromoting ? "Promoting…" : "Promote"}
+        </button>
+      )}
+    </div>
+  ),
 }));
 vi.mock("../WorktreeGroup", () => ({ WorktreeGroup: () => <div data-testid="worktree-group" /> }));
 vi.mock("../QuickEntryBox", () => ({ QuickEntryBox: () => <div data-testid="quick-entry-box" /> }));
@@ -122,7 +130,7 @@ describe("Lane", () => {
   it("shows a Promote button on hold-column cards and calls onPromote", async () => {
     const props = baseProps();
     render(<Lane {...props} tasks={[mkTask({ id: "FN-7", column: "todo" })]} />);
-    const promoteBtn = screen.getByTestId("promote-FN-7");
+    const promoteBtn = screen.getByTestId("card-promote-FN-7");
     expect(promoteBtn).toBeDefined();
     fireEvent.click(promoteBtn);
     await waitFor(() => expect(props.onPromote).toHaveBeenCalledWith("FN-7"));
@@ -134,12 +142,12 @@ describe("Lane", () => {
       details: { code: "capacity-exhausted", messageKey: "board.rejection.capacityExhausted", retryable: true },
     });
     render(<Lane {...props} tasks={[mkTask({ id: "FN-8", column: "todo" })]} />);
-    fireEvent.click(screen.getByTestId("promote-FN-8"));
+    fireEvent.click(screen.getByTestId("card-promote-FN-8"));
     await waitFor(() => expect(screen.getByTestId("column-inline-feedback")).toBeDefined());
     // No toast was used for the inline capacity feedback.
     expect(props.addToast).not.toHaveBeenCalled();
     // Button re-enabled after the call resolves.
-    await waitFor(() => expect((screen.getByTestId("promote-FN-8") as HTMLButtonElement).disabled).toBe(false));
+    await waitFor(() => expect((screen.getByTestId("card-promote-FN-8") as HTMLButtonElement).disabled).toBe(false));
   });
 
   it("prevents the drop (no-move) when canDropTask returns a rejection key", () => {

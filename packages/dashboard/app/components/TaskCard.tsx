@@ -2,7 +2,7 @@ import "./TaskCard.css";
 import { useTranslation } from "react-i18next";
 import type { TFunction } from "i18next";
 import { memo, useCallback, useState, useRef, useEffect, useMemo, type ReactElement } from "react";
-import { Link, Clock, Layers, Pencil, ChevronDown, Folder, Target, Bot, Trash2, RotateCw, Zap, GitBranch, GitPullRequest, AlertTriangle } from "lucide-react";
+import { Link, Clock, Layers, Pencil, ChevronDown, Folder, Target, Bot, Trash2, RotateCw, Zap, GitBranch, GitPullRequest, AlertTriangle, ArrowUpRight } from "lucide-react";
 import type { Task, TaskDetail, Column, ColumnId, PrInfo, IssueInfo, TaskPriority, GithubIssueAction } from "@fusion/core";
 import {
   DEFAULT_TASK_PRIORITY,
@@ -393,6 +393,10 @@ interface TaskCardProps {
   onOpenMission?: (missionId: string) => void;
   /** Called when user moves a task to a different column from the card. */
   onMoveTask?: (id: string, column: Column, optionsOrPosition?: { preserveProgress?: boolean } | number) => Promise<Task>;
+  /** Called when user promotes a held task out of a hold column. */
+  onPromote?: (taskId: string) => Promise<void>;
+  /** True while this task's promote action is in flight. */
+  isPromoting?: boolean;
   /** Timestamp (ms) when task data was last confirmed fresh from the server. Used for freshness-aware stuck detection. */
   lastFetchTimeMs?: number;
   /** Lookup of workflow step IDs to display names, fetched once at board level. */
@@ -586,6 +590,8 @@ function areTaskCardPropsEqual(previous: TaskCardProps, next: TaskCardProps): bo
     previous.onOpenDetailWithTab === next.onOpenDetailWithTab &&
     previous.onOpenMission === next.onOpenMission &&
     previous.onMoveTask === next.onMoveTask &&
+    previous.onPromote === next.onPromote &&
+    previous.isPromoting === next.isPromoting &&
     previous.workflowStepNameLookup === next.workflowStepNameLookup &&
     previous.disableDrag === next.disableDrag &&
     previous.fanout?.totalCount === next.fanout?.totalCount &&
@@ -682,6 +688,8 @@ function TaskCardComponent({
   taskStuckTimeoutMs,
   onOpenMission,
   onMoveTask,
+  onPromote,
+  isPromoting = false,
   lastFetchTimeMs,
   workflowStepNameLookup,
   disableDrag,
@@ -1281,7 +1289,7 @@ function TaskCardComponent({
     || Boolean(task.blockedBy)
     || Boolean(task.overlapBlockedBy)
     || Boolean(fanout && fanout.totalCount > 0);
-  const shouldRenderActionRow = showCreatePrQuickAction || (showInReviewMoveControl && !metaRowVisible);
+  const shouldRenderActionRow = Boolean(onPromote) || showCreatePrQuickAction || (showInReviewMoveControl && !metaRowVisible);
 
   const renderInReviewMoveControl = () => (
     <div className="card-send-back" ref={sendBackRef}>
@@ -1670,6 +1678,12 @@ function TaskCardComponent({
       addToast(t("tasks.moveFailed", "Failed to move {{taskId}}: {{error}}", { taskId: task.id, error: getErrorMessage(err) }), "error");
     }
   }, [addToast, confirm, onMoveTask, task.id, task.steps]);
+
+  const handlePromoteClick = useCallback((e: React.MouseEvent<HTMLButtonElement>) => {
+    e.stopPropagation();
+    if (!onPromote || isPromoting) return;
+    void onPromote(task.id);
+  }, [isPromoting, onPromote, task.id]);
 
   const handleRetryTask = useCallback(async (e: React.MouseEvent<HTMLButtonElement>) => {
     e.stopPropagation();
@@ -2419,6 +2433,20 @@ function TaskCardComponent({
             >
               <GitPullRequest size={12} />
               {t("tasks.createPr", "Create PR")}
+            </button>
+          )}
+          {onPromote && (
+            <button
+              type="button"
+              className="card-promote-action card-send-back-btn"
+              data-testid={`card-promote-${task.id}`}
+              title={t("tasks.promoteTask", "Promote task")}
+              aria-label={t("tasks.promoteTask", "Promote task")}
+              disabled={isPromoting}
+              onClick={handlePromoteClick}
+            >
+              <ArrowUpRight size={12} />
+              {isPromoting ? t("tasks.promoting", "Promoting…") : t("tasks.promote", "Promote")}
             </button>
           )}
           {showInReviewMoveControl && !metaRowVisible && renderInReviewMoveControl()}
