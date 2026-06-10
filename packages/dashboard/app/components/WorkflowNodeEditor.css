@@ -42,7 +42,7 @@
   justify-content: space-between;
   gap: var(--space-sm);
   padding: var(--space-sm) var(--space-md);
-  background: var(--accent-subtle, rgba(59, 130, 246, 0.12));
+  background: var(--accent-subtle, color-mix(in srgb, #3b82f6 12%, transparent));
   border-bottom: 1px solid var(--border);
   color: var(--text);
   font-size: 0.85rem;
@@ -484,7 +484,7 @@
 
 .wf-templates-badge {
   padding: 0 var(--space-xs);
-  background: var(--accent-subtle, rgba(59, 130, 246, 0.12));
+  background: var(--accent-subtle, color-mix(in srgb, #3b82f6 12%, transparent));
   border-radius: var(--radius-sm);
   color: var(--text-muted);
   font-size: 0.7rem;

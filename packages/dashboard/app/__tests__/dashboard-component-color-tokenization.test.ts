@@ -1,25 +1,40 @@
 import { describe, expect, it } from "vitest";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
 const root = resolve(__dirname, "../components");
 
 const auditedCompliant = ["ChatView.css", "MobileNavBar.css", "ListView.css", "WorkflowResultsTab.css"];
 const cleanedFiles = [
-  "ScriptsModal.css",
-  "InlineCreateCard.css",
-  "FileMentionPopup.css",
-  "BackgroundTasksIndicator.css",
-  "CliBinaryPanel.css",
-  "CliBinaryInstallBanner.css",
-  "GitHubImportModal.css",
-  "WorkspaceSelector.css",
   "AgentReflectionsTab.css",
+  "BackgroundTasksIndicator.css",
+  "CliBinaryInstallBanner.css",
+  "CliBinaryPanel.css",
+  "FileMentionPopup.css",
+  "GitHubImportModal.css",
+  "InlineCreateCard.css",
+  "LanguageSelector.css",
+  "PullRequestView.css",
+  "ScriptsModal.css",
+  "SettingsFieldRow.css",
   "SettingsSyncLog.css",
+  "WorkflowFieldsPanel.css",
+  "WorkflowNodeEditor.css",
+  "WorkflowSettingsPanel.css",
+  "WorkspaceSelector.css",
 ];
 
 const bareHexCleanedFiles = ["ScriptsModal.css", "SettingsSyncLog.css"];
 const hexLiteralPattern = /#[0-9a-fA-F]{3,8}\b/;
+
+function resolveComponentCss(file: string): string {
+  const directPath = resolve(root, file);
+  if (existsSync(directPath)) {
+    return directPath;
+  }
+
+  return resolve(root, "settings", file);
+}
 
 function stripVarCalls(line: string): string {
   return line.replace(/var\([^)]*\)/g, "");
@@ -35,7 +50,7 @@ describe("dashboard component color tokenization", () => {
 
   it("keeps cleaned files free of raw rgba()", () => {
     for (const file of cleanedFiles) {
-      const source = readFileSync(resolve(root, file), "utf8");
+      const source = readFileSync(resolveComponentCss(file), "utf8");
       expect(source).not.toMatch(/rgba\(/);
     }
   });
