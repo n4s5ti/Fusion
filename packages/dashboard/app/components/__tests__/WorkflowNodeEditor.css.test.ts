@@ -133,6 +133,7 @@ describe("WorkflowNodeEditor mobile CSS contract", () => {
     expect(editorBodyRule).toMatch(/overflow-x\s*:\s*hidden\s*;/);
 
     const editorStageWrapRule = findRule(mobileBlocks, /\.wf-editor-body--editor-stage \.wf-editor-canvas-wrap\s*\{[^}]*\}/);
+    expect(editorStageWrapRule).toMatch(/flex\s*:\s*0 1 auto\s*;/);
     expect(editorStageWrapRule).toMatch(/width\s*:\s*100%\s*;/);
     expect(editorStageWrapRule).toMatch(/min-width\s*:\s*0\s*;/);
     expect(editorStageWrapRule).toMatch(/overflow\s*:\s*hidden\s*;/);
