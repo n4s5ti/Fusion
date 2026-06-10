@@ -1492,16 +1492,7 @@ export function QuickEntryBox({ onCreate, addToast, tasks = [], availableModels,
               }
             }}
             onTouchEnd={() => {
-              const button = touchButtonRef.current;
               touchButtonRef.current = null;
-              if (button && !button.disabled) {
-                button.click();
-                window.setTimeout(() => {
-                  window.setTimeout(() => {
-                    textareaRef.current?.focus({ preventScroll: true });
-                  }, 0);
-                }, 0);
-              }
             }}
             onTouchCancel={() => {
               touchButtonRef.current = null;

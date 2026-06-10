@@ -505,6 +505,7 @@ describe("QuickEntryBox", () => {
       expect(preventDefaultSpy).toHaveBeenCalled();
       await act(async () => {
         fireEvent(button, new Event("touchend", { bubbles: true, cancelable: true }));
+        fireEvent.click(button);
         vi.runOnlyPendingTimers();
         vi.runOnlyPendingTimers();
       });
@@ -530,6 +531,7 @@ describe("QuickEntryBox", () => {
       expect(preventDefaultSpy).toHaveBeenCalled();
       await act(async () => {
         fireEvent(svg!, new Event("touchend", { bubbles: true, cancelable: true }));
+        fireEvent.click(priorityButton);
         vi.runOnlyPendingTimers();
         vi.runOnlyPendingTimers();
       });
@@ -569,6 +571,7 @@ describe("QuickEntryBox", () => {
       expect(preventDefaultSpy).toHaveBeenCalled();
       await act(async () => {
         fireEvent(svg!, new Event("touchend", { bubbles: true, cancelable: true }));
+        fireEvent.click(githubToggle);
         vi.runOnlyPendingTimers();
         vi.runOnlyPendingTimers();
       });
@@ -653,10 +656,19 @@ describe("QuickEntryBox", () => {
       expect(document.activeElement).toBe(textarea);
       await act(async () => {
         fireEvent(button, new Event("touchend", { bubbles: true, cancelable: true }));
+        fireEvent.click(button);
         vi.runOnlyPendingTimers();
         vi.runOnlyPendingTimers();
       });
       expect(document.activeElement).toBe(textarea);
+
+      const outsideElement = document.createElement("div");
+      document.body.appendChild(outsideElement);
+      try {
+        fireEvent.mouseDown(outsideElement);
+      } finally {
+        document.body.removeChild(outsideElement);
+      }
     });
 
     it("does not fire disabled button actions via touch", async () => {
@@ -3218,7 +3230,7 @@ describe("QuickEntryBox", () => {
       const touchRule = quickEntryMobileActionsTouchRule();
 
       expect(touchRule).toMatch(/\.quick-entry-actions,\s*\.quick-entry-actions \*/);
-      expect(touchRule).toMatch(/touch-action:\s*none;/);
+      expect(touchRule).toMatch(/touch-action:\s*manipulation;/);
     });
 
     it("keeps inline deps/models controls in touch-target button classes on mobile", () => {
