@@ -3124,6 +3124,153 @@ describe("fn pi extension (runnable structured-output regression slice)", () => 
       expect(updated?.mergeRetries).toBe(0);
     });
 
+    it("moves status-none in-review task with incomplete steps to todo preserving progress", async () => {
+      const store = new TaskStore(tmpDir);
+      await store.init();
+
+      const task = await store.createTask({
+        title: "status-none execution-stalled task",
+        description: "test",
+        column: "todo",
+      });
+      await store.updateTask(task.id, {
+        steps: [
+          { name: "Step 0", status: "done" },
+          { name: "Step 1", status: "in-progress" },
+          { name: "Step 2", status: "pending" },
+        ],
+      });
+      await store.moveTask(task.id, "in-progress");
+      await store.moveTask(task.id, "in-review");
+      await store.updateTask(task.id, { status: null, error: "stalled without failed status", mergeRetries: 5 });
+
+      const retryTool = api.tools.get("fn_task_retry")!;
+      const result = await retryTool.execute("retry-status-none-exec", { id: task.id }, undefined, undefined, makeCtx(tmpDir));
+
+      expect(result.isError).toBeFalsy();
+      expect(result.details.newColumn).toBe("todo");
+
+      const updated = await store.getTask(task.id);
+      expect(updated?.column).toBe("todo");
+      expect(updated?.status).toBeFalsy();
+      expect(updated?.error).toBeFalsy();
+      expect(updated?.steps[1].status).toBe("in-progress");
+      expect(updated?.mergeRetries).toBe(5);
+    });
+
+    it("moves status-none zero-step in-review task with no merge attempts to todo", async () => {
+      const store = new TaskStore(tmpDir);
+      await store.init();
+
+      const task = await store.createTask({
+        title: "status-none zero-step execution-stalled task",
+        description: "test",
+        column: "todo",
+      });
+      await writeFile(join(tmpDir, ".fusion", "tasks", task.id, "PROMPT.md"), "# status-none zero-step execution-stalled task\n\nNo steps yet.\n");
+      await store.updateTask(task.id, { steps: [] });
+      await store.moveTask(task.id, "in-progress");
+      await store.moveTask(task.id, "in-review");
+      await store.updateTask(task.id, { status: null, error: "stalled before planning steps", mergeRetries: 0, steps: [] });
+
+      const retryTool = api.tools.get("fn_task_retry")!;
+      const result = await retryTool.execute("retry-status-none-zero-step-exec", { id: task.id }, undefined, undefined, makeCtx(tmpDir));
+
+      expect(result.isError).toBeFalsy();
+      expect(result.details.newColumn).toBe("todo");
+
+      const updated = await store.getTask(task.id);
+      expect(updated?.column).toBe("todo");
+      expect(updated?.status).toBeFalsy();
+      expect(updated?.error).toBeFalsy();
+      expect(updated?.steps).toEqual([]);
+      expect(updated?.mergeRetries).toBe(0);
+    });
+
+    it("keeps status-none in-review task with prior merge attempts in-review and resets merge state", async () => {
+      const store = new TaskStore(tmpDir);
+      await store.init();
+
+      const task = await store.createTask({
+        title: "status-none merge-stalled task",
+        description: "test",
+        column: "todo",
+      });
+      await store.updateTask(task.id, {
+        steps: [
+          { name: "Step 0", status: "done" },
+          { name: "Step 1", status: "done" },
+        ],
+      });
+      await store.moveTask(task.id, "in-progress");
+      await store.moveTask(task.id, "in-review");
+      await store.updateTask(task.id, { status: null, error: "merge retry exhausted without failed status", mergeRetries: 2 });
+
+      const retryTool = api.tools.get("fn_task_retry")!;
+      const result = await retryTool.execute("retry-status-none-merge", { id: task.id }, undefined, undefined, makeCtx(tmpDir));
+
+      expect(result.isError).toBeFalsy();
+      expect(result.details.newColumn).toBe("in-review");
+
+      const updated = await store.getTask(task.id);
+      expect(updated?.column).toBe("in-review");
+      expect(updated?.status).toBeFalsy();
+      expect(updated?.error).toBeFalsy();
+      expect(updated?.mergeRetries).toBe(0);
+    });
+
+    it("rejects status-none in-review task with completed steps and no merge attempts", async () => {
+      const store = new TaskStore(tmpDir);
+      await store.init();
+
+      const task = await store.createTask({
+        title: "status-none completed task with no merge attempts",
+        description: "test",
+        column: "todo",
+      });
+      await store.updateTask(task.id, {
+        steps: [
+          { name: "Step 0", status: "done" },
+          { name: "Step 1", status: "done" },
+        ],
+      });
+      await store.moveTask(task.id, "in-progress");
+      await store.moveTask(task.id, "in-review");
+      await store.updateTask(task.id, { status: null, mergeRetries: 0 });
+
+      const retryTool = api.tools.get("fn_task_retry")!;
+      const result = await retryTool.execute("retry-status-none-no-merge", { id: task.id }, undefined, undefined, makeCtx(tmpDir));
+
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toContain("not in a retryable state");
+
+      const updated = await store.getTask(task.id);
+      expect(updated?.column).toBe("in-review");
+      expect(updated?.mergeRetries).toBe(0);
+    });
+
+    it("rejects non-review task with status none", async () => {
+      const store = new TaskStore(tmpDir);
+      await store.init();
+
+      const task = await store.createTask({
+        title: "status-none todo task",
+        description: "test",
+        column: "todo",
+      });
+      await store.updateTask(task.id, { status: null, steps: [{ name: "Step 0", status: "pending" }] });
+
+      const retryTool = api.tools.get("fn_task_retry")!;
+      const result = await retryTool.execute("retry-status-none-todo", { id: task.id }, undefined, undefined, makeCtx(tmpDir));
+
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toContain("not in a retryable state");
+
+      const updated = await store.getTask(task.id);
+      expect(updated?.column).toBe("todo");
+      expect(updated?.status).toBeFalsy();
+    });
+
     it("moves non-review failed task to todo and resets all retry counters", async () => {
       const store = new TaskStore(tmpDir);
       await store.init();

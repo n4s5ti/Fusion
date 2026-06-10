@@ -470,6 +470,140 @@ describe("POST /tasks/:id/retry", () => {
     expect(updateCall).not.toHaveProperty("mergeRetries");
   });
 
+  it("retries status-none in-review task with incomplete steps by moving to todo", async () => {
+    const reviewTask = {
+      ...FAKE_TASK_DETAIL,
+      column: "in-review" as const,
+      status: null,
+      mergeRetries: 4,
+      steps: [
+        { name: "Step 0", status: "done" },
+        { name: "Step 1", status: "in-progress" },
+        { name: "Step 2", status: "pending" },
+      ],
+    };
+    const movedTask = { ...reviewTask, column: "todo" as const, status: undefined };
+    (store.getTask as ReturnType<typeof vi.fn>).mockResolvedValueOnce(reviewTask);
+    (store.updateTask as ReturnType<typeof vi.fn>).mockResolvedValue(reviewTask);
+    (store.moveTask as ReturnType<typeof vi.fn>).mockResolvedValue(movedTask);
+
+    const res = await REQUEST(buildApp(), "POST", "/api/tasks/KB-001/retry", JSON.stringify({}), {
+      "Content-Type": "application/json",
+    });
+
+    expect(res.status).toBe(200);
+    expect(store.updateTask).toHaveBeenCalledWith("KB-001", {
+      status: null,
+      error: null,
+      ...buildManualRetryResetPatch(),
+    });
+    expect(store.moveTask).toHaveBeenCalledWith("KB-001", "todo", { preserveProgress: true });
+    expect(store.logEntry).toHaveBeenCalledWith(
+      "KB-001",
+      "Retry requested from dashboard (stranded in-review execution retry → todo, preserving progress)",
+    );
+  });
+
+  it("retries status-none zero-step in-review task with no merge attempts by moving to todo", async () => {
+    const reviewTask = {
+      ...FAKE_TASK_DETAIL,
+      column: "in-review" as const,
+      status: null,
+      steps: [],
+      mergeRetries: 0,
+    };
+    const movedTask = { ...reviewTask, column: "todo" as const, status: undefined };
+    (store.getTask as ReturnType<typeof vi.fn>).mockResolvedValueOnce(reviewTask);
+    (store.updateTask as ReturnType<typeof vi.fn>).mockResolvedValue(reviewTask);
+    (store.moveTask as ReturnType<typeof vi.fn>).mockResolvedValue(movedTask);
+
+    const res = await REQUEST(buildApp(), "POST", "/api/tasks/KB-001/retry", JSON.stringify({}), {
+      "Content-Type": "application/json",
+    });
+
+    expect(res.status).toBe(200);
+    expect(store.moveTask).toHaveBeenCalledWith("KB-001", "todo", { preserveProgress: true });
+    expect(store.logEntry).toHaveBeenCalledWith(
+      "KB-001",
+      "Retry requested from dashboard (stranded in-review execution retry → todo, preserving progress)",
+    );
+  });
+
+  it("retries status-none in-review task with prior merge attempts by staying in-review", async () => {
+    const reviewTask = {
+      ...FAKE_TASK_DETAIL,
+      column: "in-review" as const,
+      status: null,
+      mergeRetries: 2,
+      steps: [
+        { name: "Step 0", status: "done" },
+        { name: "Step 1", status: "done" },
+      ],
+    };
+    (store.getTask as ReturnType<typeof vi.fn>)
+      .mockResolvedValueOnce(reviewTask)
+      .mockResolvedValueOnce({ ...reviewTask, status: undefined, mergeRetries: 0 });
+    (store.updateTask as ReturnType<typeof vi.fn>).mockResolvedValue(reviewTask);
+
+    const res = await REQUEST(buildApp(), "POST", "/api/tasks/KB-001/retry", JSON.stringify({}), {
+      "Content-Type": "application/json",
+    });
+
+    expect(res.status).toBe(200);
+    expect(store.updateTask).toHaveBeenCalledWith("KB-001", {
+      status: null,
+      error: null,
+      ...buildManualRetryResetPatch({ resetMergeRetries: true }),
+    });
+    expect(store.moveTask).not.toHaveBeenCalled();
+    expect(store.logEntry).toHaveBeenCalledWith(
+      "KB-001",
+      "Retry requested from dashboard (in-review merge retry, mergeRetries reset)",
+    );
+  });
+
+  it("returns 400 for status-none in-review task with completed steps and no merge attempts", async () => {
+    const reviewTask = {
+      ...FAKE_TASK_DETAIL,
+      column: "in-review" as const,
+      status: null,
+      mergeRetries: 0,
+      steps: [
+        { name: "Step 0", status: "done" },
+        { name: "Step 1", status: "done" },
+      ],
+    };
+    (store.getTask as ReturnType<typeof vi.fn>).mockResolvedValueOnce(reviewTask);
+
+    const res = await REQUEST(buildApp(), "POST", "/api/tasks/KB-001/retry", JSON.stringify({}), {
+      "Content-Type": "application/json",
+    });
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toContain("not in a retryable state");
+    expect(store.updateTask).not.toHaveBeenCalled();
+    expect(store.moveTask).not.toHaveBeenCalled();
+  });
+
+  it("returns 400 for non-review task with status none", async () => {
+    const task = {
+      ...FAKE_TASK_DETAIL,
+      column: "todo" as const,
+      status: null,
+      steps: [{ name: "Step 0", status: "pending" }],
+    };
+    (store.getTask as ReturnType<typeof vi.fn>).mockResolvedValueOnce(task);
+
+    const res = await REQUEST(buildApp(), "POST", "/api/tasks/KB-001/retry", JSON.stringify({}), {
+      "Content-Type": "application/json",
+    });
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toContain("not in a retryable state");
+    expect(store.updateTask).not.toHaveBeenCalled();
+    expect(store.moveTask).not.toHaveBeenCalled();
+  });
+
   it("preserves worktree/branch when retrying in-review task", async () => {
     const reviewTask = {
       ...FAKE_TASK_DETAIL,

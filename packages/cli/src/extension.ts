@@ -1022,7 +1022,7 @@ export default function kbExtension(pi: ExtensionAPI) {
     promptSnippet: "Retry a failed Fusion task (clears error, moves to todo or stays in in-review)",
     promptGuidelines: [
       "Use when a task has failed and needs to be retried",
-      "Only tasks in 'failed' or 'stuck-killed' state can be retried",
+      "Only tasks in 'failed' or 'stuck-killed' state, plus stranded in-review tasks with incomplete execution or prior merge attempts, can be retried",
       "In-review tasks with incomplete steps (pending/in-progress) move to todo with preserveProgress so execution can resume",
       "In-review tasks with all steps done stay in in-review and reset merge retry state for auto-merge re-attempt",
       "Tasks in other columns are moved to the todo column with error state cleared",
@@ -1046,8 +1046,26 @@ export default function kbExtension(pi: ExtensionAPI) {
         };
       }
       
+      const isInReviewStatusNone =
+        task.column === "in-review" && (task.status === null || task.status === undefined);
+      const hasIncompleteSteps = task.steps.some(
+        (s: { status: string }) => s.status === "pending" || s.status === "in-progress",
+      );
+      // FN-4130 / PR #59 follow-up: zero-step review failures with no merge attempts
+      // (`mergeRetries ?? 0 === 0`) failed during execution, not merge finalization.
+      const isExecutionFailureInReview =
+        hasIncompleteSteps || (task.steps.length === 0 && (task.mergeRetries ?? 0) === 0);
+      const isInReviewExecutionStall = isInReviewStatusNone && isExecutionFailureInReview;
+      const isInReviewMergeRetryStall = isInReviewStatusNone && (task.mergeRetries ?? 0) > 0;
+      const isInReviewRetry =
+        task.column === "in-review" &&
+        (task.status === "failed" ||
+          task.status === "stuck-killed" ||
+          isInReviewExecutionStall ||
+          isInReviewMergeRetryStall);
+
       // Validate task is in a retryable state
-      if (task.status !== 'failed' && task.status !== 'stuck-killed') {
+      if (task.status !== 'failed' && task.status !== 'stuck-killed' && !isInReviewRetry) {
         return {
           content: [{ type: "text", text: `Task ${params.id} is not in a retryable state (status: ${task.status || 'none'})` }],
           isError: true,
@@ -1060,15 +1078,7 @@ export default function kbExtension(pi: ExtensionAPI) {
       const retryLogSuffix = clearedDeadlockAutoPause ? ", cleared deadlock auto-pause" : "";
 
       // In-review retry: distinguish between execution failures and merge failures.
-      if (task.column === 'in-review') {
-        const hasIncompleteSteps = task.steps.some(
-          (s: { status: string }) => s.status === "pending" || s.status === "in-progress",
-        );
-        // FN-4130 / PR #59 follow-up: zero-step review failures with no merge attempts
-        // (`mergeRetries ?? 0 === 0`) failed during execution, not merge finalization.
-        const isExecutionFailureInReview =
-          hasIncompleteSteps || (task.steps.length === 0 && (task.mergeRetries ?? 0) === 0);
-
+      if (isInReviewRetry) {
         if (isExecutionFailureInReview) {
           await store.updateTask(params.id, {
             status: null,
@@ -1076,7 +1086,12 @@ export default function kbExtension(pi: ExtensionAPI) {
             ...autoPauseClearPatch,
             ...buildManualRetryResetPatch(),
           });
-          await store.logEntry(params.id, `Retry requested via Fusion extension (execution failure in-review → todo, preserving progress${retryLogSuffix})`);
+          await store.logEntry(
+            params.id,
+            isInReviewExecutionStall
+              ? `Retry requested via Fusion extension (stranded in-review execution retry → todo, preserving progress${retryLogSuffix})`
+              : `Retry requested via Fusion extension (execution failure in-review → todo, preserving progress${retryLogSuffix})`,
+          );
           await store.moveTask(params.id, "todo", { preserveProgress: true });
           return {
             content: [{ type: "text", text: `Retried ${params.id} → todo (execution failure, preserving step progress)` }],
