@@ -20,6 +20,30 @@ export class WorkflowCompileError extends Error {
  *  not emitted as steps. */
 const SEAM_NAMES = new Set(["planning", "execute", "workflow-step", "review", "merge"]);
 
+/** Workflow-owned merge/retry/recovery policy node kinds (FN-6035). After review,
+ *  the builtin workflows express the merge lifecycle as a branching subgraph of
+ *  these primitives instead of the single legacy `merge` seam node. The linear
+ *  compiler treats the whole region as one engine-owned terminal boundary: it is
+ *  exempt from the single-outgoing-edge rule, never lowered to a WorkflowStep, and
+ *  ends the linear walk (the legacy pipeline runs the merge lifecycle natively,
+ *  the graph interpreter runs the branches). This keeps `builtin:coding` and other
+ *  linear-prefix workflows compilable to their pre-merge step list rather than
+ *  failing as "interpreter (deferred)". */
+const MERGE_REGION_KINDS = new Set([
+  "merge-gate",
+  "merge-attempt",
+  "manual-merge-hold",
+  "retry-backoff",
+  "recovery-router",
+  "branch-group-member-integration",
+  "branch-group-promotion",
+  "pr-merge",
+]);
+
+function isMergeRegion(node: WorkflowIrNode): boolean {
+  return MERGE_REGION_KINDS.has(node.kind);
+}
+
 function seamOf(node: WorkflowIrNode): string | undefined {
   const seam = node.config?.seam;
   return typeof seam === "string" && SEAM_NAMES.has(seam) ? seam : undefined;
@@ -75,6 +99,11 @@ export function validateLinearity(ir: WorkflowIr): WorkflowCompileError | null {
       continue;
     }
 
+    // Merge-region primitives are an engine-owned terminal boundary (FN-6035):
+    // they legitimately branch (e.g. merge-gate's auto-on/auto-off outcome edges)
+    // and are never lowered to steps, so they are exempt from the linearity rules.
+    if (isMergeRegion(node)) continue;
+
     const seam = seamOf(node);
     if (seam) {
       const failureEdges = outs.filter((edge) => edge.condition === "failure");
@@ -121,10 +150,18 @@ export function validateLinearity(ir: WorkflowIr): WorkflowCompileError | null {
   const seenSeams = new Set<string>();
   let nextExpectedSeamIndex = 0;
   const visited = new Set<string>();
+  // Reaching the engine-owned merge region counts as reaching the terminal
+  // lifecycle: the linear walk stops there and the branching merge subgraph
+  // (plus the end node it eventually leads to) is owned by the merge runtime.
+  let reachedTerminal = false;
   let cursor: string | undefined = startNode.id;
   while (cursor && !visited.has(cursor)) {
     visited.add(cursor);
     const node = nodesById.get(cursor);
+    if (node && isMergeRegion(node)) {
+      reachedTerminal = true;
+      break;
+    }
     const seam = node ? seamOf(node) : undefined;
     if (seam) {
       if (seenSeams.has(seam)) {
@@ -144,13 +181,21 @@ export function validateLinearity(ir: WorkflowIr): WorkflowCompileError | null {
       seenSeams.add(seam);
       nextExpectedSeamIndex += 1;
     }
-    if (cursor === endNode.id) break;
+    if (cursor === endNode.id) {
+      reachedTerminal = true;
+      break;
+    }
     cursor = mainEdge(outgoing.get(cursor) ?? [])?.to;
   }
-  if (!visited.has(endNode.id)) {
+  if (!reachedTerminal) {
     return new WorkflowCompileError("workflow main path does not reach the end node");
   }
-  const unreached = ir.nodes.filter((node) => !visited.has(node.id));
+  // Merge-region nodes and the end node may be reached only through the branching
+  // merge subgraph (not the linear walk), so they are not required to appear on the
+  // pre-merge main path. Every other node must.
+  const unreached = ir.nodes.filter(
+    (node) => !visited.has(node.id) && node.kind !== "end" && !isMergeRegion(node),
+  );
   if (unreached.length > 0) {
     return new WorkflowCompileError(
       `node '${unreached[0].id}' is not on the main path — disconnected nodes require the workflow interpreter (deferred)`,
@@ -235,6 +280,11 @@ export function compileWorkflowToSteps(ir: WorkflowIr): WorkflowStepInput[] {
     visited.add(cursor);
     const node = nodesById.get(cursor);
     if (!node) break;
+
+    // The merge region is an engine-owned terminal boundary: it carries no
+    // lowerable user steps and ends the linear lowering walk (mirrors how the
+    // legacy `merge` seam terminated the pre-merge chain).
+    if (isMergeRegion(node)) break;
 
     const seam = seamOf(node);
     if (seam === "merge") {

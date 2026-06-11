@@ -120,6 +120,40 @@ describe("compileWorkflowToSteps (U2)", () => {
     expect(() => compileWorkflowToSteps(ir)).toThrow(/interpreter \(deferred\)/i);
   });
 
+  it("compiles a workflow whose post-review merge region branches into primitives (FN-6035)", () => {
+    // Mirrors the builtin:coding shape: review → merge-gate fans out into the
+    // engine-owned merge/branch-group/retry subgraph. These primitive kinds are a
+    // terminal boundary, so the graph still compiles to its pre-merge step list
+    // instead of failing as interpreter-only.
+    const ir: WorkflowIr = {
+      version: "v1",
+      name: "merge-region",
+      nodes: [
+        { id: "start", kind: "start" },
+        { id: "spec", kind: "prompt", config: { name: "Spec", prompt: "spec" } },
+        { id: "review", kind: "prompt", config: { seam: "review" } },
+        { id: "merge-gate", kind: "merge-gate", config: { gate: "auto-merge" } },
+        { id: "merge-attempt", kind: "merge-attempt" },
+        { id: "merge-hold", kind: "manual-merge-hold" },
+        { id: "end", kind: "end" },
+      ],
+      edges: [
+        { from: "start", to: "spec", condition: "success" },
+        { from: "spec", to: "review", condition: "success" },
+        { from: "review", to: "merge-gate", condition: "success" },
+        { from: "review", to: "end", condition: "failure" },
+        { from: "merge-gate", to: "merge-attempt", condition: "outcome:auto-on" },
+        { from: "merge-gate", to: "merge-hold", condition: "outcome:auto-off" },
+        { from: "merge-attempt", to: "end", condition: "success" },
+        { from: "merge-hold", to: "merge-attempt", condition: "success" },
+      ],
+    };
+    expect(validateLinearity(parseWorkflowIr(ir))).toBeNull();
+    const steps = compileWorkflowToSteps(ir);
+    // Only the pre-merge user node lowers; the merge primitives emit no steps.
+    expect(steps.map((s) => s.name)).toEqual(["Spec"]);
+  });
+
   it("rejects a graph missing the start/end nodes via parse", () => {
     const ir = { version: "v1", name: "x", nodes: [{ id: "p", kind: "prompt" }], edges: [] } as WorkflowIr;
     expect(() => compileWorkflowToSteps(ir)).toThrow();

@@ -138,7 +138,9 @@ describe("built-in workflows", () => {
     expect(byId.get("execute")?.column).toBe("in-progress");
     expect(byId.get("workflow-step")?.column).toBe("in-progress");
     expect(byId.get("review")?.column).toBe("in-review");
-    expect(byId.get("merge")?.column).toBe("in-review");
+    // Merge is the native primitive region (FN-6035), placed in in-review.
+    expect(byId.get("merge")).toBeUndefined();
+    expect(byId.get("merge-attempt")?.column).toBe("in-review");
     expect(ir.settings).toEqual(BUILTIN_WORKFLOW_SETTINGS);
   });
 
@@ -195,10 +197,11 @@ describe("built-in workflows", () => {
       const byId = new Map(candidate.nodes.map((node) => [node.id, node]));
       expect(byId.get("workflow-step")?.config?.name).toBe("Pre-merge workflow steps");
       expect(byId.get("review")?.config?.name).toBe("Review");
-      expect(byId.get("merge")?.config?.name).toBe("Merge boundary");
       expect(byId.get("workflow-step")?.config?.maxRetries).toBeUndefined();
       expect(byId.get("review")?.config?.maxRetries).toBeUndefined();
-      expect(byId.get("merge")?.config?.maxRetries).toBeUndefined();
+      // The merge lifecycle is no longer a single `merge` seam node (FN-6035): it
+      // is expressed as the merge-gate/merge-attempt/branch-group primitive region.
+      expect(byId.get("merge")).toBeUndefined();
     }
   });
 
@@ -320,11 +323,11 @@ describe("built-in workflows", () => {
       const coding = getBuiltinWorkflow("builtin:coding");
       const execute = coding?.ir.nodes.find((node) => node.id === "execute");
       const review = coding?.ir.nodes.find((node) => node.id === "review");
-      const merge = coding?.ir.nodes.find((node) => node.id === "merge");
 
       expect((execute?.config as { prompt?: string } | undefined)?.prompt).toContain("You are a task execution agent");
       expect((review?.config as { prompt?: string } | undefined)?.prompt).toContain("You are an independent code and plan reviewer");
-      expect((merge?.config as { prompt?: string } | undefined)?.prompt).toContain("You are a merge agent");
+      // No `merge` seam node post-FN-6035 — merge runs as native primitives.
+      expect(coding?.ir.nodes.find((node) => node.id === "merge")).toBeUndefined();
     });
 
     it("rejects editing or deleting a built-in", async () => {
