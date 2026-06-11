@@ -1253,7 +1253,7 @@
   flex: 1;
   overflow-y: auto;
   padding: var(--space-lg) var(--space-xl);
-  min-height: 300px;
+  min-height: 0;
 }
 
 .activity-log-empty {
