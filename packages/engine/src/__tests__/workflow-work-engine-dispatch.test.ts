@@ -228,4 +228,46 @@ describe("workflow work processor", () => {
       expect.objectContaining({ state: "succeeded", leaseOwner: null, leaseExpiresAt: null }),
     ]);
   });
+
+  it("marks claimed work failed when runtime dispatch throws", async () => {
+    const task = await store.createTask({ description: "processor failure task" });
+    await store.moveTask(task.id, "todo");
+    await store.moveTask(task.id, "in-progress");
+    await store.handoffToReview(task.id, {
+      ownerAgentId: "agent-test",
+      evidence: { reason: "fn_task_done", runId: "run-processor-failure", agentId: "agent-test" },
+      now: "2026-06-09T00:00:00.000Z",
+    });
+    const runtime = new WorkflowTaskRuntime({
+      store,
+      primitives: primitives(),
+      runCustomNode: async () => ({ outcome: "success" }),
+    });
+    vi.spyOn(runtime, "runWorkItem").mockRejectedValue(new Error("sqlite busy"));
+
+    const result = await processDueWorkflowWorkItem(store, runtime, { experimentalFeatures: {} } as any, {
+      now: "2026-06-09T00:00:00.000Z",
+      leaseOwner: "processor-a",
+      leaseDurationMs: 60_000,
+      kinds: workflowMergeWorkKinds(),
+    });
+
+    expect(result).toMatchObject({
+      claimed: true,
+      taskId: task.id,
+      runtime: {
+        disposition: "failed",
+        outcome: "failure",
+        reason: "workflow-work-item-runtime-error:sqlite busy",
+      },
+    });
+    expect(store.listWorkflowWorkItemsForTask(task.id, { kinds: ["merge"] })).toEqual([
+      expect.objectContaining({
+        state: "failed",
+        leaseOwner: null,
+        leaseExpiresAt: null,
+        lastError: "workflow-work-item-runtime-error:sqlite busy",
+      }),
+    ]);
+  });
 });

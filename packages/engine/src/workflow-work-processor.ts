@@ -1,4 +1,4 @@
-import type { Settings, WorkflowWorkItemKind } from "@fusion/core";
+import type { Settings, WorkflowWorkItem, WorkflowWorkItemKind, WorkflowWorkItemState } from "@fusion/core";
 import { claimDueWorkflowWorkItem, type WorkflowWorkSchedulerStore } from "./workflow-work-scheduler.js";
 import { WorkflowTaskRuntime, type WorkflowTaskRuntimeResult } from "./workflow-task-runtime.js";
 
@@ -16,8 +16,16 @@ export interface WorkflowWorkProcessorResult {
   runtime?: WorkflowTaskRuntimeResult;
 }
 
+type WorkflowWorkProcessorStore = WorkflowWorkSchedulerStore & {
+  transitionWorkflowWorkItem?: (
+    id: string,
+    state: WorkflowWorkItemState,
+    patch?: { now?: string; lastError?: string | null; leaseOwner?: string | null; leaseExpiresAt?: string | null },
+  ) => WorkflowWorkItem;
+};
+
 export async function processDueWorkflowWorkItem(
-  store: WorkflowWorkSchedulerStore,
+  store: WorkflowWorkProcessorStore,
   runtime: WorkflowTaskRuntime,
   settings: (Pick<Settings, "experimentalFeatures"> & Partial<Settings>) | undefined,
   opts: WorkflowWorkProcessorOptions,
@@ -30,7 +38,25 @@ export async function processDueWorkflowWorkItem(
   });
   if (!dispatch) return { claimed: false };
 
-  const runtimeResult = await runtime.runWorkItem(dispatch.workItem, settings);
+  let runtimeResult: WorkflowTaskRuntimeResult;
+  try {
+    runtimeResult = await runtime.runWorkItem(dispatch.workItem, settings);
+  } catch (err) {
+    const reason = `workflow-work-item-runtime-error:${err instanceof Error ? err.message : String(err)}`;
+    store.transitionWorkflowWorkItem?.(dispatch.workItem.id, "failed", {
+      now: opts.now,
+      leaseOwner: null,
+      leaseExpiresAt: null,
+      lastError: reason,
+    });
+    runtimeResult = {
+      disposition: "failed",
+      outcome: "failure",
+      visitedNodeIds: [],
+      context: {},
+      reason,
+    };
+  }
   return {
     claimed: true,
     workItemId: dispatch.workItem.id,
