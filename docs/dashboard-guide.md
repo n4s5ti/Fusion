@@ -119,13 +119,14 @@ Behavior:
 
 ## Custom Providers
 
-Custom Providers live in **Settings → Authentication → Custom Providers**, inside the **Advanced: Custom Providers** disclosure. Use this section to add user-defined model providers that speak an OpenAI-compatible API, the OpenAI Responses API, or an Anthropic-compatible API. After a provider is saved with models, those models become selectable in model dropdowns, including **Settings → Project Models** lanes and workflow model lanes.
+Custom Providers live in **Settings → Authentication → Custom Providers**, inside the **Advanced: Custom Providers** disclosure. Use this section to add user-defined model providers that speak an OpenAI-compatible API, the OpenAI Responses API, an Anthropic-compatible API, or Google Generative AI. After a provider is saved with models, those models become selectable in model dropdowns, including **Settings → Project Models** lanes and workflow model lanes.
 
 Supported **API type** values match the dropdown in the form:
 
 - **OpenAI-compatible**
 - **OpenAI Responses**
 - **Anthropic-compatible**
+- **Google Generative AI**
 
 The custom-provider form uses these fields:
 
@@ -143,7 +144,7 @@ Use **Detect Models** to auto-fill **Available models** from the provider's `/mo
 2. Expand **Advanced: Custom Providers** if it is collapsed.
 3. Select **Add Custom Provider**.
 4. Enter a **Provider name**.
-5. Choose the correct **API type**: **OpenAI-compatible**, **OpenAI Responses**, or **Anthropic-compatible**.
+5. Choose the correct **API type**: **OpenAI-compatible**, **OpenAI Responses**, **Anthropic-compatible**, or **Google Generative AI**.
 6. Enter the provider **Base URL**. The value must be a valid `http` or `https` URL.
 7. If the provider requires authentication, enter its **API key**.
 8. Populate **Available models** by either:

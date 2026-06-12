@@ -4300,6 +4300,7 @@
     "addCustom": "Agregar proveedor personalizado",
     "apiKeyLabel": "Clave de API",
     "apiTypeAnthropic": "Compatible con Anthropic",
+    "apiTypeGoogle": "Google Generative AI",
     "apiTypeInvalid": "El tipo de API no es válido.",
     "apiTypeLabel": "Tipo de API",
     "apiTypeOpenAi": "Compatible con OpenAI",

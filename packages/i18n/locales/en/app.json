@@ -4302,6 +4302,7 @@
     "apiKeyKeepPlaceholder": "Leave blank to keep current key",
     "apiKeyLabel": "API key",
     "apiTypeAnthropic": "Anthropic-compatible",
+    "apiTypeGoogle": "Google Generative AI",
     "apiTypeInvalid": "API type is invalid.",
     "apiTypeLabel": "API type",
     "apiTypeOpenAi": "OpenAI-compatible",

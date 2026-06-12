@@ -4300,6 +4300,7 @@
     "addCustom": "添加自定义提供程序",
     "apiKeyLabel": "API 密钥",
     "apiTypeAnthropic": "Anthropic 兼容",
+    "apiTypeGoogle": "Google Generative AI",
     "apiTypeInvalid": "API 类型无效。",
     "apiTypeLabel": "API 类型",
     "apiTypeOpenAi": "OpenAI 兼容",

@@ -145,6 +145,68 @@ describe("CustomProvidersSection", () => {
     });
   });
 
+  it("exposes Google Generative AI in the add provider API type dropdown", async () => {
+    mockFetchCustomProviders.mockResolvedValueOnce([]);
+
+    render(<CustomProvidersSection embedded />);
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: /Add Custom Provider/i })).toBeTruthy();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: /Add Custom Provider/i }));
+
+    const apiTypeSelect = screen.getByLabelText("API type") as HTMLSelectElement;
+    expect(Array.from(apiTypeSelect.options).map((option) => option.value)).toContain("google-generative-ai");
+    expect(screen.getByRole("option", { name: "Google Generative AI" })).toBeTruthy();
+  });
+
+  it("exposes Google Generative AI in the edit provider API type dropdown", async () => {
+    mockFetchCustomProviders.mockResolvedValueOnce([
+      {
+        id: "test-id",
+        name: "Editable Provider",
+        apiType: "anthropic-compatible",
+        baseUrl: "https://api.example.com",
+      },
+    ]);
+
+    render(<CustomProvidersSection embedded />);
+
+    await waitFor(() => {
+      expect(screen.getByLabelText("Edit Editable Provider")).toBeTruthy();
+    });
+
+    fireEvent.click(screen.getByLabelText("Edit Editable Provider"));
+
+    const apiTypeSelect = screen.getByLabelText("API type") as HTMLSelectElement;
+    expect(Array.from(apiTypeSelect.options).map((option) => option.value)).toContain("google-generative-ai");
+    expect(screen.getByRole("option", { name: "Google Generative AI" })).toBeTruthy();
+  });
+
+  it("selects Google Generative AI when editing an existing Google provider", async () => {
+    mockFetchCustomProviders.mockResolvedValueOnce([
+      {
+        id: "google-id",
+        name: "Google Provider",
+        apiType: "google-generative-ai",
+        baseUrl: "https://generativelanguage.googleapis.com/v1beta",
+      },
+    ]);
+
+    render(<CustomProvidersSection embedded />);
+
+    await waitFor(() => {
+      expect(screen.getByLabelText("Edit Google Provider")).toBeTruthy();
+    });
+
+    fireEvent.click(screen.getByLabelText("Edit Google Provider"));
+
+    const apiTypeSelect = screen.getByLabelText("API type") as HTMLSelectElement;
+    expect(apiTypeSelect.value).toBe("google-generative-ai");
+    expect(apiTypeSelect.selectedOptions[0]?.value).toBe("google-generative-ai");
+  });
+
   it("shows validation errors for empty name and invalid baseUrl", async () => {
     render(<CustomProvidersSection embedded />);
 

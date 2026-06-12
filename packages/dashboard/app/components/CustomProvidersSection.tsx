@@ -349,6 +349,7 @@ export function CustomProvidersSection({ embedded = false, onProviderChange }: C
                         <option value="openai-compatible">{t("providers.apiTypeOpenAi", "OpenAI-compatible")}</option>
                         <option value="openai-responses">{t("providers.apiTypeOpenAiResp", "OpenAI Responses")}</option>
                         <option value="anthropic-compatible">{t("providers.apiTypeAnthropic", "Anthropic-compatible")}</option>
+                        <option value="google-generative-ai">{t("providers.apiTypeGoogle", "Google Generative AI")}</option>
                       </select>
                     </div>
 
@@ -468,6 +469,7 @@ export function CustomProvidersSection({ embedded = false, onProviderChange }: C
               <option value="openai-compatible">{t("providers.apiTypeOpenAi", "OpenAI-compatible")}</option>
               <option value="openai-responses">{t("providers.apiTypeOpenAiResp", "OpenAI Responses")}</option>
               <option value="anthropic-compatible">{t("providers.apiTypeAnthropic", "Anthropic-compatible")}</option>
+              <option value="google-generative-ai">{t("providers.apiTypeGoogle", "Google Generative AI")}</option>
             </select>
           </div>
 

@@ -4300,6 +4300,7 @@
     "addCustom": "사용자 정의 공급자 추가",
     "apiKeyLabel": "API 키",
     "apiTypeAnthropic": "Anthropic 호환",
+    "apiTypeGoogle": "Google Generative AI",
     "apiTypeInvalid": "API 유형이 유효하지 않습니다.",
     "apiTypeLabel": "API 유형",
     "apiTypeOpenAi": "OpenAI 호환",
