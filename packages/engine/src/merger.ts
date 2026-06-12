@@ -7314,13 +7314,16 @@ async function removePostMergeWorktree(
   settings: Partial<Settings>,
 ): Promise<void> {
   try {
-    await removeWorktree({
+    const outcome = await removeWorktree({
       rootDir,
       worktreePath: postMergeWorktree,
       settings,
       taskId,
       reason: RemovalReason.MergerPostMerge,
     });
+    if (outcome && "harmless" in outcome && outcome.harmless) {
+      mergerLog.warn(`${taskId}: post-merge worktree cleanup remove failed, but no registered worktree remains after prune for ${postMergeWorktree}: ${outcome.message}`);
+    }
   } catch (err: unknown) {
     mergerLog.warn(`${taskId}: failed to remove post-merge worktree ${postMergeWorktree}: ${getCommandErrorMessage(err)}`);
   }
@@ -10569,7 +10572,7 @@ export async function aiMergeTask(
             metadata: { taskId, reason: RemovalReason.MergerCleanup, kind: "merger" },
           });
         } else {
-          await removeWorktree({
+          const outcome = await removeWorktree({
             rootDir,
             worktreePath,
             settings,
@@ -10577,7 +10580,10 @@ export async function aiMergeTask(
             audit,
             reason: RemovalReason.MergerCleanup,
           });
-          result.worktreeRemoved = true;
+          if (outcome && "harmless" in outcome && outcome.harmless) {
+            mergerLog.warn(`${taskId}: merge worktree cleanup remove failed, but no registered worktree remains after prune for ${worktreePath}: ${outcome.message}`);
+          }
+          result.worktreeRemoved = outcome?.removed ?? true;
         }
         if (result.worktreeRemoved) {
           try {

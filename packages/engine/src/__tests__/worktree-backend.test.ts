@@ -938,7 +938,12 @@ describe("removeWorktree", () => {
         taskId: "FN-327",
         reason: RemovalReason.MergerCleanup,
       }),
-    ).resolves.toBeUndefined();
+    ).resolves.toMatchObject({
+      removed: false,
+      harmless: true,
+      classification: "not-registered-after-prune",
+      message: expect.stringContaining("no registered worktree remains after prune"),
+    });
 
     expect(execMock).toHaveBeenNthCalledWith(
       2,
@@ -962,6 +967,28 @@ describe("removeWorktree", () => {
         }),
       }),
     );
+  });
+
+  it("does not downgrade non-temp merger cleanup failures even when porcelain would be absent", async () => {
+    const worktreePath = "/repo/.worktrees/fn-327";
+    const validationError = {
+      message: `Command failed: git worktree remove --force ${worktreePath}`,
+      stderr: `fatal: validation failed, cannot remove working tree: '${worktreePath}/.git' is not a .git file, error code 2`,
+      status: 2,
+    };
+    execMock.mockRejectedValueOnce(validationError);
+
+    await expect(
+      removeWorktree({
+        rootDir: "/repo",
+        worktreePath,
+        settings: {},
+        taskId: "FN-327",
+        reason: RemovalReason.MergerCleanup,
+      }),
+    ).rejects.toBe(validationError);
+
+    expect(execMock).toHaveBeenCalledTimes(1);
   });
 
   it("keeps FN-343 remove failures visible when the temp path remains registered after prune", async () => {
