@@ -2788,7 +2788,6 @@ describe("POST /api/memory/extract", () => {
           prunedMemory: "## Architecture\n\nDurable architecture notes.",
         });
         this.state.messages.push({ role: "assistant", content: response });
-        return response;
       }),
       dispose: vi.fn(),
     };
@@ -2805,9 +2804,9 @@ describe("POST /api/memory/extract", () => {
 
     expect(res.status).toBe(200);
     expect(res.body).toHaveProperty("success", true);
-    expect(res.body).toHaveProperty("summary");
-    expect(res.body).toHaveProperty("insightCount");
-    expect(res.body).toHaveProperty("pruned");
+    expect(res.body).toHaveProperty("summary", "Extracted insights");
+    expect(res.body).toHaveProperty("insightCount", 1);
+    expect(res.body).toHaveProperty("pruned", false);
     expect(existsSync(join(rootDir, ".fusion", "memory", "memory-insights.md"))).toBe(true);
     expect(existsSync(join(rootDir, ".fusion", "memory", "memory-audit.md"))).toBe(true);
     expect(existsSync(join(rootDir, ".fusion", "memory", "memory-audit-state.json"))).toBe(true);
