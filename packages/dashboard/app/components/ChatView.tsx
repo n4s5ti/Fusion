@@ -2880,8 +2880,9 @@ export function ChatView({ projectId, addToast, experimentalFeatures }: ChatView
               if (window.innerWidth > 768) return;
               if (!isIOS()) return;
               if (document.activeElement === event.currentTarget) return;
-              event.preventDefault();
-              event.currentTarget.focus({ preventScroll: true });
+              // FN-6301: do not preventDefault on the first unfocused iOS tap.
+              // Native focus is the reliable path that raises the soft keyboard;
+              // the visualViewport/input-focus effects own scroll compensation.
             }}
             rows={1}
             data-testid="chat-input"
@@ -3420,16 +3421,11 @@ export function ChatView({ projectId, addToast, experimentalFeatures }: ChatView
                     onTouchStart={(event) => {
                       if (typeof window === "undefined") return;
                       if (window.innerWidth > 768) return;
-                      // iOS-only: preventDefault + programmatic focus avoids
-                      // iOS's visual-viewport scroll on re-focus. On Android,
-                      // preventDefault here blocks the soft keyboard from
-                      // opening at all (programmatic focus() does not raise
-                      // the keyboard on Android), so the input "focuses" but
-                      // the keyboard never appears.
                       if (!isIOS()) return;
                       if (document.activeElement === event.currentTarget) return;
-                      event.preventDefault();
-                      event.currentTarget.focus({ preventScroll: true });
+                      // FN-6301: do not preventDefault on the first unfocused iOS tap.
+                      // Native focus is the reliable path that raises the soft keyboard;
+                      // the visualViewport/input-focus effects own scroll compensation.
                     }}
                     rows={1}
                     data-testid="chat-input"

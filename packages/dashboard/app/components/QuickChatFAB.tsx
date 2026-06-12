@@ -3027,26 +3027,14 @@ export function QuickChatFAB({
                   onBlur={handleInputBlur}
                   onFocus={handleInputFocus}
                   onPaste={handlePaste}
-                  // Intercept the touch *before* iOS's default focus-and-
-                  // scroll handler runs. Without this, on the second focus
-                  // (after a keyboard dismiss) iOS shifts the visual
-                  // viewport to "scroll" the input into view, which yanks
-                  // the position:fixed panel up off-screen for ~1s before
-                  // settling back. preventDefault on touchstart suppresses
-                  // that auto-scroll; we then focus programmatically with
-                  // preventScroll so the keyboard still comes up.
                   onTouchStart={(event) => {
                     if (typeof window === "undefined") return;
                     if (window.innerWidth > QUICK_CHAT_DESKTOP_BREAKPOINT) return;
-                    // iOS-only workaround. On Android, preventDefault on
-                    // textarea touchstart prevents the soft keyboard from
-                    // opening at all (programmatic focus() does not raise
-                    // the keyboard on Android — only the default touch
-                    // action does), so the tap silently dismisses.
                     if (!isIOS()) return;
                     if (document.activeElement === event.currentTarget) return;
-                    event.preventDefault();
-                    event.currentTarget.focus({ preventScroll: true });
+                    // FN-6301: do not preventDefault on the first unfocused iOS tap.
+                    // Native focus is the reliable path that raises the soft keyboard;
+                    // the visualViewport/input-focus effects own scroll compensation.
                   }}
                   placeholder={inputPlaceholder}
                   disabled={inputDisabled}

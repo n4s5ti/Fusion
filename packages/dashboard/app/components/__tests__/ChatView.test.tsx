@@ -22,6 +22,7 @@ import { _resetInitialViewportHeight } from "../../hooks/useMobileKeyboard";
 import { SWR_CACHE_KEYS, writeCache } from "../../utils/swrCache";
 import * as useChatRoomsModule from "../../hooks/useChatRooms";
 import type { UseChatRoomsResult } from "../../hooks/useChatRooms";
+import * as mobileScrollLock from "../../hooks/useMobileScrollLock";
 
 // Mock the hooks
 vi.mock("../../hooks/useChat");
@@ -3865,6 +3866,50 @@ describe("ChatView mobile behavior", () => {
       expect(screen.getByText("#backend")).toBeInTheDocument();
     } finally {
       localStorage.setItem("fusion:chat-scope", "direct");
+      restoreMatchMedia.mockRestore();
+    }
+  });
+
+  it("mobile mode: iOS first tap focuses direct composer without blocking native focus, then sends", async () => {
+    const restoreMatchMedia = mockMobileViewport();
+    const isIOSSpy = vi.spyOn(mobileScrollLock, "isIOS").mockReturnValue(true);
+    const sendMessage = vi.fn();
+
+    try {
+      setupMockChat({
+        activeSession: activeSessionFixture,
+        messages: [],
+        sendMessage,
+      });
+
+      await renderWithAct(<ChatView projectId="proj-123" addToast={vi.fn()} />);
+
+      const input = screen.getByTestId("chat-input") as HTMLTextAreaElement;
+      input.blur();
+      expect(document.activeElement).not.toBe(input);
+
+      const touchEvent = new TouchEvent("touchstart", { bubbles: true, cancelable: true });
+      const preventDefaultSpy = vi.spyOn(touchEvent, "preventDefault");
+      fireEvent(input, touchEvent);
+      // jsdom has no soft keyboard/native touch-focus default action; mirror
+      // the browser focus that iOS only performs when touchstart is not canceled.
+      if (!touchEvent.defaultPrevented) {
+        input.focus();
+      }
+
+      expect(preventDefaultSpy).not.toHaveBeenCalled();
+      expect(document.activeElement).toBe(input);
+
+      fireEvent.change(input, { target: { value: "Hello mobile" } });
+      const sendButton = screen.getByTestId("chat-send-btn");
+      fireEvent.touchStart(sendButton);
+      fireEvent.click(sendButton);
+
+      expect(sendMessage).toHaveBeenCalledTimes(1);
+      expect(sendMessage).toHaveBeenCalledWith("Hello mobile", []);
+      expect(document.activeElement).toBe(input);
+    } finally {
+      isIOSSpy.mockRestore();
       restoreMatchMedia.mockRestore();
     }
   });
