@@ -583,7 +583,7 @@ export function parseReviewLevelFromPrompt(prompt: string): number {
 
 function extractPromptSection(prompt: string, heading: string): string {
   const escaped = heading.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const pattern = new RegExp(`^##\\s+${escaped}\\s*$([\\s\\S]*?)(?=^##\\s+|$(?![\\s\\S]))`, "im");
+  const pattern = new RegExp(`^##\\s+${escaped}\\s*:?\\s*$([\\s\\S]*?)(?=^##\\s+|\\s*$)`, "im");
   return pattern.exec(prompt)?.[1]?.trim() ?? "";
 }
 
@@ -613,10 +613,12 @@ function isNoSourceScopeEntry(entry: string): boolean {
 
 function hasSourceChangingScopeEntry(entry: string): boolean {
   const normalized = entry.toLowerCase();
-  if (!normalized || isNoSourceScopeEntry(normalized)) return false;
-  if (normalized.includes("read-only")) return false;
-  if (/\b(source|sources|packages|tests|src|app|docs|scripts|\.changeset)\b/.test(normalized)) return true;
-  return /\.(ts|tsx|js|jsx|mjs|cjs|swift|kt|java|py|rs|go|rb|md|json|ya?ml|toml|css|scss|html)\b/.test(normalized);
+  if (!normalized) return false;
+  if (normalized.startsWith(".fusion/tasks/") || normalized.startsWith("<rootdir>/.fusion/tasks/")) return false;
+  if (/\b(source|sources|packages|tests|src|app|scripts|\.changeset)\b/.test(normalized)) return true;
+  if (/\.(ts|tsx|js|jsx|mjs|cjs|swift|kt|java|py|rs|go|rb|md|json|ya?ml|toml|css|scss|html)\b/.test(normalized)) return true;
+  if (normalized.includes("read-only") || isNoSourceScopeEntry(normalized)) return false;
+  return false;
 }
 
 function getTaskTextForNoCommitEligibility(task: Task, promptContent: string): string {
@@ -663,7 +665,11 @@ function evaluatePromptDerivedNoCommitEligibility(task: Task, promptContent: str
   const stepsComplete = Array.isArray(task.steps) && task.steps.length > 0
     ? task.steps.every((step) => step.status === "done" || step.status === "skipped")
     : false;
-  const hasOperationalEvidence = /\b(evidence|recorded|documented|no-route|routed|assigned|handoff|decision)\b/.test(combined);
+  const logText = (task.log ?? [])
+    .map((entry) => `${entry.action ?? ""}\n${entry.outcome ?? ""}`)
+    .join("\n")
+    .toLowerCase();
+  const hasOperationalEvidence = /\b(evidence|recorded|documented|no-route|routed|assigned|handoff|decision)\b/.test(logText);
   if (!stepsComplete && !hasOperationalEvidence) return { eligible: false };
 
   return { eligible: true, reason: "prompt/source metadata derived operational no-commit contract" };
