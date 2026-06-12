@@ -1305,6 +1305,7 @@ Limits are controlled by project settings (`maxSpawnedAgentsPerParent`, `maxSpaw
   - timer
   - task assignment
   - on-demand runs
+- Assignment triggers skipped because a heartbeat run is already active are deferred and re-fired from `HeartbeatMonitor.onRunCompleted`, preserving the existing completion recovery path while avoiding timer-dependent stalls.
 
 ### Custom instructions
 `packages/engine/src/agent-instructions.ts` resolves per-agent instruction text/path with path-traversal and extension validation.

@@ -527,6 +527,8 @@ The `runtimeConfig` field on agents supports the following options:
 | `modelId` | `string` | — | AI model ID override for heartbeat session |
 | `budgetConfig` | `AgentBudgetConfig` | — | Token budget governance settings |
 
+Assignment-triggered heartbeats are completion-resilient: if an `agent:assigned` wake is skipped only because the durable agent already has an active heartbeat run, Fusion records the latest assigned task as a pending assignment and re-fires that assignment wake once the active run completes. This prevents assigned work from being stranded by long heartbeat intervals or `skipHeartbeatWhenIdle`; disabled agents (`enabled === false`) and budget-exhausted agents still do not defer assignment wakes.
+
 Heartbeat values are validated and minimum-clamped to 5 minutes (300,000 ms).
 Project setting `heartbeatMultiplier` (default `1`) scales resolved heartbeat timing globally: both the heartbeat interval (`pollIntervalMs`) and unresponsive timeout base (`heartbeatTimeoutMs`) are multiplied. Per-agent `heartbeatIntervalMs`/`heartbeatTimeoutMs` remain base values before multiplier scaling. This setting is configured from the **Agents** screen's **Controls** popup under "Heartbeat Speed".
 

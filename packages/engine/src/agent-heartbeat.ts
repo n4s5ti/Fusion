@@ -3627,11 +3627,19 @@ function readHeartbeatTimerRepairMetadata(agent: Agent): HeartbeatTimerRepairMet
   };
 }
 
+type PendingAssignment = {
+  taskId: string;
+  triggeringCommentIds?: string[];
+  triggeringCommentType?: "steering" | "task" | "pr";
+  budgetStatus?: AgentBudgetStatus;
+};
+
 export class HeartbeatTriggerScheduler {
   private store: AgentStore;
   private callback: TriggerCallback;
   private taskStore?: TaskStore;
   private timers: Map<string, AgentTimer> = new Map();
+  private pendingAssignments: Map<string, PendingAssignment> = new Map();
   private registrationEpochs: Map<string, number> = new Map();
   private running = false;
   private assignedListener: ((agent: import("@fusion/core").Agent, taskId: string) => void) | null = null;
@@ -3911,6 +3919,7 @@ export class HeartbeatTriggerScheduler {
    */
   unregisterAgent(agentId: string): void {
     this.registrationEpochs.set(agentId, (this.registrationEpochs.get(agentId) ?? 0) + 1);
+    this.pendingAssignments.delete(agentId);
     if (this.timers.has(agentId)) {
       this.clearAgentTimer(agentId);
       heartbeatLog.log(`Unregistered timer for ${agentId}`);
@@ -3948,9 +3957,12 @@ export class HeartbeatTriggerScheduler {
           return;
         }
 
-        // Guard: skip if agent already has an active run
+        // Guard: skip if agent already has an active run. Preserve this
+        // assignment for completion-driven re-fire so it is not stranded by
+        // long/idle-skipped timer intervals.
         const activeRun = await this.store.getActiveHeartbeatRun(agent.id);
         if (activeRun) {
+          this.pendingAssignments.set(agent.id, { taskId });
           heartbeatLog.log(`Assignment trigger skipped for ${agent.id} (active run)`);
           return;
         }
@@ -4022,6 +4034,101 @@ export class HeartbeatTriggerScheduler {
 
     this.store.on("agent:assigned", this.assignedListener);
     heartbeatLog.log("Watching agent:assigned events");
+  }
+
+  /**
+   * Re-evaluate and re-fire an assignment trigger that was deferred because
+   * the agent already had an active heartbeat run. Transient ineligibility
+   * keeps the pending entry so a later completion can retry; terminal
+   * ineligibility clears it.
+   */
+  async drainPendingAssignment(agentId: string): Promise<void> {
+    if (!this.running) return;
+
+    const pending = this.pendingAssignments.get(agentId);
+    if (!pending) {
+      return;
+    }
+
+    try {
+      const agent = await this.store.getAgent(agentId);
+      if (!agent) {
+        this.pendingAssignments.delete(agentId);
+        heartbeatLog.log(`Deferred assignment cleared for ${agentId} (agent missing)`);
+        return;
+      }
+
+      if (!isHeartbeatManaged(agent)) {
+        this.pendingAssignments.delete(agentId);
+        heartbeatLog.log(`Deferred assignment cleared for ${agentId} (ephemeral/internal)`);
+        return;
+      }
+
+      const runtimeConfig = (agent.runtimeConfig ?? {}) as { enabled?: boolean; allowParallelExecution?: boolean };
+      if (runtimeConfig.enabled === false) {
+        this.pendingAssignments.delete(agentId);
+        heartbeatLog.log(`Deferred assignment cleared for ${agentId} (disabled)`);
+        return;
+      }
+
+      if (!isTickableState(agent.state)) {
+        heartbeatLog.log(`Deferred assignment preserved for ${agentId} (state=${agent.state})`);
+        return;
+      }
+
+      const settings = this.taskStore ? await this.taskStore.getSettings() : null;
+      if (settings?.globalPause) {
+        heartbeatLog.log(`Deferred assignment preserved for ${agentId} (global pause active)`);
+        return;
+      }
+      if (settings?.enginePaused) {
+        heartbeatLog.log(`Deferred assignment preserved for ${agentId} (engine paused)`);
+        return;
+      }
+
+      const activeRun = await this.store.getActiveHeartbeatRun(agentId);
+      if (activeRun) {
+        heartbeatLog.log(`Deferred assignment preserved for ${agentId} (active run)`);
+        return;
+      }
+
+      if (
+        runtimeConfig.allowParallelExecution === false
+        && (this.isTaskExecuting?.(pending.taskId) || this.isAgentEffectivelyExecuting?.(agentId))
+      ) {
+        heartbeatLog.log(`Deferred assignment preserved for ${agentId} (parallel execution disabled, task ${pending.taskId} or column-bound session executing)`);
+        return;
+      }
+
+      let budgetStatus: AgentBudgetStatus | undefined = pending.budgetStatus;
+      try {
+        budgetStatus = await this.store.getBudgetStatus(agentId);
+        if (budgetStatus.isOverBudget) {
+          this.pendingAssignments.delete(agentId);
+          heartbeatLog.log(`Deferred assignment cleared for ${agentId} (budget exhausted)`);
+          return;
+        }
+      } catch (budgetErr) {
+        heartbeatLog.warn(`Deferred assignment budget check failed for ${agentId}: ${budgetErr instanceof Error ? budgetErr.message : String(budgetErr)} — proceeding without budget check`);
+      }
+
+      this.pendingAssignments.delete(agentId);
+      heartbeatLog.log(`Deferred assignment re-fired for ${agentId} (task: ${pending.taskId})`);
+      await this.callback(agentId, "assignment", {
+        taskId: pending.taskId,
+        wakeReason: "assignment",
+        triggerDetail: "task-assigned",
+        ...(pending.triggeringCommentIds?.length
+          ? {
+            triggeringCommentIds: pending.triggeringCommentIds,
+            triggeringCommentType: pending.triggeringCommentType ?? "steering",
+          }
+          : {}),
+        ...(budgetStatus && { budgetStatus }),
+      });
+    } catch (err) {
+      heartbeatLog.error(`Deferred assignment drain error for ${agentId}: ${err instanceof Error ? err.message : err}`);
+    }
   }
 
   /**
