@@ -368,6 +368,7 @@ export interface TaskDetailModalProps {
   onTaskUpdated?: (task: Task) => void;
   addToast: (message: string, type?: ToastType) => void;
   prAuthAvailable?: boolean;
+  autoMergeEnabled?: boolean;
   onOpenWorkflowEditor?: () => void;
   /** Open the modal with this tab active instead of "definition" */
   initialTab?: TabId;
@@ -549,6 +550,7 @@ export function TaskDetailContent({
   onTaskUpdated,
   addToast,
   prAuthAvailable,
+  autoMergeEnabled: autoMergeEnabledProp,
   onOpenWorkflowEditor,
   initialTab = "definition",
   mobileHeaderMode = "close",
@@ -2605,7 +2607,7 @@ export function TaskDetailContent({
   };
   const prAutomationLabel = task.status ? prAutomationStatusLabels[task.status] : undefined;
   const mergeStrategy = settings?.mergeStrategy ?? "direct";
-  const autoMergeEnabled = settings?.autoMerge ?? false;
+  const autoMergeEnabled = autoMergeEnabledProp ?? (settings?.autoMerge ?? false);
   const effectiveAutoMerge = resolveEffectiveAutoMerge({ autoMerge: task.autoMerge }, { autoMerge: autoMergeEnabled });
   const isManualPrFlow = mergeStrategy === "pull-request" && !autoMergeEnabled;
 

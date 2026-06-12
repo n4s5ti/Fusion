@@ -1815,6 +1815,7 @@ function AppInner() {
           searchQuery={searchQuery}
           lastFetchTimeMs={lastFetchTimeMs}
           prAuthAvailable={prAuthAvailable}
+          autoMerge={autoMerge}
           onCreateWorkflow={openCreateWorkflowWithNav}
         />
       </PageErrorBoundary>
@@ -2136,7 +2137,7 @@ function AppInner() {
         }}
         taskOperations={{ moveTask, deleteTask, mergeTask, archiveTask, retryTask, resetTask, duplicateTask }}
         deepLink={{ handleDetailClose }}
-        settings={{ prAuthAvailable, themeMode, colorTheme, dashboardFontScalePct, setThemeMode, setColorTheme, setDashboardFontScalePct }}
+        settings={{ prAuthAvailable, autoMerge, themeMode, colorTheme, dashboardFontScalePct, setThemeMode, setColorTheme, setDashboardFontScalePct }}
         onSettingsClose={handleSettingsCloseWithNav}
         onReopenOnboarding={reopenOnboardingWithNav}
         onOpenApprovals={(_approvalId) => handleTaskViewChange("mailbox")}
