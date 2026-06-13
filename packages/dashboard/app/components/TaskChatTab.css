@@ -65,6 +65,19 @@
   gap: var(--space-sm);
 }
 
+.task-chat-user-group {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: var(--space-xs);
+}
+
+.task-chat-user-header {
+  padding-inline: var(--space-sm);
+  color: var(--text-muted);
+}
+
 .task-chat-entry {
   min-width: 0;
   padding: var(--space-sm) var(--space-md);
@@ -73,6 +86,13 @@
   background: var(--surface);
   color: var(--text);
   overflow-wrap: anywhere;
+}
+
+.task-chat-entry--user {
+  max-width: min(100%, calc(var(--space-2xl) * 18));
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
+  background: color-mix(in srgb, var(--accent) 12%, var(--surface));
+  box-shadow: var(--shadow-sm);
 }
 
 .task-chat-tool-group,
@@ -272,6 +292,18 @@
 
   .task-chat-group-header {
     min-width: 0;
+  }
+
+  .task-chat-user-group {
+    align-items: stretch;
+  }
+
+  .task-chat-user-header {
+    align-self: flex-end;
+  }
+
+  .task-chat-entry--user {
+    max-width: 100%;
   }
 
   .task-chat-tool-group-summary,

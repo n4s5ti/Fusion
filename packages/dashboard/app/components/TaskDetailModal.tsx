@@ -2516,6 +2516,11 @@ export function TaskDetailContent({
     overlapBlockerTask && (overlapBlockerTask.column === "in-progress" || overlapBlockerTask.column === "in-review"),
   );
 
+  const handleChatTaskUpdated = useCallback((updatedTask: Task) => {
+    setFullDetail((prev) => prev ? ({ ...prev, ...updatedTask } as TaskDetail) : (updatedTask as TaskDetail));
+    onTaskUpdated?.(updatedTask);
+  }, [onTaskUpdated]);
+
   const assignedAgentLabel = assignedAgent?.name ?? task.assignedAgentId ?? null;
   const detailProviders = useMemo(() => {
     const providers: string[] = [];
@@ -3126,11 +3131,12 @@ export function TaskDetailContent({
           ) : activeTab === "chat" ? (
             <div className="detail-section">
               <TaskChatTab
-                task={task}
+                task={workingTask}
                 projectId={projectId}
                 active={activeTab === "chat"}
                 addToast={addToast}
                 sessionLive={isCliSessionLive(cliSession)}
+                onTaskUpdated={handleChatTaskUpdated}
               />
             </div>
           ) : activeTab === "logs" ? (

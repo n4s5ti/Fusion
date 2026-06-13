@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { render, screen, fireEvent, waitFor, within } from "@testing-library/react";
+import { act, render, screen, fireEvent, waitFor, within } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
@@ -59,6 +59,26 @@ function makeEntry(overrides: Partial<AgentLogEntry>): AgentLogEntry {
     text: "message",
     ...overrides,
   } as AgentLogEntry;
+}
+
+function makeSteeringComment(overrides: Partial<NonNullable<Task["steeringComments"]>[number]> = {}): NonNullable<Task["steeringComments"]>[number] {
+  return {
+    id: "steer-1",
+    text: "Persisted user guidance",
+    createdAt: "2026-06-12T00:00:01.000Z",
+    author: "user",
+    ...overrides,
+  };
+}
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((promiseResolve, promiseReject) => {
+    resolve = promiseResolve;
+    reject = promiseReject;
+  });
+  return { promise, resolve, reject };
 }
 
 function mockLogs(entries: AgentLogEntry[] = [], loading = false) {
@@ -666,6 +686,114 @@ describe("TaskChatTab", () => {
     expect(input).toHaveValue("");
   });
 
+  it("renders a sent user message in the chat transcript", async () => {
+    const user = userEvent.setup();
+    mockLogs([
+      makeEntry({ agent: "executor", text: "I am checking the failure", timestamp: "2026-06-12T00:00:00.000Z" }),
+    ]);
+    const send = deferred<Task>();
+    mockedAddSteeringComment.mockReturnValue(send.promise);
+    render(<TaskChatTab task={makeTask({ column: "in-progress", assignedAgentId: "agent-1" })} projectId="project-1" active addToast={vi.fn()} />);
+
+    const input = screen.getByLabelText("Message active agent session");
+    await user.type(input, "Please inspect the failing test");
+    await user.click(screen.getByRole("button", { name: "Send" }));
+
+    const transcript = screen.getByTestId("task-chat-transcript");
+    expect(within(transcript).getByText("You")).toBeVisible();
+    expect(within(transcript).getByText("Please inspect the failing test")).toBeVisible();
+    expect(within(transcript).getByTestId("task-chat-entry-user")).toBeVisible();
+    expect(mockedAddSteeringComment).toHaveBeenCalledWith("FN-001", "Please inspect the failing test", "project-1");
+
+    await act(async () => {
+      send.resolve(makeTask({ steeringComments: [makeSteeringComment({ id: "steer-sent", text: "Please inspect the failing test" })] }));
+      await send.promise;
+    });
+
+    expect(within(transcript).getByText("Please inspect the failing test")).toBeVisible();
+    expect(input).toHaveValue("");
+  });
+
+  it("renders persisted user steering comments but not agent-authored steering comments", () => {
+    render(
+      <TaskChatTab
+        task={makeTask({
+          steeringComments: [
+            makeSteeringComment({ id: "user-steer", text: "Persisted user guidance", author: "user" }),
+            makeSteeringComment({ id: "agent-steer", text: "Internal agent note", author: "agent" }),
+          ],
+        })}
+        active
+        addToast={vi.fn()}
+      />,
+    );
+
+    const transcript = screen.getByTestId("task-chat-transcript");
+    expect(within(transcript).getByText("You")).toBeVisible();
+    expect(within(transcript).getByText("Persisted user guidance")).toBeVisible();
+    expect(within(transcript).queryByText("Internal agent note")).not.toBeInTheDocument();
+  });
+
+  it("deduplicates optimistic messages when matching persisted comments arrive", async () => {
+    const user = userEvent.setup();
+    const persistedComment = makeSteeringComment({ id: "steer-dedup", text: "Do not duplicate me" });
+    mockedAddSteeringComment.mockResolvedValue(makeTask({ steeringComments: [persistedComment] }));
+    const { rerender } = render(<TaskChatTab task={makeTask()} projectId="project-1" active addToast={vi.fn()} />);
+
+    await user.type(screen.getByLabelText("Message active agent session"), "Do not duplicate me");
+    await user.click(screen.getByRole("button", { name: "Send" }));
+    await waitFor(() => {
+      expect(mockedAddSteeringComment).toHaveBeenCalledWith("FN-001", "Do not duplicate me", "project-1");
+    });
+
+    rerender(<TaskChatTab task={makeTask({ steeringComments: [persistedComment] })} projectId="project-1" active addToast={vi.fn()} />);
+
+    expect(within(screen.getByTestId("task-chat-transcript")).getAllByText("Do not duplicate me")).toHaveLength(1);
+  });
+
+  it("deduplicates persisted user comments by fallback text and timestamp", () => {
+    render(
+      <TaskChatTab
+        task={makeTask({
+          steeringComments: [
+            makeSteeringComment({ id: "", text: "Fallback duplicate", createdAt: "2026-06-12T00:00:04.000Z" }),
+            makeSteeringComment({ id: "", text: "Fallback duplicate", createdAt: "2026-06-12T00:00:04.000Z" }),
+          ],
+        })}
+        active
+        addToast={vi.fn()}
+      />,
+    );
+
+    expect(within(screen.getByTestId("task-chat-transcript")).getAllByText("Fallback duplicate")).toHaveLength(1);
+  });
+
+  it("interleaves user messages chronologically with agent output", () => {
+    mockLogs([
+      makeEntry({ agent: "executor", text: "first agent output", timestamp: "2026-06-12T00:00:00.000Z" }),
+      makeEntry({ agent: "executor", text: "second agent output", timestamp: "2026-06-12T00:00:02.000Z" }),
+    ]);
+
+    render(
+      <TaskChatTab
+        task={makeTask({ steeringComments: [makeSteeringComment({ text: "middle user guidance", createdAt: "2026-06-12T00:00:01.000Z" })] })}
+        active
+        addToast={vi.fn()}
+      />,
+    );
+
+    const transcriptText = screen.getByTestId("task-chat-transcript").textContent ?? "";
+    expect(transcriptText.indexOf("first agent output")).toBeLessThan(transcriptText.indexOf("middle user guidance"));
+    expect(transcriptText.indexOf("middle user guidance")).toBeLessThan(transcriptText.indexOf("second agent output"));
+  });
+
+  it.each([undefined, []])("does not render a phantom user bubble for %s steering comments", (steeringComments) => {
+    render(<TaskChatTab task={makeTask({ steeringComments })} active addToast={vi.fn()} />);
+
+    expect(screen.queryByTestId("task-chat-entry-user")).not.toBeInTheDocument();
+    expect(screen.getByText(/No agent output yet/)).toBeVisible();
+  });
+
   it.each([
     ["queued", "Please continue after dispatch"],
     [undefined, "Please continue with a cleared status"],
@@ -865,16 +993,30 @@ describe("TaskChatTab", () => {
     },
   );
 
-  it("surfaces send failures through addToast", async () => {
+  it("rolls back optimistic messages and surfaces send failures through addToast", async () => {
     const user = userEvent.setup();
     const addToast = vi.fn();
-    mockedAddSteeringComment.mockRejectedValue(new Error("network down"));
+    const send = deferred<Task>();
+    mockedAddSteeringComment.mockReturnValue(send.promise);
     render(<TaskChatTab task={makeTask()} active addToast={addToast} />);
 
     await user.type(screen.getByLabelText("Message active agent session"), "hello");
     await user.click(screen.getByRole("button", { name: "Send" }));
+    const transcript = screen.getByTestId("task-chat-transcript");
+    expect(within(transcript).getByTestId("task-chat-entry-user")).toBeVisible();
+    expect(within(transcript).getByText("hello")).toBeVisible();
+
+    await act(async () => {
+      send.reject(new Error("network down"));
+      try {
+        await send.promise;
+      } catch {
+        // Expected rejection drives the component rollback path.
+      }
+    });
 
     await waitFor(() => {
+      expect(screen.queryByTestId("task-chat-entry-user")).not.toBeInTheDocument();
       expect(addToast).toHaveBeenCalledWith("Unable to send message: network down", "error");
     });
   });
@@ -889,5 +1031,7 @@ describe("TaskChatTab", () => {
     expect(css).toContain(".task-chat-tool-group-error-count");
     expect(css).toContain(".task-chat-thinking-summary");
     expect(css).not.toContain(".task-chat-thinking-markdown + .task-chat-thinking-markdown");
+    expect(css).toContain(".task-chat-user-group");
+    expect(css).toContain(".task-chat-entry--user");
   });
 });
