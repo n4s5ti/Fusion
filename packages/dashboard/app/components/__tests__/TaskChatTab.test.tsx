@@ -377,13 +377,33 @@ describe("TaskChatTab", () => {
 
     const thinking = screen.getByTestId("task-chat-thinking");
     expect(thinking).toHaveAttribute("open");
-    expect(screen.getByText("Thinking")).toBeVisible();
+    expect(within(thinking).getByText("Thinking")).toBeVisible();
     expect(screen.getByText("I am considering options")).toBeVisible();
+    expect(within(thinking).getAllByTestId("task-chat-entry-thinking")).toHaveLength(1);
 
     await user.click(within(thinking).getByText("Thinking"));
 
     expect(thinking).not.toHaveAttribute("open");
     expect(screen.getByText("I am considering options")).not.toBeVisible();
+  });
+
+  it("renders consecutive thinking entries as one continuous section", () => {
+    mockLogs([
+      makeEntry({ agent: "triage", type: "thinking", text: "First" }),
+      makeEntry({ agent: "triage", type: "thinking", text: "Second", timestamp: "2026-06-12T00:00:01.000Z" }),
+    ]);
+
+    render(<TaskChatTab task={makeTask()} active addToast={vi.fn()} />);
+
+    const thinking = screen.getByTestId("task-chat-thinking");
+    const summary = thinking.querySelector("summary");
+    expect(summary).toBeTruthy();
+    expect(within(summary as HTMLElement).getByText("Thinking")).toBeVisible();
+    expect(screen.queryByText("2 thinking entries")).not.toBeInTheDocument();
+    const thinkingBlocks = within(thinking).getAllByTestId("task-chat-entry-thinking");
+    expect(thinkingBlocks).toHaveLength(1);
+    expect(thinkingBlocks[0]).toHaveTextContent("FirstSecond");
+    expect(thinkingBlocks[0].nextElementSibling).toBeNull();
   });
 
   it("creates distinct tool segments when text or thinking entries are interleaved", () => {
@@ -820,5 +840,6 @@ describe("TaskChatTab", () => {
     expect(css).toContain(".task-chat-tool-group-names");
     expect(css).toContain(".task-chat-tool-group-error-count");
     expect(css).toContain(".task-chat-thinking-summary");
+    expect(css).not.toContain(".task-chat-thinking-markdown + .task-chat-thinking-markdown");
   });
 });

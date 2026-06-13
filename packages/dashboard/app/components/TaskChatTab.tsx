@@ -301,23 +301,20 @@ function TaskChatToolGroup({ entries }: { entries: AgentLogEntry[] }) {
 }
 
 function TaskChatThinking({ entries }: { entries: AgentLogEntry[] }) {
+  const combinedThinkingText = entries.map((entry) => entry.text).join("");
+
   return (
     <details className="task-chat-thinking" data-testid="task-chat-thinking" open>
-      <summary className="task-chat-thinking-summary">
-        {entries.length === 1 ? "Thinking" : `${entries.length} thinking entries`}
-      </summary>
+      <summary className="task-chat-thinking-summary">Thinking</summary>
       <div className="task-chat-thinking-body">
-        {entries.map((entry, entryIndex) => (
-          <div
-            className="markdown-body task-chat-markdown task-chat-thinking-markdown"
-            data-testid="task-chat-entry-thinking"
-            key={getEntryKey(entry, entryIndex)}
-          >
-            <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
-              {entry.text}
-            </ReactMarkdown>
-          </div>
-        ))}
+        <div
+          className="markdown-body task-chat-markdown task-chat-thinking-markdown"
+          data-testid="task-chat-entry-thinking"
+        >
+          <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
+            {combinedThinkingText}
+          </ReactMarkdown>
+        </div>
       </div>
     </details>
   );
