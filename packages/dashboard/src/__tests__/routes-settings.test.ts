@@ -189,6 +189,7 @@ function createMockStore(overrides: Partial<TaskStore> = {}): TaskStore {
     updateGlobalSettings: vi.fn(),
     getSettingsByScope: vi.fn().mockResolvedValue({ global: {}, project: {} }),
     getSettingsByScopeFast: vi.fn().mockResolvedValue({ global: {}, project: {} }),
+    listWorkflowSettingValuesForProject: vi.fn().mockReturnValue({}),
     getGlobalSettingsStore: vi.fn().mockReturnValue(createMockGlobalSettingsStore()),
     logEntry: vi.fn().mockResolvedValue(undefined),
     getAgentLogs: vi.fn().mockResolvedValue([]),
@@ -1375,16 +1376,23 @@ describe("GET /settings/scopes", () => {
     expect(res.body.global.persistAgentThinkingLog).toBe(false);
     expect(res.body.project.maxConcurrent).toBe(4);
     expect(res.body.project.autoMerge).toBe(false);
+    expect(res.body.workflowSettings).toEqual({});
+    expect(res.body.workflowSettings).not.toBeNull();
+    expect(typeof res.body.workflowSettings).toBe("object");
+    expect(Array.isArray(res.body.workflowSettings)).toBe(false);
     expect(res.body.project.persistAgentToolOutput).toBeUndefined();
     expect(res.body.project.persistAgentThinkingLogPermanent).toBeUndefined();
     expect(res.body.project.persistAgentThinkingLogEphemeral).toBeUndefined();
     expect(res.body.project.persistAgentThinkingLog).toBeUndefined();
   });
 
-  it("returns exact response envelope shape with only global and project keys", async () => {
+  it("returns exact response envelope shape with global, project, and workflowSettings keys", async () => {
     (store.getSettingsByScopeFast as ReturnType<typeof vi.fn>).mockResolvedValue({
       global: { themeMode: "dark" },
       project: { maxConcurrent: 4 },
+    });
+    (store.listWorkflowSettingValuesForProject as ReturnType<typeof vi.fn>).mockReturnValue({
+      "builtin:coding": { workflowStepTimeoutMs: 120000 },
     });
 
     const res = await GET(buildApp(), "/api/settings/scopes");
@@ -1393,10 +1401,17 @@ describe("GET /settings/scopes", () => {
     // Assert exact envelope shape
     expect(res.body).toHaveProperty("global");
     expect(res.body).toHaveProperty("project");
+    expect(res.body).toHaveProperty("workflowSettings");
+    expect(res.body.workflowSettings).not.toBeNull();
+    expect(typeof res.body.workflowSettings).toBe("object");
+    expect(Array.isArray(res.body.workflowSettings)).toBe(false);
     // No unexpected top-level keys
     const keys = Object.keys(res.body);
-    expect(keys).toHaveLength(2);
-    expect(keys).toEqual(["global", "project"]);
+    expect(keys).toHaveLength(3);
+    expect(keys).toEqual(["global", "project", "workflowSettings"]);
+    expect(res.body.workflowSettings).toEqual({
+      "builtin:coding": { workflowStepTimeoutMs: 120000 },
+    });
   });
 
   it("uses getSettingsByScopeFast and does not call getSettingsByScope", async () => {
@@ -1579,6 +1594,10 @@ describe("GET /settings/scopes with projectId scoping", () => {
     expect(projectStoreResolver.getOrCreateProjectStore).toHaveBeenCalledWith(projectId);
     expect(scopedStore.getSettingsByScopeFast).toHaveBeenCalled();
     expect(defaultStore.getSettingsByScopeFast).not.toHaveBeenCalled();
+    expect(res.body.workflowSettings).toEqual({});
+    expect(res.body.workflowSettings).not.toBeNull();
+    expect(typeof res.body.workflowSettings).toBe("object");
+    expect(Array.isArray(res.body.workflowSettings)).toBe(false);
     expect(res.body.project.maxConcurrent).toBe(8);
     expect(res.body.project.planningProvider).toBe("anthropic");
   });
