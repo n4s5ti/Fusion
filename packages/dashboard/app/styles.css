@@ -996,6 +996,7 @@ body {
   padding: var(--board-padding);
   overflow-x: auto;
   overflow-y: hidden;
+  overscroll-behavior-x: contain;
   scroll-snap-type: x proximity;
   scroll-padding-inline: 50%;
   scrollbar-color: var(--border) transparent;
