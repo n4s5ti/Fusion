@@ -151,6 +151,7 @@ export function TaskChatTab({ task, projectId, active, addToast }: TaskChatTabPr
   const transcriptRef = useRef<HTMLDivElement>(null);
   const previousEntryCountRef = useRef(0);
   const previousScrollHeightRef = useRef(0);
+  const previousActiveRef = useRef(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   const groups = useMemo(() => groupEntriesByAgent(entries), [entries]);
@@ -173,7 +174,28 @@ export function TaskChatTab({ task, projectId, active, addToast }: TaskChatTabPr
 
   useLayoutEffect(() => {
     const container = transcriptRef.current;
+    const wasActive = previousActiveRef.current;
+    previousActiveRef.current = active;
+    if (!container || !active || entries.length === 0) return;
+
+    const becameActive = !wasActive;
+    const receivedInitialEntries = previousEntryCountRef.current === 0;
+    if (!becameActive && !receivedInitialEntries) return;
+
+    container.scrollTop = container.scrollHeight;
+    previousEntryCountRef.current = entries.length;
+    previousScrollHeightRef.current = container.scrollHeight;
+  }, [active, entries.length]);
+
+  useLayoutEffect(() => {
+    const container = transcriptRef.current;
     if (!container) return;
+
+    if (!active) {
+      previousEntryCountRef.current = entries.length;
+      previousScrollHeightRef.current = container.scrollHeight;
+      return;
+    }
 
     const previousCount = previousEntryCountRef.current;
     const previousScrollHeight = previousScrollHeightRef.current || container.scrollHeight;
@@ -186,7 +208,7 @@ export function TaskChatTab({ task, projectId, active, addToast }: TaskChatTabPr
 
     previousEntryCountRef.current = entries.length;
     previousScrollHeightRef.current = container.scrollHeight;
-  }, [entries]);
+  }, [active, entries]);
 
   const handleTranscriptScroll = useCallback(() => {
     const container = transcriptRef.current;
@@ -223,6 +245,7 @@ export function TaskChatTab({ task, projectId, active, addToast }: TaskChatTabPr
         ref={transcriptRef}
         onScroll={handleTranscriptScroll}
         aria-live="polite"
+        data-testid="task-chat-transcript"
       >
         {loading && entries.length === 0 ? (
           <div className="task-chat-empty" role="status">

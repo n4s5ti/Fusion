@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
 import { readFileSync } from "node:fs";
@@ -18,6 +18,9 @@ vi.mock("../../api", () => ({
 
 const mockedUseAgentLogs = vi.mocked(useAgentLogs);
 const mockedAddSteeringComment = vi.mocked(addSteeringComment);
+const originalScrollTopDescriptor = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "scrollTop");
+const originalScrollHeightDescriptor = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "scrollHeight");
+const originalClientHeightDescriptor = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "clientHeight");
 
 function makeTask(overrides: Partial<Task> = {}): Task {
   return {
@@ -56,10 +59,91 @@ function mockLogs(entries: AgentLogEntry[] = [], loading = false) {
   });
 }
 
+function restoreMetricDescriptor(name: "scrollTop" | "scrollHeight" | "clientHeight", descriptor: PropertyDescriptor | undefined) {
+  if (descriptor) {
+    Object.defineProperty(HTMLElement.prototype, name, descriptor);
+    return;
+  }
+  delete (HTMLElement.prototype as Record<string, unknown>)[name];
+}
+
+function mockTranscriptMetrics({
+  scrollHeight = 1200,
+  clientHeight = 240,
+  initialScrollTop = 0,
+}: {
+  scrollHeight?: number;
+  clientHeight?: number;
+  initialScrollTop?: number;
+} = {}) {
+  let scrollTopValue = initialScrollTop;
+  let scrollHeightValue = scrollHeight;
+  Object.defineProperty(HTMLElement.prototype, "scrollHeight", {
+    configurable: true,
+    get() {
+      return this instanceof HTMLElement && this.classList.contains("task-chat-transcript") ? scrollHeightValue : 0;
+    },
+  });
+  Object.defineProperty(HTMLElement.prototype, "clientHeight", {
+    configurable: true,
+    get() {
+      return this instanceof HTMLElement && this.classList.contains("task-chat-transcript") ? clientHeight : 0;
+    },
+  });
+  Object.defineProperty(HTMLElement.prototype, "scrollTop", {
+    configurable: true,
+    get() {
+      return this instanceof HTMLElement && this.classList.contains("task-chat-transcript") ? scrollTopValue : 0;
+    },
+    set(value) {
+      if (this instanceof HTMLElement && this.classList.contains("task-chat-transcript")) {
+        scrollTopValue = Number(value);
+      }
+    },
+  });
+  return {
+    get scrollTop() {
+      return scrollTopValue;
+    },
+    set scrollTop(value: number) {
+      scrollTopValue = value;
+    },
+    get scrollHeight() {
+      return scrollHeightValue;
+    },
+    set scrollHeight(value: number) {
+      scrollHeightValue = value;
+    },
+  };
+}
+
+function mockMatchMedia(matches: boolean) {
+  Object.defineProperty(window, "matchMedia", {
+    configurable: true,
+    writable: true,
+    value: vi.fn().mockImplementation((query: string) => ({
+      matches,
+      media: query,
+      onchange: null,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+      dispatchEvent: vi.fn(),
+    })),
+  });
+}
+
 describe("TaskChatTab", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockLogs();
+  });
+
+  afterEach(() => {
+    restoreMetricDescriptor("scrollTop", originalScrollTopDescriptor);
+    restoreMetricDescriptor("scrollHeight", originalScrollHeightDescriptor);
+    restoreMetricDescriptor("clientHeight", originalClientHeightDescriptor);
   });
 
   it("subscribes to live agent logs only when active", () => {
@@ -133,6 +217,102 @@ describe("TaskChatTab", () => {
 
     rerender(<TaskChatTab task={makeTask()} active addToast={vi.fn()} />);
     expect(screen.getByText("second live chunk")).toBeTruthy();
+  });
+
+  it.each([
+    ["desktop", false],
+    ["mobile", true],
+  ])("snaps populated transcripts to the bottom on initial %s render", (_label, matchesMobile) => {
+    mockMatchMedia(matchesMobile);
+    const metrics = mockTranscriptMetrics({ scrollHeight: 1400, clientHeight: 240, initialScrollTop: 0 });
+    mockLogs([
+      makeEntry({ agent: "executor", text: "older output" }),
+      makeEntry({ agent: "executor", text: "latest output", timestamp: "2026-06-12T00:00:01.000Z" }),
+    ]);
+
+    render(<TaskChatTab task={makeTask()} active addToast={vi.fn()} />);
+
+    expect(screen.getByTestId("task-chat-transcript")).toBeTruthy();
+    expect(metrics.scrollTop).toBe(metrics.scrollHeight);
+  });
+
+  it("snaps to the bottom when the tab reactivates with unchanged cached entries", () => {
+    const metrics = mockTranscriptMetrics({ scrollHeight: 1200, clientHeight: 240, initialScrollTop: 0 });
+    const cachedEntries = [
+      makeEntry({ agent: "executor", text: "cached first" }),
+      makeEntry({ agent: "executor", text: "cached latest", timestamp: "2026-06-12T00:00:01.000Z" }),
+    ];
+    mockLogs(cachedEntries);
+
+    const { rerender } = render(<TaskChatTab task={makeTask()} active={false} addToast={vi.fn()} />);
+    expect(metrics.scrollTop).toBe(0);
+
+    rerender(<TaskChatTab task={makeTask()} active addToast={vi.fn()} />);
+
+    expect(metrics.scrollTop).toBe(metrics.scrollHeight);
+  });
+
+  it("snaps when entries first become populated after an active empty render", () => {
+    const metrics = mockTranscriptMetrics({ scrollHeight: 1100, clientHeight: 240, initialScrollTop: 0 });
+    const loadedEntries = [makeEntry({ agent: "executor", text: "loaded output" })];
+    mockedUseAgentLogs
+      .mockReturnValueOnce({ entries: [], loading: true, clear: vi.fn(), loadMore: vi.fn(), hasMore: false, total: 0, loadingMore: false })
+      .mockReturnValueOnce({ entries: loadedEntries, loading: false, clear: vi.fn(), loadMore: vi.fn(), hasMore: false, total: 1, loadingMore: false });
+
+    const { rerender } = render(<TaskChatTab task={makeTask()} active addToast={vi.fn()} />);
+    expect(metrics.scrollTop).toBe(0);
+
+    rerender(<TaskChatTab task={makeTask()} active addToast={vi.fn()} />);
+
+    expect(metrics.scrollTop).toBe(metrics.scrollHeight);
+  });
+
+  it("does not mutate scroll position for an empty transcript", () => {
+    const metrics = mockTranscriptMetrics({ scrollHeight: 900, clientHeight: 240, initialScrollTop: 25 });
+    mockLogs([]);
+
+    render(<TaskChatTab task={makeTask()} active addToast={vi.fn()} />);
+
+    expect(screen.getByText(/No agent output yet/)).toBeTruthy();
+    expect(metrics.scrollTop).toBe(25);
+  });
+
+  it("continues following new entries when the user is near the bottom", () => {
+    const metrics = mockTranscriptMetrics({ scrollHeight: 1000, clientHeight: 240, initialScrollTop: 0 });
+    const firstEntries = [makeEntry({ agent: "executor", text: "first output" })];
+    const secondEntries = [...firstEntries, makeEntry({ agent: "executor", text: "second output", timestamp: "2026-06-12T00:00:01.000Z" })];
+    mockedUseAgentLogs
+      .mockReturnValueOnce({ entries: firstEntries, loading: false, clear: vi.fn(), loadMore: vi.fn(), hasMore: false, total: 1, loadingMore: false })
+      .mockReturnValueOnce({ entries: secondEntries, loading: false, clear: vi.fn(), loadMore: vi.fn(), hasMore: false, total: 2, loadingMore: false });
+
+    const { rerender } = render(<TaskChatTab task={makeTask()} active addToast={vi.fn()} />);
+    expect(metrics.scrollTop).toBe(1000);
+
+    metrics.scrollTop = 720;
+    fireEvent.scroll(screen.getByTestId("task-chat-transcript"));
+    metrics.scrollHeight = 1400;
+    rerender(<TaskChatTab task={makeTask()} active addToast={vi.fn()} />);
+
+    expect(metrics.scrollTop).toBe(1400);
+  });
+
+  it("does not yank a scrolled-up user when a new entry arrives", () => {
+    const metrics = mockTranscriptMetrics({ scrollHeight: 1000, clientHeight: 240, initialScrollTop: 0 });
+    const firstEntries = [makeEntry({ agent: "executor", text: "first output" })];
+    const secondEntries = [...firstEntries, makeEntry({ agent: "executor", text: "second output", timestamp: "2026-06-12T00:00:01.000Z" })];
+    mockedUseAgentLogs
+      .mockReturnValueOnce({ entries: firstEntries, loading: false, clear: vi.fn(), loadMore: vi.fn(), hasMore: false, total: 1, loadingMore: false })
+      .mockReturnValueOnce({ entries: secondEntries, loading: false, clear: vi.fn(), loadMore: vi.fn(), hasMore: false, total: 2, loadingMore: false });
+
+    const { rerender } = render(<TaskChatTab task={makeTask()} active addToast={vi.fn()} />);
+    expect(metrics.scrollTop).toBe(1000);
+
+    metrics.scrollTop = 120;
+    fireEvent.scroll(screen.getByTestId("task-chat-transcript"));
+    metrics.scrollHeight = 1400;
+    rerender(<TaskChatTab task={makeTask()} active addToast={vi.fn()} />);
+
+    expect(metrics.scrollTop).toBe(120);
   });
 
   it("posts composer text through addSteeringComment and clears on success", async () => {
