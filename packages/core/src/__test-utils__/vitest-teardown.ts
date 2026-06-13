@@ -6,9 +6,11 @@
  * the run-local worker/home directories as leaks.
  */
 
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+
+export const WORKER_ROOT_OWNER_FILE = ".fusion-test-worker-root-owner";
 
 let workerRootRmSync = rmSync;
 let workerRootSleepMsSync = sleepMsSync;
@@ -54,6 +56,12 @@ export default function setup(): () => Promise<void> {
   // setup-time redirect sweep proportional to stale directories left by every
   // prior interrupted run.
   const workerRoot = resolve(mkdtempSync(join(tmpdir(), "fusion-test-workers-")));
+  try {
+    writeFileSync(join(workerRoot, WORKER_ROOT_OWNER_FILE), `${process.pid}\n`);
+  } catch {
+    // Best effort only. The marker protects active roots from external orphan
+    // pruning; teardown still owns this root by absolute path.
+  }
   process.env.FUSION_TEST_WORKER_ROOT = workerRoot;
 
   return async function teardown() {

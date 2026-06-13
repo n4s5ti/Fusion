@@ -173,9 +173,49 @@ let cleanupRmSync = rmSync;
 const PRUNE_REMOVE_RETRIES = 3;
 const PRUNE_REMOVE_DELAY_MS = 75;
 const PRUNE_DIAGNOSTIC_CHILD_LIMIT = 8;
+const FUSION_WORKER_ROOT_OWNER_FILE = ".fusion-test-worker-root-owner";
 
 function isEnoentError(err) {
   return Boolean(err && typeof err === "object" && "code" in err && err.code === "ENOENT");
+}
+
+function isProcessAlive(pid) {
+  if (!Number.isInteger(pid) || pid <= 0) return false;
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    return error && typeof error === "object" && error.code === "EPERM";
+  }
+}
+
+function readWorkerRootOwnerPid(rootPath) {
+  try {
+    const raw = readFileSync(path.join(rootPath, FUSION_WORKER_ROOT_OWNER_FILE), "utf8").trim();
+    const pid = Number.parseInt(raw, 10);
+    return Number.isInteger(pid) && pid > 0 ? pid : null;
+  } catch {
+    return null;
+  }
+}
+
+function isActiveFusionWorkerRoot(rootPath) {
+  const ownerPid = readWorkerRootOwnerPid(rootPath);
+  if (ownerPid !== null && isProcessAlive(ownerPid)) return true;
+
+  // Backward-compatible guard for worker roots created before the owner marker
+  // landed, or marker writes that failed: an alive redir-<pid> child means a
+  // Vitest worker still owns temp workspaces beneath this root.
+  try {
+    for (const child of readdirSync(rootPath, { withFileTypes: true })) {
+      if (!child.isDirectory()) continue;
+      const match = /^redir-(\d+)$/.exec(child.name);
+      if (match && isProcessAlive(Number.parseInt(match[1], 10))) return true;
+    }
+  } catch {
+    // If we cannot inspect it, fall through to normal best-effort pruning.
+  }
+  return false;
 }
 
 function listImmediateChildrenForPruneWarning(rootPath) {
@@ -235,6 +275,7 @@ function pruneFusionTestRoots(prefix, maxEntries = PRUNE_MAX_ENTRIES, retryOptio
     } catch {
       // Keep raw path fallback.
     }
+    if (isActiveFusionWorkerRoot(rawPath)) continue;
     removePrunedRootWithRetry(rawPath, retryOptions);
   }
 }

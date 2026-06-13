@@ -1035,6 +1035,29 @@ function withPersistentPruneFailure(root, pruneFn) {
   }
 }
 
+test("pruneFusionTestWorkers: skips active per-invocation worker roots", () => {
+  const root = createNonEmptyPruneRoot("fusion-test-workers-", "active");
+  try {
+    writeFileSync(path.join(root, ".fusion-test-worker-root-owner"), `${process.pid}\n`);
+    pruneFusionTestWorkers(1024);
+    assert.equal(existsSync(root), true, "active worker root must not be pruned");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("pruneFusionTestWorkers: skips markerless roots with live redirect sinks", () => {
+  const root = mkdtempSync(path.join(tmpdir(), `fusion-test-workers-active-redir-${process.pid}-`));
+  try {
+    mkdirSync(path.join(root, `redir-${process.pid}`), { recursive: true });
+    writeFileSync(path.join(root, `redir-${process.pid}`, "payload.txt"), "active\n");
+    pruneFusionTestWorkers(1024);
+    assert.equal(existsSync(root), true, "live redir-pid root must not be pruned");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test("pruneFusionTestWorkers: reclaims non-empty root after transient ENOTEMPTY", () => {
   const root = createNonEmptyPruneRoot("fusion-test-workers-", "transient");
   withTransientPruneFailure(root, pruneFusionTestWorkers);
