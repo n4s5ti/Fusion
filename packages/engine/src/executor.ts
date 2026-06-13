@@ -588,6 +588,111 @@ export function parseReviewLevelFromPrompt(prompt: string): number {
   return reviewMatch ? parseInt(reviewMatch[1], 10) : 0;
 }
 
+function extractPromptSection(prompt: string, heading: string): string {
+  const escaped = heading.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const headingPattern = new RegExp(`^##\\s+${escaped}\\s*:?\\s*$`, "i");
+  const nextHeadingPattern = /^##\s+/;
+  const lines = prompt.split(/\r?\n/);
+  const start = lines.findIndex((line) => headingPattern.test(line.trim()));
+  if (start === -1) return "";
+
+  const sectionLines: string[] = [];
+  for (let i = start + 1; i < lines.length; i++) {
+    const line = lines[i];
+    if (nextHeadingPattern.test(line.trim())) break;
+    sectionLines.push(line);
+  }
+  return sectionLines.join("\n").trim();
+}
+
+function extractPromptListEntries(section: string): string[] {
+  return section
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .map((line) => line.replace(/^[-*]\s+/, "").replace(/^`([^`]+)`.*$/, "$1").trim())
+    .filter(Boolean);
+}
+
+function isNoSourceScopeEntry(entry: string): boolean {
+  const normalized = entry.toLowerCase();
+  return (
+    normalized.includes("no source") ||
+    normalized.includes("no product-source") ||
+    normalized.includes("no code") ||
+    normalized.includes("no file mutations") ||
+    normalized.includes("task document") ||
+    normalized.includes("task log") ||
+    normalized.includes("agent log") ||
+    normalized.includes("read-only evidence") ||
+    normalized.startsWith(".fusion/tasks/") ||
+    normalized.startsWith("<rootdir>/.fusion/tasks/")
+  );
+}
+
+function hasSourceChangingScopeEntry(entry: string): boolean {
+  const normalized = entry.toLowerCase();
+  if (!normalized) return false;
+  if (normalized.startsWith(".fusion/tasks/") || normalized.startsWith("<rootdir>/.fusion/tasks/")) return false;
+  if (/\b(source|sources|packages|tests|src|app|scripts|\.changeset)\b/.test(normalized)) return true;
+  if (/\.(ts|tsx|js|jsx|mjs|cjs|swift|kt|java|py|rs|go|rb|md|json|ya?ml|toml|css|scss|html)\b/.test(normalized)) return true;
+  if (normalized.includes("read-only") || isNoSourceScopeEntry(normalized)) return false;
+  return false;
+}
+
+function getTaskTextForNoCommitEligibility(task: Task, promptContent: string): string {
+  const logText = (task.log ?? [])
+    .map((entry) => `${entry.action ?? ""}\n${entry.outcome ?? ""}`)
+    .join("\n");
+  const sourceMetadata = task.sourceMetadata ? JSON.stringify(task.sourceMetadata) : "";
+  return [task.title, task.description, promptContent, sourceMetadata, logText]
+    .filter((part): part is string => typeof part === "string" && part.length > 0)
+    .join("\n");
+}
+
+function evaluatePromptDerivedNoCommitEligibility(task: Task, promptContent: string): { eligible: boolean; reason?: string } {
+  const combined = getTaskTextForNoCommitEligibility(task, promptContent).toLowerCase();
+  const reviewLevel = typeof task.reviewLevel === "number" ? task.reviewLevel : parseReviewLevelFromPrompt(promptContent);
+  const isPlanOnly = reviewLevel === 1 && (/plan\s*only/.test(combined) || combined.includes("plan-only"));
+  if (!isPlanOnly) return { eligible: false };
+
+  const explicitNoSourceIntent = [
+    "no expected product-source changes",
+    "no product-source changes",
+    "no source changes expected",
+    "no source files expected",
+    "no code changes expected",
+    "no expected source changes",
+    "no file mutations",
+    "no source/config/file mutations",
+  ].some((phrase) => combined.includes(phrase));
+  if (!explicitNoSourceIntent) return { eligible: false };
+
+  const excludedImplementationIntent = /\b(investigate and fix|fix if needed|implement|source-changing|code change|docs\/tests changes|documentation change|bug[- ]fix|feature)\b/.test(combined);
+  const operationalIntent = /\b(operational|routing|route|assign|assignment|owner|handoff|coordination|coordinate|no-route|triage)\b/.test(combined);
+  if (!operationalIntent || excludedImplementationIntent) return { eligible: false };
+
+  const promptScopeEntries = extractPromptListEntries(extractPromptSection(promptContent, "File Scope"));
+  const metadataScope = Array.isArray(task.sourceMetadata?.fileScope)
+    ? task.sourceMetadata.fileScope.filter((entry): entry is string => typeof entry === "string")
+    : [];
+  const declaredScope = [...promptScopeEntries, ...metadataScope];
+  if (declaredScope.length === 0) return { eligible: false };
+  if (declaredScope.some(hasSourceChangingScopeEntry)) return { eligible: false };
+  if (!declaredScope.every(isNoSourceScopeEntry)) return { eligible: false };
+
+  const stepsComplete = Array.isArray(task.steps) && task.steps.length > 0
+    ? task.steps.every((step) => step.status === "done" || step.status === "skipped")
+    : false;
+  const logText = (task.log ?? [])
+    .map((entry) => `${entry.action ?? ""}\n${entry.outcome ?? ""}`)
+    .join("\n")
+    .toLowerCase();
+  const hasOperationalEvidence = /\b(evidence|recorded|documented|no-route|routed|assigned|handoff|decision)\b/.test(logText);
+  if (!stepsComplete && !hasOperationalEvidence) return { eligible: false };
+
+  return { eligible: true, reason: "prompt/source metadata derived operational no-commit contract" };
+}
+
 export function partitionWorkflowRevisionFeedback(
   feedback: string,
   declaredFileScope: readonly string[],
@@ -9476,8 +9581,24 @@ export class TaskExecutor {
       };
     }
 
-    if (task.noCommitsExpected === true) {
-      executorLog.log(`${task.id}: fn_task_done no_commits guard skipped (noCommitsExpected=true)`);
+    const promptContent = (task as Task & { prompt?: unknown }).prompt;
+    const noCommitEligibility = task.noCommitsExpected === true
+      ? { eligible: true, reason: "noCommitsExpected=true" }
+      : evaluatePromptDerivedNoCommitEligibility(task, typeof promptContent === "string" ? promptContent : "");
+    if (noCommitEligibility.eligible) {
+      executorLog.log(`${task.id}: fn_task_done no_commits guard skipped (${noCommitEligibility.reason})`);
+      try {
+        await this.store.logEntry(
+          task.id,
+          `fn_task_done no_commits guard skipped (${noCommitEligibility.reason})`,
+          undefined,
+          this.getRunContextFor(task.id),
+        );
+      } catch (error) {
+        executorLog.warn(
+          `${task.id}: failed to write no_commits guard skip audit log: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
       return { ok: true };
     }
 

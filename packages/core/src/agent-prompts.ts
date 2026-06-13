@@ -376,14 +376,16 @@ When ALL of the following are true, include this metadata line in the header blo
 - Add this exact line: **No commits expected:** true
 
 Set it only when all of these conditions hold:
-- Title/mission starts with decision verbs like "Decide", "Evaluate", "Verify", "Confirm", "Audit", "Review whether", or "Investigate and report"
-- Acceptance criteria are strictly observational (record findings, log a decision, update task log/docs) with no required code/config/file mutations
-- Task description explicitly says things like "no code changes expected" or "the deliverable is the recorded decision"
+- Title/mission starts with decision verbs like "Decide", "Evaluate", "Verify", "Confirm", "Audit", "Review whether", or "Investigate and report", OR is an operational routing/coordination task whose only outcome is assigning/routing existing work or recording an intentional no-route/no-owner decision
+- Acceptance criteria are strictly observational (record findings, routing evidence, no-route/no-owner state, log a decision, update task log/docs) with no required code/config/file mutations
+- Task description explicitly says things like "no code changes expected", "no source files expected", "no product-source changes", or "the deliverable is the recorded decision"
 
 Anti-heuristics (bias to false-negative when ambiguous):
 - SET: Decide whether FN-XYZ needs a fix
+- SET: Assign ready implementation task to active owner, or record no-route state (no source files expected)
 - LEAVE UNSET: Investigate FN-XYZ
 - LEAVE UNSET: Investigate FN-XYZ and fix if needed
+- LEAVE UNSET: Investigate and fix routing if needed
 
 ## Guidelines
 - Read relevant source files before writing the spec
@@ -397,7 +399,7 @@ Anti-heuristics (bias to false-negative when ambiguous):
 When the user prompt includes explicit test/build commands, use those exact commands in the generated spec.
 
 ## Workflow Routing
-Call \`fn_workflow_list\` and use workflow descriptions as the routing signal. For investigation/audit/research or decision-only tasks that meet the no-commits criteria above, include \`**No commits expected:** true\` in the PROMPT.md header and prefer \`builtin:quick-fix\` or a custom investigation workflow; standard coding tasks can stay on the default \`builtin:coding\`. Use \`fn_workflow_select\` for the current task or pass \`workflow_id\` to \`fn_task_create\` for subtasks.
+Call \`fn_workflow_list\` and use workflow descriptions as the routing signal. For investigation/audit/research, operational routing/coordination, or decision-only tasks that meet the no-commits criteria above, include \`**No commits expected:** true\` in the PROMPT.md header and prefer \`builtin:quick-fix\` or a custom investigation workflow; standard coding tasks can stay on the default \`builtin:coding\`. Use \`fn_workflow_select\` for the current task or pass \`workflow_id\` to \`fn_task_create\` for subtasks.
 
 ## Task Artifact Location for Forensic / Reconciliation Tasks
 
@@ -657,14 +659,16 @@ When ALL of the following are true, include this metadata line in the header blo
 - Add this exact line: **No commits expected:** true
 
 Set it only when all of these conditions hold:
-- Title/mission starts with decision verbs like {{triageNoCommitsDecisionVerbs}}
-- Acceptance criteria are strictly observational (record findings, log a decision, update task log/docs) with no required code/config/file mutations
-- Task description explicitly says things like "no code changes expected" or "the deliverable is the recorded decision"
+- Title/mission starts with decision verbs like {{triageNoCommitsDecisionVerbs}}, OR is an operational routing/coordination task whose only outcome is assigning/routing existing work or recording an intentional no-route/no-owner decision
+- Acceptance criteria are strictly observational (record findings, routing evidence, no-route/no-owner state, log a decision, update task log/docs) with no required code/config/file mutations
+- Task description explicitly says things like "no code changes expected", "no source files expected", "no product-source changes", or "the deliverable is the recorded decision"
 
 Anti-heuristics (bias to false-negative when ambiguous):
 - SET: Decide whether FN-XYZ needs a fix
+- SET: Assign ready implementation task to active owner, or record no-route state (no source files expected)
 - LEAVE UNSET: Investigate FN-XYZ
 - LEAVE UNSET: Investigate FN-XYZ and fix if needed
+- LEAVE UNSET: Investigate and fix routing if needed
 
 ## Guidelines
 - Read the project structure and relevant source files to understand context BEFORE writing
@@ -687,7 +691,7 @@ package.json when explicit commands are provided.
 
 ## Workflow Routing
 - Call \`fn_workflow_list\` to discover available workflows before selecting a routing path, and read each workflow description as the routing signal.
-- For investigation, audit, research, or decision-only tasks that produce no code changes, set \`**No commits expected:** true\` in the PROMPT.md header when the no-commits criteria above are met, then select an appropriate lightweight workflow.
+- For investigation, audit, research, operational routing/coordination, or decision-only tasks that produce no code/config/file changes, set \`**No commits expected:** true\` in the PROMPT.md header when the no-commits criteria above are met, then select an appropriate lightweight workflow.
 - For decision-only tasks ({{triageNoCommitsDecisionVerbs}}), prefer \`{{triageDecisionOnlyWorkflowId}}\` or a custom investigation workflow when one is available.
 - For standard coding tasks, \`{{triageDefaultWorkflowId}}\` is the default and is usually appropriate.
 - Use \`fn_workflow_select\` to set the workflow on the current task, or pass \`workflow_id\` to \`fn_task_create\` when creating subtasks.
