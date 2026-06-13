@@ -1143,6 +1143,7 @@ body {
 }
 
 .modal {
+  position: relative;
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
@@ -1151,6 +1152,37 @@ body {
   box-shadow: var(--shadow-lg);
   display: flex;
   flex-direction: column;
+}
+
+.modal-resize-grip {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  z-index: 2;
+  width: var(--space-lg);
+  height: var(--space-lg);
+  cursor: se-resize;
+  touch-action: none;
+  background: transparent;
+}
+
+.modal-resize-grip::after {
+  content: "";
+  position: absolute;
+  right: var(--space-xs);
+  bottom: var(--space-xs);
+  width: var(--space-md);
+  height: var(--space-md);
+  border-right: var(--btn-border-width) solid var(--border);
+  border-bottom: var(--btn-border-width) solid var(--border);
+  opacity: 0;
+  transition: opacity var(--transition-fast);
+}
+
+.modal-resize-grip:hover::after,
+.modal-resize-grip:focus-visible::after,
+.modal-resize-grip:active::after {
+  opacity: 1;
 }
 .modal-lg {
   width: 640px;
@@ -3431,6 +3463,10 @@ input[type="range"]:focus-visible {
        inset so headers / close buttons aren't clipped behind it. */
     padding-top: env(safe-area-inset-top, 0px);
     padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+
+  .modal-resize-grip {
+    display: none;
   }
 
   /* Settings modal: use the section picker as the only mobile navigation */
