@@ -1,4 +1,3 @@
-/* global clearTimeout, setTimeout */
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";

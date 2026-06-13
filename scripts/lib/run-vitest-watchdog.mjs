@@ -1,4 +1,3 @@
-/* global clearInterval, clearTimeout, console, process, setInterval, setTimeout */
 
 /**
  * Shared, bounded test-invocation runner (the L2 watchdog layer).
