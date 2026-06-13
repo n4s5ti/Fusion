@@ -288,6 +288,22 @@ describe("built-in workflows", () => {
     expect(execute!.toolMode).toBe("coding");
   });
 
+  it("compound-engineering merge stage uses the CE commit/PR + resolve-feedback skills", () => {
+    const ce = getBuiltinWorkflow("builtin:compound-engineering")!;
+    const byId = (id: string) => ce.ir.nodes.find((n) => n.id === id);
+    expect(byId("commit-pr")?.config?.skillName).toBe("compound-engineering:ce-commit-push-pr");
+    expect(byId("commit-pr")?.config?.toolMode).toBe("coding");
+    expect(byId("resolve-feedback")?.config?.skillName).toBe("compound-engineering:ce-resolve-pr-feedback");
+    // KTD-6: the Fusion board-merge seam is preserved (CE prepares the PR, Fusion
+    // owns the merge transition).
+    expect(byId("merge")?.config?.seam).toBe("merge");
+    // Ordering: commit-pr → resolve-feedback → merge → document.
+    const ids = ce.ir.nodes.map((n) => n.id);
+    expect(ids.indexOf("commit-pr")).toBeLessThan(ids.indexOf("resolve-feedback"));
+    expect(ids.indexOf("resolve-feedback")).toBeLessThan(ids.indexOf("merge"));
+    expect(ids.indexOf("merge")).toBeLessThan(ids.indexOf("document"));
+  });
+
   describe("store integration", () => {
     const harness = createTaskStoreTestHarness();
     let store: ReturnType<typeof harness.store>;

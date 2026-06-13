@@ -191,6 +191,35 @@ export const BUILTIN_WORKFLOWS: WorkflowDefinition[] = [
           prompt: "Run a structured code review of the changes. Block merge on P0/P1 findings.",
         },
       },
+      {
+        id: "commit-pr",
+        kind: "prompt",
+        config: {
+          name: "Commit & open PR",
+          executor: "skill",
+          skillName: "compound-engineering:ce-commit-push-pr",
+          // Coding mode: this step runs git + gh. Per KTD-6 it OWNS commit /
+          // push / PR creation; it does NOT perform the board-state merge — that
+          // stays with Fusion's merge seam below (workflow-owned merge), so the
+          // two never race the same branch state.
+          toolMode: "coding",
+          prompt: "Commit the work in logical commits, push the branch, and open a pull request with a value-first description.",
+        },
+      },
+      {
+        id: "resolve-feedback",
+        kind: "prompt",
+        config: {
+          name: "Resolve PR feedback",
+          executor: "skill",
+          skillName: "compound-engineering:ce-resolve-pr-feedback",
+          toolMode: "coding",
+          // Resolves open PR review threads. On the first autonomous pass there
+          // may be no feedback yet (review is async); the skill no-ops when there
+          // are no threads, and a re-run picks up later feedback.
+          prompt: "Resolve open PR review feedback: evaluate each thread, fix valid issues, and reply.",
+        },
+      },
       { id: "merge", kind: "prompt", config: builtinPromptConfig("merge", "Merge boundary") },
       {
         id: "document",
