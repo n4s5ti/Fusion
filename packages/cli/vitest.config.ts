@@ -25,6 +25,10 @@ const quarantinedCliTests = [
   FNXC:CliTests 2026-06-13-20:05:
   FN-6421 quarantines the remaining FN-6419 CLI lane offenders after standalone evidence showed the agent-provisioning and serve suites pass directly but are integration-heavy under package-wide load.
   Keep them on the 14-day deletion clock rather than widening CLI test timeouts or loosening assertions.
+
+  FNXC:CliTests 2026-06-14-05:50:
+  FN-6427 triaged all 24 quarantined CLI files and kept them in-window: 0 rescued, 0 deleted, 24 kept until the 2026-06-27 and 2026-06-28 deletion deadlines.
+  Fresh direct runs passed, and the shared package-load signature needs a broader fixture/concurrency rescue before these high-value suites can safely rejoin the default lane.
   */
   "src/__tests__/bin.test.ts",
   "src/__tests__/extension.test.ts",
