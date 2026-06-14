@@ -607,6 +607,33 @@ describe("TaskCard", () => {
     expect(card.getAttribute("draggable")).toBe("false");
   });
 
+  // FN-6389 follow-up: native HTML5 drag is desktop-mouse only and doesn't move
+  // cards via touch, but a `draggable` element still arms the browser's touch-drag
+  // heuristic, which intermittently hijacks horizontal swipes meant to scroll the
+  // mobile board. On touch-primary (coarse pointer) devices we drop `draggable`.
+  it("disables native card dragging on touch-primary (coarse pointer) devices", () => {
+    const original = window.matchMedia;
+    window.matchMedia = vi.fn().mockImplementation((query: string) => ({
+      matches: query === "(hover: none) and (pointer: coarse)",
+      media: query,
+      onchange: null,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      dispatchEvent: vi.fn(),
+    })) as unknown as typeof window.matchMedia;
+    try {
+      const { container } = render(<TaskCard task={makeTask()} onOpenDetail={noop} addToast={noop} />);
+      const card = container.querySelector(".card") as HTMLElement;
+      expect(card.getAttribute("draggable")).toBe("false");
+      // No drag-start handler should be wired on touch (would arm the heuristic).
+      const dragStart = new Event("dragstart", { bubbles: true, cancelable: true });
+      const prevented = !card.dispatchEvent(dragStart);
+      expect(prevented).toBe(false);
+    } finally {
+      window.matchMedia = original;
+    }
+  });
+
   it("renders Nx PR badge label when multiple PRs are linked", () => {
     render(
       <TaskCard

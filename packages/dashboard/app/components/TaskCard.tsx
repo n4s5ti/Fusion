@@ -18,6 +18,7 @@ import { PrCreateModal } from "./PrCreateModal";
 import { ProviderIcon } from "./ProviderIcon";
 import { PluginSlot } from "./PluginSlot";
 import { useBadgeWebSocket } from "../hooks/useBadgeWebSocket";
+import { useCoarsePointer } from "../hooks/useCoarsePointer";
 import { getFreshBatchData } from "../hooks/useBatchBadgeFetch";
 import { useTaskDiffStats } from "../hooks/useTaskDiffStats";
 import { useAgentsMapCache } from "../hooks/useAgentsMapCache";
@@ -983,7 +984,12 @@ function TaskCardComponent({
   const isAwaitingInput = task.status === "awaiting-user-input";
   const isArchived = task.column === "archived";
   const isAgentActive = !globalPaused && !queued && !isFailed && !isPaused && !isStuck && !isAwaitingApproval && !isAwaitingInput && (task.column === "in-progress" || ACTIVE_STATUSES.has(visualStatus as string));
-  const isDraggable = !disableDrag && !queued && !isPaused && !isEditing && !isArchived; // Disable drag during edit/archived or host embedding
+  // Native HTML5 drag is desktop-mouse only — it doesn't move cards via touch.
+  // On touch-primary devices the `draggable` attribute still arms the browser's
+  // touch-drag heuristic, which intermittently hijacks horizontal swipes meant
+  // to scroll the board. Drop drag on coarse pointers so panning stays reliable.
+  const isCoarsePointer = useCoarsePointer();
+  const isDraggable = !disableDrag && !queued && !isPaused && !isEditing && !isArchived && !isCoarsePointer; // Disable drag during edit/archived, host embedding, or touch
 
   // Check if this card can be edited inline
   const canEdit = EDITABLE_COLUMNS.has(task.column) && !isAgentActive && !isPaused && !queued && onUpdateTask;
