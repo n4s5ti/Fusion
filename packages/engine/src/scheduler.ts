@@ -343,36 +343,47 @@ function computeConcurrencyGateDiagnostic(params: {
   maxWorktrees: number;
   semaphore?: AgentSemaphore;
   inProgressTaskIds: string[];
-  available: number;
+  startedThisTick?: number;
   /** U6: additive per-column capacity gates (flag-ON only). Omitted → the legacy
    *  three-gate report is byte-identical. */
   perColumnGates?: PerColumnCapacityGate[];
 }): ConcurrencyGateDiagnostic {
+  const startedThisTick = Math.max(0, Math.floor(params.startedThisTick ?? 0));
+  const maxConcurrentUsed = params.agentSlots + startedThisTick;
+  const maxWorktreesUsed = params.activeWorktrees + startedThisTick;
   const maxConcurrentGate: ConcurrencyGateSnapshot = {
-    used: params.agentSlots,
+    used: maxConcurrentUsed,
     limit: params.maxConcurrent,
-    slack: params.maxConcurrent - params.agentSlots,
+    slack: params.maxConcurrent - maxConcurrentUsed,
   };
   const maxWorktreesGate: ConcurrencyGateSnapshot = {
-    used: params.activeWorktrees,
+    used: maxWorktreesUsed,
     limit: params.maxWorktrees,
-    slack: params.maxWorktrees - params.activeWorktrees,
+    slack: params.maxWorktrees - maxWorktreesUsed,
   };
   const semaphoreGate = params.semaphore
-    ? {
-      used: params.semaphore.activeCount,
-      limit: params.semaphore.limit,
-      slack: params.semaphore.availableCount,
-    }
+    ? (() => {
+      const used = Math.max(0, params.semaphore.activeCount, params.agentSlots) + startedThisTick;
+      return {
+        used,
+        limit: params.semaphore.limit,
+        slack: params.semaphore.limit - used,
+      };
+    })()
     : undefined;
+  const available = Math.min(
+    maxConcurrentGate.slack,
+    maxWorktreesGate.slack,
+    semaphoreGate?.slack ?? Infinity,
+  );
 
   const bindingGates: ConcurrencyGateName[] = [];
-  if (maxConcurrentGate.slack === params.available) bindingGates.push("maxConcurrent");
-  if (maxWorktreesGate.slack === params.available) bindingGates.push("maxWorktrees");
-  if (semaphoreGate && semaphoreGate.slack === params.available) bindingGates.push("semaphore");
+  if (maxConcurrentGate.used >= maxConcurrentGate.limit) bindingGates.push("maxConcurrent");
+  if (maxWorktreesGate.used >= maxWorktreesGate.limit) bindingGates.push("maxWorktrees");
+  if (semaphoreGate && semaphoreGate.used >= semaphoreGate.limit) bindingGates.push("semaphore");
 
   return {
-    available: params.available,
+    available,
     bindingGates,
     maxConcurrentGate,
     maxWorktreesGate,
@@ -398,8 +409,9 @@ function formatConcurrencyLimitReason(diagnostic: ConcurrencyGateDiagnostic): st
     `maxWorktrees used=${diagnostic.maxWorktreesGate.used}/${diagnostic.maxWorktreesGate.limit} (holders: ${holdersText("maxWorktrees")})`,
   ];
   if (diagnostic.semaphoreGate) {
+    const semaphoreUsed = Math.max(0, diagnostic.semaphoreGate.used);
     details.push(
-      `semaphore used=${diagnostic.semaphoreGate.used}/${diagnostic.semaphoreGate.limit} (holders: ${holdersText("semaphore")}; note: semaphore slots may include triage/merge agents outside in-progress)`,
+      `semaphore used=${semaphoreUsed}/${diagnostic.semaphoreGate.limit} (holders: ${holdersText("semaphore")}; note: semaphore slots may include triage/merge agents outside in-progress)`,
     );
   }
   return `queued — concurrency limit reached: gate=${gateLabel}; ${details.join("; ")}`;
@@ -1243,43 +1255,34 @@ export class Scheduler {
 
       // When a semaphore is provided, factor in its available slots so we
       // don't schedule more tasks than the global limit allows.
-      const semaphoreAvailable = this.options.semaphore
-        ? Math.min(
-          this.options.semaphore.availableCount,
-          this.options.semaphore.limit - agentSlots,
-        )
-        : Infinity;
-
-      const available = Math.min(
-        maxConcurrent - agentSlots,
-        maxWorktrees - activeWorktrees,
-        semaphoreAvailable,
-      );
       const inProgressTaskIds = inProgress.map((task) => task.id);
-      // U6 (KTD-10): when the workflowColumns flag is ON, report the default
-      // workflow's in-progress capacity as a per-column gate — the generalization
-      // of the legacy maxConcurrent gate (which reads through to the same value).
-      // Additive: omitted flag-OFF so the three-gate report shape is unchanged.
-      const perColumnGates = isWorkflowColumnsEnabled(settings)
-        ? [{
-          workflowId: DEFAULT_WORKFLOW_POOL_ID,
-          columnId: "in-progress",
-          used: agentSlots,
-          limit: maxConcurrent,
-          slack: maxConcurrent - agentSlots,
-        }]
-        : undefined;
-      const concurrencyGateDiagnostic = computeConcurrencyGateDiagnostic({
-        agentSlots,
-        maxConcurrent,
-        activeWorktrees,
-        maxWorktrees,
-        semaphore: this.options.semaphore,
-        inProgressTaskIds,
-        available,
-        perColumnGates,
-      });
-      if (available <= 0) return;
+      const computeDispatchCapacityDiagnostic = (startedThisTick: number): ConcurrencyGateDiagnostic => {
+        const started = Math.max(0, Math.floor(startedThisTick));
+        // U6 (KTD-10): when the workflowColumns flag is ON, report the default
+        // workflow's in-progress capacity as a per-column gate — the generalization
+        // of the legacy maxConcurrent gate (which reads through to the same value).
+        // Additive: omitted flag-OFF so the three-gate report shape is unchanged.
+        const perColumnGates = isWorkflowColumnsEnabled(settings)
+          ? [{
+            workflowId: DEFAULT_WORKFLOW_POOL_ID,
+            columnId: "in-progress",
+            used: agentSlots + started,
+            limit: maxConcurrent,
+            slack: maxConcurrent - (agentSlots + started),
+          }]
+          : undefined;
+        return computeConcurrencyGateDiagnostic({
+          agentSlots,
+          maxConcurrent,
+          activeWorktrees,
+          maxWorktrees,
+          semaphore: this.options.semaphore,
+          inProgressTaskIds,
+          startedThisTick: started,
+          perColumnGates,
+        });
+      };
+      if (computeDispatchCapacityDiagnostic(0).available <= 0) return;
 
       const now = Date.now();
       let todo = tasks.filter((t) => {
@@ -1626,10 +1629,14 @@ export class Scheduler {
           }
         }
 
-        // Dependencies met — check concurrency
-        if (started >= available) {
-          const reason = formatConcurrencyLimitReason(concurrencyGateDiagnostic);
-          const concurrencySignature = formatConcurrencyLimitMemoKey(concurrencyGateDiagnostic);
+        /**
+         * FNXC:Scheduler-Concurrency 2026-06-13-20:08:
+         * FN-6423 fixes the FN-6420 evidence where queue logs reported `gate=maxWorktrees` with `maxWorktrees used=1/3` and `semaphore used=-9/3`. Recompute capacity at the queue decision point, including tasks already started this tick, so the gate label, memo key, and `started` decision share one authoritative snapshot.
+         */
+        const queuePointCapacity = computeDispatchCapacityDiagnostic(started);
+        if (queuePointCapacity.available <= 0) {
+          const reason = formatConcurrencyLimitReason(queuePointCapacity);
+          const concurrencySignature = formatConcurrencyLimitMemoKey(queuePointCapacity);
           await this.logDispatchQueuedReason(
             task.id,
             reason,
