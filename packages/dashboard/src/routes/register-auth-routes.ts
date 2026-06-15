@@ -580,21 +580,36 @@ export const registerAuthRoutes: ApiRouteRegistrar = (ctx) => {
     try {
       const binary = await probeClaudeCli();
       let enabled = false;
+      let acpEnabled = true; // experimentalFeatures.claudeCliAcp defaults ON
       if (store) {
         try {
           const globalSettings = await store.getGlobalSettingsStore().getSettings();
           enabled = globalSettings.useClaudeCli === true;
+          acpEnabled =
+            (globalSettings as { experimentalFeatures?: Record<string, boolean> })
+              .experimentalFeatures?.claudeCliAcp !== false;
         } catch {
           // Best-effort: unreadable settings still allow the binary probe
           // to surface, just with enabled=false.
         }
       }
       const extension = options?.getClaudeCliExtensionStatus?.() ?? null;
+      // ACP transport (Route A): active only when Claude CLI is on, the
+      // experimental flag is on, AND the acp-runtime plugin published a bridge
+      // path (FUSION_CLAUDE_ACP_BRIDGE). Otherwise the provider uses `claude -p`.
+      const acpBridgeAvailable =
+        typeof process.env.FUSION_CLAUDE_ACP_BRIDGE === "string" &&
+        process.env.FUSION_CLAUDE_ACP_BRIDGE.length > 0;
 
       res.json({
         binary,
         enabled,
         extension,
+        acp: {
+          enabled: acpEnabled,
+          bridgeAvailable: acpBridgeAvailable,
+          active: enabled && acpEnabled && acpBridgeAvailable,
+        },
         // Convenience field: the provider card considers everything "ready"
         // when the binary is available, the user has enabled the toggle,
         // AND the host loaded the extension without error. Surfacing this
