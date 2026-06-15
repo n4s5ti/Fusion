@@ -89,6 +89,7 @@ import {
   isResearchToolSurfaceEnabled,
 } from "./tool-availability.js";
 import { runGhostBugPreflight } from "./triage-preflight.js";
+import { evaluateReleaseAuthorizationGate } from "./triage-release-authorization.js";
 import { archiveAsGhostBug } from "./self-healing.js";
 import { createRunAuditor, generateSyntheticRunId } from "./run-audit.js";
 import { resolveAndEmitGoalContext } from "./goal-injection-diagnostics.js";
@@ -2300,6 +2301,56 @@ export class TriageProcessor {
       planLog.warn(`${task.id}: failed to re-read task before approved-spec transition (${message}); proceeding with original task snapshot`);
       latestTransitionTask = task;
     }
+    try {
+      /**
+       * FNXC:ReleaseAuthorizationGate 2026-06-15-02:47:
+       * FN-6469 showed that agent-authored release specs can otherwise flow from triage directly to execution and publish npm packages. FN-6481 parks release-class tasks before every final triage dispatch branch unless a user-authored source supplied the explicit authorization marker.
+       */
+      const releaseGateDecision = evaluateReleaseAuthorizationGate({
+        sourceType: latestTransitionTask?.sourceType ?? task.sourceType,
+        title: latestTransitionTask?.title ?? task.title ?? "",
+        description: latestTransitionTask?.description ?? task.description ?? "",
+        promptText: written,
+      });
+      if (releaseGateDecision.action === "block") {
+        const approvalUpdates: Record<string, unknown> = { status: "awaiting-approval" };
+        if (shouldApplyPromptDeclaredTitle && promptDeclaredTitle) {
+          approvalUpdates.title = promptDeclaredTitle;
+        }
+        const signals = releaseGateDecision.signals.length > 0
+          ? releaseGateDecision.signals.join(", ")
+          : "release intent";
+        const details = `${releaseGateDecision.reason} Matched signals: ${signals}.`;
+        await this.store.updateTask(task.id, approvalUpdates);
+        await this.store.logEntry(
+          task.id,
+          "Release authorization required — leaving task in triage awaiting manual approval",
+          details,
+        );
+        try {
+          await this.store.recordActivity({
+            type: "task:release-authorization-required",
+            taskId: task.id,
+            taskTitle: promptDeclaredTitle ?? latestTransitionTask?.title ?? task.title ?? "",
+            details,
+            metadata: {
+              reason: releaseGateDecision.reason,
+              signals: releaseGateDecision.signals,
+              sourceType: latestTransitionTask?.sourceType ?? task.sourceType ?? "unknown",
+            },
+          });
+        } catch (activityError: unknown) {
+          const message = activityError instanceof Error ? activityError.message : String(activityError);
+          planLog.warn(`${task.id}: failed to record release-authorization-required activity (${message})`);
+        }
+        planLog.log(`${task.id} release authorization required — leaving in triage awaiting manual approval (${signals})`);
+        return;
+      }
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error);
+      planLog.warn(`${task.id}: release-authorization gate failed open: ${message}`);
+    }
+
     if (latestTransitionTask?.paused === true || latestTransitionTask?.userPaused === true) {
       const restoreStatus = options.isReplan ? "needs-replan" : null;
       await this.store.updateTask(task.id, { status: restoreStatus });

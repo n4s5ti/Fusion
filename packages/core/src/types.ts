@@ -1240,6 +1240,8 @@ export type ActivityEventType =
   | "task:auto-archived-deterministic-duplicate"
   | "task:auto-archived-near-duplicate"
   | "task:near-duplicate-flagged"
+  /** FNXC:ReleaseAuthorizationGate 2026-06-15-02:44: Release-class tasks parked by triage need a distinct activity so operators can see that explicit user approval is required before dispatch. */
+  | "task:release-authorization-required"
   | "task:auto-archived-ghost-bug"
   | "task:auto-archived-duplicate"
   | "task:merge-worktree-reacquired"
