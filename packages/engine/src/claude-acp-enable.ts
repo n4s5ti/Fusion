@@ -1,4 +1,5 @@
 /**
+ * FNXC:ClaudeAcp 2026-06-15-11:40:
  * Route A enable resolution (experimental, DEFAULT ON).
  *
  * The `pi-claude-cli` provider drives Claude through the `claude-code-cli-acp`

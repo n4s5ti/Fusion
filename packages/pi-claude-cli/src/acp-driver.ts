@@ -79,6 +79,7 @@ const MAX_TURN_CHARS = 5_000_000;
 const MAX_ID_CHARS = 256;
 
 /**
+ * FNXC:ClaudeAcp 2026-06-15-11:40:
  * Cross-process signal for the dashboard: when the bridged `claude` can't
  * authenticate (R17 — e.g. a detached daemon with no keychain), the turn comes
  * back as "Not logged in · Please run /login" instead of a real answer. We

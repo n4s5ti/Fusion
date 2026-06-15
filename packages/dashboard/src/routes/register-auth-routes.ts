@@ -603,6 +603,12 @@ export const registerAuthRoutes: ApiRouteRegistrar = (ctx) => {
       const acpBridgeAvailable =
         typeof process.env.FUSION_CLAUDE_ACP_BRIDGE === "string" &&
         process.env.FUSION_CLAUDE_ACP_BRIDGE.length > 0;
+      // FNXC:ClaudeAcp 2026-06-15-11:40:
+      // `active` must reflect the ACTUAL dispatch determinant — FUSION_CLAUDE_ACP
+      // (set by applyClaudeAcpEnable from the flag OR the operator force-override),
+      // not the flag alone — so the status isn't misleading when an operator forces
+      // it on/off.
+      const acpEnvOn = process.env.FUSION_CLAUDE_ACP === "1";
       // R17: the driver writes this signal when a turn comes back "Not logged in"
       // (the bridged `claude` can't authenticate). Surface it so the UI can offer
       // fall-back-to-`-p` or fix-auth. Path matches ACP_BRIDGE_AUTH_SIGNAL_PATH.
@@ -628,7 +634,7 @@ export const registerAuthRoutes: ApiRouteRegistrar = (ctx) => {
         acp: {
           enabled: acpEnabled,
           bridgeAvailable: acpBridgeAvailable,
-          active: enabled && acpEnabled && acpBridgeAvailable,
+          active: enabled && acpBridgeAvailable && acpEnvOn,
           authFailed: acpAuthFailed,
           authReason: acpAuthReason,
         },
