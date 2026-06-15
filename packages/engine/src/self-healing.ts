@@ -30,7 +30,7 @@ import { setImmediate as setImmediateCb } from "node:timers";
 import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { isAbsolute, join, relative, resolve } from "node:path";
-import { IN_REVIEW_STALL_DEADLOCK_LOG_PREFIX, IN_REVIEW_STALL_LOG_PREFIX, IN_REVIEW_STALL_TERMINAL_LOG_PREFIX, allowsAutoMergeProcessing, countRecentIdenticalStallEntries, detectDependencyCycle, detectSelfDefeatingDependency, getInReviewStalledSignal, getInReviewStallReason, getPrimaryPrInfo, getStalePausedReviewSignal, getStalePausedTodoSignal, getTaskHardMergeBlocker, getTaskMergeBlocker, isEphemeralAgent, isMergeRequestContractShadowEnabled, isWorkflowColumnsEnabled, isSharedBranchGroupMemberIntegration, parseExplicitDuplicateMarker, type AgentStore, type ChatStore, type MessageStore, type TaskStore, type Settings, type Task, type MergeDetails, type TaskPriority, type MergeResult } from "@fusion/core";
+import { IN_REVIEW_STALL_DEADLOCK_LOG_PREFIX, IN_REVIEW_STALL_LOG_PREFIX, IN_REVIEW_STALL_TERMINAL_LOG_PREFIX, allowsAutoMergeProcessing, countRecentIdenticalStallEntries, detectDependencyCycle, detectSelfDefeatingDependency, evaluateNoCommitsNoOpFinalize, getInReviewStalledSignal, getInReviewStallReason, getPrimaryPrInfo, getStalePausedReviewSignal, getStalePausedTodoSignal, getTaskHardMergeBlocker, getTaskMergeBlocker, isEphemeralAgent, isMergeRequestContractShadowEnabled, isWorkflowColumnsEnabled, isSharedBranchGroupMemberIntegration, parseExplicitDuplicateMarker, type AgentStore, type ChatStore, type MessageStore, type TaskStore, type Settings, type Task, type MergeDetails, type TaskPriority, type MergeResult } from "@fusion/core";
 import type { MeshLeaseManager } from "./mesh-lease-manager.js";
 import { createLogger, schedulerLog } from "./logger.js";
 import { mergeEffectiveSettings } from "./effective-settings.js";
@@ -2267,6 +2267,11 @@ export class SelfHealingManager {
         if (task.column !== "todo" || task.paused) return false;
         if (executingIds.has(task.id)) return false;
         if (task.steps.length === 0 || !task.steps.every((s) => s.status === "done" || s.status === "skipped")) return false;
+        /*
+         * FNXC:Lifecycle 2026-06-14-20:12:
+         * FN-6461 keeps skipped-to-completion no-commits tasks out of the stranded-todo promoter so a finalize guard demotion cannot loop back into in-review before an operator fixes the incomplete work.
+         */
+        if (evaluateNoCommitsNoOpFinalize(task).blocked) return false;
         if (task.error) return false;
         if (task.status && STRANDED_COMPLETED_TODO_ACTIVE_STATUSES.has(task.status)) return false;
         if (task.reviewState?.refreshStatus === "refreshing") return false;
@@ -4943,7 +4948,7 @@ export class SelfHealingManager {
     return recovered;
   }
 
-  private async recordIntegrityAudit(taskId: string, mutationType: "task:finalize-unproven-blocked" | "task:finalize-lost-work-blocked" | "task:integrity-reconcile-modified-files" | "task:integrity-warning" | "task:auto-recover-stale-merger-status", metadata: Record<string, unknown>): Promise<void> {
+  private async recordIntegrityAudit(taskId: string, mutationType: "task:finalize-unproven-blocked" | "task:finalize-lost-work-blocked" | "task:no-commits-finalize-blocked-incomplete-steps" | "task:integrity-reconcile-modified-files" | "task:integrity-warning" | "task:auto-recover-stale-merger-status", metadata: Record<string, unknown>): Promise<void> {
     const auditor = createRunAuditor(this.store, {
       runId: generateSyntheticRunId("self-healing-integrity", taskId),
       agentId: "self-healing",
@@ -5131,6 +5136,38 @@ export class SelfHealingManager {
           // the audit trail of the lost work. Now we refuse to finalize and
           // move the task back to todo with progress preserved so the next
           // executor run can re-attempt.
+          const noCommitsFinalize = evaluateNoCommitsNoOpFinalize(task);
+          if (noCommitsFinalize.blocked) {
+            const reason = noCommitsFinalize.reason ?? "no-commits task has incomplete work with no net branch changes";
+            /*
+             * FNXC:Lifecycle 2026-06-14-20:14:
+             * FN-6461/FN-6455 requires self-healing no-op finalization to demote no-commits tasks with incomplete/skipped work and set an error so stranded-todo recovery will not immediately re-promote them.
+             */
+            await this.store.updateTask(task.id, { error: reason });
+            await this.store.logEntry(
+              task.id,
+              `Finalize blocked (no-commits incomplete-work guard): ${reason} — moving back to todo with progress preserved`,
+              JSON.stringify({
+                doneCount: noCommitsFinalize.doneCount,
+                incompleteCount: noCommitsFinalize.incompleteCount,
+                classification: "proven-no-op",
+                baseRef: classification.baseRef,
+                lane: "self-healing-finalize-no-op-review",
+              }, null, 2),
+            );
+            await this.recordIntegrityAudit(task.id, "task:no-commits-finalize-blocked-incomplete-steps", {
+              reason,
+              doneCount: noCommitsFinalize.doneCount,
+              incompleteCount: noCommitsFinalize.incompleteCount,
+              classification: "proven-no-op",
+              baseRef: classification.baseRef,
+              lane: "self-healing-finalize-no-op-review",
+            });
+            // #1411: backward recovery — skip order-derived adjacency.
+            await this.store.moveTask(task.id, "todo", { preserveProgress: true, moveSource: "engine", recoveryRehome: true });
+            recovered++;
+            continue;
+          }
           if (task.modifiedFiles && task.modifiedFiles.length > 0) {
             await this.store.logEntry(
               task.id,

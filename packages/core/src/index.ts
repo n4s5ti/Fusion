@@ -494,6 +494,8 @@ export {
   type NoOpCompletionMarker,
   type NoOpCompletionMarkerKind,
 } from "./no-op-completion-marker.js";
+export { evaluateNoCommitsNoOpFinalize } from "./no-commits-finalize-guard.js";
+export type { NoCommitsNoOpFinalizeEvaluation } from "./no-commits-finalize-guard.js";
 export {
   __getDeterministicGuardMutexSize,
   deterministicGuardLocks,

@@ -3944,6 +3944,131 @@ describe("SelfHealingManager", () => {
       managerWithRecovery.stop();
     });
 
+    it("FN-6461: demotes no-commits no-op review tasks with skipped-out work", async () => {
+      const managerWithRecovery = new SelfHealingManager(store, {
+        rootDir: "/tmp/test-project",
+      });
+      (store.getSettings as ReturnType<typeof vi.fn>).mockResolvedValue({
+        autoMerge: true,
+        globalPause: false,
+        enginePaused: false,
+      });
+      mockedExecSync.mockImplementation((command) => {
+        const cmd = String(command);
+        if (cmd.includes("rev-parse --verify 'fusion/fn-6461'")) return "ok" as any;
+        if (cmd.includes("rev-parse --verify 'main'")) return "ok" as any;
+        if (cmd.includes("rev-list --count 'main'..'fusion/fn-6461'")) return "0\n" as any;
+        return "" as any;
+      });
+      (store.listTasks as ReturnType<typeof vi.fn>).mockResolvedValue([
+        {
+          id: "FN-6461",
+          column: "in-review",
+          paused: false,
+          status: null,
+          worktree: "/tmp/test-project/.worktrees/fn-6461",
+          branch: "fusion/fn-6461",
+          noCommitsExpected: true,
+          steps: [
+            { name: "Preflight", status: "done" },
+            { name: "Dry-run", status: "skipped" },
+            { name: "Execute", status: "skipped" },
+            { name: "Verify", status: "skipped" },
+            { name: "Testing", status: "skipped" },
+            { name: "Documentation", status: "skipped" },
+          ],
+          workflowStepResults: [{ id: "ws-1", status: "passed", phase: "pre-merge" }],
+          mergeDetails: undefined,
+          log: [],
+        },
+      ]);
+
+      const result = await managerWithRecovery.finalizeNoOpReviewTasks();
+
+      expect(result).toBe(1);
+      expect(store.updateTask).toHaveBeenCalledWith("FN-6461", expect.objectContaining({ error: expect.stringContaining("done=1, incomplete=5") }));
+      expect(store.moveTask).toHaveBeenCalledWith("FN-6461", "todo", expect.objectContaining({ preserveProgress: true, moveSource: "engine", recoveryRehome: true }));
+      expect(store.moveTask).not.toHaveBeenCalledWith("FN-6461", "done");
+      expect(store.logEntry).toHaveBeenCalledWith(
+        "FN-6461",
+        expect.stringContaining("Finalize blocked (no-commits incomplete-work guard)"),
+        expect.stringContaining("self-healing-finalize-no-op-review"),
+      );
+      expect((store as any).recordRunAuditEvent).toHaveBeenCalledWith(expect.objectContaining({
+        mutationType: "task:no-commits-finalize-blocked-incomplete-steps",
+        target: "FN-6461",
+      }));
+
+      managerWithRecovery.stop();
+    });
+
+    it("FN-6461: still finalizes all-done no-commits no-op review tasks", async () => {
+      const managerWithRecovery = new SelfHealingManager(store, {
+        rootDir: "/tmp/test-project",
+      });
+      (store.getSettings as ReturnType<typeof vi.fn>).mockResolvedValue({
+        autoMerge: true,
+        globalPause: false,
+        enginePaused: false,
+      });
+      mockedExecSync.mockImplementation((command) => {
+        const cmd = String(command);
+        if (cmd.includes("rev-parse --verify 'fusion/fn-6462'")) return "ok" as any;
+        if (cmd.includes("rev-parse --verify 'main'")) return "ok" as any;
+        if (cmd.includes("rev-list --count 'main'..'fusion/fn-6462'")) return "0\n" as any;
+        return "" as any;
+      });
+      (store.listTasks as ReturnType<typeof vi.fn>).mockResolvedValue([
+        {
+          id: "FN-6462",
+          column: "in-review",
+          paused: false,
+          status: null,
+          worktree: "/tmp/test-project/.worktrees/fn-6462",
+          branch: "fusion/fn-6462",
+          noCommitsExpected: true,
+          steps: [{ name: "Preflight", status: "done" }, { name: "Verify", status: "done" }],
+          workflowStepResults: [{ id: "ws-1", status: "passed", phase: "pre-merge" }],
+          mergeDetails: undefined,
+          log: [],
+        },
+      ]);
+
+      const result = await managerWithRecovery.finalizeNoOpReviewTasks();
+
+      expect(result).toBe(1);
+      expect(store.moveTask).toHaveBeenCalledWith("FN-6462", "done");
+      expect(store.moveTask).not.toHaveBeenCalledWith("FN-6462", "todo", expect.anything());
+
+      managerWithRecovery.stop();
+    });
+
+    it("FN-6461: stranded todo recovery does not promote skipped-to-completion no-commits tasks", async () => {
+      const recoverCompletedTask = vi.fn().mockResolvedValue(true);
+      const managerWithRecovery = new SelfHealingManager(store, {
+        rootDir: "/tmp/test-project",
+        recoverCompletedTask,
+      });
+      (store.listTasks as ReturnType<typeof vi.fn>).mockResolvedValue([
+        {
+          id: "FN-6463",
+          column: "todo",
+          paused: false,
+          status: null,
+          noCommitsExpected: true,
+          steps: [{ name: "Preflight", status: "done" }, { name: "Execute", status: "skipped" }],
+          log: [],
+        },
+      ]);
+
+      const result = await managerWithRecovery.recoverStrandedCompletedTodoTasks();
+
+      expect(result).toBe(0);
+      expect(recoverCompletedTask).not.toHaveBeenCalled();
+
+      managerWithRecovery.stop();
+    });
+
     it("blocks unproven no-op finalize candidates and emits audit", async () => {
       const managerWithRecovery = new SelfHealingManager(store, {
         rootDir: "/tmp/test-project",

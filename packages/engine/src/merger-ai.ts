@@ -38,6 +38,7 @@ import { tmpdir } from "node:os";
 import { isAbsolute, join, relative } from "node:path";
 import {
   buildTaskLineageTrailer,
+  evaluateNoCommitsNoOpFinalize,
   getPrimaryPrInfo,
   getTaskMergeBlocker,
   resolveAgentPrompt,
@@ -1125,6 +1126,50 @@ export async function runAiMerge(
       if (!squashSha) {
         // Branch had no net changes vs the tip — nothing to land.
         await audit.git({ type: "merge:ai-empty", target: integrationBranch, metadata: { taskId, tipSha } });
+        const noCommitsFinalize = evaluateNoCommitsNoOpFinalize(task);
+        if (noCommitsFinalize.blocked) {
+          const reason = noCommitsFinalize.reason ?? "no-commits task has incomplete work with no net branch changes";
+          /*
+           * FNXC:Lifecycle 2026-06-14-20:02:
+           * FN-6461/FN-6455 requires the AI empty-merge lane to demote no-commits tasks whose skipped/incomplete steps outweigh done steps instead of finalizing the operational work as done.
+           */
+          await store.updateTask(taskId, { error: reason });
+          await store.logEntry(
+            taskId,
+            `Finalize blocked (no-commits incomplete-work guard): ${reason} — moving back to todo with progress preserved`,
+            JSON.stringify({
+              doneCount: noCommitsFinalize.doneCount,
+              incompleteCount: noCommitsFinalize.incompleteCount,
+              branch,
+              integrationBranch,
+              lane: "ai-empty-merge",
+            }, null, 2),
+          );
+          await audit.database({
+            type: "task:no-commits-finalize-blocked-incomplete-steps" as Parameters<typeof audit.database>[0]["type"],
+            target: taskId,
+            metadata: {
+              reason,
+              doneCount: noCommitsFinalize.doneCount,
+              incompleteCount: noCommitsFinalize.incompleteCount,
+              branch,
+              integrationBranch,
+              lane: "ai-empty-merge",
+            },
+          });
+          await store.moveTask(taskId, "todo", { preserveProgress: true, moveSource: "engine" } as Parameters<TaskStore["moveTask"]>[2]);
+          return {
+            task,
+            branch,
+            merged: false,
+            noOp: false,
+            ok: true,
+            reason,
+            error: reason,
+            worktreeRemoved: false,
+            branchDeleted: false,
+          };
+        }
         await log(`AI merge: ${branch} had no net changes vs ${integrationBranch} — finalizing as no-op`);
         return await finalizeMerged(store, projectRootDir, taskId, task, branch, integrationBranch, tipSha, audit, log, { empty: true });
       }

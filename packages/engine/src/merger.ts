@@ -74,6 +74,7 @@ import { isBranchAuthoritativeForTask } from "./branch-conflicts.js";
 import { hostname } from "node:os";
 import {
   buildTaskLineageTrailer,
+  evaluateNoCommitsNoOpFinalize,
   getTaskMergeBlocker,
   normalizeMergeConflictStrategy,
   normalizeMergeStrategyOverlapBehavior,
@@ -7370,6 +7371,51 @@ async function tryEarlyEmptyOwnDiffFinalize(input: {
     return null;
   }
 
+  const noCommitsFinalize = evaluateNoCommitsNoOpFinalize(task);
+  if (noCommitsFinalize.blocked) {
+    const reason = noCommitsFinalize.reason ?? "no-commits task has incomplete work with no net branch changes";
+    /*
+     * FNXC:Lifecycle 2026-06-14-20:06:
+     * FN-6461/FN-6455 requires the early empty-own-diff fast-path to block before mergeDetails writes or branch/worktree cleanup so incomplete release/ops work remains recoverable.
+     */
+    await store.updateTask(taskId, { error: reason });
+    await store.logEntry(
+      taskId,
+      `Finalize blocked (no-commits incomplete-work guard): ${reason} — moving back to todo with progress preserved`,
+      JSON.stringify({
+        doneCount: noCommitsFinalize.doneCount,
+        incompleteCount: noCommitsFinalize.incompleteCount,
+        branch,
+        mergeTargetBranch,
+        lane: "early-empty-own-diff",
+      }, null, 2),
+    );
+    await audit.database({
+      type: "task:no-commits-finalize-blocked-incomplete-steps" as Parameters<typeof audit.database>[0]["type"],
+      target: taskId,
+      metadata: {
+        reason,
+        doneCount: noCommitsFinalize.doneCount,
+        incompleteCount: noCommitsFinalize.incompleteCount,
+        branch,
+        mergeTargetBranch,
+        lane: "early-empty-own-diff",
+      },
+    });
+    await store.moveTask(taskId, "todo", { preserveProgress: true, moveSource: "engine" } as any);
+    return {
+      task,
+      branch,
+      merged: false,
+      noOp: false,
+      ok: true,
+      reason,
+      error: reason,
+      worktreeRemoved: false,
+      branchDeleted: false,
+    };
+  }
+
   const noOpReason = `early fast-path: branch ${branch} has ${aheadCount} own commit(s) but zero net diff vs merge-base of ${mergeTargetBranch}`;
   const mergedAt = new Date().toISOString();
   const mergeDetails: MergeDetails = {
@@ -8382,6 +8428,52 @@ export async function aiMergeTask(
       // — NOT a legitimate no-op. Demote to the unproven-recovery path which
       // moves the task back to todo with progress preserved instead of
       // clearing modifiedFiles to [].
+      const noCommitsFinalize = evaluateNoCommitsNoOpFinalize(task);
+      if (noCommitsFinalize.blocked) {
+        const reason = noCommitsFinalize.reason ?? "no-commits task has incomplete work with no net branch changes";
+        /*
+         * FNXC:Lifecycle 2026-06-14-20:08:
+         * FN-6461/FN-6455 extends the FN-5490 no-op demotion pattern to no-commits tasks whose skipped/incomplete steps outweigh completed work.
+         */
+        await store.updateTask(taskId, { error: reason });
+        await store.logEntry(
+          taskId,
+          `Finalize blocked (no-commits incomplete-work guard): ${reason} — moving back to todo with progress preserved`,
+          JSON.stringify({
+            doneCount: noCommitsFinalize.doneCount,
+            incompleteCount: noCommitsFinalize.incompleteCount,
+            classification: classification.kind,
+            baseRef: classification.baseRef,
+            lane: "legacy-no-op-classifier",
+          }, null, 2),
+        );
+        await (store as any).recordRunAuditEvent?.({
+          domain: "database",
+          mutationType: "task:no-commits-finalize-blocked-incomplete-steps",
+          target: taskId,
+          metadata: {
+            reason,
+            doneCount: noCommitsFinalize.doneCount,
+            incompleteCount: noCommitsFinalize.incompleteCount,
+            classification: classification.kind,
+            baseRef: classification.baseRef,
+            lane: "legacy-no-op-classifier",
+          },
+        });
+        await store.moveTask(taskId, "todo", { preserveProgress: true, moveSource: "engine" } as any);
+        await releaseReuseHandoffEarly("no-commits-incomplete-blocked");
+        return {
+          task,
+          branch,
+          merged: false,
+          noOp: false,
+          ok: true,
+          reason,
+          worktreeRemoved: false,
+          branchDeleted: false,
+          error: reason,
+        };
+      }
       if (task.modifiedFiles && task.modifiedFiles.length > 0) {
         const reason = `lost-work-detected: ${task.modifiedFiles.length} modifiedFiles claimed but no commit landed`;
         await store.updateTask(taskId, { error: reason });
@@ -8641,6 +8733,44 @@ export async function aiMergeTask(
       result.mergeTargetSource = mergeTarget.source;
       mergerLog.log(`${taskId}: branch missing; recovered owned landed commit ${classification.commit.sha.slice(0, 8)}`);
     } else {
+      const noCommitsFinalize = evaluateNoCommitsNoOpFinalize(task);
+      if (noCommitsFinalize.blocked) {
+        const reason = noCommitsFinalize.reason ?? "no-commits task has incomplete work with no net branch changes";
+        /*
+         * FNXC:Lifecycle 2026-06-14-20:10:
+         * FN-6461/FN-6455 applies the same no-commits incomplete-work guard when branch-missing classification would otherwise finalize a zero-change task.
+         */
+        result.error = reason;
+        result.reason = reason;
+        result.noOp = false;
+        await store.updateTask(taskId, { error: reason });
+        await store.logEntry(
+          taskId,
+          `Finalize blocked (no-commits incomplete-work guard): ${reason} — moving back to todo with progress preserved`,
+          JSON.stringify({
+            doneCount: noCommitsFinalize.doneCount,
+            incompleteCount: noCommitsFinalize.incompleteCount,
+            classification: classification.kind,
+            baseRef: classification.baseRef,
+            lane: "legacy-branch-missing-no-op",
+          }, null, 2),
+        );
+        await (store as any).recordRunAuditEvent?.({
+          domain: "database",
+          mutationType: "task:no-commits-finalize-blocked-incomplete-steps",
+          target: taskId,
+          metadata: {
+            reason,
+            doneCount: noCommitsFinalize.doneCount,
+            incompleteCount: noCommitsFinalize.incompleteCount,
+            classification: classification.kind,
+            baseRef: classification.baseRef,
+            lane: "legacy-branch-missing-no-op",
+          },
+        });
+        await store.moveTask(taskId, "todo", { preserveProgress: true, moveSource: "engine" } as any);
+        return result;
+      }
       const noOpReason = `branch has zero commits ahead of ${classification.baseRef}`;
       const mergedAt = new Date().toISOString();
       await store.updateTask(taskId, {
