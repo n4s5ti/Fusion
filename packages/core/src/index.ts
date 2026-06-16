@@ -530,6 +530,35 @@ export type {
   UsageEventKind,
   UsageEventRangeQuery,
 } from "./usage-events.js";
+export { aggregateTokenAnalytics } from "./token-analytics.js";
+export type {
+  TokenAnalytics,
+  TokenAnalyticsQuery,
+  TokenGroupBy,
+  TokenGroupSummary,
+  TokenTotals,
+} from "./token-analytics.js";
+export { aggregateToolAnalytics, countInterventions } from "./tool-analytics.js";
+export type {
+  ToolAnalytics,
+  ToolAnalyticsQuery,
+  ToolCategoryCount,
+  InterventionBreakdown,
+} from "./tool-analytics.js";
+export { aggregateActivityAnalytics } from "./activity-analytics.js";
+export type {
+  ActivityAnalytics,
+  ActivityAnalyticsQuery,
+  DailyActivity,
+  MttrSummary,
+} from "./activity-analytics.js";
+export { aggregateProductivityAnalytics } from "./productivity-analytics.js";
+export type {
+  ProductivityAnalytics,
+  ProductivityAnalyticsQuery,
+  LanguageCount,
+  LocSummary,
+} from "./productivity-analytics.js";
 export {
   STALLED_REVIEW_REENQUEUE_THRESHOLD,
   STALLED_REVIEW_INVALID_TRANSITION_THRESHOLD,
@@ -674,6 +703,8 @@ export {
   isPrEntityActionable,
   isPrEntityAutoMergeReady,
   autoMergeGateReason,
+  summarizePrThreadActivity,
+  type PrThreadActivity,
 } from "./pr-entity.js";
 export {
   findVitestProcessIds,
