@@ -1,6 +1,5 @@
 import {
   applySignalCaps,
-  isWithinReplayWindow,
   verifyHmacSignature,
   type Signal,
   type SignalSeverity,
