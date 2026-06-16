@@ -138,7 +138,11 @@ describe("knowledge-index store", () => {
     db.exec("DROP INDEX IF EXISTS idxKnowledgePagesSourceKind");
     db.exec("DROP INDEX IF EXISTS idxKnowledgePagesUpdatedAt");
     db.exec("DROP TABLE IF EXISTS knowledge_pages");
-    db.prepare("UPDATE __meta SET value = ? WHERE key = 'schemaVersion'").run(String(SCHEMA_VERSION - 1));
+    // Pinned to the literal pre-migration version (118), NOT SCHEMA_VERSION-1:
+    // knowledge_pages was created by migration 119, so seeding at 118 keeps this
+    // test exercising that CREATE block even after later migrations land (mirrors
+    // the literal-117 pin in usage-events.test.ts).
+    db.prepare("UPDATE __meta SET value = ? WHERE key = 'schemaVersion'").run("118");
 
     (db as unknown as { migrate: () => void }).migrate();
 
