@@ -47,6 +47,8 @@ function tokenFixture(): TokenAnalytics {
 }
 
 function activityFixture(): ActivityAnalytics {
+  // Focused fixture: the OTLP mapping only reads the activity gauge fields below,
+  // so funnel/monitor (U7/U13 additions) are intentionally omitted via the cast.
   return {
     from: null,
     to: null,
@@ -56,8 +58,8 @@ function activityFixture(): ActivityAnalytics {
     activeAgents: 5,
     daily: [],
     stickiness: 0.6,
-    mttr: { value: null, unavailable: true },
-  };
+    mttr: { value: null, unavailable: true, sampleCount: 0 },
+  } as unknown as ActivityAnalytics;
 }
 
 function findMetric(payload: ReturnType<typeof mapAnalyticsToOtlp>, name: string) {

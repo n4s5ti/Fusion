@@ -1,0 +1,137 @@
+// @vitest-environment node
+
+import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { mkdtempSync, rmSync } from "node:fs";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
+
+import { Database } from "@fusion/core";
+import type { Task, TaskCreateInput, TaskStore } from "@fusion/core";
+import { runMonitorOnRegression, isMonitorFixTask } from "../monitor-trait.js";
+import { DEFAULT_STORM_GUARD } from "../monitor-store.js";
+
+/**
+ * A minimal TaskStore stub: a real Database (for the incidents/deployments
+ * tables the monitor store writes) plus a `createTask` that records created
+ * tasks so we can assert exactly how many fix tasks were opened.
+ */
+function makeStore(db: Database): { store: TaskStore; created: Task[] } {
+  const created: Task[] = [];
+  let seq = 0;
+  const store = {
+    getDatabase: () => db,
+    async createTask(input: TaskCreateInput): Promise<Task> {
+      const task = {
+        id: `FN-${++seq}`,
+        title: input.title,
+        description: input.description,
+        column: input.column,
+        source: input.source,
+      } as unknown as Task;
+      created.push(task);
+      return task;
+    },
+  } as unknown as TaskStore;
+  return { store, created };
+}
+
+function makeDb(): { db: Database; tmpDir: string } {
+  const tmpDir = mkdtempSync(join(tmpdir(), "kb-monitor-trait-"));
+  const db = new Database(join(tmpDir, ".fusion"));
+  db.init();
+  return { db, tmpDir };
+}
+
+describe("monitor-trait runMonitorOnRegression (U13)", () => {
+  let db: Database;
+  let tmpDir: string;
+
+  beforeEach(() => {
+    ({ db, tmpDir } = makeDb());
+  });
+  afterEach(() => {
+    db.close();
+    rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it("a post-ship error signal past the gate auto-creates ONE linked fix task in triage", async () => {
+    const { store, created } = makeStore(db);
+    let outcome;
+    // Fire 3 times (threshold) sharing one groupingKey.
+    for (let i = 0; i < 3; i += 1) {
+      outcome = await runMonitorOnRegression(
+        { groupingKey: "g1", title: "Checkout 500s", severity: "error", source: "sentry" },
+        { store },
+      );
+    }
+    expect(created).toHaveLength(1);
+    expect(outcome?.kind).toBe("fix-task-opened");
+    const fix = created[0];
+    expect(fix.column).toBe("triage");
+    expect(isMonitorFixTask(fix)).toBe(true);
+  });
+
+  it("a 100-event burst sharing one groupingKey yields exactly ONE fix task", async () => {
+    const { store, created } = makeStore(db);
+    for (let i = 0; i < 100; i += 1) {
+      await runMonitorOnRegression(
+        { groupingKey: "g-burst", title: "Flood", severity: "error" },
+        { store },
+      );
+    }
+    expect(created).toHaveLength(1);
+  });
+
+  it("a flapping alert (single firing, gate not met) yields NO new task", async () => {
+    const { store, created } = makeStore(db);
+    const outcome = await runMonitorOnRegression(
+      { groupingKey: "g-flap", title: "Blip", severity: "warning" },
+      { store },
+    );
+    expect(created).toHaveLength(0);
+    expect(outcome.kind).toBe("suppressed");
+  });
+
+  it("an already-open fix task absorbs repeat signals (cooldown, no second task)", async () => {
+    const { store, created } = makeStore(db);
+    // Open a fix task via threshold.
+    for (let i = 0; i < 3; i += 1) {
+      await runMonitorOnRegression({ groupingKey: "g1", title: "Down" }, { store });
+    }
+    expect(created).toHaveLength(1);
+    // Further firings absorb.
+    const absorbed = await runMonitorOnRegression({ groupingKey: "g1", title: "Down again" }, { store });
+    expect(absorbed.kind).toBe("absorbed");
+    expect(created).toHaveLength(1);
+  });
+
+  it("circuit breaker caps auto-created tasks per window", async () => {
+    const { store, created } = makeStore(db);
+    const config = { ...DEFAULT_STORM_GUARD, threshold: 1, maxTasksPerWindow: 2 };
+    for (let g = 0; g < 5; g += 1) {
+      await runMonitorOnRegression({ groupingKey: `g-${g}`, title: "x" }, { store, config });
+    }
+    expect(created).toHaveLength(2);
+  });
+
+  it("the sustained-duration gate opens a task for a low-frequency but long-lived incident", async () => {
+    const { store, created } = makeStore(db);
+    const past = "2026-03-02T10:00:00.000Z";
+    const openMoment = Date.parse(past);
+    // Open with a single firing (occurrences=1) evaluated AT open time — the
+    // sustained gate (5 min) is not yet met.
+    await runMonitorOnRegression(
+      { groupingKey: "g-slow", title: "Slow leak", at: past },
+      { store, nowMs: openMoment },
+    );
+    expect(created).toHaveLength(0); // first firing: gate not met at open time
+    // Evaluate "now" 10 minutes later so the sustained gate is satisfied.
+    const later = Date.parse("2026-03-02T10:10:00.000Z");
+    const outcome = await runMonitorOnRegression(
+      { groupingKey: "g-slow", title: "Slow leak", at: past },
+      { store, nowMs: later },
+    );
+    expect(outcome.kind).toBe("fix-task-opened");
+    expect(created).toHaveLength(1);
+  });
+});

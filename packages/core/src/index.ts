@@ -558,12 +558,13 @@ export type {
   ToolCategoryCount,
   InterventionBreakdown,
 } from "./tool-analytics.js";
-export { aggregateActivityAnalytics } from "./activity-analytics.js";
+export { aggregateActivityAnalytics, aggregateMonitorMetrics } from "./activity-analytics.js";
 export type {
   ActivityAnalytics,
   ActivityAnalyticsQuery,
   DailyActivity,
   MttrSummary,
+  MonitorMetrics,
 } from "./activity-analytics.js";
 export { aggregateProductivityAnalytics } from "./productivity-analytics.js";
 export type {

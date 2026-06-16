@@ -10,11 +10,11 @@ import type { WorkflowIrColumn } from "./workflow-ir-types.js";
  * activity come from `usage_events`. Inclusivity: `from`/`to` are inclusive,
  * matching `usage-events.ts`.
  *
- * **MTTR seam (U13).** Mean-time-to-resolve aggregation is deliberately NOT
- * implemented here yet — it depends on the deployments/incidents tables U13
- * introduces. {@link aggregateActivityAnalytics} returns an `mttr` field set to
- * the documented "unavailable" sentinel so the shape is stable now and U13 can
- * fill it in without changing callers. See {@link MttrSummary}.
+ * **MTTR (U13).** Mean-time-to-resolve is computed over the `incidents` table
+ * introduced by U13: MTTR = mean(resolvedAt − openedAt) across incidents whose
+ * `resolvedAt` falls within the range. Unresolved incidents contribute to
+ * "open incidents", not to MTTR. Deployment frequency comes from the
+ * `deployments` table. See {@link MttrSummary} and {@link MonitorMetrics}.
  */
 
 export interface ActivityAnalyticsQuery {
@@ -34,15 +34,36 @@ export interface DailyActivity {
 }
 
 /**
- * MTTR summary placeholder. U13 will populate `value` (mean minutes to resolve)
- * once deployments/incidents land; until then it is the documented unavailable
- * sentinel — `null` value with `unavailable: true`, never `0`.
+ * MTTR summary. `value` is the mean minutes to resolve across incidents whose
+ * `resolvedAt` falls in the range. When no incident has been resolved in range
+ * MTTR cannot be computed: `value` is `null` and `unavailable` is `true`, never
+ * `0`. The `sampleCount` is the number of resolved incidents the mean is over.
  */
 export interface MttrSummary {
-  /** Mean minutes to resolve; null until U13 provides incident data. */
+  /** Mean minutes to resolve; null when no resolved incident exists in range. */
   value: number | null;
-  /** True when MTTR cannot be computed (no incident data source yet). */
+  /** True when MTTR cannot be computed (no resolved incidents in range). */
   unavailable: boolean;
+  /** Number of resolved incidents the mean is computed over. */
+  sampleCount: number;
+}
+
+/**
+ * Monitor-stage metrics (U13): MTTR plus deployment / incident counts that feed
+ * the Command Center's External Signals area and the Monitor surface. All counts
+ * are over the same date range as the parent activity query.
+ */
+export interface MonitorMetrics {
+  /** Mean-time-to-resolve over incidents resolved in range. */
+  mttr: MttrSummary;
+  /** Incidents opened (by `openedAt`) within the range. */
+  incidentsOpened: number;
+  /** Incidents resolved (by `resolvedAt`) within the range. */
+  incidentsResolved: number;
+  /** Incidents currently in the `open` state (point-in-time, not range-bound). */
+  openIncidents: number;
+  /** Deployments recorded (by `deployedAt`) within the range — deploy frequency. */
+  deployments: number;
 }
 
 export interface ActivityAnalytics {
@@ -63,8 +84,10 @@ export interface ActivityAnalytics {
    * range; MAU = distinct active agents over the whole range. 0 when MAU is 0.
    */
   stickiness: number;
-  /** MTTR placeholder (U13 seam). */
+  /** MTTR over incidents resolved in range (U13). */
   mttr: MttrSummary;
+  /** Full monitor-stage metrics (MTTR + deploy/incident counts) (U13). */
+  monitor: MonitorMetrics;
   /** SDLC funnel + throughput over the same range (U7). */
   funnel: SdlcFunnel;
 }
@@ -182,6 +205,9 @@ export function aggregateActivityAnalytics(
   const mau = activeAgents;
   const stickiness = mau > 0 ? dau / mau : 0;
 
+  // U13: real monitor metrics over the incidents/deployments tables.
+  const monitor = aggregateMonitorMetrics(db, query);
+
   return {
     from: query.from ?? null,
     to: query.to ?? null,
@@ -191,8 +217,8 @@ export function aggregateActivityAnalytics(
     activeAgents,
     daily,
     stickiness,
-    // U13 seam: no incident data source yet — unavailable, not 0.
-    mttr: { value: null, unavailable: true },
+    mttr: monitor.mttr,
+    monitor,
     // U7 seam: SDLC funnel/throughput over the same range, mapped by workflow
     // trait. Uses the built-in workflow's column→trait mapping by default;
     // callers with a custom workflow IR should call aggregateSdlcFunnel directly
@@ -453,4 +479,126 @@ export function aggregateSdlcFunnel(
     rangeDays,
     throughputPerDay,
   };
+}
+
+/* ------------------------------------------------------------------------- */
+/* U13 — Monitor stage: MTTR + deploy/incident metrics                       */
+/* ------------------------------------------------------------------------- */
+
+interface ResolvedIncidentRow {
+  openedAt: string;
+  resolvedAt: string;
+}
+
+/**
+ * Aggregate monitor-stage metrics over a date range from the `incidents` and
+ * `deployments` tables (U13).
+ *
+ * - **MTTR** = mean(resolvedAt − openedAt), in minutes, over incidents whose
+ *   `resolvedAt` is within `[from, to]`. An incident with no `resolvedAt`
+ *   (still open) is excluded — it contributes to {@link MonitorMetrics.openIncidents},
+ *   never to MTTR. When no incident is resolved in range, MTTR is the documented
+ *   unavailable sentinel (`value: null`, `unavailable: true`), never `0`.
+ * - **incidentsOpened** counts incidents by `openedAt` in range.
+ * - **incidentsResolved** counts incidents by `resolvedAt` in range.
+ * - **openIncidents** is the current count of `status = 'open'` incidents
+ *   (point-in-time, deliberately not range-bound — "how many are open now").
+ * - **deployments** counts deploys by `deployedAt` in range (deploy frequency).
+ *
+ * Tables are queried defensively: if `incidents`/`deployments` are absent (a DB
+ * predating migration 120), every metric degrades to its empty value rather than
+ * throwing, so the aggregator is safe to call on any schema.
+ */
+export function aggregateMonitorMetrics(
+  db: Database,
+  query: ActivityAnalyticsQuery = {},
+): MonitorMetrics {
+  if (!tableExists(db, "incidents")) {
+    return {
+      mttr: { value: null, unavailable: true, sampleCount: 0 },
+      incidentsOpened: 0,
+      incidentsResolved: 0,
+      openIncidents: 0,
+      deployments: tableExists(db, "deployments")
+        ? countDeployments(db, query)
+        : 0,
+    };
+  }
+
+  const openedRange = rangeClauses("openedAt", query);
+  const incidentsOpened = (
+    db
+      .prepare(`SELECT COUNT(*) AS count FROM incidents ${openedRange.where}`)
+      .get(...openedRange.params) as CountRow
+  ).count;
+
+  // Resolved-in-range: resolvedAt within [from,to]. Build clauses on resolvedAt
+  // plus a NOT NULL guard so unresolved incidents are excluded from MTTR.
+  const resolvedRange = rangeClauses("resolvedAt", query);
+  const resolvedWhere = resolvedRange.where
+    ? `${resolvedRange.where} AND resolvedAt IS NOT NULL`
+    : `WHERE resolvedAt IS NOT NULL`;
+
+  const incidentsResolved = (
+    db
+      .prepare(`SELECT COUNT(*) AS count FROM incidents ${resolvedWhere}`)
+      .get(...resolvedRange.params) as CountRow
+  ).count;
+
+  const openIncidents = (
+    db
+      .prepare(`SELECT COUNT(*) AS count FROM incidents WHERE status = 'open'`)
+      .get() as CountRow
+  ).count;
+
+  const resolvedRows = db
+    .prepare(
+      `SELECT openedAt, resolvedAt FROM incidents ${resolvedWhere}`,
+    )
+    .all(...resolvedRange.params) as ResolvedIncidentRow[];
+
+  let totalMs = 0;
+  let sampleCount = 0;
+  for (const row of resolvedRows) {
+    const opened = Date.parse(row.openedAt);
+    const resolved = Date.parse(row.resolvedAt);
+    if (!Number.isFinite(opened) || !Number.isFinite(resolved)) continue;
+    const delta = resolved - opened;
+    if (delta < 0) continue; // guard against clock skew / bad data
+    totalMs += delta;
+    sampleCount += 1;
+  }
+
+  const mttr: MttrSummary =
+    sampleCount === 0
+      ? { value: null, unavailable: true, sampleCount: 0 }
+      : { value: totalMs / sampleCount / 60_000, unavailable: false, sampleCount };
+
+  return {
+    mttr,
+    incidentsOpened,
+    incidentsResolved,
+    openIncidents,
+    deployments: tableExists(db, "deployments")
+      ? countDeployments(db, query)
+      : 0,
+  };
+}
+
+function countDeployments(db: Database, query: ActivityAnalyticsQuery): number {
+  const range = rangeClauses("deployedAt", query);
+  return (
+    db
+      .prepare(`SELECT COUNT(*) AS count FROM deployments ${range.where}`)
+      .get(...range.params) as CountRow
+  ).count;
+}
+
+function tableExists(db: Database, table: string): boolean {
+  const row = db
+    .prepare(
+      `SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?`,
+    )
+    .get(table) as { name: string } | undefined;
+  return row !== undefined;
 }

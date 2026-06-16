@@ -162,7 +162,7 @@ export function isFts5CorruptionError(error: unknown): boolean {
 
 // ── Schema Definition ────────────────────────────────────────────────
 
-const SCHEMA_VERSION = 119;
+const SCHEMA_VERSION = 120;
 
 const TASKS_FTS_AUTOMERGE = 8;
 const TASKS_FTS_CRISISMERGE = 16;
@@ -1255,6 +1255,47 @@ CREATE TABLE IF NOT EXISTS knowledge_pages (
 );
 CREATE INDEX IF NOT EXISTS idxKnowledgePagesSourceKind ON knowledge_pages(sourceKind);
 CREATE INDEX IF NOT EXISTS idxKnowledgePagesUpdatedAt ON knowledge_pages(updatedAt);
+
+-- Monitor stage: deployments + incidents (U13). Deployments are recorded from
+-- CI/Ship events; incidents are opened from U11 signals and resolved when the
+-- underlying signal clears. MTTR = mean(resolvedAt - openedAt) over resolved
+-- incidents in range (aggregated in activity-analytics.ts). Both ingest through
+-- the authenticated monitor-routes endpoint and feed the Command Center.
+CREATE TABLE IF NOT EXISTS deployments (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  deploymentId TEXT NOT NULL UNIQUE,
+  service TEXT,
+  environment TEXT,
+  version TEXT,
+  status TEXT,
+  deployedAt TEXT NOT NULL,
+  link TEXT,
+  meta TEXT,
+  createdAt TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idxDeploymentsDeployedAt ON deployments(deployedAt);
+CREATE INDEX IF NOT EXISTS idxDeploymentsService ON deployments(service);
+
+CREATE TABLE IF NOT EXISTS incidents (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  incidentId TEXT NOT NULL UNIQUE,
+  groupingKey TEXT NOT NULL,
+  title TEXT NOT NULL,
+  severity TEXT,
+  status TEXT NOT NULL,
+  source TEXT,
+  fixTaskId TEXT,
+  openedAt TEXT NOT NULL,
+  resolvedAt TEXT,
+  link TEXT,
+  meta TEXT,
+  createdAt TEXT NOT NULL,
+  updatedAt TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idxIncidentsGroupingKey ON incidents(groupingKey);
+CREATE INDEX IF NOT EXISTS idxIncidentsStatus ON incidents(status);
+CREATE INDEX IF NOT EXISTS idxIncidentsOpenedAt ON incidents(openedAt);
+CREATE INDEX IF NOT EXISTS idxIncidentsResolvedAt ON incidents(resolvedAt);
 `;
 
 const TABLE_LEVEL_CONSTRAINT_PREFIXES = new Set([
@@ -4824,6 +4865,67 @@ export class Database {
         `);
         this.db.exec(`
           CREATE INDEX IF NOT EXISTS idxKnowledgePagesUpdatedAt ON knowledge_pages(updatedAt)
+        `);
+      });
+    }
+
+    // Migration 120: Monitor stage — deployments + incidents tables (U13).
+    // Deployments are recorded from CI/Ship events; incidents are opened from
+    // U11 signals and resolved when the signal clears. MTTR is computed over
+    // resolved incidents in activity-analytics.ts. Mirrors the SCHEMA_SQL
+    // definition above so a fresh-from-SCHEMA_SQL DB and a migrated DB converge
+    // on the same tables.
+    if (version < 120) {
+      this.applyMigration(120, () => {
+        this.db.exec(`
+          CREATE TABLE IF NOT EXISTS deployments (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            deploymentId TEXT NOT NULL UNIQUE,
+            service TEXT,
+            environment TEXT,
+            version TEXT,
+            status TEXT,
+            deployedAt TEXT NOT NULL,
+            link TEXT,
+            meta TEXT,
+            createdAt TEXT NOT NULL
+          )
+        `);
+        this.db.exec(`
+          CREATE INDEX IF NOT EXISTS idxDeploymentsDeployedAt ON deployments(deployedAt)
+        `);
+        this.db.exec(`
+          CREATE INDEX IF NOT EXISTS idxDeploymentsService ON deployments(service)
+        `);
+        this.db.exec(`
+          CREATE TABLE IF NOT EXISTS incidents (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            incidentId TEXT NOT NULL UNIQUE,
+            groupingKey TEXT NOT NULL,
+            title TEXT NOT NULL,
+            severity TEXT,
+            status TEXT NOT NULL,
+            source TEXT,
+            fixTaskId TEXT,
+            openedAt TEXT NOT NULL,
+            resolvedAt TEXT,
+            link TEXT,
+            meta TEXT,
+            createdAt TEXT NOT NULL,
+            updatedAt TEXT NOT NULL
+          )
+        `);
+        this.db.exec(`
+          CREATE INDEX IF NOT EXISTS idxIncidentsGroupingKey ON incidents(groupingKey)
+        `);
+        this.db.exec(`
+          CREATE INDEX IF NOT EXISTS idxIncidentsStatus ON incidents(status)
+        `);
+        this.db.exec(`
+          CREATE INDEX IF NOT EXISTS idxIncidentsOpenedAt ON incidents(openedAt)
+        `);
+        this.db.exec(`
+          CREATE INDEX IF NOT EXISTS idxIncidentsResolvedAt ON incidents(resolvedAt)
         `);
       });
     }

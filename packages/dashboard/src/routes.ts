@@ -171,6 +171,7 @@ import { registerUsageRoutes } from "./routes/register-usage-routes.js";
 import { registerCommandCenterRoutes } from "./routes/register-command-center-routes.js";
 import { registerKnowledgeRoutes } from "./routes/register-knowledge-routes.js";
 import { registerSignalRoutes } from "./routes/register-signal-routes.js";
+import { registerMonitorRoutes } from "./routes/monitor-routes.js";
 import { registerAuthRoutes } from "./routes/register-auth-routes.js";
 import { registerRuntimeProviderRoutes } from "./routes/register-runtime-provider-routes.js";
 import { registerFnBinaryRoutes } from "./routes/register-fn-binary-routes.js";
@@ -2004,6 +2005,10 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
   // Each route HMAC-verifies against a per-provider secret; never an
   // unauthenticated task-creation endpoint.
   registerSignalRoutes(routeContext);
+  // U13 — Monitor stage: deployment + incident ingestion (bearer-token authed,
+  // never unauthenticated) + MTTR/deploy/incident metrics read. Closes the loop
+  // by opening storm-guarded fix tasks back in triage.
+  registerMonitorRoutes(routeContext);
   registerUpdateCheckRoutes(routeContext);
   registerDiagnosticsRoutes(routeContext);
   // CLI Agent Executor hook ingestion (U17) — per-session token auth, exempt from

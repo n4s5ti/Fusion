@@ -8,10 +8,52 @@ import { Database } from "../db.js";
 import { emitUsageEvent } from "../usage-events.js";
 import {
   aggregateActivityAnalytics,
+  aggregateMonitorMetrics,
   aggregateSdlcFunnel,
   buildColumnStageMap,
   stageForTraits,
 } from "../activity-analytics.js";
+
+let incidentSeq = 0;
+function insertIncident(
+  db: Database,
+  fields: {
+    groupingKey: string;
+    status: "open" | "resolved";
+    openedAt: string;
+    resolvedAt?: string | null;
+    severity?: string;
+  },
+): string {
+  const incidentId = `inc-${incidentSeq++}`;
+  const now = "2026-03-01T00:00:00.000Z";
+  db.prepare(
+    `INSERT INTO incidents
+       (incidentId, groupingKey, title, severity, status, source, openedAt, resolvedAt, createdAt, updatedAt)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+  ).run(
+    incidentId,
+    fields.groupingKey,
+    `Incident ${incidentId}`,
+    fields.severity ?? "error",
+    fields.status,
+    "webhook",
+    fields.openedAt,
+    fields.resolvedAt ?? null,
+    now,
+    now,
+  );
+  return incidentId;
+}
+
+let deploySeq = 0;
+function insertDeployment(db: Database, deployedAt: string): void {
+  const id = `dep-${deploySeq++}`;
+  db.prepare(
+    `INSERT INTO deployments (deploymentId, service, environment, deployedAt, createdAt)
+     VALUES (?, ?, ?, ?, ?)`,
+  ).run(id, "svc", "prod", deployedAt, deployedAt);
+}
 
 let moveSeq = 0;
 function insertMove(
@@ -110,9 +152,11 @@ describe("activity-analytics", () => {
     expect(result.stickiness).toBe(0);
   });
 
-  it("leaves a clean MTTR seam for U13 (unavailable, not 0)", () => {
+  it("MTTR is unavailable (not 0) when no incident has been resolved", () => {
     const result = aggregateActivityAnalytics(db, {});
-    expect(result.mttr).toEqual({ value: null, unavailable: true });
+    expect(result.mttr).toEqual({ value: null, unavailable: true, sampleCount: 0 });
+    expect(result.monitor.openIncidents).toBe(0);
+    expect(result.monitor.deployments).toBe(0);
   });
 
   describe("SDLC funnel (U7)", () => {
@@ -241,6 +285,64 @@ describe("activity-analytics", () => {
       for (const s of result.stages) {
         expect(s.entered).toBe(0);
       }
+    });
+  });
+
+  describe("monitor metrics / MTTR (U13)", () => {
+    const RANGE = { from: "2026-03-01T00:00:00.000Z", to: "2026-03-31T23:59:59.999Z" };
+
+    it("incident opened then resolved yields correct MTTR (minutes)", () => {
+      // Opened 10:00, resolved 10:30 → 30 minutes.
+      insertIncident(db, {
+        groupingKey: "g1",
+        status: "resolved",
+        openedAt: "2026-03-02T10:00:00.000Z",
+        resolvedAt: "2026-03-02T10:30:00.000Z",
+      });
+      const m = aggregateMonitorMetrics(db, RANGE);
+      expect(m.mttr).toEqual({ value: 30, unavailable: false, sampleCount: 1 });
+      expect(m.incidentsResolved).toBe(1);
+      expect(m.openIncidents).toBe(0);
+    });
+
+    it("averages MTTR across multiple resolved incidents", () => {
+      insertIncident(db, { groupingKey: "g1", status: "resolved", openedAt: "2026-03-02T10:00:00.000Z", resolvedAt: "2026-03-02T10:20:00.000Z" }); // 20m
+      insertIncident(db, { groupingKey: "g2", status: "resolved", openedAt: "2026-03-03T10:00:00.000Z", resolvedAt: "2026-03-03T11:00:00.000Z" }); // 60m
+      const m = aggregateMonitorMetrics(db, RANGE);
+      expect(m.mttr.value).toBe(40);
+      expect(m.mttr.sampleCount).toBe(2);
+    });
+
+    it("unresolved incident contributes to open incidents, NOT to MTTR", () => {
+      insertIncident(db, { groupingKey: "g1", status: "open", openedAt: "2026-03-02T10:00:00.000Z" });
+      const m = aggregateMonitorMetrics(db, RANGE);
+      expect(m.mttr).toEqual({ value: null, unavailable: true, sampleCount: 0 });
+      expect(m.openIncidents).toBe(1);
+      expect(m.incidentsOpened).toBe(1);
+      expect(m.incidentsResolved).toBe(0);
+    });
+
+    it("a resolution outside the range does not count toward MTTR", () => {
+      insertIncident(db, { groupingKey: "g1", status: "resolved", openedAt: "2026-02-01T10:00:00.000Z", resolvedAt: "2026-02-01T10:30:00.000Z" });
+      const m = aggregateMonitorMetrics(db, RANGE);
+      expect(m.mttr.unavailable).toBe(true);
+      expect(m.incidentsResolved).toBe(0);
+    });
+
+    it("deploy with no incident counts toward deploy frequency", () => {
+      insertDeployment(db, "2026-03-05T12:00:00.000Z");
+      insertDeployment(db, "2026-03-06T12:00:00.000Z");
+      const m = aggregateMonitorMetrics(db, RANGE);
+      expect(m.deployments).toBe(2);
+      expect(m.incidentsOpened).toBe(0);
+      expect(m.mttr.unavailable).toBe(true);
+    });
+
+    it("rides the aggregated activity payload (mttr + monitor surfaced)", () => {
+      insertIncident(db, { groupingKey: "g1", status: "resolved", openedAt: "2026-03-02T10:00:00.000Z", resolvedAt: "2026-03-02T10:30:00.000Z" });
+      const result = aggregateActivityAnalytics(db, RANGE);
+      expect(result.mttr.value).toBe(30);
+      expect(result.monitor.mttr.value).toBe(30);
     });
   });
 });
