@@ -972,7 +972,7 @@ describe("ListView", () => {
   it.each([
     { status: "executing", column: "in-progress" as const, label: "executing" },
     { status: "merging-fix", column: "in-review" as const, label: "Merging fixes…" },
-  ])("renders agent-active tasks with glow styling for $status", ({ status, column, label }) => {
+  ])("renders agent-active tasks with static highlight styling for $status", ({ status, column, label }) => {
     const tasks = [
       createMockTask({
         id: "FN-001",
