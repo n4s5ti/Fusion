@@ -290,6 +290,41 @@ function scriptDef(): WorkflowDefinition {
   };
 }
 
+function plainConnectDef(): WorkflowDefinition {
+  return {
+    id: "WF-PLAIN-CONNECT",
+    kind: "workflow",
+    name: "Plain connect",
+    description: "",
+    ir: {
+      version: "v2",
+      name: "Plain connect",
+      columns: [
+        { id: "triage", name: "Triage", traits: [{ trait: "intake" }] },
+        { id: "done", name: "Done", traits: [{ trait: "complete" }] },
+      ],
+      nodes: [
+        { id: "start", kind: "start", column: "triage" },
+        { id: "draft", kind: "step-review", column: "triage", config: { type: "code" } },
+        { id: "review", kind: "prompt", column: "triage", config: { prompt: "review" } },
+        { id: "end", kind: "end", column: "done" },
+      ],
+      edges: [
+        { from: "start", to: "draft", condition: "success" },
+        { from: "review", to: "end", condition: "success" },
+      ],
+    },
+    layout: {
+      start: { x: 0, y: 20 },
+      draft: { x: 120, y: 60 },
+      review: { x: 240, y: 120 },
+      end: { x: 360, y: 240 },
+    },
+    createdAt: "2026-06-03T00:00:00.000Z",
+    updatedAt: "2026-06-03T00:00:00.000Z",
+  };
+}
+
 describe("workflow-flow-mapping", () => {
   it("round-trips IR through flow and back, preserving structure and layout", () => {
     const original = def();
@@ -434,6 +469,85 @@ describe("WorkflowNodeEditor", () => {
     expect(screen.getByTestId("wf-mobile-add-prompt-prompt")).toBeInTheDocument();
     expect(screen.getByTestId("wf-mobile-add-script-script")).toBeInTheDocument();
     expect(screen.getByTestId("wf-mobile-add-gate-gate")).toBeInTheDocument();
+  });
+
+  it("creates a condition-capable edge from the mobile simple graph without the canvas", async () => {
+    mockWorkflowEditorViewport("mobile");
+    vi.mocked(fetchWorkflows).mockResolvedValue([def()]);
+
+    render(<WorkflowNodeEditor isOpen onClose={() => {}} addToast={() => {}} />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "QA" }));
+    await screen.findByText("Save");
+    const shell = await screen.findByTestId("wf-mobile-shell");
+    expect(within(shell).queryByTestId("rf__wrapper")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("mobile-wf-connect-start")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("mobile-wf-connect-end")).not.toBeInTheDocument();
+
+    fireEvent.click(await screen.findByTestId("mobile-wf-connect-lint"));
+    fireEvent.change(screen.getByTestId("mobile-wf-connect-target-lint"), { target: { value: "end" } });
+
+    const inspector = await screen.findByTestId("wf-edge-inspector");
+    expect(within(inspector).getByTestId("wf-edge-condition")).toHaveValue("success");
+    expect(screen.getAllByText("end").length).toBeGreaterThan(1);
+  });
+
+  it("creates a verdict-source edge in the desktop compact simple graph", async () => {
+    vi.mocked(fetchWorkflows).mockResolvedValue([plainConnectDef()]);
+
+    render(<WorkflowNodeEditor isOpen onClose={() => {}} addToast={() => {}} />);
+
+    expect(await screen.findByTestId("wf-workflow-name")).toHaveTextContent("Plain connect");
+    fireEvent.click(screen.getByTestId("wf-layout-toggle"));
+    await screen.findByTestId("wf-mobile-shell");
+
+    fireEvent.click(await screen.findByTestId("mobile-wf-connect-draft"));
+    fireEvent.change(screen.getByTestId("mobile-wf-connect-target-draft"), { target: { value: "review" } });
+
+    const inspector = await screen.findByTestId("wf-edge-inspector");
+    expect(within(inspector).queryByTestId("wf-edge-condition")).not.toBeInTheDocument();
+    expect(within(inspector).getByTestId("wf-edge-verdict")).toHaveValue("");
+  });
+
+  it("hides simple-graph connection controls for built-in read-only workflows", async () => {
+    mockWorkflowEditorViewport("mobile");
+    vi.mocked(fetchWorkflows).mockResolvedValue([builtinDef()]);
+
+    render(<WorkflowNodeEditor isOpen onClose={() => {}} addToast={() => {}} />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Default coding workflow" }));
+    await screen.findByTestId("wf-mobile-shell");
+    expect(screen.queryByTestId(/mobile-wf-connect-/)).not.toBeInTheDocument();
+  });
+
+  it("rejects cyclic simple-graph connections with a toast", async () => {
+    mockWorkflowEditorViewport("mobile");
+    const addToast = vi.fn();
+    vi.mocked(fetchWorkflows).mockResolvedValue([def()]);
+
+    render(<WorkflowNodeEditor isOpen onClose={() => {}} addToast={addToast} />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "QA" }));
+    await screen.findByTestId("wf-mobile-shell");
+
+    fireEvent.click(await screen.findByTestId("mobile-wf-connect-merge"));
+    fireEvent.change(screen.getByTestId("mobile-wf-connect-target-merge"), { target: { value: "lint" } });
+    await waitFor(() => expect(addToast).toHaveBeenCalledWith(
+      "That connection would create a cycle — only rework edges inside a for-each template may loop back",
+      "warning",
+    ));
+    expect(screen.queryByTestId("wf-edge-inspector")).not.toBeInTheDocument();
+  });
+
+  it("offers connection controls for editable foreach template children in the simple graph", async () => {
+    mockWorkflowEditorViewport("mobile");
+    vi.mocked(fetchWorkflows).mockResolvedValue([stepwiseDef()]);
+
+    render(<WorkflowNodeEditor isOpen onClose={() => {}} addToast={() => {}} />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Stepwise" }));
+    await screen.findByTestId("wf-mobile-shell");
+    expect(await screen.findByTestId(`mobile-wf-connect-${foreachChildFlowId("loop", "exec")}`)).toBeInTheDocument();
   });
 
   it("surfaces built-in simple-editor actions at desktop width", async () => {

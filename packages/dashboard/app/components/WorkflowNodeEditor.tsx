@@ -85,7 +85,7 @@ import { WorkflowSettingsPanel } from "./WorkflowSettingsPanel";
 import type { WorkflowFieldDefinition, WorkflowSettingDefinition } from "../api";
 import { CustomModelDropdown } from "./CustomModelDropdown";
 import { MobileWorkflowGraphView } from "./MobileWorkflowGraphView";
-import { buildMobileWorkflowGraph } from "./workflow-mobile-graph";
+import { buildMobileWorkflowGraph, type MobileWorkflowConnectionTarget } from "./workflow-mobile-graph";
 
 type ExecutorKind = "model" | "agent" | "skill" | "cli" | "cli-agent";
 type MobileWorkflowPanel = "graph" | "add" | "settings" | "fields" | "columns" | "actions";
@@ -1234,8 +1234,8 @@ function InnerEditor({
   // which dedupes on source/target/handles and would block parallel
   // success+failure edges between the same pair (KTD-3). buildConnectionEdge
   // reimplements addEdge's sanity guards plus the author-time cycle guard (KTD-9).
-  const onConnect = useCallback(
-    (connection: Connection) => {
+  const createConnectionEdge = useCallback(
+    (connection: Connection, options: { selectCreatedEdge?: boolean } = {}) => {
       const result = buildConnectionEdge(connection, edges, nodes);
       if ("error" in result) {
         if (result.error === "cycle") {
@@ -1246,12 +1246,36 @@ function InnerEditor({
             ),
             "warning",
           );
+        } else if (result.error === "duplicate") {
+          addToast(
+            t("workflowNodes.duplicateBlocked", "That connection already exists"),
+            "warning",
+          );
         }
         return;
       }
       setEdges((eds) => [...eds, result.edge]);
+      if (options.selectCreatedEdge) {
+        setSelectedEdgeId(result.edge.id);
+        setSelectedNodeId(null);
+        setInspectorCollapsed(false);
+      }
     },
     [edges, nodes, setEdges, addToast, t],
+  );
+
+  const onConnect = useCallback(
+    (connection: Connection) => {
+      createConnectionEdge(connection);
+    },
+    [createConnectionEdge],
+  );
+
+  const onCreateSimpleConnection = useCallback(
+    (source: string, target: string) => {
+      createConnectionEdge({ source, target, sourceHandle: null, targetHandle: null }, { selectCreatedEdge: true });
+    },
+    [createConnectionEdge],
   );
 
   // Dragging a step node into a column band sets node.column (position-based
@@ -1974,10 +1998,40 @@ function InnerEditor({
     }),
     [models, agents, skills],
   );
-  const mobileGraphRows = useMemo(
-    () => buildMobileWorkflowGraph(nodesForRender, edges, columns, catalogs, t),
-    [nodesForRender, edges, columns, catalogs, t],
-  );
+  const mobileConnectionTargetsBySource = useMemo(() => {
+    const targetNodes = nodesForRender
+      .filter((node) => !isColumnBandNode(node.id) && node.data.kind !== "start")
+      .map((node): MobileWorkflowConnectionTarget => ({
+        id: node.id,
+        label: node.data.label || node.id,
+        kind: node.data.kind,
+      }));
+
+    const targetsBySource = new Map<string, MobileWorkflowConnectionTarget[]>();
+    for (const source of nodesForRender) {
+      if (
+        isColumnBandNode(source.id)
+        || source.data.kind === "start"
+        || source.data.kind === "end"
+      ) {
+        continue;
+      }
+      const targets = targetNodes.filter((target) => target.id !== source.id);
+      if (targets.length > 0) targetsBySource.set(source.id, targets);
+    }
+    return targetsBySource;
+  }, [nodesForRender]);
+
+  const mobileGraphRows = useMemo(() => {
+    const attachConnectionTargets = (rows: ReturnType<typeof buildMobileWorkflowGraph>): ReturnType<typeof buildMobileWorkflowGraph> =>
+      rows.map((row) => ({
+        ...row,
+        connectionTargets: isBuiltin ? [] : mobileConnectionTargetsBySource.get(row.id) ?? [],
+        children: attachConnectionTargets(row.children),
+      }));
+
+    return attachConnectionTargets(buildMobileWorkflowGraph(nodesForRender, edges, columns, catalogs, t));
+  }, [nodesForRender, edges, columns, catalogs, t, isBuiltin, mobileConnectionTargetsBySource]);
 
   const currentExecutor = (selectedNode?.data.config?.executor as ExecutorKind | undefined) ?? "model";
 
@@ -2520,6 +2574,7 @@ function InnerEditor({
                             setSelectedEdgeId(id);
                             setSelectedNodeId(null);
                           }}
+                          onCreateConnection={isBuiltin ? undefined : onCreateSimpleConnection}
                         />
                       )}
 

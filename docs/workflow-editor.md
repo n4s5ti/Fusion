@@ -61,7 +61,7 @@ Some nodes expose specialized inspector fields: for example prompt execution det
 
 ## Edges, conditions, and rework
 
-Create edges by connecting node handles on the graph. A new connection defaults to a **success** edge. The edge inspector lets you edit routing details when the source node supports it:
+Create edges by connecting node handles on the graph. In the mobile and compact simple graph, use a node's **Connect** action and target picker to create the same edge without dragging on the canvas; built-in workflows hide this mutation control because they are read-only. A new connection defaults to a **success** edge. The edge inspector lets you edit routing details when the source node supports it:
 
 - **Success / failure conditions:** prompt, script, gate, code, and for-each style sources can route on `success` or `failure`.
 - **Outcome conditions:** review-style nodes route verdicts as `outcome:<verdict>` values. The shipped verdict list is `approve`, `revise`, `rethink`, and `unavailable`.

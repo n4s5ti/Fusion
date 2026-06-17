@@ -17,6 +17,12 @@ export interface MobileWorkflowEdgeSummary {
   kind?: string;
 }
 
+export interface MobileWorkflowConnectionTarget {
+  id: string;
+  label: string;
+  kind: WorkflowFlowNodeData["kind"];
+}
+
 export interface MobileWorkflowNodeSummary {
   id: string;
   label: string;
@@ -27,6 +33,7 @@ export interface MobileWorkflowNodeSummary {
   parentId?: string;
   templateLocalId?: string;
   outgoing: MobileWorkflowEdgeSummary[];
+  connectionTargets?: MobileWorkflowConnectionTarget[];
   children: MobileWorkflowNodeSummary[];
 }
 
