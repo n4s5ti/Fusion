@@ -667,7 +667,7 @@ describe("WorkflowNodeEditor", () => {
 
     fireEvent.click(await screen.findByRole("button", { name: "QA" }));
     const mobileGateRow = await screen.findByTestId("mobile-wf-node-lint");
-    fireEvent.click(within(mobileGateRow).getByRole("button"));
+    fireEvent.click(within(mobileGateRow).getAllByRole("button")[0]);
 
     const inspector = await screen.findByTestId("wf-node-inspector");
     expect(within(inspector).getByLabelText("Prompt")).toBeInTheDocument();
@@ -679,10 +679,106 @@ describe("WorkflowNodeEditor", () => {
     expect(screen.queryByLabelText("Prompt")).not.toBeInTheDocument();
     expect(await screen.findByTestId("mobile-wf-graph")).toBeVisible();
 
-    fireEvent.click(within(await screen.findByTestId("mobile-wf-node-lint")).getByRole("button"));
+    fireEvent.click(within(await screen.findByTestId("mobile-wf-node-lint")).getAllByRole("button")[0]);
 
     expect(await screen.findByTestId("wf-node-inspector")).toBeInTheDocument();
     expect(screen.getByTestId("wf-inspector-toggle")).toHaveAttribute("aria-expanded", "true");
+  });
+
+  it("edits the start node entry column from the desktop inspector and saves it", async () => {
+    vi.mocked(fetchWorkflows).mockResolvedValue([v2Def()]);
+    vi.mocked(updateWorkflow).mockImplementation(async (_id, updates) => ({
+      ...v2Def(),
+      ...(updates as object),
+    }));
+    vi.mocked(compileWorkflow).mockResolvedValue({ steps: [] });
+
+    render(<WorkflowNodeEditor isOpen onClose={() => {}} addToast={() => {}} />);
+
+    await screen.findByText("Save");
+    await screen.findByTestId("wf-column-panel");
+    fireEvent.click(await screen.findByTestId("wf-node-start"));
+
+    const inspector = await screen.findByTestId("wf-node-inspector");
+    expect(within(inspector).getByTestId("wf-start-inspector")).toHaveTextContent(
+      "The start node marks where a task enters the workflow.",
+    );
+    expect(within(inspector).queryByLabelText("Name")).not.toBeInTheDocument();
+    const entryColumn = within(inspector).getByTestId("wf-start-entry-column");
+    expect(entryColumn).toHaveValue("triage");
+    expect(within(inspector).getByRole("option", { name: "— Auto (first column)" })).toHaveValue("");
+
+    fireEvent.change(entryColumn, { target: { value: "done" } });
+    expect(entryColumn).toHaveValue("done");
+
+    fireEvent.click(screen.getByText("Save").closest("button")!);
+
+    await waitFor(() => expect(updateWorkflow).toHaveBeenCalled());
+    const [, updates] = vi.mocked(updateWorkflow).mock.calls[0];
+    const ir = (updates as { ir: WorkflowDefinition["ir"] }).ir;
+    const start = ir.nodes.find((node) => node.kind === "start");
+    expect(start?.column).toBe("done");
+  });
+
+  it("renders the start inspector without the entry-column select for v1 workflows", async () => {
+    vi.mocked(fetchWorkflows).mockResolvedValue([def()]);
+
+    render(<WorkflowNodeEditor isOpen onClose={() => {}} addToast={() => {}} />);
+
+    await screen.findByText("Save");
+    fireEvent.click(await screen.findByTestId("wf-node-start"));
+
+    const inspector = await screen.findByTestId("wf-node-inspector");
+    expect(within(inspector).getByTestId("wf-start-inspector")).toHaveTextContent(
+      "The start node marks where a task enters the workflow.",
+    );
+    expect(within(inspector).queryByTestId("wf-start-entry-column")).not.toBeInTheDocument();
+    expect(within(inspector).queryByLabelText("Name")).not.toBeInTheDocument();
+  });
+
+  it("keeps built-in start node entry-column controls read-only", async () => {
+    vi.mocked(fetchWorkflows).mockResolvedValue([builtinDef()]);
+
+    render(<WorkflowNodeEditor isOpen onClose={() => {}} addToast={() => {}} />);
+
+    await screen.findByTestId("wf-readonly-banner");
+    fireEvent.click(await screen.findByTestId("wf-node-start"));
+
+    const inspector = await screen.findByTestId("wf-node-inspector");
+    expect(within(inspector).getByText(/Read-only built-in/i)).toBeInTheDocument();
+    expect(within(inspector).getByTestId("wf-start-entry-column")).toBeDisabled();
+  });
+
+  it("opens the start node inspector from the mobile node-detail stage", async () => {
+    mockWorkflowEditorViewport("mobile");
+    vi.mocked(fetchWorkflows).mockResolvedValue([v2Def()]);
+
+    render(<WorkflowNodeEditor isOpen onClose={() => {}} addToast={() => {}} />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Custom" }));
+    fireEvent.click(within(await screen.findByTestId("mobile-wf-node-start")).getAllByRole("button")[0]);
+
+    const inspector = await screen.findByTestId("wf-node-inspector");
+    expect(inspector.closest(".wf-editor-body")).toHaveClass("wf-editor-body--mobile-node-detail");
+    expect(within(inspector).getByTestId("wf-start-entry-column")).toHaveValue("triage");
+
+    fireEvent.click(screen.getByTestId("wf-inspector-toggle"));
+    await waitFor(() => expect(screen.queryByTestId("wf-node-inspector")).not.toBeInTheDocument());
+    fireEvent.click(within(await screen.findByTestId("mobile-wf-node-start")).getAllByRole("button")[0]);
+
+    expect(await screen.findByTestId("wf-node-inspector")).toBeInTheDocument();
+    expect(screen.getByTestId("wf-inspector-toggle")).toHaveAttribute("aria-expanded", "true");
+  });
+
+  it("leaves the end node without an editable inspector", async () => {
+    vi.mocked(fetchWorkflows).mockResolvedValue([v2Def()]);
+
+    render(<WorkflowNodeEditor isOpen onClose={() => {}} addToast={() => {}} />);
+
+    await screen.findByText("Save");
+    fireEvent.click(await screen.findByTestId("wf-node-end"));
+
+    await waitFor(() => expect(screen.queryByTestId("wf-node-inspector")).not.toBeInTheDocument());
   });
 
   it("opens selected edge details as a dismissible full-screen mobile stage", async () => {
@@ -709,7 +805,7 @@ describe("WorkflowNodeEditor", () => {
     await waitFor(() => expect(screen.queryByTestId("wf-edge-inspector")).not.toBeInTheDocument());
     expect(await screen.findByTestId("mobile-wf-graph")).toBeVisible();
 
-    fireEvent.click(within(await screen.findByTestId("mobile-wf-node-step")).getByRole("button"));
+    fireEvent.click(within(await screen.findByTestId("mobile-wf-node-step")).getAllByRole("button")[0]);
 
     const nodeInspector = await screen.findByTestId("wf-node-inspector");
     expect(nodeInspector.closest(".wf-editor-body")).toHaveClass("wf-editor-body--mobile-node-detail");
@@ -723,13 +819,13 @@ describe("WorkflowNodeEditor", () => {
     render(<WorkflowNodeEditor isOpen onClose={() => {}} addToast={() => {}} />);
 
     fireEvent.click(await screen.findByRole("button", { name: "QA" }));
-    fireEvent.click(within(await screen.findByTestId("mobile-wf-node-lint")).getByRole("button"));
+    fireEvent.click(within(await screen.findByTestId("mobile-wf-node-lint")).getAllByRole("button")[0]);
     expect(await screen.findByTestId("wf-node-inspector")).toBeInTheDocument();
 
     fireEvent.click(screen.getByTestId("wf-inspector-toggle"));
     await waitFor(() => expect(screen.queryByTestId("wf-node-inspector")).not.toBeInTheDocument());
 
-    fireEvent.click(within(await screen.findByTestId("mobile-wf-node-merge")).getByRole("button"));
+    fireEvent.click(within(await screen.findByTestId("mobile-wf-node-merge")).getAllByRole("button")[0]);
 
     const inspector = await screen.findByTestId("wf-node-inspector");
     expect(within(inspector).getByLabelText("Name")).toBeInTheDocument();

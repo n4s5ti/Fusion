@@ -258,6 +258,19 @@ describe("workflow-flow-mapping v2 round-trip", () => {
     expect(out.nodes.some((n) => isColumnBandNode(n.id))).toBe(false);
   });
 
+  it("preserves start node column edits through the flow mapping round-trip", () => {
+    const definition = v2Def(ir);
+    const { nodes, edges } = irToFlow(definition);
+    const edited = nodes.map((node) =>
+      node.id === "start" ? { ...node, data: { ...node.data, column: "done" } } : node,
+    );
+
+    const { ir: out } = flowToIr("wf2", edited, edges, columnsOf(definition));
+
+    if (out.version !== "v2") throw new Error("expected v2");
+    expect(out.nodes.find((node) => node.kind === "start")?.column).toBe("done");
+  });
+
   it("clears stale node columns while preserving valid placement and group nodes", () => {
     const columns = [
       { id: "todo", name: "Todo", traits: [] },

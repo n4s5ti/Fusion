@@ -1917,10 +1917,11 @@ function InnerEditor({
   }, [nodes, unplaced, serverNodeError, t]);
 
   const selectedNode = nodes.find((n) => n.id === selectedNodeId) ?? null;
-  const selectedNodeHasInspector =
-    selectedNode !== null &&
-    selectedNode.data.kind !== "start" &&
-    selectedNode.data.kind !== "end";
+  /**
+   * FNXC:WorkflowEditor 2026-06-17-00:20:
+   * The structural start node needs an inspector because its entry column is editable and persisted in the workflow IR. Keep end structural-only until it has a meaningful editable property.
+   */
+  const selectedNodeHasInspector = selectedNode !== null && selectedNode.data.kind !== "end";
   const selectedEdge = edges.find((e) => e.id === selectedEdgeId) ?? null;
   const mobileNodeDetailStage = isMobileMode && selectedNodeHasInspector && !inspectorCollapsed;
   const mobileEdgeDetailStage = isMobileMode && selectedEdge !== null;
@@ -3144,7 +3145,6 @@ function InnerEditor({
                   {isMobileMode &&
                     inspectorCollapsed &&
                     selectedNode &&
-                    selectedNode.data.kind !== "start" &&
                     selectedNode.data.kind !== "end" && (
                       <button
                         type="button"
@@ -3255,13 +3255,46 @@ function InnerEditor({
                 </p>
               )}
               <fieldset className="wf-inspector-fields" disabled={isBuiltin}>
-              <label className="wf-field">
-                <span>Name</span>
-                <input
-                  value={selectedNode.data.label}
-                  onChange={(e) => updateSelectedData({ label: e.target.value })}
-                />
-              </label>
+              {/* FNXC:WorkflowEditor 2026-06-17-00:20: Start labels are structural and ignored by flowToIr, so exposing the generic Name editor would create a no-op rename. */}
+              {selectedNode.data.kind !== "start" && (
+                <label className="wf-field">
+                  <span>Name</span>
+                  <input
+                    value={selectedNode.data.label}
+                    onChange={(e) => updateSelectedData({ label: e.target.value })}
+                  />
+                </label>
+              )}
+              {selectedNode.data.kind === "start" && (
+                <div data-testid="wf-start-inspector">
+                  {/* FNXC:WorkflowEditor 2026-06-17-00:20: The start node's entry column persists as node.column in v2 IR and determines the board column a task enters. Only render the selector when columns exist so v1 workflows keep a meaningful note without an empty control. */}
+                  <p className="wf-inspector-note wf-inspector-note--info">
+                    {t(
+                      "workflowNodes.startNote",
+                      "The start node marks where a task enters the workflow.",
+                    )}
+                  </p>
+                  {columns.length > 0 && (
+                    <label className="wf-field">
+                      <span>{t("workflowNodes.startEntryColumn", "Entry column")}</span>
+                      <select
+                        data-testid="wf-start-entry-column"
+                        value={String(selectedNode.data.column ?? "")}
+                        onChange={(e) => updateSelectedData({ column: e.target.value || undefined })}
+                      >
+                        <option value="">
+                          {t("workflowNodes.startEntryColumnAuto", "— Auto (first column)")}
+                        </option>
+                        {columns.map((col) => (
+                          <option key={col.id} value={col.id}>
+                            {col.name}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  )}
+                </div>
+              )}
               </fieldset>
 
               {selectedNode.data.kind === "prompt" || selectedNode.data.kind === "gate" ? (
