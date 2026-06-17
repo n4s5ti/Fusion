@@ -1686,6 +1686,23 @@ describe("TaskChatTab", () => {
     expect(mobileJumpRule).toContain("min-block-size");
   });
 
+  it("scales the task chat send glyph without shrinking the desktop or mobile touch target", () => {
+    const css = readFileSync(resolve(__dirname, "../TaskChatTab.css"), "utf8");
+    const sendRule = getCssRuleBlock(css, ".task-chat-send");
+    const mobileCss = getCssAfter(css, "@media (max-width: 768px)");
+    const mobileSendRule = getCssRuleBlock(mobileCss, ".task-chat-send");
+
+    expect(sendRule).toContain("--btn-icon-size: var(--space-lg)");
+    expect(sendRule).not.toContain("--btn-icon-size: var(--icon-size-md)");
+    expect(sendRule).toContain("inline-size: calc(var(--space-2xl) + var(--space-sm))");
+    expect(sendRule).toContain("min-inline-size: calc(var(--space-2xl) + var(--space-sm))");
+    expect(sendRule).toContain("block-size: calc(var(--space-2xl) + var(--space-sm))");
+    expect(sendRule).toContain("min-block-size: calc(var(--space-2xl) + var(--space-sm))");
+    expect(mobileSendRule).toContain("--btn-icon-size: var(--space-lg)");
+    expect(mobileSendRule).toContain("inline-size: calc(var(--space-2xl) + var(--space-sm))");
+    expect(mobileSendRule).toContain("min-inline-size: calc(var(--space-2xl) + var(--space-sm))");
+  });
+
   it("keeps mobile breakpoint scaffolding for the transcript, composer, and collapsible groups", () => {
     const css = readFileSync(resolve(__dirname, "../TaskChatTab.css"), "utf8");
     const sendRule = getCssRuleBlock(css, ".task-chat-send");
