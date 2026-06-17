@@ -91,6 +91,35 @@ fi
 # Gradle reads the SDK location from local.properties.
 printf "sdk.dir=%s\n" "$ANDROID_HOME" > "$MOBILE_DIR/android/local.properties"
 
+# FNXC:MobileShell 2026-06-16-18:40:
+# The Android project is generated (gitignored), so re-apply the edge-to-edge
+# enablement that @capacitor-community/safe-area needs in MainActivity. Idempotent:
+# only rewrites when EdgeToEdge is not already wired. Without this the status bar
+# overlaps the app top on Android 15+ (API 35+).
+MAIN_ACTIVITY="$MOBILE_DIR/android/app/src/main/java/com/fusion/mobile/MainActivity.java"
+if [[ -f "$MAIN_ACTIVITY" ]] && ! grep -q "EdgeToEdge" "$MAIN_ACTIVITY"; then
+  echo "[mobile:run:android] Patching MainActivity for edge-to-edge (safe-area insets)..."
+  cat > "$MAIN_ACTIVITY" <<'JAVA'
+package com.fusion.mobile;
+
+import android.os.Bundle;
+import androidx.activity.EdgeToEdge;
+import com.getcapacitor.BridgeActivity;
+
+// FNXC:MobileShell 2026-06-16-18:40:
+// Enable Android edge-to-edge so @capacitor-community/safe-area passes status-bar
+// insets to the WebView as env(safe-area-inset-*). Re-applied by
+// scripts/mobile-run-android.sh because android/ is generated (gitignored).
+public class MainActivity extends BridgeActivity {
+  @Override
+  public void onCreate(Bundle savedInstanceState) {
+    super.onCreate(savedInstanceState);
+    EdgeToEdge.enable(this);
+  }
+}
+JAVA
+fi
+
 # --- Build web client --------------------------------------------------------
 echo "[mobile:run:android] Building dashboard web client..."
 pnpm --filter @fusion/dashboard build
