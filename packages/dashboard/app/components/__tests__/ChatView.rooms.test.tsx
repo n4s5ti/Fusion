@@ -635,6 +635,96 @@ describe("ChatView — rooms (FN-3805..FN-3811 contract)", () => {
     mediaSpy.mockRestore();
   });
 
+  it("FN-6563 sends a room message exactly once when iOS suppresses the trailing click", async () => {
+    const mediaSpy = mockMobileViewport();
+    const sendRoomMessage = vi.fn().mockResolvedValue(undefined);
+    setup({}, { sendRoomMessage, activeRoom: roomA });
+
+    await renderWithAct(<ChatView projectId="proj-123" addToast={vi.fn()} experimentalFeatures={{ chatRooms: true }} />);
+
+    await userEvent.type(screen.getByTestId("chat-input"), "Room iOS tap");
+    const sendButton = screen.getByTestId("chat-send-btn");
+    await act(async () => {
+      sendButton.dispatchEvent(Object.assign(new Event("pointerdown", { bubbles: true, cancelable: true }), { pointerType: "touch" }));
+    });
+
+    await waitFor(() => expect(sendRoomMessage).toHaveBeenCalledTimes(1));
+    expect(sendRoomMessage).toHaveBeenCalledWith("Room iOS tap", { files: [] });
+    mediaSpy.mockRestore();
+  });
+
+  it("FN-6563 sends a room message exactly once for a full Android tap sequence", async () => {
+    const mediaSpy = mockMobileViewport();
+    const sendRoomMessage = vi.fn().mockResolvedValue(undefined);
+    setup({}, { sendRoomMessage, activeRoom: roomA });
+
+    await renderWithAct(<ChatView projectId="proj-123" addToast={vi.fn()} experimentalFeatures={{ chatRooms: true }} />);
+
+    await userEvent.type(screen.getByTestId("chat-input"), "Room Android tap");
+    const sendButton = screen.getByTestId("chat-send-btn");
+    await act(async () => {
+      sendButton.dispatchEvent(Object.assign(new Event("pointerdown", { bubbles: true, cancelable: true }), { pointerType: "touch" }));
+      sendButton.dispatchEvent(new Event("touchstart", { bubbles: true, cancelable: true }));
+      sendButton.dispatchEvent(new Event("click", { bubbles: true, cancelable: true }));
+    });
+
+    await waitFor(() => expect(sendRoomMessage).toHaveBeenCalledTimes(1));
+    expect(sendRoomMessage).toHaveBeenCalledWith("Room Android tap", { files: [] });
+    mediaSpy.mockRestore();
+  });
+
+  it("FN-6563 sends a room message exactly once for a desktop mouse click sequence", async () => {
+    const mediaSpy = mockDesktopViewport();
+    const sendRoomMessage = vi.fn().mockResolvedValue(undefined);
+    setup({}, { sendRoomMessage, activeRoom: roomA });
+
+    await renderWithAct(<ChatView projectId="proj-123" addToast={vi.fn()} experimentalFeatures={{ chatRooms: true }} />);
+
+    await userEvent.type(screen.getByTestId("chat-input"), "Room desktop tap");
+    const sendButton = screen.getByTestId("chat-send-btn");
+    await act(async () => {
+      sendButton.dispatchEvent(Object.assign(new Event("pointerdown", { bubbles: true, cancelable: true }), { pointerType: "mouse" }));
+      sendButton.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true }));
+      sendButton.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+    });
+
+    await waitFor(() => expect(sendRoomMessage).toHaveBeenCalledTimes(1));
+    expect(sendRoomMessage).toHaveBeenCalledWith("Room desktop tap", { files: [] });
+    mediaSpy.mockRestore();
+  });
+
+  it("FN-6563 keeps direct send routing single-fired after a room mobile gesture", async () => {
+    const mediaSpy = mockMobileViewport();
+    const sendMessage = vi.fn().mockResolvedValue(undefined);
+    const sendRoomMessage = vi.fn().mockResolvedValue(undefined);
+    setup({ sendMessage, activeSession }, { sendRoomMessage, activeRoom: roomA });
+
+    await renderWithAct(<ChatView projectId="proj-123" addToast={vi.fn()} experimentalFeatures={{ chatRooms: true }} />);
+
+    await userEvent.type(screen.getByTestId("chat-input"), "Room first");
+    const roomSendButton = screen.getByTestId("chat-send-btn");
+    await act(async () => {
+      roomSendButton.dispatchEvent(Object.assign(new Event("pointerdown", { bubbles: true, cancelable: true }), { pointerType: "touch" }));
+      roomSendButton.dispatchEvent(new Event("touchstart", { bubbles: true, cancelable: true }));
+      roomSendButton.dispatchEvent(new Event("click", { bubbles: true, cancelable: true }));
+    });
+    await waitFor(() => expect(sendRoomMessage).toHaveBeenCalledTimes(1));
+
+    await userEvent.click(screen.getByTestId("chat-sidebar-scope-direct"));
+    await userEvent.type(screen.getByTestId("chat-input"), "Direct second");
+    const directSendButton = screen.getByTestId("chat-send-btn");
+    await act(async () => {
+      directSendButton.dispatchEvent(Object.assign(new Event("pointerdown", { bubbles: true, cancelable: true }), { pointerType: "touch" }));
+      directSendButton.dispatchEvent(new Event("touchstart", { bubbles: true, cancelable: true }));
+      directSendButton.dispatchEvent(new Event("click", { bubbles: true, cancelable: true }));
+    });
+
+    await waitFor(() => expect(sendMessage).toHaveBeenCalledTimes(1));
+    expect(sendMessage).toHaveBeenCalledWith("Direct second", []);
+    expect(sendRoomMessage).toHaveBeenCalledTimes(1);
+    mediaSpy.mockRestore();
+  });
+
   it("applies keyboard-active thread layout in room mode on mobile and preserves direct-chat parity", async () => {
     const mediaSpy = mockMobileViewport();
     const { listeners, mockVV } = mockMobileVisualViewport({ innerHeight: 800, vvHeight: 800 });

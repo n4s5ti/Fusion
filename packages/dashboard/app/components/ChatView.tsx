@@ -3738,23 +3738,28 @@ export function ChatView({ projectId, addToast, experimentalFeatures }: ChatView
                 <button
                   type="button"
                   className="chat-input-send"
-                  // Keep keyboard up when sending. preventDefault fires on
-                  // pointerdown for touch pointers (BEFORE iOS blurs the
-                  // textarea — the synthesized mousedown is too late on
-                  // iOS), and on mousedown for desktop. Crucially we do NOT
-                  // call preventDefault on touchstart and we do NOT run the
-                  // action here — both of those broke quick taps. Click
-                  // still fires from the iOS touch sequence and runs the
-                  // action reliably.
+                  /*
+                  FNXC:ChatRoomSend 2026-06-17-02:56:
+                  FN-6563 requires the room composer send button to share the direct-chat touch/pointer dedupe contract: a single mobile tap must dispatch exactly one room send, even when iOS suppresses the trailing click after pointerdown preventDefault or Android emits pointerdown, touchstart, and click.
+                  */
                   onPointerDown={(event) => {
                     if (event.pointerType && event.pointerType !== "mouse") {
                       event.preventDefault();
+                      if (handledSendTouchRef.current) return;
+                      markHandledSendTouch();
+                      void handleSendDispatch();
                     }
+                  }}
+                  onTouchStart={() => {
+                    if (handledSendTouchRef.current) return;
+                    markHandledSendTouch();
+                    void handleSendDispatch();
                   }}
                   onMouseDown={(event) => {
                     event.preventDefault();
                   }}
                   onClick={() => {
+                    if (consumeHandledSendTouch()) return;
                     void handleSendDispatch();
                   }}
                   disabled={!messageInput.trim() && pendingAttachments.length === 0}
