@@ -14,6 +14,7 @@ vi.mock("../../../../api/legacy", () => ({
 import { TokensArea } from "../TokensArea";
 import { ToolsArea } from "../ToolsArea";
 import { ProductivityArea } from "../ProductivityArea";
+import { GithubArea } from "../GithubArea";
 import { SignalsArea } from "../SignalsArea";
 import { ActivityArea } from "../ActivityArea";
 import { useAnalyticsArea } from "../useAnalyticsArea";
@@ -79,6 +80,24 @@ function tokenFixture() {
         nTasks: 2,
         cost: { usd: 3.5, unavailable: false, stale: false },
       },
+    ],
+  };
+}
+
+function githubFixture() {
+  return {
+    from: "2026-06-08",
+    to: null,
+    filed: 5,
+    fixed: 3,
+    net: 2,
+    daily: [
+      { date: "2026-06-08", filed: 2, fixed: 1 },
+      { date: "2026-06-09", filed: 3, fixed: 2 },
+    ],
+    byRepo: [
+      { repo: "acme/alpha", filed: 4, fixed: 1 },
+      { repo: "acme/beta", filed: 1, fixed: 2 },
     ],
   };
 }
@@ -446,6 +465,60 @@ describe("ProductivityArea", () => {
     expect(loc.getAttribute("title")).toBeTruthy();
     // The commits outcome counter still shows a real number.
     expect(screen.getByTestId("cc-productivity-commits").textContent).toContain("4");
+  });
+});
+
+describe("GithubArea", () => {
+  it("renders filed/fixed/net stats, daily trend, and by-repo bars", async () => {
+    apiMock.mockResolvedValue(githubFixture());
+    render(<GithubArea range={range7d} />);
+
+    await screen.findByTestId("cc-area-github");
+    expect(screen.getByTestId("cc-github-filed").textContent).toContain("5");
+    expect(screen.getByTestId("cc-github-fixed").textContent).toContain("3");
+    expect(screen.getByTestId("cc-github-net").textContent).toContain("2");
+    expect(screen.getByTestId("cc-github-daily-trend")).toBeTruthy();
+    expect(screen.getByRole("img", { name: "Filed" })).toBeTruthy();
+    expect(screen.getByRole("img", { name: "Fixed" })).toBeTruthy();
+    const repoChart = screen.getByRole("list", { name: "By repository" });
+    expect(within(repoChart).getByText("acme/alpha")).toBeTruthy();
+    expect(within(repoChart).getByLabelText("acme/alpha: 4 filed / 1 fixed")).toBeTruthy();
+  });
+
+  it("renders the empty state without empty chart shells", async () => {
+    apiMock.mockResolvedValue({ ...githubFixture(), filed: 0, fixed: 0, net: 0, daily: [], byRepo: [] });
+    render(<GithubArea range={range7d} />);
+
+    await screen.findByTestId("cc-area-github-empty");
+    expect(screen.queryByTestId("cc-github-daily-trend")).toBeNull();
+    expect(screen.queryByTestId("cc-github-by-repo")).toBeNull();
+  });
+
+  it("renders loading and error states", async () => {
+    apiMock.mockImplementationOnce(() => new Promise(() => undefined));
+    const { unmount } = render(<GithubArea range={range7d} />);
+    expect(screen.getByTestId("cc-area-github-loading")).toBeTruthy();
+    unmount();
+
+    apiMock.mockRejectedValueOnce(new Error("github failed"));
+    render(<GithubArea range={range7d} />);
+    await screen.findByTestId("cc-area-github-error");
+    expect(screen.getByTestId("cc-area-github-error").textContent).toContain("github failed");
+  });
+
+  it("handles undefined chart arrays and zero values without NaN output", async () => {
+    apiMock.mockResolvedValue({ ...githubFixture(), filed: 1, fixed: 0, net: 1, daily: undefined, byRepo: undefined });
+    render(<GithubArea range={range7d} />);
+
+    await screen.findByTestId("cc-area-github");
+    expect(screen.queryByTestId("cc-github-daily-trend")).toBeNull();
+    expect(screen.queryByTestId("cc-github-by-repo")).toBeNull();
+    expect(screen.getByTestId("cc-area-github").textContent).not.toContain("NaN");
+  });
+
+  it("rejects an inverted custom range client-side without fetching", async () => {
+    render(<GithubArea range={customRange("2026-06-10", "2026-06-01")} />);
+    await waitFor(() => expect(apiMock).not.toHaveBeenCalled());
   });
 });
 

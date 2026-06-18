@@ -3,6 +3,7 @@ import type {
   ToolAnalytics,
   ActivityAnalytics,
   ProductivityAnalytics,
+  GithubIssueAnalytics,
 } from "@fusion/core";
 
 /**
@@ -166,5 +167,24 @@ export function productivityAnalyticsToTable(
   rows.push(["commits", result.commits]);
   rows.push(["pullRequests", result.pullRequests]);
   rows.push(["loc", result.loc.value ?? ""]);
+  return { header, rows };
+}
+
+/** GitHub issue analytics → CSV. Daily rows plus repo and summary rows. */
+export function githubIssueAnalyticsToTable(
+  result: GithubIssueAnalytics,
+): CsvTable {
+  const header = ["section", "key", "filed", "fixed", "net"];
+  const rows: CsvCell[][] = result.daily.map((d) => [
+    "daily",
+    d.date,
+    d.filed,
+    d.fixed,
+    d.filed - d.fixed,
+  ]);
+  for (const repo of result.byRepo) {
+    rows.push(["repo", repo.repo, repo.filed, repo.fixed, repo.filed - repo.fixed]);
+  }
+  rows.push(["summary", "total", result.filed, result.fixed, result.net]);
   return { header, rows };
 }

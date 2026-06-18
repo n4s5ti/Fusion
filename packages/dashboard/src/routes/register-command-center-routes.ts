@@ -3,6 +3,7 @@ import {
   aggregateToolAnalytics,
   aggregateActivityAnalytics,
   aggregateProductivityAnalytics,
+  aggregateGithubIssueAnalytics,
   composeLiveSnapshot,
   type TokenGroupBy,
   type TokenTimeGranularity,
@@ -15,6 +16,7 @@ import {
   toolAnalyticsToTable,
   activityAnalyticsToTable,
   productivityAnalyticsToTable,
+  githubIssueAnalyticsToTable,
   type CsvTable,
 } from "../command-center-csv.js";
 import type { ApiRouteRegistrar } from "./types.js";
@@ -235,6 +237,29 @@ export const registerCommandCenterRoutes: ApiRouteRegistrar = (ctx) => {
     } catch (err: unknown) {
       if (err instanceof ApiError) throw err;
       rethrowAsApiError(err, "Failed to aggregate productivity analytics");
+    }
+  });
+
+  /**
+   * GET /api/command-center/github
+   * GitHub issues filed by Fusion and imported GitHub issues fixed by Fusion.
+   */
+  router.get("/command-center/github", async (req, res) => {
+    try {
+      const store = await getScopedStore(req);
+      const range = resolveRange(req.query);
+      const result = aggregateGithubIssueAnalytics(store.getDatabase(), {
+        from: range.from,
+        to: range.to,
+      });
+      if (wantsCsv(req.query)) {
+        sendCsv(res, "command-center-github.csv", githubIssueAnalyticsToTable(result));
+        return;
+      }
+      res.json(result);
+    } catch (err: unknown) {
+      if (err instanceof ApiError) throw err;
+      rethrowAsApiError(err, "Failed to aggregate GitHub issue analytics");
     }
   });
 

@@ -669,11 +669,13 @@ Features:
 - **Activity** tracks sessions, messages, active nodes, active agents, and stickiness, then renders live animated line charts for messages/day, active agents/day, active nodes/day, and combined throughput/day (`messages + active agents + active nodes`). These charts reuse the existing activity analytics endpoint, refresh on a bounded 15-second cadence while mounted, keep the previous data visible during refreshes, and disable decorative draw-on motion for reduced-motion users.
 - **Productivity** separates outcome counters (commits and pull requests) from volume proxies such as modified files, lines changed, and files by language.
 - **Ecosystem** shows active model breadth and per-model task activity; unavailable plugin-activation metrics render as unavailable rather than zero.
+- **GitHub** shows local GitHub issue flow for the selected range: **Filed by Fusion** counts tasks with a persisted `githubTracking.issue`, **Fixed by Fusion** counts tasks imported from GitHub source issues (`sourceIssueProvider = "github"`) that are currently in `done`, using task `updatedAt` as the documented completion-time approximation because Fusion does not persist a separate source-issue closed timestamp. The area shows filed/fixed/net stat cards, filed-vs-fixed daily sparklines, and a by-repository bar breakdown; it never calls GitHub, the `gh` CLI, or any external network source.
 - **Signals** shows external signal totals, open/resolved counts, MTTR, and source/severity breakdowns when signal sources are connected.
 - **Mission Control** shows live active sessions/runs/nodes, current sessions and nodes, an animated live activity snapshot, and a live SDLC funnel; when idle it reports that live updates resume when work starts. Motion-heavy accents respect reduced-motion preferences.
 
 Data states:
 - Overview shows a loading state while core analytics settle, then shows `No usage data yet. Run some agents to populate the Command Center.` only after the selected range has settled with no core usage data.
+- GitHub issue analytics is local and additive: empty filed/fixed totals render the GitHub area's empty state; malformed historical `githubTracking` JSON is skipped instead of breaking the Command Center.
 - Signals is best-effort: if the Signals endpoint is absent or no signal source is connected, the Signals area falls back to its empty state and other Command Center metrics remain valid.
 
 ## Reliability View

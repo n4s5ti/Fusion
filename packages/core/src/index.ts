@@ -576,6 +576,13 @@ export type {
   LanguageCount,
   LocSummary,
 } from "./productivity-analytics.js";
+export { aggregateGithubIssueAnalytics } from "./github-issue-analytics.js";
+export type {
+  GithubIssueAnalytics,
+  GithubIssueAnalyticsQuery,
+  GithubIssueDailyPoint,
+  GithubIssueRepoBreakdown,
+} from "./github-issue-analytics.js";
 export { composeLiveSnapshot } from "./command-center-live.js";
 export type {
   LiveSnapshot,

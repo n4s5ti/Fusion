@@ -85,6 +85,10 @@ function populatedToolsFixture() {
   };
 }
 
+function emptyGithubFixture() {
+  return { filed: 0, fixed: 0, net: 0, daily: [], byRepo: [] };
+}
+
 function populatedActivityFixture() {
   return {
     ...emptyActivityFixture(),
@@ -113,6 +117,7 @@ function mockOverviewApi({ populated = false }: { populated?: boolean } = {}) {
     if (path.startsWith("/command-center/tokens")) return Promise.resolve(populated ? populatedTokenFixture() : emptyTokenFixture());
     if (path.startsWith("/command-center/tools")) return Promise.resolve(populated ? populatedToolsFixture() : emptyToolsFixture());
     if (path.startsWith("/command-center/activity")) return Promise.resolve(populated ? populatedActivityFixture() : emptyActivityFixture());
+    if (path.startsWith("/command-center/github")) return Promise.resolve(emptyGithubFixture());
     if (path.startsWith("/command-center/signals")) return Promise.resolve({ totalSignals: 0, open: 0, resolved: 0, mttr: { value: null, unavailable: true }, bySource: [], bySeverity: [] });
     if (path === "/command-center/live") {
       return Promise.resolve({
@@ -192,6 +197,11 @@ describe("CommandCenter mobile scroll regression (FN-6595)", () => {
     const tokensPanel = screen.getByTestId("command-center-panel-tokens");
     expect(tokensPanel).toBe(screen.getByRole("tabpanel"));
     assertScrollOwnerContract(tokensPanel);
+
+    fireEvent.click(screen.getByTestId("command-center-tab-github"));
+    const githubPanel = screen.getByTestId("command-center-panel-github");
+    expect(githubPanel).toBe(screen.getByRole("tabpanel"));
+    assertScrollOwnerContract(githubPanel);
   });
 
   it("preserves the mobile scroll owner when the populated Overview charts render", async () => {

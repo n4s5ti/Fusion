@@ -102,6 +102,18 @@ function activityFixture(overrides: Partial<Record<"sessions" | "messages" | "ac
 const emptyActivityFixture = () =>
   activityFixture({ sessions: 0, messages: 0, activeNodes: 0, activeAgents: 0, doneInRange: 0 });
 
+function githubFixture(filed = 0, fixed = 0) {
+  return {
+    from: "2026-06-08",
+    to: null,
+    filed,
+    fixed,
+    net: filed - fixed,
+    daily: filed || fixed ? [{ date: "2026-06-08", filed, fixed }] : [],
+    byRepo: filed || fixed ? [{ repo: "acme/alpha", filed, fixed }] : [],
+  };
+}
+
 function signalsFixture(open = 2) {
   return {
     totalSignals: open,
@@ -129,12 +141,14 @@ function mockOverviewApi({
   tokens = tokenFixture(),
   tools = toolsFixture(),
   activity = activityFixture(),
+  github = githubFixture(),
   signals = signalsFixture(),
   live = liveFixture(),
 }: {
   tokens?: unknown;
   tools?: unknown;
   activity?: unknown;
+  github?: unknown;
   signals?: unknown;
   live?: unknown;
 } = {}) {
@@ -142,6 +156,7 @@ function mockOverviewApi({
     if (path.startsWith("/command-center/tokens")) return Promise.resolve(tokens);
     if (path.startsWith("/command-center/tools")) return Promise.resolve(tools);
     if (path.startsWith("/command-center/activity")) return Promise.resolve(activity);
+    if (path.startsWith("/command-center/github")) return Promise.resolve(github);
     if (path.startsWith("/command-center/signals")) {
       return signals instanceof Error ? Promise.reject(signals) : Promise.resolve(signals);
     }
@@ -231,6 +246,7 @@ describe("CommandCenter shell", () => {
       if (path.startsWith("/command-center/tokens")) return Promise.resolve(tokenFixture(tokenTotal));
       if (path.startsWith("/command-center/tools")) return Promise.resolve(toolsFixture());
       if (path.startsWith("/command-center/activity")) return Promise.resolve(activityFixture());
+      if (path.startsWith("/command-center/github")) return Promise.resolve(githubFixture());
       if (path.startsWith("/command-center/signals")) return Promise.resolve(signalsFixture(2));
       if (path === "/command-center/live") return Promise.resolve(liveFixture([{ column: "in-progress", count: 3 }]));
       return Promise.reject(new Error(`Unhandled api path: ${path}`));
@@ -309,6 +325,7 @@ describe("CommandCenter shell", () => {
         return Promise.resolve(activityFixture({ doneInRange: allTime ? 21 : 7, inProgress: allTime ? 99 : 12 }));
       }
       if (path.startsWith("/command-center/signals")) return Promise.resolve(signalsFixture(2));
+      if (path.startsWith("/command-center/github")) return Promise.resolve(githubFixture());
       if (path === "/command-center/live") return Promise.resolve(liveFixture([{ column: "in-progress", count: 4 }]));
       return Promise.reject(new Error(`Unhandled api path: ${path}`));
     });
@@ -419,6 +436,7 @@ describe("CommandCenter shell", () => {
       if (path.startsWith("/command-center/tools")) return Promise.resolve(populated ? toolsFixture() : toolsFixture(0));
       if (path.startsWith("/command-center/activity")) return Promise.resolve(populated ? activityFixture() : emptyActivityFixture());
       if (path.startsWith("/command-center/signals")) return Promise.resolve(populated ? signalsFixture() : signalsFixture(0));
+      if (path.startsWith("/command-center/github")) return Promise.resolve(githubFixture());
       if (path === "/command-center/live") return Promise.resolve(liveFixture([{ column: "in-progress", count: populated ? 3 : 0 }]));
       return Promise.reject(new Error(`Unhandled api path: ${path}`));
     });
@@ -439,8 +457,8 @@ describe("CommandCenter shell", () => {
     render(<CommandCenter />);
     const tablist = screen.getByRole("tablist");
     const tabs = within(tablist).getAllByRole("tab");
-    // Overview, Tokens, Tools, Activity, Productivity, Ecosystem, Signals, Mission Control.
-    expect(tabs.length).toBe(8);
+    // Overview, Tokens, Tools, Activity, Productivity, Ecosystem, GitHub, Signals, Mission Control.
+    expect(tabs.length).toBe(9);
     // roving tabindex: exactly one tab is focusable.
     const focusable = tabs.filter((tab) => tab.getAttribute("tabindex") === "0");
     expect(focusable.length).toBe(1);
@@ -453,6 +471,19 @@ describe("CommandCenter shell", () => {
     expect(screen.getByTestId("command-center-tab-tokens").getAttribute("aria-selected")).toBe("true");
     expect(screen.getByTestId("command-center-tab-overview").getAttribute("aria-selected")).toBe("false");
     expect(screen.getByTestId("command-center-panel-tokens")).toBeTruthy();
+  });
+
+  it("renders and routes the GitHub tab exactly once", async () => {
+    mockOverviewApi({ github: githubFixture(4, 2) });
+    render(<CommandCenter />);
+    expect(screen.getAllByTestId("command-center-tab-github")).toHaveLength(1);
+
+    fireEvent.click(screen.getByTestId("command-center-tab-github"));
+    expect(screen.getByTestId("command-center-tab-github").getAttribute("aria-selected")).toBe("true");
+    expect(screen.getByTestId("command-center-panel-github")).toBeTruthy();
+    await screen.findByTestId("cc-area-github");
+    expect(screen.getByTestId("cc-github-filed").textContent).toContain("4");
+    expect(screen.getByTestId("cc-github-fixed").textContent).toContain("2");
   });
 
   it("supports arrow-key navigation between tabs (roving tabindex)", () => {

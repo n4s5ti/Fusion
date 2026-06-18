@@ -49,6 +49,42 @@ function seedDb(db: Database, opts: { taskId: string; model: string; tokens: num
   });
 }
 
+function seedGithubIssueMetrics(db: Database, opts: { prefix: string; repo: string; filed: number; fixed: number }): void {
+  for (let i = 0; i < opts.filed; i += 1) {
+    db.prepare(
+      `INSERT INTO tasks (id, description, "column", createdAt, updatedAt, githubTracking)
+       VALUES (?, 'desc', 'todo', '2026-03-02T00:00:00.000Z', '2026-03-02T00:00:00.000Z', ?)`,
+    ).run(
+      `${opts.prefix}-filed-${i}`,
+      JSON.stringify({
+        issue: {
+          owner: opts.repo.split("/")[0],
+          repo: opts.repo.split("/")[1],
+          number: i + 1,
+          url: `https://github.com/${opts.repo}/issues/${i + 1}`,
+          createdAt: "2026-03-02T00:00:00.000Z",
+        },
+      }),
+    );
+  }
+  for (let i = 0; i < opts.fixed; i += 1) {
+    db.prepare(
+      `INSERT INTO tasks (
+         id, description, "column", createdAt, updatedAt,
+         sourceIssueProvider, sourceIssueRepository, sourceIssueExternalIssueId,
+         sourceIssueNumber, sourceIssueUrl
+       ) VALUES (?, 'desc', 'done', '2026-03-03T00:00:00.000Z', '2026-03-03T00:00:00.000Z',
+                 'github', ?, ?, ?, ?)`,
+    ).run(
+      `${opts.prefix}-fixed-${i}`,
+      opts.repo,
+      String(i + 100),
+      i + 100,
+      `https://github.com/${opts.repo}/issues/${i + 100}`,
+    );
+  }
+}
+
 /**
  * Build an express app with the registrar mounted, backed by per-project real
  * DBs. The `getScopedStore` resolves the DB by the `projectId` query param,
@@ -180,6 +216,13 @@ describe("register-command-center-routes", () => {
     expect(prod.status).toBe(200);
     expect(prod.body).toHaveProperty("loc");
     expect(prod.body).toHaveProperty("byLanguage");
+
+    seedGithubIssueMetrics(dbA, { prefix: "FN-A", repo: "acme/alpha", filed: 2, fixed: 1 });
+    const github = await request(app, "GET", `/api/command-center/github?${range}&projectId=proj-a`);
+    expect(github.status).toBe(200);
+    expect(github.body).toMatchObject({ filed: 2, fixed: 1, net: 1 });
+    expect(github.body).toHaveProperty("daily");
+    expect(github.body).toHaveProperty("byRepo");
   });
 
   it("returns the live snapshot shape", async () => {
@@ -226,6 +269,27 @@ describe("register-command-center-routes", () => {
     // A's task had 100 input tokens (total 200); B's had 999 (total 1998).
     expect((a.body as { totals: { totalTokens: number } }).totals.totalTokens).toBe(200);
     expect((b.body as { totals: { totalTokens: number } }).totals.totalTokens).toBe(1998);
+  });
+
+  it("github endpoint defaults invalid ranges and stays project scoped", async () => {
+    seedGithubIssueMetrics(dbA, { prefix: "FN-A", repo: "acme/alpha", filed: 2, fixed: 1 });
+    seedGithubIssueMetrics(dbB, { prefix: "FN-B", repo: "acme/beta", filed: 5, fixed: 4 });
+    const invalid = await request(
+      app,
+      "GET",
+      "/api/command-center/github?from=bad&to=range&projectId=proj-a",
+    );
+    expect(invalid.status).toBe(200);
+    expect(invalid.body).toHaveProperty("filed");
+    expect(invalid.body).toHaveProperty("fixed");
+    expect(invalid.body).toHaveProperty("daily");
+    expect(invalid.body).toHaveProperty("byRepo");
+
+    const range = "from=2026-02-01T00:00:00.000Z&to=2026-04-01T00:00:00.000Z";
+    const a = await request(app, "GET", `/api/command-center/github?${range}&projectId=proj-a`);
+    const b = await request(app, "GET", `/api/command-center/github?${range}&projectId=proj-b`);
+    expect(a.body).toMatchObject({ filed: 2, fixed: 1 });
+    expect(b.body).toMatchObject({ filed: 5, fixed: 4 });
   });
 
   it("?format=csv returns well-formed CSV with attachment header", async () => {
@@ -314,6 +378,7 @@ describe("register-command-center-routes", () => {
       ["tools", "command-center-tools.csv"],
       ["activity", "command-center-activity.csv"],
       ["productivity", "command-center-productivity.csv"],
+      ["github", "command-center-github.csv"],
     ]) {
       const res = await request(
         app,
@@ -405,6 +470,7 @@ describe("vite /api proxy negative-lookahead (proxy verification)", () => {
   it("proxies the real command-center endpoints to the backend", () => {
     expect(PROXY_RE.test("/api/command-center/tokens")).toBe(true);
     expect(PROXY_RE.test("/api/command-center/live")).toBe(true);
+    expect(PROXY_RE.test("/api/command-center/github")).toBe(true);
     expect(PROXY_RE.test("/api/command-center/activity?from=x&to=y")).toBe(true);
   });
 
