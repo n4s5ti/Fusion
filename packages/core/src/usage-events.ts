@@ -99,14 +99,74 @@ interface UsageEventRow {
 /**
  * Coarse tool category derived from a tool name, for the Tools analytics area.
  * Pure and side-effect free; callers may also pass an explicit `category`.
+ *
+ * FNXC:CommandCenter 2026-06-17-21:35:
+ * Fusion agents mostly call namespaced `fn_*` tools, so Command Center analytics must bucket those families meaningfully instead of letting the Tools chart collapse into `other`.
+ * Keep this mapping pure and lowercase-normalized because it is used both at log-write time and when re-bucketing historical rows.
  */
 export function categorizeToolName(toolName: string | null | undefined): string {
   if (!toolName) return "other";
-  const name = toolName.toLowerCase();
-  if (name === "read" || name === "grep" || name === "glob" || name === "ls" || name.includes("search")) {
+  const name = toolName.trim().toLowerCase();
+  if (!name) return "other";
+
+  if (name.startsWith("fn_task_import_github") || name.startsWith("fn_task_browse_github")) {
+    return "github";
+  }
+  if (name === "fn_web_fetch") return "network";
+  if (name.startsWith("fn_secret_")) return "secrets";
+  if (name.startsWith("fn_skills_")) return "skills";
+  if (name.startsWith("fn_memory_")) return "memory";
+  if (name === "fn_list_agents" || name === "fn_agent_org_chart") return "read";
+  if (name.startsWith("fn_agent_") || name === "fn_delegate_task") return "agents";
+  if (
+    name.startsWith("fn_mission_") ||
+    name.startsWith("fn_milestone_") ||
+    name.startsWith("fn_slice_") ||
+    name.startsWith("fn_feature_") ||
+    name.startsWith("fn_goal_") ||
+    name === "fn_task_plan"
+  ) {
+    return "planning";
+  }
+  if (name.startsWith("fn_research_") || name.startsWith("fn_insight_") || name.startsWith("fn_experiment_")) {
+    return "research";
+  }
+  if (name.startsWith("fn_workflow_") || name === "fn_review_spec") return "workflow";
+
+  if (
+    name === "read" ||
+    name === "grep" ||
+    name === "glob" ||
+    name === "ls" ||
+    name.includes("search") ||
+    name === "fn_list_agents" ||
+    name === "fn_agent_org_chart" ||
+    name === "fn_task_document_read" ||
+    name.endsWith("_list") ||
+    name.endsWith("_show") ||
+    name.endsWith("_get") ||
+    name.endsWith("_search")
+  ) {
     return "read";
   }
-  if (name === "edit" || name === "write" || name === "multiedit" || name.includes("notebook")) {
+  if (
+    name === "edit" ||
+    name === "write" ||
+    name === "multiedit" ||
+    name.includes("notebook") ||
+    name === "fn_task_create" ||
+    name === "fn_task_update" ||
+    name === "fn_task_attach" ||
+    name === "fn_task_pause" ||
+    name === "fn_task_unpause" ||
+    name === "fn_task_retry" ||
+    name === "fn_task_duplicate" ||
+    name === "fn_task_refine" ||
+    name === "fn_task_archive" ||
+    name === "fn_task_unarchive" ||
+    name === "fn_task_delete" ||
+    name === "fn_task_document_write"
+  ) {
     return "edit";
   }
   if (name === "bash" || name.includes("exec") || name.includes("command") || name.includes("terminal")) {

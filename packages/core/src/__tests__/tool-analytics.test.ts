@@ -65,6 +65,39 @@ describe("tool-analytics", () => {
     ]);
   });
 
+  it("re-buckets historical other tool calls by tool name while preserving explicit categories", () => {
+    const ts = "2026-03-01T00:00:00.000Z";
+    emitUsageEvent(db, { kind: "tool_call", toolName: "fn_task_create", category: "other", ts });
+    emitUsageEvent(db, { kind: "tool_call", toolName: "fn_research_run", category: "other", ts });
+    emitUsageEvent(db, { kind: "tool_call", toolName: "fn_memory_append", category: null, ts });
+    emitUsageEvent(db, { kind: "tool_call", toolName: "fn_mission_show", category: "other", ts });
+    emitUsageEvent(db, { kind: "tool_call", toolName: "fn_skills_search", category: "other", ts });
+    emitUsageEvent(db, { kind: "tool_call", toolName: "Read", category: "other", ts });
+    emitUsageEvent(db, { kind: "tool_call", toolName: "Bash", category: "other", ts });
+    emitUsageEvent(db, { kind: "tool_call", toolName: "Unknown", category: "other", ts });
+    emitUsageEvent(db, { kind: "tool_call", toolName: null, category: "other", ts });
+    emitUsageEvent(db, { kind: "tool_call", toolName: "fn_task_update", category: "custom", ts });
+
+    const result = aggregateToolAnalytics(db, { from: "2026-03-01T00:00:00.000Z", to: "2026-03-31T00:00:00.000Z" });
+    const byCategory = new Map(result.byCategory.map((row) => [row.category, row.count]));
+
+    expect(result.toolCalls).toBe(10);
+    expect(byCategory).toEqual(
+      new Map([
+        ["other", 2],
+        ["custom", 1],
+        ["edit", 1],
+        ["execute", 1],
+        ["memory", 1],
+        ["planning", 1],
+        ["read", 1],
+        ["research", 1],
+        ["skills", 1],
+      ]),
+    );
+    expect(result.byCategory[0]).toEqual({ category: "other", count: 2 });
+  });
+
   it("autonomy denominator counts a USER steer + an approval but NOT an agent steer", () => {
     insertTaskWithSteers(db, "task-1", [
       { id: "s1", text: "do X", createdAt: "2026-03-02T00:00:00.000Z", author: "user" },

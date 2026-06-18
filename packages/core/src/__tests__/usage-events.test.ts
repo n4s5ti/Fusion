@@ -88,15 +88,66 @@ describe("usage_events", () => {
   });
 
   it("categorizes tool names into coarse buckets", () => {
-    expect(categorizeToolName("Read")).toBe("read");
-    expect(categorizeToolName("Grep")).toBe("read");
-    expect(categorizeToolName("Edit")).toBe("edit");
-    expect(categorizeToolName("Write")).toBe("edit");
-    expect(categorizeToolName("Bash")).toBe("execute");
-    expect(categorizeToolName("WebFetch")).toBe("network");
-    expect(categorizeToolName("Unknown")).toBe("other");
-    expect(categorizeToolName(undefined)).toBe("other");
-    expect(categorizeToolName(null)).toBe("other");
+    const cases: Array<[string | null | undefined, string]> = [
+      ["Read", "read"],
+      ["Grep", "read"],
+      ["Glob", "read"],
+      ["ls", "read"],
+      ["semantic_search", "read"],
+      ["fn_task_list", "read"],
+      ["fn_task_show", "read"],
+      ["fn_task_get", "read"],
+      ["fn_task_search", "read"],
+      ["fn_list_agents", "read"],
+      ["fn_agent_org_chart", "read"],
+      ["fn_task_document_read", "read"],
+      ["fn_research_list", "research"],
+      ["Edit", "edit"],
+      ["Write", "edit"],
+      ["MultiEdit", "edit"],
+      ["NotebookEdit", "edit"],
+      ["fn_task_create", "edit"],
+      ["fn_task_update", "edit"],
+      ["fn_task_attach", "edit"],
+      ["fn_task_archive", "edit"],
+      ["fn_task_document_write", "edit"],
+      ["Bash", "execute"],
+      ["execute_command", "execute"],
+      ["terminal", "execute"],
+      ["WebFetch", "network"],
+      ["fn_web_fetch", "network"],
+      ["http_request", "network"],
+      ["fn_mission_show", "planning"],
+      ["fn_milestone_add", "planning"],
+      ["fn_slice_activate", "planning"],
+      ["fn_feature_link_task", "planning"],
+      ["fn_goal_create", "planning"],
+      ["fn_task_plan", "planning"],
+      ["fn_research_run", "research"],
+      ["fn_insight_show", "research"],
+      ["fn_experiment_finalize", "research"],
+      ["fn_memory_append", "memory"],
+      ["fn_agent_create", "agents"],
+      ["fn_delegate_task", "agents"],
+      ["fn_skills_search", "skills"],
+      ["fn_secret_get", "secrets"],
+      ["fn_task_import_github", "github"],
+      ["fn_task_import_github_issue", "github"],
+      ["fn_task_browse_github_issues", "github"],
+      ["fn_workflow_create", "workflow"],
+      ["fn_review_spec", "workflow"],
+      ["mcp__server__search", "read"],
+      ["mcp__server__tool", "other"],
+      ["Unknown", "other"],
+      ["", "other"],
+      ["   ", "other"],
+      [undefined, "other"],
+      [null, "other"],
+    ];
+
+    for (const [toolName, expected] of cases) {
+      expect(categorizeToolName(toolName), String(toolName)).toBe(expected);
+    }
   });
 
   it("rejects a meta payload over the byte cap at write (event skipped, nothing inserted)", () => {

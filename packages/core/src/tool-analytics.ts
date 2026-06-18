@@ -1,4 +1,5 @@
 import type { Database } from "./db.js";
+import { categorizeToolName } from "./usage-events.js";
 import type { SteeringComment } from "./types.js";
 
 /**
@@ -75,6 +76,7 @@ interface CountRow {
 }
 
 interface CategoryRow {
+  toolName: string | null;
   category: string | null;
   count: number;
 }
@@ -175,17 +177,27 @@ export function aggregateToolAnalytics(
       .get(...eventParams) as CountRow
   ).count;
 
+  /**
+   * FNXC:CommandCenter 2026-06-17-21:43:
+   * Historical usage rows were logged with `category = "other"` before Fusion tool families were mapped, so aggregation must re-derive those buckets from `toolName`.
+   * Preserve explicit non-`other` categories because external callers may already provide a deliberate custom bucket.
+   */
   const categoryRows = db
     .prepare(
-      `SELECT category AS category, COUNT(*) AS count
+      `SELECT toolName AS toolName, category AS category, COUNT(*) AS count
        FROM usage_events
        WHERE kind = 'tool_call' ${rangeWhere}
-       GROUP BY category`,
+       GROUP BY toolName, category`,
     )
     .all(...eventParams) as CategoryRow[];
-  const byCategory: ToolCategoryCount[] = categoryRows
-    .map((r) => ({ category: r.category ?? "other", count: r.count }))
-    .sort((a, b) => b.count - a.count);
+  const categoryCounts = new Map<string, number>();
+  for (const row of categoryRows) {
+    const category = row.category && row.category !== "other" ? row.category : categorizeToolName(row.toolName);
+    categoryCounts.set(category, (categoryCounts.get(category) ?? 0) + row.count);
+  }
+  const byCategory: ToolCategoryCount[] = [...categoryCounts.entries()]
+    .map(([category, count]) => ({ category, count }))
+    .sort((a, b) => b.count - a.count || a.category.localeCompare(b.category));
 
   const sessions = (
     db
