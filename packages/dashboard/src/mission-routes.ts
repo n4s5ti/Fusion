@@ -3294,6 +3294,7 @@ export function createMissionRouter(
           missionContext,
           rootDir,
           scopedStore,
+          pluginRunner,
         );
         res.status(201).json({ sessionId });
       } catch (err: unknown) {
@@ -3347,7 +3348,7 @@ export function createMissionRouter(
 
         const { store: scopedStore } = await getProjectContext(req);
         const rootDir = scopedStore.getRootDir();
-        const result = await submitTargetInterviewResponse(sessionId, responses, rootDir, scopedStore);
+        const result = await submitTargetInterviewResponse(sessionId, responses, rootDir, scopedStore, pluginRunner);
         res.json(result);
       } catch (err: unknown) {
         const errName = err instanceof Error ? err.name : "";
@@ -3511,7 +3512,7 @@ export function createMissionRouter(
 
         const { store: scopedStore } = await getProjectContext(req);
         const rootDir = scopedStore.getRootDir();
-        await retryTargetInterviewSession(sessionId, rootDir, scopedStore);
+        await retryTargetInterviewSession(sessionId, rootDir, scopedStore, pluginRunner);
         res.json({ success: true, sessionId });
       } catch (err: unknown) {
         const errName = err instanceof Error ? err.name : "";
@@ -3642,6 +3643,7 @@ export function createMissionRouter(
           missionContext,
           rootDir,
           scopedStore,
+          pluginRunner,
         );
         res.status(201).json({ sessionId });
       } catch (err: unknown) {
@@ -3695,7 +3697,7 @@ export function createMissionRouter(
 
         const { store: scopedStore } = await getProjectContext(req);
         const rootDir = scopedStore.getRootDir();
-        const result = await submitTargetInterviewResponse(sessionId, responses, rootDir, scopedStore);
+        const result = await submitTargetInterviewResponse(sessionId, responses, rootDir, scopedStore, pluginRunner);
         res.json(result);
       } catch (err: unknown) {
         const errName = err instanceof Error ? err.name : "";
@@ -3859,7 +3861,7 @@ export function createMissionRouter(
 
         const { store: scopedStore } = await getProjectContext(req);
         const rootDir = scopedStore.getRootDir();
-        await retryTargetInterviewSession(sessionId, rootDir, scopedStore);
+        await retryTargetInterviewSession(sessionId, rootDir, scopedStore, pluginRunner);
         res.json({ success: true, sessionId });
       } catch (err: unknown) {
         const errName = err instanceof Error ? err.name : "";

@@ -96,11 +96,12 @@ function parseTargetInterviewResponseImpl(text: string): TargetInterviewResponse
 // Export the parse function for tests
 export { parseTargetInterviewResponseImpl as parseTargetInterviewResponse };
 
-import { createFnAgent as engineCreateFnAgent } from "@fusion/engine";
+import { buildSessionSkillContextSync, createFnAgent as engineCreateFnAgent } from "@fusion/engine";
 import { createPlanningBoardTools } from "./planning-board-tools.js";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type AgentResult = any;
+type SkillSelectionPluginRunner = Parameters<typeof buildSessionSkillContextSync>[3];
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const createFnAgent: any = engineCreateFnAgent;
 
@@ -730,14 +731,21 @@ async function createTargetInterviewAgent(
   session: TargetInterviewSession,
   rootDir: string,
   store: TaskStore,
+  pluginRunner?: SkillSelectionPluginRunner,
 ): Promise<AgentResult> {
   await ensureEngineReady();
+  const skillContext = buildSessionSkillContextSync(null, "executor", rootDir, pluginRunner);
 
   return createFnAgent({
     cwd: rootDir,
     systemPrompt: getSystemPrompt(session.targetType),
     tools: "readonly",
     customTools: [...createPlanningBoardTools(store)],
+    /*
+    FNXC:InterviewSkills 2026-06-17-21:42:
+    Milestone and slice interview agents are model-only tool-loop sessions, so they must request executor role-fallback skills plus enabled plugin skills such as ce-debug instead of creating skill-less dashboard sessions.
+    */
+    ...(skillContext.skillSelectionContext ? { skillSelection: skillContext.skillSelectionContext } : {}),
     onThinking: (delta: string) => {
       session.thinkingOutput += delta;
       persistThinking(session.id, session.thinkingOutput);
@@ -787,6 +795,7 @@ async function ensureInterviewAgent(
   rootDir: string | undefined,
   store: TaskStore | undefined,
   historyForReplay: Array<{ question: PlanningQuestion; response: unknown }>,
+  pluginRunner?: SkillSelectionPluginRunner,
 ): Promise<void> {
   if (session.agent) {
     return;
@@ -804,7 +813,7 @@ async function ensureInterviewAgent(
     );
   }
 
-  session.agent = await createTargetInterviewAgent(session, rootDir, store);
+  session.agent = await createTargetInterviewAgent(session, rootDir, store, pluginRunner);
 
   if (historyForReplay.length === 0) {
     return;
@@ -841,9 +850,14 @@ async function ensureInterviewAgent(
 /**
  * Initialize the AI agent for a session and start the first turn.
  */
-async function initializeAgent(session: TargetInterviewSession, rootDir: string, store: TaskStore): Promise<void> {
+async function initializeAgent(
+  session: TargetInterviewSession,
+  rootDir: string,
+  store: TaskStore,
+  pluginRunner?: SkillSelectionPluginRunner,
+): Promise<void> {
   try {
-    session.agent = await createTargetInterviewAgent(session, rootDir, store);
+    session.agent = await createTargetInterviewAgent(session, rootDir, store, pluginRunner);
     session.updatedAt = new Date();
 
     // Send initial message to get first question
@@ -1025,6 +1039,7 @@ export async function createTargetInterviewSession(
   missionContext: string | undefined,
   rootDir: string,
   store: TaskStore,
+  pluginRunner?: SkillSelectionPluginRunner,
 ): Promise<string> {
   if (!checkRateLimit(ip)) {
     const resetTime = getRateLimitResetTime(ip);
@@ -1054,7 +1069,7 @@ export async function createTargetInterviewSession(
   persistSession(session, "generating");
 
   // Initialize AI agent in background
-  initializeAgent(session, rootDir, store).catch((err) => {
+  initializeAgent(session, rootDir, store, pluginRunner).catch((err) => {
     diagnostics.errorFromException("Failed to initialize agent for session", err, { sessionId, operation: "initialize-agent" });
     persistSession(session, "error", err.message || "Failed to initialize AI agent");
     milestoneSliceInterviewStreamManager.broadcast(sessionId, {
@@ -1074,6 +1089,7 @@ export async function submitTargetInterviewResponse(
   responses: Record<string, unknown>,
   rootDir?: string,
   store?: TaskStore,
+  pluginRunner?: SkillSelectionPluginRunner,
 ): Promise<TargetInterviewResponse> {
   const session = getTargetInterviewSession(sessionId);
   if (!session) {
@@ -1095,7 +1111,7 @@ export async function submitTargetInterviewResponse(
 
   if (!session.agent) {
     const replayHistory = session.history.slice(0, -1);
-    await ensureInterviewAgent(session, rootDir, store, replayHistory);
+    await ensureInterviewAgent(session, rootDir, store, replayHistory, pluginRunner);
   }
 
   const message = formatResponseForAgent(session.currentQuestion, responses);
@@ -1122,7 +1138,12 @@ export async function submitTargetInterviewResponse(
 /**
  * Retry a failed interview session.
  */
-export async function retryTargetInterviewSession(sessionId: string, rootDir: string, store?: TaskStore): Promise<void> {
+export async function retryTargetInterviewSession(
+  sessionId: string,
+  rootDir: string,
+  store?: TaskStore,
+  pluginRunner?: SkillSelectionPluginRunner,
+): Promise<void> {
   const session = getTargetInterviewSession(sessionId);
   if (!session) {
     throw new TargetSessionNotFoundError(`Interview session ${sessionId} not found or expired`);
@@ -1149,7 +1170,7 @@ export async function retryTargetInterviewSession(sessionId: string, rootDir: st
   persistSession(session, "generating");
 
   if (session.history.length === 0) {
-    await ensureInterviewAgent(session, rootDir, store, []);
+    await ensureInterviewAgent(session, rootDir, store, [], pluginRunner);
     await continueAgentConversation(
       session,
       `I want to refine the scope for this ${session.targetType}: "${session.targetTitle}".` +
@@ -1162,7 +1183,7 @@ export async function retryTargetInterviewSession(sessionId: string, rootDir: st
   const replayHistory = session.history.slice(0, -1);
   const lastEntry = session.history[session.history.length - 1];
 
-  await ensureInterviewAgent(session, rootDir, store, replayHistory);
+  await ensureInterviewAgent(session, rootDir, store, replayHistory, pluginRunner);
   const replayMessage = formatResponseForAgent(
     lastEntry.question,
     coerceResponseRecord(lastEntry.question, lastEntry.response),
