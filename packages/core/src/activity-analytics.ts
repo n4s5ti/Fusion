@@ -351,8 +351,10 @@ export interface SdlcFunnel {
   /** Distinct tasks that reached `done` in range. */
   doneInRange: number;
   /**
-   * Completion rate = doneInRange / enteredInRange, as a 0..1 ratio. `null` when
-   * the denominator is zero (documented zero-denominator case), never NaN/∞.
+   * Cohort completion rate for tasks that entered triage in range: count of
+   * those entrants that also reached `done`, divided by `enteredInRange`.
+   * Bounded to the 0..1 conversion ratio by set intersection; `null` when the
+   * denominator is zero (documented zero-denominator case), never NaN/∞.
    */
   completionRate: number | null;
   /** Number of whole UTC days in the range (>= 1), used for throughput. */
@@ -460,11 +462,20 @@ export function aggregateSdlcFunnel(
   }
 
   // Entered-in-range = distinct tasks that entered the FIRST funnel stage
-  // (triage) in range. completion rate = done / entered.
-  const enteredInRange = perStage.get("triage")?.size ?? 0;
-  const doneInRange = perStage.get("done")?.size ?? 0;
+  // (triage) in range. doneInRange remains every task that reached done in range.
+  const triageEntrants = perStage.get("triage") ?? new Set<string>();
+  const doneEntrants = perStage.get("done") ?? new Set<string>();
+  const enteredInRange = triageEntrants.size;
+  const doneInRange = doneEntrants.size;
+  /*
+  FNXC:CommandCenter 2026-06-18-00:00:
+  Completion rate must be a cohort conversion, not done-in-range divided by triage-in-range. Tasks can finish inside a date range after entering triage before the range (or never entering triage), so intersecting the in-range triage cohort with done tasks keeps the dashboard and OTEL metric trustable at 0..1 or null.
+  */
+  const completedTriageEntrants = Array.from(triageEntrants).filter((taskId) =>
+    doneEntrants.has(taskId),
+  ).length;
   const completionRate =
-    enteredInRange === 0 ? null : doneInRange / enteredInRange;
+    enteredInRange === 0 ? null : completedTriageEntrants / enteredInRange;
 
   const rangeDays = countWholeDays(query.from, query.to);
   const throughputPerDay = doneInRange / rangeDays;

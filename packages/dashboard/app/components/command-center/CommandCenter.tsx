@@ -12,6 +12,7 @@ import { EcosystemArea } from "./areas/EcosystemArea";
 import { SignalsArea } from "./areas/SignalsArea";
 import { MissionControlPanel } from "./MissionControlPanel";
 import { SdlcFunnel } from "./SdlcFunnel";
+import { Sparkline } from "./charts/Sparkline";
 import { useAnalyticsArea } from "./areas/useAnalyticsArea";
 import { formatCost, formatCount, isInvalidRange, rangeQuery } from "./areas/areaShared";
 import type { SignalsAnalytics } from "./areas/SignalsArea";
@@ -100,13 +101,19 @@ function OverviewTab({ range }: { range: DateRange }) {
   const tokenTotal = tokens.data?.totals?.totalTokens ?? 0;
   const toolCalls = tools.data?.toolCalls ?? 0;
   const activeNodes = activity.data?.activeNodes ?? 0;
+  const activeAgents = activity.data?.activeAgents ?? 0;
   const tasksDone = activity.data?.funnel?.doneInRange ?? 0;
+  const inProgressTasks = activity.data?.funnel?.stages.find((stage) => stage.stage === "in-progress")?.entered ?? 0;
   const uniqueModels = tokens.data?.groups?.length ?? 0;
+  const activityTrendValues =
+    activity.data && activity.data.daily.length > 0
+      ? activity.data.daily.map((day) => day.messages + day.activeAgents)
+      : [activity.data?.sessions ?? 0, activity.data?.messages ?? 0, activeAgents, activeNodes, tasksDone];
   const hasActivityData =
     (activity.data?.sessions ?? 0) > 0 ||
     (activity.data?.messages ?? 0) > 0 ||
     activeNodes > 0 ||
-    (activity.data?.activeAgents ?? 0) > 0 ||
+    activeAgents > 0 ||
     tasksDone > 0;
   const hasData = tokenTotal > 0 || toolCalls > 0 || hasActivityData;
   const hasAllCoreData = tokens.data !== null && tools.data !== null && activity.data !== null;
@@ -196,11 +203,39 @@ function OverviewTab({ range }: { range: DateRange }) {
           </div>
         ))}
       </div>
+      {/*
+      FNXC:CommandCenter 2026-06-18-00:00:
+      The Overview should feel like a living software factory, so the live strip now surfaces animated pulses for tasks in progress, agents working, open signals, and a compact throughput trend from existing activity analytics without adding a new endpoint.
+
+      FNXC:CommandCenter 2026-06-18-00:00:
+      Motion must be decorative and disabled for reduced-motion users; keep data-testid anchors and the mobile scroll owner unchanged so the cooler dashboard does not destabilize Command Center navigation.
+      */}
       <div className="cc-live-strip" data-testid="command-center-live-strip">
-        <span className="cc-live-strip-label">{t("commandCenter.overview.liveStrip", "Live activity")}</span>
-        <span className="cc-live-strip-placeholder">
-          {t("commandCenter.overview.liveStripPending", "Live Mission Control loads with active sessions.")}
-        </span>
+        <div className="cc-live-strip-heading">
+          <span className="status-dot status-dot--connecting" aria-hidden="true" />
+          <span className="cc-live-strip-label">{t("commandCenter.overview.liveStrip", "Live activity snapshot")}</span>
+        </div>
+        <div className="cc-live-strip-metrics" data-testid="command-center-live-snapshot">
+          <span className="cc-live-metric" data-testid="command-center-live-tasks-in-progress">
+            <span className="cc-live-metric-value">{formatCount(inProgressTasks)}</span>
+            <span className="cc-live-metric-label">{t("commandCenter.overview.tasksInProgress", "tasks in progress")}</span>
+          </span>
+          <span className="cc-live-metric" data-testid="command-center-live-agents-working">
+            <span className="cc-live-metric-value">{formatCount(activeAgents)}</span>
+            <span className="cc-live-metric-label">{t("commandCenter.overview.agentsWorking", "agents working")}</span>
+          </span>
+          <span className="cc-live-metric" data-testid="command-center-live-open-signals">
+            <span className="cc-live-metric-value">{signalsLoading ? "—" : signals ? formatCount(signals.open ?? 0) : "—"}</span>
+            <span className="cc-live-metric-label">{t("commandCenter.overview.openSignals", "open signals")}</span>
+          </span>
+        </div>
+        <div className="cc-live-trend" data-testid="command-center-throughput-trend">
+          <span className="cc-live-trend-label">{t("commandCenter.overview.throughputTrend", "throughput trend")}</span>
+          <Sparkline
+            values={activityTrendValues}
+            ariaLabel={t("commandCenter.overview.throughputTrendAria", "Recent activity throughput trend")}
+          />
+        </div>
       </div>
       {throughputSection}
     </div>

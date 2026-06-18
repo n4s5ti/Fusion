@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import type { ActivityAnalytics } from "@fusion/core";
 import type { DateRange } from "./DateRangePicker";
 import { Funnel, type FunnelStage } from "./charts/Funnel";
+import { RadialGauge } from "./charts/RadialGauge";
 import { AreaShell } from "./areas/AreaShell";
 import { useAnalyticsArea } from "./areas/useAnalyticsArea";
 import { formatCount } from "./areas/areaShared";
@@ -32,11 +33,6 @@ function useStageLabels(): (stage: string) => string {
         return stage;
     }
   };
-}
-
-function formatRate(rate: number | null): string {
-  if (rate === null) return "—";
-  return `${Math.round(rate * 100)}%`;
 }
 
 function formatThroughput(value: number): string {
@@ -99,11 +95,12 @@ export function SdlcFunnel({ range }: { range: DateRange }) {
           {t("commandCenter.funnel.throughputTitle", "Throughput")}
         </h3>
         <div className="cc-stat-grid">
-          <div className="card cc-stat-card" data-testid="cc-funnel-completion-rate">
-            <div className="cc-stat-label">
-              {t("commandCenter.funnel.completionRate", "Completion rate")}
-            </div>
-            <div className="cc-stat-value">{formatRate(funnel?.completionRate ?? null)}</div>
+          <div className="card cc-stat-card cc-stat-card--gauge" data-testid="cc-funnel-completion-rate">
+            <RadialGauge
+              value={funnel?.completionRate ?? null}
+              label={t("commandCenter.funnel.completionRate", "Completion rate")}
+              ariaLabel={t("commandCenter.funnel.completionRateAria", "Completion rate for in-range triage entrants")}
+            />
             <span className="cc-stat-sub">
               {t("commandCenter.funnel.completionRateHint", "Done ÷ entered (in range)")}
             </span>

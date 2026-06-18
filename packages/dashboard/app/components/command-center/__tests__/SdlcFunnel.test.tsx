@@ -73,6 +73,7 @@ describe("SdlcFunnel", () => {
     render(<SdlcFunnel range={range7d} />);
 
     await screen.findByTestId("cc-area-funnel");
+    expect(screen.getByRole("img", { name: "Completion rate for in-range triage entrants" })).toBeTruthy();
     expect(screen.getByTestId("cc-funnel-completion-rate").textContent).toContain("50%");
     expect(screen.getByTestId("cc-funnel-done").textContent).toContain("2");
     expect(screen.getByTestId("cc-funnel-entered").textContent).toContain("4");
@@ -101,6 +102,7 @@ describe("SdlcFunnel", () => {
     render(<SdlcFunnel range={range7d} />);
 
     await screen.findByTestId("cc-area-funnel");
+    expect(screen.getByRole("img", { name: "Completion rate for in-range triage entrants" })).toBeTruthy();
     expect(screen.getByTestId("cc-funnel-completion-rate").textContent).toContain("—");
   });
 

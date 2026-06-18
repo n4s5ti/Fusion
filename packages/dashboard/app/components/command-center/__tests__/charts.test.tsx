@@ -6,6 +6,7 @@ import { Bar } from "../charts/Bar";
 import { StackedBar } from "../charts/StackedBar";
 import { Sparkline } from "../charts/Sparkline";
 import { Funnel } from "../charts/Funnel";
+import { RadialGauge } from "../charts/RadialGauge";
 
 function widthOf(el: HTMLElement): string {
   return el.style.width;
@@ -99,6 +100,29 @@ describe("Sparkline", () => {
   });
 });
 
+describe("RadialGauge", () => {
+  it("renders the percentage for a valid ratio with an accessible label", () => {
+    render(<RadialGauge value={0.73} label="Completion" ariaLabel="Completion rate" />);
+    expect(screen.getByRole("img", { name: "Completion rate" })).toBeTruthy();
+    expect(screen.getByText("73%")).toBeTruthy();
+    expect(screen.getByText("Completion")).toBeTruthy();
+  });
+
+  it("renders an em dash for a null ratio", () => {
+    render(<RadialGauge value={null} label="Completion" ariaLabel="Completion rate" />);
+    expect(screen.getByRole("img", { name: "Completion rate" })).toBeTruthy();
+    expect(screen.getByText("—")).toBeTruthy();
+  });
+
+  it("renders safe 0% text for zero and non-finite numeric input", () => {
+    const { rerender } = render(<RadialGauge value={0} label="Zero" ariaLabel="Zero rate" />);
+    expect(screen.getByText("0%")).toBeTruthy();
+    rerender(<RadialGauge value={Number.NaN} label="NaN" ariaLabel="NaN rate" />);
+    expect(screen.getByText("0%")).toBeTruthy();
+    expect(screen.getByText("0%").textContent).not.toContain("NaN");
+  });
+});
+
 describe("Funnel", () => {
   it("renders stages with conversion from the prior stage", () => {
     render(
@@ -134,7 +158,7 @@ describe("chart CSS animation tokens", () => {
   const css = readFileSync(cssPath, "utf8");
 
   it("uses a --duration-* token in the loader animation, not --transition-*", () => {
-    const animationLines = css.split("\n").filter((line) => /animation\s*:/.test(line));
+    const animationLines = css.split("\n").filter((line) => /animation\s*:/.test(line) && !/animation\s*:\s*none/.test(line));
     expect(animationLines.length).toBeGreaterThan(0);
     for (const line of animationLines) {
       expect(line).not.toMatch(/var\(--transition-/);

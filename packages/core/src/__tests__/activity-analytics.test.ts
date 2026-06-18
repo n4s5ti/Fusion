@@ -237,8 +237,8 @@ describe("activity-analytics", () => {
       expect(map.get("icebox")).toBe("other");
     });
 
-    it("completion rate = done-in-range / entered-in-range (triage entrants)", () => {
-      // 4 tasks enter triage; 2 reach done.
+    it("completion rate is cohort completed triage entrants / entered-in-range", () => {
+      // 4 tasks enter triage; 2 of those in-range entrants reach done.
       insertMove(db, "t1", "todo", "triage", "2026-03-02T00:00:00.000Z");
       insertMove(db, "t2", "todo", "triage", "2026-03-02T01:00:00.000Z");
       insertMove(db, "t3", "todo", "triage", "2026-03-02T02:00:00.000Z");
@@ -250,6 +250,34 @@ describe("activity-analytics", () => {
       expect(result.enteredInRange).toBe(4);
       expect(result.doneInRange).toBe(2);
       expect(result.completionRate).toBe(0.5);
+    });
+
+    it("keeps completion rate bounded when older triage entrants finish in range", () => {
+      insertMove(db, "old-1", "todo", "triage", "2026-02-20T00:00:00.000Z");
+      insertMove(db, "old-2", "todo", "triage", "2026-02-21T00:00:00.000Z");
+      insertMove(db, "new-1", "todo", "triage", "2026-03-02T00:00:00.000Z");
+      insertMove(db, "old-1", "in-review", "done", "2026-03-03T00:00:00.000Z");
+      insertMove(db, "old-2", "in-review", "done", "2026-03-03T01:00:00.000Z");
+      insertMove(db, "new-1", "in-review", "done", "2026-03-03T02:00:00.000Z");
+
+      const result = aggregateSdlcFunnel(db, RANGE);
+      expect(result.enteredInRange).toBe(1);
+      expect(result.doneInRange).toBe(3);
+      expect(result.completionRate).toBe(1);
+      expect(result.completionRate).toBeLessThanOrEqual(1);
+      expect(result.completionRate).not.toBeGreaterThan(1);
+    });
+
+    it("reports exactly 100 percent when all in-range triage entrants reach done", () => {
+      insertMove(db, "t1", "todo", "triage", "2026-03-02T00:00:00.000Z");
+      insertMove(db, "t2", "todo", "triage", "2026-03-02T01:00:00.000Z");
+      insertMove(db, "t1", "in-review", "done", "2026-03-03T00:00:00.000Z");
+      insertMove(db, "t2", "in-review", "done", "2026-03-03T01:00:00.000Z");
+
+      const result = aggregateSdlcFunnel(db, RANGE);
+      expect(result.enteredInRange).toBe(2);
+      expect(result.doneInRange).toBe(2);
+      expect(result.completionRate).toBe(1);
     });
 
     it("handles the zero-denominator completion rate as null, not NaN", () => {

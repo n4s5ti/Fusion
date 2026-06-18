@@ -66,12 +66,13 @@ function toolsFixture(toolCalls = 30) {
   };
 }
 
-function activityFixture(overrides: Partial<Record<"sessions" | "messages" | "activeNodes" | "activeAgents" | "doneInRange", number>> = {}) {
+function activityFixture(overrides: Partial<Record<"sessions" | "messages" | "activeNodes" | "activeAgents" | "doneInRange" | "inProgress", number>> = {}) {
   const sessions = overrides.sessions ?? 4;
   const messages = overrides.messages ?? 18;
   const activeNodes = overrides.activeNodes ?? 3;
   const activeAgents = overrides.activeAgents ?? 2;
   const doneInRange = overrides.doneInRange ?? 7;
+  const inProgress = overrides.inProgress ?? 3;
   return {
     from: "2026-06-08",
     to: null,
@@ -79,13 +80,14 @@ function activityFixture(overrides: Partial<Record<"sessions" | "messages" | "ac
     messages,
     activeNodes,
     activeAgents,
-    daily: [],
+    daily: messages > 0 ? [{ day: "2026-06-08", activeNodes, activeAgents, messages }] : [],
     stickiness: activeAgents > 0 ? 0.5 : 0,
     mttr: { value: null, unavailable: true },
     monitor: { mttr: { value: null, unavailable: true }, incidents: 0, deployments: 0 },
     funnel: {
       stages: [
         { stage: "triage", entered: doneInRange, current: 0 },
+        { stage: "in-progress", entered: inProgress, current: inProgress },
         { stage: "done", entered: doneInRange, current: doneInRange },
       ],
       enteredInRange: doneInRange,
@@ -179,6 +181,12 @@ describe("CommandCenter shell", () => {
     expect(statValue("command-center-stat-models")).toBe("2");
     expect(statValue("command-center-stat-signals")).toBe("2");
     expect(screen.getByTestId("command-center-live-strip")).toBeTruthy();
+    expect(screen.getByTestId("command-center-live-snapshot")).toBeTruthy();
+    expect(screen.getByTestId("command-center-live-tasks-in-progress").textContent).toContain("3");
+    expect(screen.getByTestId("command-center-live-agents-working").textContent).toContain("2");
+    expect(screen.getByTestId("command-center-live-open-signals").textContent).toContain("2");
+    expect(screen.getByTestId("command-center-throughput-trend")).toBeTruthy();
+    expect(screen.getByRole("img", { name: "Recent activity throughput trend" })).toBeTruthy();
     expect(screen.getByTestId("command-center-throughput")).toBeTruthy();
   });
 

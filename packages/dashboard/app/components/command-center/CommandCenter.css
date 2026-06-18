@@ -113,23 +113,139 @@ The Command Center must remain scrollable on mobile inside the overflow-hidden .
   color: var(--text-primary, #ddd);
 }
 
-.cc-live-strip {
-  display: flex;
+.cc-stat-card--gauge {
   align-items: center;
-  gap: var(--space-2, 0.5rem);
-  padding: var(--space-2, 0.5rem) var(--space-3, 0.75rem);
-  border: 1px dashed var(--border-subtle, rgba(127, 127, 127, 0.25));
-  border-radius: var(--radius-md, 8px);
+  text-align: center;
+}
+
+.cc-live-strip {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(10rem, 1fr) minmax(16rem, 2fr) minmax(10rem, 1fr);
+  align-items: center;
+  gap: var(--space-3, 0.75rem);
+  padding: var(--space-3, 0.75rem);
+  border: var(--border-width, 0.0625rem) solid color-mix(in srgb, var(--color-accent) 35%, var(--border-subtle));
+  border-radius: var(--radius-md);
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--color-accent) 14%, transparent), transparent),
+    var(--surface-1);
+  box-shadow: 0 0 var(--space-4) color-mix(in srgb, var(--color-accent) 18%, transparent);
+  overflow: hidden;
   font-size: var(--font-size-sm, 0.85rem);
 }
 
+.cc-live-strip::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--color-accent) 24%, transparent), transparent);
+  opacity: 0.45;
+  transform: translateX(-100%);
+  animation: cc-live-signal-sweep calc(var(--duration-slow) * 8) linear infinite;
+  pointer-events: none;
+}
+
+.cc-live-strip-heading,
+.cc-live-strip-metrics,
+.cc-live-trend {
+  position: relative;
+  z-index: 1;
+}
+
+.cc-live-strip-heading {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2, 0.5rem);
+}
+
 .cc-live-strip-label {
-  color: var(--text-primary, #ddd);
+  color: var(--text-primary);
   font-weight: 600;
 }
 
-.cc-live-strip-placeholder {
+.cc-live-strip-metrics {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-2, 0.5rem);
+}
+
+.cc-live-metric {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1, 0.25rem);
+  min-width: 0;
+  padding: var(--space-2, 0.5rem);
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--surface-2) 70%, transparent);
+  animation: cc-live-signal-pulse calc(var(--duration-slow) * 6) ease-in-out infinite;
+}
+
+.cc-live-metric-value {
+  color: var(--text-primary);
+  font-size: var(--font-size-lg, 1.1rem);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.cc-live-metric-label,
+.cc-live-trend-label {
   color: var(--text-muted);
+  font-size: var(--font-size-xs, 0.75rem);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.cc-live-trend {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2, 0.5rem);
+}
+
+.cc-live-trend .cc-sparkline {
+  height: 2.5rem;
+}
+
+.cc-live-trend .cc-sparkline-bar {
+  box-shadow: 0 0 var(--space-2) color-mix(in srgb, var(--color-accent) 28%, transparent);
+  animation: cc-live-signal-pulse calc(var(--duration-slow) * 5) ease-in-out infinite;
+}
+
+@keyframes cc-live-signal-sweep {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(100%);
+  }
+}
+
+@keyframes cc-live-signal-pulse {
+  0%,
+  100% {
+    opacity: 0.78;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cc-live-strip::before,
+  .cc-live-metric,
+  .cc-live-trend .cc-sparkline-bar {
+    animation: none;
+  }
+}
+
+@media (max-width: 768px) {
+  .cc-live-strip {
+    grid-template-columns: 1fr;
+  }
+
+  .cc-live-strip-metrics {
+    grid-template-columns: 1fr;
+  }
 }
 
 /* ---- States ---- */

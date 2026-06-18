@@ -663,14 +663,14 @@ Navigation:
 
 Features:
 - Global date-range picker in the header scopes the analytics tabs; **Mission Control** remains live rather than historical.
-- **Overview** summarizes token usage/cost, autonomy, active nodes, tasks done, model breadth, and open signals, and includes the SDLC throughput funnel for the selected range.
+- **Overview** summarizes token usage/cost, autonomy, active nodes, tasks done, model breadth, and open signals, and includes the SDLC throughput funnel for the selected range. The SDLC completion rate is shown as a radial gauge and is calculated as cohort conversion from in-range triage entrants, so the rate is capped at 100% even when older tasks finish during the range.
 - **Tokens** breaks down token totals, estimated cost, tasks, and per-model usage.
 - **Tools** shows autonomy ratio, tool-call volume, intervention counts, sessions, and tool categories.
 - **Activity** tracks sessions, messages, active nodes, active agents, stickiness, and daily activity sparklines.
 - **Productivity** separates outcome counters (commits and pull requests) from volume proxies such as modified files, lines changed, and files by language.
 - **Ecosystem** shows active model breadth and per-model task activity; unavailable plugin-activation metrics render as unavailable rather than zero.
 - **Signals** shows external signal totals, open/resolved counts, MTTR, and source/severity breakdowns when signal sources are connected.
-- **Mission Control** shows live active sessions/runs/nodes, current sessions and nodes, and a live SDLC funnel; when idle it reports that live updates resume when work starts.
+- **Mission Control** shows live active sessions/runs/nodes, current sessions and nodes, an animated live activity snapshot, and a live SDLC funnel; when idle it reports that live updates resume when work starts. Motion-heavy accents respect reduced-motion preferences.
 
 Data states:
 - Overview shows a loading state while core analytics settle, then shows `No usage data yet. Run some agents to populate the Command Center.` only after the selected range has settled with no core usage data.
