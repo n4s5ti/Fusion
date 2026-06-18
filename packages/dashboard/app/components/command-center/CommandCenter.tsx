@@ -60,7 +60,7 @@ interface OverviewStatCard {
 
 /*
 FNXC:CommandCenter 2026-06-17-00:00:
-Overview is the Command Center landing surface, so it must reflect real analytics instead of shell placeholders. Show loading while core analytics have not settled, show the empty state only after settled zero data, and treat Signals as best-effort because that endpoint can be absent without invalidating tokens/tools/activity metrics.
+Overview is the Command Center landing surface, so it must reflect real analytics instead of shell placeholders. Show loading while core analytics have not settled, show the empty state only after settled zero data, include the agent-runs card as a first-class activity signal, and treat Signals as best-effort because that endpoint can be absent without invalidating tokens/tools/activity metrics.
 */
 const OVERVIEW_TOKEN_REFRESH_MS = 15_000;
 
@@ -136,6 +136,7 @@ function OverviewTab({ range }: { range: DateRange }) {
   const toolCalls = tools.data?.toolCalls ?? 0;
   const activeNodes = activity.data?.activeNodes ?? 0;
   const activeAgents = activity.data?.activeAgents ?? 0;
+  const agentRunsTotal = activity.data?.agentRuns?.total ?? 0;
   const tasksDone = activity.data?.funnel?.doneInRange ?? 0;
   /*
   FNXC:CommandCenter 2026-06-18-00:00:
@@ -167,7 +168,7 @@ function OverviewTab({ range }: { range: DateRange }) {
     [tools.data?.byCategory],
   );
   const dailyActivityValues = useMemo(
-    () => (activity.data?.daily ?? []).map((day) => day.messages + day.activeAgents),
+    () => (activity.data?.daily ?? []).map((day) => day.messages + day.activeAgents + (day.agentRuns ?? 0)),
     [activity.data?.daily],
   );
   const activityTrendValues =
@@ -180,6 +181,7 @@ function OverviewTab({ range }: { range: DateRange }) {
     (activity.data?.messages ?? 0) > 0 ||
     activeNodes > 0 ||
     activeAgents > 0 ||
+    agentRunsTotal > 0 ||
     tasksDone > 0;
   const hasData = tokenTotal > 0 || toolCalls > 0 || hasActivityData;
   const hasAllCoreData = tokens.data !== null && tools.data !== null && activity.data !== null;
@@ -204,6 +206,7 @@ function OverviewTab({ range }: { range: DateRange }) {
     },
     { id: "autonomy", label: t("commandCenter.overview.autonomy", "Autonomy ratio"), value: autonomyLabel },
     { id: "nodes", label: t("commandCenter.overview.activeNodes", "Active nodes"), value: formatCount(activeNodes) },
+    { id: "agentRuns", label: t("commandCenter.overview.agentRuns", "Agent runs"), value: formatCount(agentRunsTotal) },
     { id: "tasksDone", label: t("commandCenter.overview.tasksDone", "Tasks done"), value: formatCount(tasksDone) },
     { id: "models", label: t("commandCenter.overview.uniqueModels", "Unique models"), value: formatCount(uniqueModels) },
     {

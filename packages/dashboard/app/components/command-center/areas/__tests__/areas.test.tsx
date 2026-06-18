@@ -110,10 +110,11 @@ function activityFixture() {
     messages: 12,
     activeNodes: 3,
     activeAgents: 2,
+    agentRuns: { total: 8, active: 1, completed: 6, failed: 1 },
     daily: [
-      { day: "2026-06-08", messages: 2, activeNodes: 1, activeAgents: 1 },
-      { day: "2026-06-09", messages: 4, activeNodes: 2, activeAgents: 1 },
-      { day: "2026-06-10", messages: 6, activeNodes: 3, activeAgents: 2 },
+      { day: "2026-06-08", messages: 2, activeNodes: 1, activeAgents: 1, agentRuns: 2 },
+      { day: "2026-06-09", messages: 4, activeNodes: 2, activeAgents: 1, agentRuns: 3 },
+      { day: "2026-06-10", messages: 6, activeNodes: 3, activeAgents: 2, agentRuns: 3 },
     ],
     stickiness: 0.5,
     mttr: { value: null, unavailable: true, sampleCount: 0 },
@@ -218,11 +219,52 @@ describe("ActivityArea", () => {
     expect(screen.getByTestId("cc-activity-messages").textContent).toContain("12");
     expect(screen.getByTestId("cc-activity-nodes").textContent).toContain("3");
     expect(screen.getByTestId("cc-activity-agents").textContent).toContain("2");
+    expect(screen.getByTestId("cc-activity-agent-runs").textContent).toContain("8");
+    expect(screen.getByTestId("cc-activity-agent-runs-active").textContent).toContain("1");
+    expect(screen.getByTestId("cc-activity-agent-runs-completed").textContent).toContain("6");
+    expect(screen.getByTestId("cc-activity-agent-runs-failed").textContent).toContain("1");
     expect(screen.getByTestId("cc-activity-stickiness").textContent).toContain("50%");
     expect(screen.getByTestId("cc-activity-line-messages")).toBeTruthy();
     expect(screen.getByTestId("cc-activity-line-agents")).toBeTruthy();
     expect(screen.getByTestId("cc-activity-line-nodes")).toBeTruthy();
+    expect(screen.getByTestId("cc-activity-agent-runs-sparkline")).toBeTruthy();
+    expect(screen.getByRole("img", { name: "Agent runs / day" })).toBeTruthy();
     expect(screen.getByTestId("cc-activity-line-throughput")).toBeTruthy();
+  });
+
+  it("renders zero agent-run cards when counts are zero and other activity exists", async () => {
+    apiMock.mockResolvedValue({
+      ...activityFixture(),
+      agentRuns: { total: 0, active: 0, completed: 0, failed: 0 },
+      daily: [{ day: "2026-06-08", messages: 1, activeNodes: 1, activeAgents: 1, agentRuns: 0 }],
+    });
+    render(<ActivityArea range={range7d} />);
+
+    await screen.findByTestId("cc-area-activity");
+    expect(screen.queryByTestId("cc-area-activity-empty")).toBeNull();
+    expect(screen.getByTestId("cc-activity-agent-runs").textContent).toContain("0");
+    expect(screen.getByTestId("cc-activity-agent-runs-active").textContent).toContain("0");
+    expect(screen.getByTestId("cc-activity-agent-runs-completed").textContent).toContain("0");
+    expect(screen.getByTestId("cc-activity-agent-runs-failed").textContent).toContain("0");
+  });
+
+  it("renders agent-run cards instead of the empty state when only run data exists", async () => {
+    apiMock.mockResolvedValue({
+      ...activityFixture(),
+      sessions: 0,
+      messages: 0,
+      activeNodes: 0,
+      activeAgents: 0,
+      agentRuns: { total: 2, active: 1, completed: 1, failed: 0 },
+      daily: [{ day: "2026-06-08", messages: 0, activeNodes: 0, activeAgents: 0, agentRuns: 2 }],
+      stickiness: 0,
+    });
+    render(<ActivityArea range={range7d} />);
+
+    await screen.findByTestId("cc-area-activity");
+    expect(screen.queryByTestId("cc-area-activity-empty")).toBeNull();
+    expect(screen.getByTestId("cc-activity-agent-runs").textContent).toContain("2");
+    expect(screen.getByTestId("cc-activity-agent-runs-sparkline")).toBeTruthy();
   });
 
   it("renders the empty state for zero activity without empty chart shells", async () => {
@@ -232,6 +274,7 @@ describe("ActivityArea", () => {
       messages: 0,
       activeNodes: 0,
       activeAgents: 0,
+      agentRuns: { total: 0, active: 0, completed: 0, failed: 0 },
       daily: [],
       stickiness: 0,
     });
@@ -241,6 +284,7 @@ describe("ActivityArea", () => {
     expect(screen.queryByTestId("cc-activity-line-messages")).toBeNull();
     expect(screen.queryByTestId("cc-activity-line-agents")).toBeNull();
     expect(screen.queryByTestId("cc-activity-line-nodes")).toBeNull();
+    expect(screen.queryByTestId("cc-activity-agent-runs-sparkline")).toBeNull();
     expect(screen.queryByTestId("cc-activity-line-throughput")).toBeNull();
   });
 

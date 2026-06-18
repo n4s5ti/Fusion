@@ -136,21 +136,27 @@ export function toolAnalyticsToTable(result: ToolAnalytics): CsvTable {
 
 /** Activity analytics → CSV. One row per day plus summary rows. */
 export function activityAnalyticsToTable(result: ActivityAnalytics): CsvTable {
-  const header = ["day", "messages", "activeNodes", "activeAgents"];
+  const header = ["day", "messages", "activeNodes", "activeAgents", "agentRuns"];
   const rows: CsvCell[][] = result.daily.map((d) => [
     d.day,
     d.messages,
     d.activeNodes,
     d.activeAgents,
+    d.agentRuns,
   ]);
   rows.push([
     "(total)",
     result.messages,
     result.activeNodes,
     result.activeAgents,
+    result.agentRuns.total,
   ]);
-  rows.push(["(sessions)", result.sessions, "", ""]);
-  rows.push(["(stickiness)", result.stickiness, "", ""]);
+  rows.push(["(sessions)", result.sessions, "", "", ""]);
+  rows.push(["(stickiness)", result.stickiness, "", "", ""]);
+  rows.push(["(agentRuns.total)", result.agentRuns.total, "", "", ""]);
+  rows.push(["(agentRuns.active)", result.agentRuns.active, "", "", ""]);
+  rows.push(["(agentRuns.completed)", result.agentRuns.completed, "", "", ""]);
+  rows.push(["(agentRuns.failed)", result.agentRuns.failed, "", "", ""]);
   return { header, rows };
 }
 

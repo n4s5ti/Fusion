@@ -84,11 +84,38 @@ function insertCliSession(db: Database, id: string, createdAt: string): void {
   ).run(id, createdAt, createdAt);
 }
 
+let agentRunSeq = 0;
+function insertAgentRun(
+  db: Database,
+  fields: {
+    agentId?: string;
+    startedAt: string;
+    endedAt?: string | null;
+    status: string;
+  },
+): string {
+  const id = `run-${agentRunSeq++}`;
+  const agentId = fields.agentId ?? "agent-1";
+  db.prepare(
+    `INSERT OR IGNORE INTO agents (id, name, role, state, createdAt, updatedAt)
+     VALUES (?, ?, 'executor', 'idle', ?, ?)`,
+  ).run(agentId, agentId, fields.startedAt, fields.startedAt);
+  db.prepare(
+    `INSERT INTO agentRuns (id, agentId, data, startedAt, endedAt, status)
+     VALUES (?, ?, ?, ?, ?, ?)`,
+  ).run(id, agentId, JSON.stringify({ taskId: `task-${id}` }), fields.startedAt, fields.endedAt ?? null, fields.status);
+  return id;
+}
+
 describe("activity-analytics", () => {
   let tmpDir: string;
   let db: Database;
 
   beforeEach(() => {
+    incidentSeq = 0;
+    deploySeq = 0;
+    moveSeq = 0;
+    agentRunSeq = 0;
     tmpDir = mkdtempSync(join(tmpdir(), "kb-activity-analytics-"));
     db = new Database(join(tmpDir, ".fusion"));
     db.init();
@@ -127,6 +154,44 @@ describe("activity-analytics", () => {
     expect(result.daily[1]).toMatchObject({ day: "2026-03-02", activeNodes: 1, activeAgents: 1, messages: 1 });
   });
 
+  it("counts agent runs by status over startedAt range and includes unknown statuses only in total", () => {
+    insertAgentRun(db, { agentId: "agent-a", startedAt: "2026-03-01T00:00:00.000Z", status: "active" });
+    insertAgentRun(db, { agentId: "agent-b", startedAt: "2026-03-02T00:00:00.000Z", endedAt: "2026-03-02T00:10:00.000Z", status: "completed" });
+    insertAgentRun(db, { agentId: "agent-c", startedAt: "2026-03-03T00:00:00.000Z", endedAt: "2026-03-03T00:05:00.000Z", status: "failed" });
+    insertAgentRun(db, { agentId: "agent-d", startedAt: "2026-03-04T00:00:00.000Z", endedAt: "2026-03-04T00:01:00.000Z", status: "cancelled" });
+    insertAgentRun(db, { agentId: "agent-old", startedAt: "2026-02-28T23:59:59.000Z", status: "completed" });
+    insertAgentRun(db, { agentId: "agent-new", startedAt: "2026-04-01T00:00:00.000Z", status: "failed" });
+
+    const result = aggregateActivityAnalytics(db, { from: "2026-03-01T00:00:00.000Z", to: "2026-03-31T23:59:59.999Z" });
+
+    expect(result.agentRuns).toEqual({ total: 4, active: 1, completed: 1, failed: 1 });
+  });
+
+  it("aligns per-day agent run counts with usage days and run-only days", () => {
+    emitUsageEvent(db, { kind: "user_message", agentId: "a", nodeId: "n1", ts: "2026-03-01T08:00:00.000Z" });
+    emitUsageEvent(db, { kind: "user_message", agentId: "b", nodeId: "n2", ts: "2026-03-03T08:00:00.000Z" });
+    insertAgentRun(db, { startedAt: "2026-03-02T00:00:00.000Z", status: "completed" });
+    insertAgentRun(db, { startedAt: "2026-03-03T00:00:00.000Z", status: "failed" });
+    insertAgentRun(db, { startedAt: "2026-03-03T02:00:00.000Z", status: "active" });
+
+    const result = aggregateActivityAnalytics(db, { from: "2026-03-01T00:00:00.000Z", to: "2026-03-31T00:00:00.000Z" });
+
+    expect(result.daily).toEqual([
+      { day: "2026-03-01", activeNodes: 1, activeAgents: 1, messages: 1, agentRuns: 0 },
+      { day: "2026-03-02", activeNodes: 0, activeAgents: 0, messages: 0, agentRuns: 1 },
+      { day: "2026-03-03", activeNodes: 1, activeAgents: 1, messages: 1, agentRuns: 2 },
+    ]);
+  });
+
+  it("returns zero agent-run metrics when the agentRuns table is absent", () => {
+    db.prepare("DROP TABLE agentRuns").run();
+
+    const result = aggregateActivityAnalytics(db, { from: "2026-03-01T00:00:00.000Z", to: "2026-03-31T00:00:00.000Z" });
+
+    expect(result.agentRuns).toEqual({ total: 0, active: 0, completed: 0, failed: 0 });
+    expect(result.daily).toEqual([]);
+  });
+
   it("computes stickiness = DAU/MAU", () => {
     // Day 1: agents a,b active. Day 2: agent a active. MAU = {a,b} = 2.
     // DAU = mean(2, 1) = 1.5. stickiness = 1.5 / 2 = 0.75.
@@ -148,6 +213,7 @@ describe("activity-analytics", () => {
     expect(result.messages).toBe(0);
     expect(result.activeNodes).toBe(0);
     expect(result.activeAgents).toBe(0);
+    expect(result.agentRuns).toEqual({ total: 0, active: 0, completed: 0, failed: 0 });
     expect(result.daily).toEqual([]);
     expect(result.stickiness).toBe(0);
   });

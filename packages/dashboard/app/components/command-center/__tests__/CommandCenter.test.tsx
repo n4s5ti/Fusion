@@ -66,11 +66,14 @@ function toolsFixture(toolCalls = 30) {
   };
 }
 
-function activityFixture(overrides: Partial<Record<"sessions" | "messages" | "activeNodes" | "activeAgents" | "doneInRange" | "inProgress", number>> = {}) {
+function activityFixture(
+  overrides: Partial<Record<"sessions" | "messages" | "activeNodes" | "activeAgents" | "agentRuns" | "doneInRange" | "inProgress", number>> = {},
+) {
   const sessions = overrides.sessions ?? 4;
   const messages = overrides.messages ?? 18;
   const activeNodes = overrides.activeNodes ?? 3;
   const activeAgents = overrides.activeAgents ?? 2;
+  const agentRuns = overrides.agentRuns ?? 8;
   const doneInRange = overrides.doneInRange ?? 7;
   const inProgress = overrides.inProgress ?? 3;
   return {
@@ -80,7 +83,8 @@ function activityFixture(overrides: Partial<Record<"sessions" | "messages" | "ac
     messages,
     activeNodes,
     activeAgents,
-    daily: messages > 0 ? [{ day: "2026-06-08", activeNodes, activeAgents, messages }] : [],
+    agentRuns: { total: agentRuns, active: agentRuns > 0 ? 1 : 0, completed: Math.max(0, agentRuns - 2), failed: agentRuns > 1 ? 1 : 0 },
+    daily: messages > 0 || agentRuns > 0 ? [{ day: "2026-06-08", activeNodes, activeAgents, messages, agentRuns }] : [],
     stickiness: activeAgents > 0 ? 0.5 : 0,
     mttr: { value: null, unavailable: true },
     monitor: { mttr: { value: null, unavailable: true }, incidents: 0, deployments: 0 },
@@ -100,7 +104,7 @@ function activityFixture(overrides: Partial<Record<"sessions" | "messages" | "ac
 }
 
 const emptyActivityFixture = () =>
-  activityFixture({ sessions: 0, messages: 0, activeNodes: 0, activeAgents: 0, doneInRange: 0 });
+  activityFixture({ sessions: 0, messages: 0, activeNodes: 0, activeAgents: 0, agentRuns: 0, doneInRange: 0 });
 
 function githubFixture(filed = 0, fixed = 0) {
   return {
@@ -208,6 +212,20 @@ describe("CommandCenter shell", () => {
     expect(screen.queryByTestId("command-center-overview-charts")).toBeNull();
   });
 
+  it("renders the Overview agent-runs card when run data is the only activity", async () => {
+    mockOverviewApi({
+      tokens: tokenFixture(0),
+      tools: toolsFixture(0),
+      activity: activityFixture({ sessions: 0, messages: 0, activeNodes: 0, activeAgents: 0, agentRuns: 5, doneInRange: 0 }),
+      signals: signalsFixture(0),
+      live: liveFixture([{ column: "in-progress", count: 0 }]),
+    });
+    render(<CommandCenter />);
+
+    await waitFor(() => expect(screen.queryByTestId("command-center-empty")).toBeNull());
+    expect(statValue("command-center-stat-agentRuns")).toBe("5");
+  });
+
   it("renders live Overview headline values when analytics data exists", async () => {
     mockOverviewApi();
     render(<CommandCenter />);
@@ -219,6 +237,7 @@ describe("CommandCenter shell", () => {
     expect(screen.getByTestId("command-center-stat-tokens").textContent).toContain("$12.50");
     expect(statValue("command-center-stat-autonomy")).toBe("10.0:1");
     expect(statValue("command-center-stat-nodes")).toBe("3");
+    expect(statValue("command-center-stat-agentRuns")).toBe("8");
     expect(statValue("command-center-stat-tasksDone")).toBe("7");
     expect(statValue("command-center-stat-models")).toBe("2");
     expect(statValue("command-center-stat-signals")).toBe("2");
@@ -343,7 +362,7 @@ describe("CommandCenter shell", () => {
   });
 
   it("renders cards for partially populated analytics instead of the empty state", async () => {
-    mockOverviewApi({ tokens: tokenFixture(0), tools: toolsFixture(0), activity: activityFixture({ sessions: 0, messages: 0, activeNodes: 1, activeAgents: 0, doneInRange: 0 }), signals: signalsFixture(0) });
+    mockOverviewApi({ tokens: tokenFixture(0), tools: toolsFixture(0), activity: activityFixture({ sessions: 0, messages: 0, activeNodes: 1, activeAgents: 0, agentRuns: 0, doneInRange: 0 }), signals: signalsFixture(0) });
     render(<CommandCenter />);
 
     await screen.findByTestId("command-center-stat-nodes");

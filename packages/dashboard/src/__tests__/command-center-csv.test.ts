@@ -4,9 +4,10 @@ import { describe, expect, it } from "vitest";
 import {
   serializeCsv,
   tokenAnalyticsToTable,
+  activityAnalyticsToTable,
   type CsvTable,
 } from "../command-center-csv.js";
-import type { TokenAnalytics } from "@fusion/core";
+import type { ActivityAnalytics, TokenAnalytics } from "@fusion/core";
 
 describe("serializeCsv (RFC-4180)", () => {
   it("emits a header row and CRLF-terminated records", () => {
@@ -44,6 +45,49 @@ describe("serializeCsv (RFC-4180)", () => {
       rows: [[null, undefined, 42, true]],
     };
     expect(serializeCsv(table)).toBe("a,b,c,d\r\n,,42,true\r\n");
+  });
+});
+
+describe("activityAnalyticsToTable", () => {
+  function result(): ActivityAnalytics {
+    return {
+      from: "2026-06-01",
+      to: "2026-06-02",
+      sessions: 2,
+      messages: 5,
+      activeNodes: 1,
+      activeAgents: 2,
+      agentRuns: { total: 9, active: 3, completed: 4, failed: 2 },
+      daily: [{ day: "2026-06-01", messages: 5, activeNodes: 1, activeAgents: 2, agentRuns: 9 }],
+      stickiness: 0.5,
+      mttr: { value: null, unavailable: true, sampleCount: 0 },
+      monitor: {
+        mttr: { value: null, unavailable: true, sampleCount: 0 },
+        incidentsOpened: 0,
+        incidentsResolved: 0,
+        openIncidents: 0,
+        deployments: 0,
+      },
+      funnel: {
+        stages: [],
+        enteredInRange: 0,
+        doneInRange: 0,
+        completionRate: null,
+        throughputPerDay: 0,
+        rangeDays: 2,
+      },
+    };
+  }
+
+  it("includes agent run daily and summary rows", () => {
+    const table = activityAnalyticsToTable(result());
+
+    expect(table.header).toEqual(["day", "messages", "activeNodes", "activeAgents", "agentRuns"]);
+    expect(table.rows).toContainEqual(["2026-06-01", 5, 1, 2, 9]);
+    expect(table.rows).toContainEqual(["(agentRuns.total)", 9, "", "", ""]);
+    expect(table.rows).toContainEqual(["(agentRuns.active)", 3, "", "", ""]);
+    expect(table.rows).toContainEqual(["(agentRuns.completed)", 4, "", "", ""]);
+    expect(table.rows).toContainEqual(["(agentRuns.failed)", 2, "", "", ""]);
   });
 });
 

@@ -49,6 +49,17 @@ function seedDb(db: Database, opts: { taskId: string; model: string; tokens: num
   });
 }
 
+function seedAgentRun(db: Database, opts: { id: string; agentId: string; startedAt: string; status: string }): void {
+  db.prepare(
+    `INSERT OR IGNORE INTO agents (id, name, role, state, createdAt, updatedAt)
+     VALUES (?, ?, 'executor', 'idle', ?, ?)`,
+  ).run(opts.agentId, opts.agentId, opts.startedAt, opts.startedAt);
+  db.prepare(
+    `INSERT INTO agentRuns (id, agentId, data, startedAt, endedAt, status)
+     VALUES (?, ?, '{}', ?, NULL, ?)`,
+  ).run(opts.id, opts.agentId, opts.startedAt, opts.status);
+}
+
 function seedGithubIssueMetrics(db: Database, opts: { prefix: string; repo: string; filed: number; fixed: number }): void {
   for (let i = 0; i < opts.filed; i += 1) {
     db.prepare(
@@ -202,6 +213,7 @@ describe("register-command-center-routes", () => {
 
   it("returns the tools / activity / productivity aggregator shapes", async () => {
     const range = "from=2026-02-01T00:00:00.000Z&to=2026-04-01T00:00:00.000Z";
+    seedAgentRun(dbA, { id: "run-a1", agentId: "agent-route", startedAt: "2026-03-02T00:00:00.000Z", status: "active" });
     const tools = await request(app, "GET", `/api/command-center/tools?${range}&projectId=proj-a`);
     expect(tools.status).toBe(200);
     expect(tools.body).toHaveProperty("autonomyRatio");
@@ -211,6 +223,8 @@ describe("register-command-center-routes", () => {
     expect(activity.status).toBe(200);
     expect(activity.body).toHaveProperty("stickiness");
     expect(activity.body).toHaveProperty("mttr");
+    expect(activity.body).toHaveProperty("agentRuns");
+    expect((activity.body as { agentRuns: { total: number; active: number } }).agentRuns).toMatchObject({ total: 1, active: 1 });
 
     const prod = await request(app, "GET", `/api/command-center/productivity?${range}&projectId=proj-a`);
     expect(prod.status).toBe(200);

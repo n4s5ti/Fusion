@@ -24,13 +24,23 @@ export interface ActivityAnalyticsQuery {
   to?: string;
 }
 
-/** Distinct active nodes/agents and message count for a single UTC day. */
+/** Distinct active nodes/agents, messages, and agent-run count for a single UTC day. */
 export interface DailyActivity {
   /** UTC date, `YYYY-MM-DD`. */
   day: string;
   activeNodes: number;
   activeAgents: number;
   messages: number;
+  /** Agent heartbeat runs started on this UTC day. */
+  agentRuns: number;
+}
+
+/** Agent heartbeat-run counts over an activity range, grouped by canonical status. */
+export interface AgentRunSummary {
+  total: number;
+  active: number;
+  completed: number;
+  failed: number;
 }
 
 /**
@@ -77,6 +87,8 @@ export interface ActivityAnalytics {
   activeNodes: number;
   /** Distinct agents with any usage_event in range. */
   activeAgents: number;
+  /** Agent heartbeat runs started in range, grouped by status. */
+  agentRuns: AgentRunSummary;
   /** Per-day breakdown, ascending by day. */
   daily: DailyActivity[];
   /**
@@ -105,6 +117,16 @@ interface DayAggRow {
   activeNodes: number;
   activeAgents: number;
   messages: number;
+}
+
+interface AgentRunStatusRow {
+  status: string;
+  count: number;
+}
+
+interface AgentRunDayRow {
+  day: string;
+  count: number;
 }
 
 function rangeClauses(
@@ -189,12 +211,36 @@ export function aggregateActivityAnalytics(
        ORDER BY day ASC`,
     )
     .all(...eventRange.params) as DayAggRow[];
-  const daily: DailyActivity[] = dailyRows.map((r) => ({
-    day: r.day,
-    activeNodes: r.activeNodes,
-    activeAgents: r.activeAgents,
-    messages: r.messages ?? 0,
-  }));
+  /**
+   * FNXC:CommandCenter 2026-06-18-00:00:
+   * Command Center activity analytics must surface agent heartbeat-run volume as stat cards by status and as a per-day trend without requiring a schema migration or new endpoint. Count by agentRuns.startedAt in the selected range, and degrade to zeros when older databases do not have the table.
+   */
+  const agentRunMetrics = aggregateAgentRunMetrics(db, query);
+  const dailyByDay = new Map<string, DailyActivity>();
+  for (const r of dailyRows) {
+    dailyByDay.set(r.day, {
+      day: r.day,
+      activeNodes: r.activeNodes,
+      activeAgents: r.activeAgents,
+      messages: r.messages ?? 0,
+      agentRuns: 0,
+    });
+  }
+  for (const r of agentRunMetrics.daily) {
+    const existing = dailyByDay.get(r.day);
+    if (existing) {
+      existing.agentRuns = r.count;
+    } else {
+      dailyByDay.set(r.day, {
+        day: r.day,
+        activeNodes: 0,
+        activeAgents: 0,
+        messages: 0,
+        agentRuns: r.count,
+      });
+    }
+  }
+  const daily: DailyActivity[] = [...dailyByDay.values()].sort((a, b) => a.day.localeCompare(b.day));
 
   // Stickiness = DAU/MAU. DAU = mean distinct-active-agents-per-day; MAU =
   // distinct active agents over the range.
@@ -215,6 +261,7 @@ export function aggregateActivityAnalytics(
     messages,
     activeNodes,
     activeAgents,
+    agentRuns: agentRunMetrics.summary,
     daily,
     stickiness,
     mttr: monitor.mttr,
@@ -225,6 +272,47 @@ export function aggregateActivityAnalytics(
     // with that workflow's columns so custom column ids map correctly.
     funnel: aggregateSdlcFunnel(db, query),
   };
+}
+
+function zeroAgentRunSummary(): AgentRunSummary {
+  return { total: 0, active: 0, completed: 0, failed: 0 };
+}
+
+function aggregateAgentRunMetrics(
+  db: Database,
+  query: ActivityAnalyticsQuery,
+): { summary: AgentRunSummary; daily: AgentRunDayRow[] } {
+  if (!tableExists(db, "agentRuns")) {
+    return { summary: zeroAgentRunSummary(), daily: [] };
+  }
+
+  const range = rangeClauses("startedAt", query);
+  const statusRows = db
+    .prepare(
+      `SELECT status, COUNT(*) AS count
+       FROM agentRuns ${range.where}
+       GROUP BY status`,
+    )
+    .all(...range.params) as AgentRunStatusRow[];
+
+  const summary = zeroAgentRunSummary();
+  for (const row of statusRows) {
+    summary.total += row.count;
+    if (row.status === "active") summary.active = row.count;
+    if (row.status === "completed") summary.completed = row.count;
+    if (row.status === "failed") summary.failed = row.count;
+  }
+
+  const daily = db
+    .prepare(
+      `SELECT substr(startedAt, 1, 10) AS day, COUNT(*) AS count
+       FROM agentRuns ${range.where}
+       GROUP BY day
+       ORDER BY day ASC`,
+    )
+    .all(...range.params) as AgentRunDayRow[];
+
+  return { summary, daily };
 }
 
 /* ------------------------------------------------------------------------- */

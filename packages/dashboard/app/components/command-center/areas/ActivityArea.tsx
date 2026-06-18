@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import type { ActivityAnalytics } from "@fusion/core";
 import type { DateRange } from "../DateRangePicker";
 import { LineChart } from "../charts/LineChart";
+import { Sparkline } from "../charts/Sparkline";
 import { AreaShell } from "./AreaShell";
 import { useAnalyticsArea } from "./useAnalyticsArea";
 import { formatCount, isInvalidRange } from "./areaShared";
@@ -21,6 +22,7 @@ export function ActivityArea({ range }: { range: DateRange }) {
   const messagesSeries = useMemo(() => daily.map((d) => d.messages), [daily]);
   const agentsSeries = useMemo(() => daily.map((d) => d.activeAgents), [daily]);
   const nodesSeries = useMemo(() => daily.map((d) => d.activeNodes), [daily]);
+  const agentRunsSeries = useMemo(() => daily.map((d) => d.agentRuns), [daily]);
   const throughputSeries = useMemo(
     () => daily.map((d) => d.messages + d.activeAgents + d.activeNodes),
     [daily],
@@ -38,9 +40,14 @@ export function ActivityArea({ range }: { range: DateRange }) {
     return () => window.clearInterval(interval);
   }, [invalidRange, reload]);
 
+  const agentRuns = data?.agentRuns ?? { total: 0, active: 0, completed: 0, failed: 0 };
   const isEmpty =
     !data ||
-    (data.sessions === 0 && data.messages === 0 && data.activeNodes === 0 && data.activeAgents === 0);
+    (data.sessions === 0 &&
+      data.messages === 0 &&
+      data.activeNodes === 0 &&
+      data.activeAgents === 0 &&
+      agentRuns.total === 0);
 
   return (
     <AreaShell testId="activity" isLoading={isInitialLoading} error={error} isEmpty={isEmpty}>
@@ -62,6 +69,26 @@ export function ActivityArea({ range }: { range: DateRange }) {
           <div className="card cc-stat-card" data-testid="cc-activity-agents">
             <div className="cc-stat-label">{t("commandCenter.activity.activeAgents", "Active agents")}</div>
             <div className="cc-stat-value">{formatCount(data?.activeAgents ?? 0)}</div>
+          </div>
+          {/*
+          FNXC:CommandCenter 2026-06-18-00:00:
+          Activity Summary needs agent-run sheets for total, active, completed, and failed heartbeat runs so operators can read run volume without leaving the existing Command Center Activity surface.
+          */}
+          <div className="card cc-stat-card" data-testid="cc-activity-agent-runs">
+            <div className="cc-stat-label">{t("commandCenter.activity.agentRuns", "Agent runs")}</div>
+            <div className="cc-stat-value">{formatCount(agentRuns.total)}</div>
+          </div>
+          <div className="card cc-stat-card" data-testid="cc-activity-agent-runs-active">
+            <div className="cc-stat-label">{t("commandCenter.activity.agentRunsActive", "Active")}</div>
+            <div className="cc-stat-value">{formatCount(agentRuns.active)}</div>
+          </div>
+          <div className="card cc-stat-card" data-testid="cc-activity-agent-runs-completed">
+            <div className="cc-stat-label">{t("commandCenter.activity.agentRunsCompleted", "Completed")}</div>
+            <div className="cc-stat-value">{formatCount(agentRuns.completed)}</div>
+          </div>
+          <div className="card cc-stat-card" data-testid="cc-activity-agent-runs-failed">
+            <div className="cc-stat-label">{t("commandCenter.activity.agentRunsFailed", "Failed")}</div>
+            <div className="cc-stat-value">{formatCount(agentRuns.failed)}</div>
           </div>
           <div className="card cc-stat-card" data-testid="cc-activity-stickiness">
             <div className="cc-stat-label">{t("commandCenter.activity.stickiness", "Stickiness")}</div>
@@ -92,6 +119,14 @@ export function ActivityArea({ range }: { range: DateRange }) {
         <LineChart
           series={[{ label: t("commandCenter.activity.activeNodes", "Active nodes"), values: nodesSeries }]}
           ariaLabel={t("commandCenter.activity.nodesPerDay", "Active nodes / day")}
+        />
+      </div>
+
+      <div className="cc-area-section" data-testid="cc-activity-agent-runs-sparkline">
+        <h3 className="cc-area-section-title">{t("commandCenter.activity.agentRunsPerDay", "Agent runs / day")}</h3>
+        <Sparkline
+          values={agentRunsSeries}
+          ariaLabel={t("commandCenter.activity.agentRunsPerDay", "Agent runs / day")}
         />
       </div>
 
