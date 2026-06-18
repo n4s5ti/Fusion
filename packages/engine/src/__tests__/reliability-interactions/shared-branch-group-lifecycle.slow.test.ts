@@ -1,4 +1,3 @@
-import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 
@@ -16,6 +15,20 @@ type StagedMember = {
   worktreePath: string;
   fileName: string;
 };
+
+const shellQuote = (value: string): string => `'${value.replaceAll("'", `'\\''`)}'`;
+
+/*
+FNXC:EngineTests 2026-06-18-11:52:
+This file asserts FN-5820 shared-branch routing, completion, gating, and recovery invariants; it does not need remote-rebase/smart-conflict preflight branches for every synthetic merge.
+Disable those optional merge preflights in the fixture settings so the slow lane spends time on the lifecycle contract rather than repeated no-origin fetch fallbacks.
+*/
+const sharedBranchLifecycleSettings = (settings: Record<string, unknown> = {}) => ({
+  testMode: true,
+  worktreeRebaseBeforeMerge: false,
+  mergeConflictStrategy: "ai-only",
+  ...settings,
+}) as any;
 
 async function stageSharedMember(
   store: TaskStore,
@@ -36,12 +49,26 @@ async function stageSharedMember(
     currentStep: (task?.steps ?? []).length ?? 0,
   } as any);
 
-  git(rootDir, `git checkout -b ${branch}`);
-  await mkdir(join(rootDir, "packages/engine/src"), { recursive: true });
-  git(rootDir, `sh -c 'printf ${JSON.stringify(`export const ${input.fileName} = true;\n`)} > ${JSON.stringify(`packages/engine/src/${input.fileName}.ts`)}'`);
-  git(rootDir, `git add ${JSON.stringify(`packages/engine/src/${input.fileName}.ts`)}`);
-  git(rootDir, `git commit -m ${JSON.stringify(`feat: add ${input.fileName}`)}`);
-  git(rootDir, "git checkout main");
+  const filePath = `packages/engine/src/${input.fileName}.ts`;
+  const content = `export const ${input.fileName} = true;\n`;
+  const message = `feat: add ${input.fileName}`;
+  /*
+  FNXC:EngineTests 2026-06-18-11:47:
+  FN-6646 preserves the FN-5820 shared-branch lifecycle assertions but stages member branches through one deterministic shell seam so this slow-lane file does less repeated Node-side subprocess and fs orchestration per member.
+  */
+  const script = `set -e
+branch=$1
+file=$2
+content=$3
+message=$4
+git checkout -b "$branch"
+mkdir -p "$(dirname "$file")"
+printf "%s" "$content" > "$file"
+git add "$file"
+git commit -m "$message"
+git checkout main
+`;
+  git(rootDir, `sh -c ${shellQuote(script)} sh ${[branch, filePath, content, message].map(shellQuote).join(" ")}`);
   store.enqueueMergeQueue(input.taskId);
 
   return { taskId: input.taskId, branch, worktreePath, fileName: input.fileName };
@@ -49,7 +76,7 @@ async function stageSharedMember(
 
 describe("FN-5820 reliability interactions: shared branch group lifecycle", () => {
   it.skipIf(!hasGit)("CASE 1: shared members resolve distinct working branches/worktrees without branch conflict", async () => {
-    const fixture = await makeReliabilityFixture({ taskId: "FN-5820-RI-A", settings: { testMode: true } as any });
+    const fixture = await makeReliabilityFixture({ taskId: "FN-5820-RI-A", settings: sharedBranchLifecycleSettings() });
 
     try {
       const { rootDir, store, task, settings } = fixture;
@@ -93,7 +120,7 @@ describe("FN-5820 reliability interactions: shared branch group lifecycle", () =
   }, 45_000);
 
   it.skipIf(!hasGit)("CASE 2: shared members integrate to common branch and accumulate without landing main", async () => {
-    const fixture = await makeReliabilityFixture({ taskId: "FN-5820-RI-C", settings: { testMode: true } as any });
+    const fixture = await makeReliabilityFixture({ taskId: "FN-5820-RI-C", settings: sharedBranchLifecycleSettings() });
 
     try {
       const { rootDir, store, task } = fixture;
@@ -160,7 +187,7 @@ describe("FN-5820 reliability interactions: shared branch group lifecycle", () =
   }, 45_000);
 
   it.skipIf(!hasGit)("CASE 3: completion gate promotes exactly once after all shared members land", async () => {
-    const fixture = await makeReliabilityFixture({ taskId: "FN-5820-RI-E", settings: { testMode: true, autoMerge: true } as any });
+    const fixture = await makeReliabilityFixture({ taskId: "FN-5820-RI-E", settings: sharedBranchLifecycleSettings({ autoMerge: true }) });
     try {
       const { rootDir, store, task } = fixture;
       const second = await store.createTask({
@@ -248,7 +275,7 @@ describe("FN-5820 reliability interactions: shared branch group lifecycle", () =
   }, 45_000);
 
   it.skipIf(!hasGit)("CASE 4: auto-merge gate disabled still integrates members into shared branch without promotion", async () => {
-    const fixture = await makeReliabilityFixture({ taskId: "FN-5820-RI-G", settings: { testMode: true, autoMerge: false } as any });
+    const fixture = await makeReliabilityFixture({ taskId: "FN-5820-RI-G", settings: sharedBranchLifecycleSettings({ autoMerge: false }) });
     try {
       const { rootDir, store, task, manager } = fixture;
       const second = await store.createTask({
@@ -347,7 +374,7 @@ describe("FN-5820 reliability interactions: shared branch group lifecycle", () =
   }, 45_000);
 
   it.skipIf(!hasGit)("CASE 5: self-healing already-merged recovery stamps shared-branch routing metadata", async () => {
-    const fixture = await makeReliabilityFixture({ taskId: "FN-5820-RI-K", settings: { testMode: true, autoMerge: true } as any });
+    const fixture = await makeReliabilityFixture({ taskId: "FN-5820-RI-K", settings: sharedBranchLifecycleSettings({ autoMerge: true }) });
     try {
       const { rootDir, store, task } = fixture;
       const group = store.createBranchGroup({
@@ -385,7 +412,7 @@ describe("FN-5820 reliability interactions: shared branch group lifecycle", () =
   }, 45_000);
 
   it.skipIf(!hasGit)("CASE 6: per-task-derived and ungrouped tasks remain default-branch routed", async () => {
-    const fixture = await makeReliabilityFixture({ taskId: "FN-5820-RI-I", settings: { testMode: true } as any });
+    const fixture = await makeReliabilityFixture({ taskId: "FN-5820-RI-I", settings: sharedBranchLifecycleSettings() });
     try {
       const { rootDir, store, task } = fixture;
       await stageSharedMember(store, rootDir, {
