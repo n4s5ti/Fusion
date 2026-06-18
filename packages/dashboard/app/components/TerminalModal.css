@@ -1,6 +1,9 @@
 /*
 FNXC:Terminal 2026-06-13-20:02:
-The symbols-only Nerd Font is listed first in the xterm font stack so powerline prompt glyphs resolve before platform monospace fonts. It must stay unicode-range-scoped to Nerd Font codepoints only; otherwise mobile DOM/canvas xterm can measure ASCII cells against the symbols font after font-display: swap and render commands like `pnpm build` with oversized inter-character spacing.
+The symbols-only Nerd Font must stay unicode-range-scoped to Nerd Font codepoints only; otherwise mobile DOM/canvas xterm can measure ASCII cells against the symbols font after font-display: swap and render commands like `pnpm build` with oversized inter-character spacing.
+
+FNXC:Terminal 2026-06-17-18:12:
+FN-6603 found that unicode-range scoping is not enough when the symbols face is first: iOS canvas measurement can still use that first face for xterm cell metrics while DOM glyph fallback draws ASCII from a later monospace font. Keep text fonts first in terminalPreferences and this symbols face as a fallback so powerline glyphs remain available without corrupting ASCII cell width.
 */
 @font-face {
   font-family: "Fusion Terminal Nerd Font Symbols";

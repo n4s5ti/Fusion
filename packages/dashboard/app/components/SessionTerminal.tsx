@@ -343,6 +343,9 @@ export function SessionTerminal({
       const resolvedFontFamily = resolveTerminalFontFamily(terminalPreferences.fontFamily);
 
       /*
+      FNXC:Terminal 2026-06-17-18:25:
+      SessionTerminal shares the FN-6603 wide-cell hazard because it passes the same resolved font stack to xterm's mobile DOM/canvas renderer. The shared terminalPreferences stack keeps real monospace faces before the symbols fallback so this attach surface inherits the durable cell-measurement fix instead of relying on a separate SessionTerminal-only font path.
+
       FNXC:Terminal 2026-06-17-00:50:
       SessionTerminal consumes the shared localStorage terminal preferences for parity with TerminalModal, but replay safety still owns input posture: cursor blink is the user preference AND-gated by !readOnly && mode === "live" so read-only, idle, and ended sessions never blink.
       */

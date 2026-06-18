@@ -56,7 +56,24 @@ import { SessionTerminal } from "../SessionTerminal";
 import {
   DEFAULT_TERMINAL_PREFERENCES,
   TERMINAL_PREFERENCES_KEY,
+  TERMINAL_SYMBOLS_FONT_FAMILY,
+  resolveTerminalFontFamily,
 } from "../../utils/terminalPreferences";
+
+function splitFontFamilies(stack: string): string[] {
+  return stack
+    .split(/,(?=(?:[^"]*"[^"]*")*[^"]*$)/)
+    .map((family) => family.trim())
+    .filter(Boolean);
+}
+
+function expectMeasurementSafeFontStack(stack: string): void {
+  const families = splitFontFamilies(stack);
+  const symbolsIndex = families.indexOf(TERMINAL_SYMBOLS_FONT_FAMILY);
+  const firstTextIndex = families.findIndex((family) => family !== TERMINAL_SYMBOLS_FONT_FAMILY);
+  expect(firstTextIndex).toBeGreaterThan(-1);
+  expect(symbolsIndex).toBeGreaterThan(firstTextIndex);
+}
 
 beforeEach(() => {
   FakeWS.instances = [];
@@ -123,6 +140,7 @@ describe("SessionTerminal", () => {
         cursorBlink: DEFAULT_TERMINAL_PREFERENCES.cursorBlink,
       }),
     );
+    expectMeasurementSafeFontStack(mockTerm.options.fontFamily as string);
     expect(mockTerm.attachCustomKeyEventHandler).not.toHaveBeenCalled();
 
     const inputHandler = mockTerm.onData.mock.calls[0]?.[0] as
@@ -154,7 +172,7 @@ describe("SessionTerminal", () => {
     await waitFor(() => expect(FakeWS.instances.length).toBe(1));
     expect(Terminal).toHaveBeenCalledWith(
       expect.objectContaining({
-        fontFamily: 'ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace',
+        fontFamily: resolveTerminalFontFamily("system-mono"),
         fontSize: 18,
         cursorStyle: "underline",
         cursorBlink: true,
@@ -249,8 +267,7 @@ describe("SessionTerminal", () => {
 
     await waitFor(() => {
       expect(mockTerm.options).toMatchObject({
-        fontFamily:
-          '"JetBrains Mono", "JetBrainsMono Nerd Font", ui-monospace, SFMono-Regular, monospace',
+        fontFamily: resolveTerminalFontFamily("jetbrains-mono"),
         fontSize: 20,
         cursorStyle: "bar",
         cursorBlink: false,

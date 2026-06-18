@@ -1,7 +1,9 @@
 import { describe, it, expect } from "vitest";
 import { loadAllAppCss } from "../test/cssFixture";
-import { readFileSync } from "fs";
-import { resolve } from "path";
+import {
+  TERMINAL_FONT_FAMILY_PRESETS,
+  XTERM_FONT_FAMILY,
+} from "../utils/terminalPreferences";
 
 const css = loadAllAppCss();
 
@@ -87,5 +89,41 @@ describe("FN-6424 terminal symbols font CSS contract", () => {
       expect.arrayContaining(["U+E0A0-E0D7", "U+E700-E8EF", "U+F0001-F1AF0"]),
     );
     expect(unicodeRanges.some(unicodeRangeIncludesAsciiPrintable)).toBe(false);
+  });
+});
+
+describe("FN-6603 terminal font stack measurement contract", () => {
+  const symbolsFamily = '"Fusion Terminal Nerd Font Symbols"';
+
+  function splitFontFamilies(stack: string): string[] {
+    return stack
+      .split(/,(?=(?:[^"]*"[^"]*")*[^"]*$)/)
+      .map((family) => family.trim())
+      .filter(Boolean);
+  }
+
+  it("keeps the default symbols fallback after real monospace text fonts", () => {
+    const families = splitFontFamilies(XTERM_FONT_FAMILY);
+    const symbolsIndex = families.indexOf(symbolsFamily);
+    const firstTextFontIndex = families.findIndex((family) => family !== symbolsFamily);
+
+    expect(symbolsIndex).toBeGreaterThan(-1);
+    expect(firstTextFontIndex).toBeGreaterThan(-1);
+    expect(symbolsIndex).toBeGreaterThan(firstTextFontIndex);
+  });
+
+  it("gives every terminal font preset a measurement-safe text face before symbols", () => {
+    for (const preset of TERMINAL_FONT_FAMILY_PRESETS) {
+      const families = splitFontFamilies(preset.css);
+      const symbolsIndex = families.indexOf(symbolsFamily);
+      const firstTextFontIndex = families.findIndex((family) => family !== symbolsFamily);
+
+      expect(firstTextFontIndex, `${preset.id} has a text font`).toBeGreaterThan(-1);
+      if (symbolsIndex >= 0) {
+        expect(symbolsIndex, `${preset.id} symbols fallback order`).toBeGreaterThan(
+          firstTextFontIndex,
+        );
+      }
+    }
   });
 });

@@ -93,7 +93,26 @@ function stubScreen(width: number, height: number) {
 }
 
 import { SessionTerminal } from "../SessionTerminal";
-import { DEFAULT_TERMINAL_PREFERENCES, TERMINAL_PREFERENCES_KEY } from "../../utils/terminalPreferences";
+import {
+  DEFAULT_TERMINAL_PREFERENCES,
+  TERMINAL_PREFERENCES_KEY,
+  TERMINAL_SYMBOLS_FONT_FAMILY,
+} from "../../utils/terminalPreferences";
+
+function splitFontFamilies(stack: string): string[] {
+  return stack
+    .split(/,(?=(?:[^"]*"[^"]*")*[^"]*$)/)
+    .map((family) => family.trim())
+    .filter(Boolean);
+}
+
+function expectMeasurementSafeFontStack(stack: string): void {
+  const families = splitFontFamilies(stack);
+  const symbolsIndex = families.indexOf(TERMINAL_SYMBOLS_FONT_FAMILY);
+  const firstTextIndex = families.findIndex((family) => family !== TERMINAL_SYMBOLS_FONT_FAMILY);
+  expect(firstTextIndex).toBeGreaterThan(-1);
+  expect(symbolsIndex).toBeGreaterThan(firstTextIndex);
+}
 
 /** Pull the parsed input frames a WS has sent. */
 function inputFrames(ws: FakeWS): string[] {
@@ -318,6 +337,7 @@ describe("SessionTerminal (mobile)", () => {
     await renderMobile();
 
     expect(WebglAddon).not.toHaveBeenCalled();
+    expectMeasurementSafeFontStack(mockTerm.options.fontFamily as string);
   });
 
   it("keeps the accessory key bar intact while applying terminal preferences", async () => {

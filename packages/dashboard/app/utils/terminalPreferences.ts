@@ -4,8 +4,14 @@ export const DEFAULT_TERMINAL_FONT_SIZE = 14;
 export const MIN_TERMINAL_FONT_SIZE = 8;
 export const MAX_TERMINAL_FONT_SIZE = 32;
 
+export const TERMINAL_SYMBOLS_FONT_FAMILY = '"Fusion Terminal Nerd Font Symbols"';
+
+/*
+FNXC:Terminal 2026-06-17-18:12:
+Mobile WebKit can render ASCII through a later text fallback while xterm's canvas/DOM cell-measurement probe still binds metrics from the first listed symbols-only face. Keep real monospace text faces first for stable cell widths across mobile DOM/canvas and desktop WebGL renderers, then use the unicode-range-scoped symbols face as a fallback for powerline/Nerd-Font codepoints in every preset.
+*/
 export const XTERM_FONT_FAMILY =
-  '"Fusion Terminal Nerd Font Symbols", "MesloLGS NF", "MesloLGM Nerd Font", "JetBrainsMono Nerd Font", "FiraCode Nerd Font", "Hack Nerd Font", ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace';
+  `"MesloLGS NF", "MesloLGM Nerd Font", "JetBrainsMono Nerd Font", "FiraCode Nerd Font", "Hack Nerd Font", ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace, ${TERMINAL_SYMBOLS_FONT_FAMILY}`;
 
 export const TERMINAL_FONT_FAMILY_PRESETS = [
   {
@@ -16,17 +22,17 @@ export const TERMINAL_FONT_FAMILY_PRESETS = [
   {
     id: "system-mono",
     label: "System monospace",
-    css: 'ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace',
+    css: `ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace, ${TERMINAL_SYMBOLS_FONT_FAMILY}`,
   },
   {
     id: "jetbrains-mono",
     label: "JetBrains Mono",
-    css: '"JetBrains Mono", "JetBrainsMono Nerd Font", ui-monospace, SFMono-Regular, monospace',
+    css: `"JetBrains Mono", "JetBrainsMono Nerd Font", ui-monospace, SFMono-Regular, monospace, ${TERMINAL_SYMBOLS_FONT_FAMILY}`,
   },
   {
     id: "fira-code",
     label: "Fira Code",
-    css: '"Fira Code", "FiraCode Nerd Font", ui-monospace, SFMono-Regular, monospace',
+    css: `"Fira Code", "FiraCode Nerd Font", ui-monospace, SFMono-Regular, monospace, ${TERMINAL_SYMBOLS_FONT_FAMILY}`,
   },
 ] as const;
 
