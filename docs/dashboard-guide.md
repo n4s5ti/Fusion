@@ -702,8 +702,10 @@ Navigation:
 Features:
 - Headline 7-day in-review success rate (derived as `1 - inReviewFailureRate7d`) with color thresholds: success for `≥95%`, warning for `≥90%`, error below `90%`; shows **Insufficient data** when the metric is null
 - Per-day in-review flow table showing tasks that entered in-review versus tasks bounced back to in-progress
+- **Entered vs bounced trend** line chart in the **In-review flow** card, using the same per-day rows as the table and respecting the **Show/Hide empty days** filter
 - In-review duration percentiles (P50 and P95) plus sample count
 - Merge-attempt distribution stats including mean, max, and histogram buckets
+- **Attempts distribution** pie chart in the **Merge attempts** card, visualizing the merge-attempt histogram buckets and showing `No merge attempt data` when no histogram data exists
 - Auto-refreshes every 60 seconds
 
 For the backing API and `windowDays` query parameter, see [architecture.md](./architecture.md).
