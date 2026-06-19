@@ -1,9 +1,26 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { render, waitFor } from "@testing-library/react";
+import { cleanup, render, waitFor } from "@testing-library/react";
 import "@testing-library/jest-dom";
 import { loadAllAppCss, loadAllAppCssBaseOnly } from "../../test/cssFixture";
 import { setupAgentDetailMocks } from "./AgentDetailView.test-helpers";
 import { AgentDetailView } from "../AgentDetailView";
+
+function installAgentDetailMatchMedia(matchesMobile: boolean) {
+  Object.defineProperty(window, "matchMedia", {
+    configurable: true,
+    writable: true,
+    value: vi.fn().mockImplementation((query: string) => ({
+      matches: matchesMobile && query.includes("max-width: 768px"),
+      media: query,
+      onchange: null,
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      dispatchEvent: vi.fn(),
+    })),
+  });
+}
 
 describe("AgentDetailView mobile scroll regression (FN-4231)", () => {
   beforeEach(() => {
@@ -14,20 +31,7 @@ describe("AgentDetailView mobile scroll regression (FN-4231)", () => {
     style.textContent = loadAllAppCss();
     document.head.appendChild(style);
 
-    Object.defineProperty(window, "matchMedia", {
-      configurable: true,
-      writable: true,
-      value: vi.fn().mockImplementation((query: string) => ({
-        matches: query.includes("max-width: 768px"),
-        media: query,
-        onchange: null,
-        addListener: vi.fn(),
-        removeListener: vi.fn(),
-        addEventListener: vi.fn(),
-        removeEventListener: vi.fn(),
-        dispatchEvent: vi.fn(),
-      })),
-    });
+    installAgentDetailMatchMedia(true);
   });
 
   it("keeps AgentDetailView tab body as the mobile scroll owner (FN-4231)", async () => {
@@ -63,20 +67,7 @@ describe("AgentDetailView mobile scroll regression (FN-4231)", () => {
   });
 
   it("tabs are horizontally scrollable at tablet widths (FN-6209)", async () => {
-    Object.defineProperty(window, "matchMedia", {
-      configurable: true,
-      writable: true,
-      value: vi.fn().mockImplementation((query: string) => ({
-        matches: false,
-        media: query,
-        onchange: null,
-        addListener: vi.fn(),
-        removeListener: vi.fn(),
-        addEventListener: vi.fn(),
-        removeEventListener: vi.fn(),
-        dispatchEvent: vi.fn(),
-      })),
-    });
+    installAgentDetailMatchMedia(false);
 
     const style = document.head.querySelector("style[data-testid='fn-4231-css']") as HTMLStyleElement;
     style.textContent = loadAllAppCssBaseOnly();
@@ -92,5 +83,40 @@ describe("AgentDetailView mobile scroll regression (FN-4231)", () => {
 
     expect(window.getComputedStyle(tabsEl).overflowX).toBe("auto");
     expect(window.getComputedStyle(tabEl).whiteSpace).toBe("nowrap");
+  });
+
+  it("keeps tab labels readable across tablet and mobile states (FN-6728)", async () => {
+    const style = document.head.querySelector("style[data-testid='fn-4231-css']") as HTMLStyleElement;
+
+    installAgentDetailMatchMedia(false);
+    style.textContent = loadAllAppCssBaseOnly();
+
+    const desktopRender = render(<AgentDetailView agentId="agent-001" onClose={vi.fn()} addToast={vi.fn()} />);
+
+    await waitFor(() => {
+      expect(document.querySelector(".agent-detail-tab")).toBeTruthy();
+    });
+
+    const baseTabEl = document.querySelector(".agent-detail-tab") as HTMLElement;
+    expect(window.getComputedStyle(baseTabEl).fontSize).toBe("0.875rem");
+
+    desktopRender.unmount();
+    cleanup();
+
+    document.head.querySelector("style[data-testid='fn-4231-css']")?.remove();
+    const mobileStyle = document.createElement("style");
+    mobileStyle.setAttribute("data-testid", "fn-4231-css");
+    mobileStyle.textContent = loadAllAppCss();
+    document.head.appendChild(mobileStyle);
+    installAgentDetailMatchMedia(true);
+
+    render(<AgentDetailView agentId="agent-001" onClose={vi.fn()} addToast={vi.fn()} />);
+
+    await waitFor(() => {
+      expect(document.querySelector(".agent-detail-tab")).toBeTruthy();
+    });
+
+    const mobileTabEl = document.querySelector(".agent-detail-tab") as HTMLElement;
+    expect(window.getComputedStyle(mobileTabEl).fontSize).toBe("0.875rem");
   });
 });

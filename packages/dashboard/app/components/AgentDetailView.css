@@ -256,6 +256,10 @@ The overflowing agent-detail tab strip must keep horizontal touch panning enable
   display: none;
 }
 
+/*
+FNXC:AgentDetailView 2026-06-19-08:26:
+Tablet viewports inherit the base tab rule because AgentDetailView has only a mobile breakpoint, so FN-6728 enlarges tab labels to about 14px for Dashboard / Logs / Mail readability without changing icon, spacing, or horizontal-scroll behavior.
+*/
 .agent-detail-tab {
   display: flex;
   align-items: center;
@@ -265,7 +269,7 @@ The overflowing agent-detail tab strip must keep horizontal touch panning enable
   border: none;
   border-bottom: calc(var(--space-xs) * 0.5) solid transparent;
   color: var(--text-muted);
-  font-size: calc(var(--space-sm) + var(--space-xs) + var(--space-xs) * 0.25);
+  font-size: 0.875rem;
   cursor: pointer;
   transition: all var(--transition-fast);
   white-space: nowrap;
@@ -1813,7 +1817,7 @@ The overflowing agent-detail tab strip must keep horizontal touch panning enable
 
   .agent-detail-tab {
     padding: var(--space-md) calc(var(--space-md) + var(--space-xs) * 0.5);
-    font-size: calc(var(--space-md) + var(--space-xs) * 0.25);
+    font-size: 0.875rem;
     white-space: nowrap;
     min-height: calc(var(--space-lg) + var(--space-md) + var(--space-xs));
   }
