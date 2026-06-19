@@ -1,6 +1,9 @@
 /*
 FNXC:CommandCenterStyling 2026-06-17-18:46:
 The FN-4286 dashboard text-token guard requires command-center secondary copy to use --text-muted, not the deprecated secondary text token or raw color fallbacks.
+
+FNXC:CommandCenterStyling 2026-06-19-18:30:
+FN-6690 fix: Command Center CSS was authored against a numeric token scale (--space-1..--space-36, --font-size-*, --border-width*) that this design system never defines, so ~186 var() refs resolved to nothing and the whole view rendered collapsed/unstyled on desktop and mobile (raw run-together tabs, no padding). The dashboard uses the NAMED 4px spacing scale only: --space-xs(4) sm(8) md(12) lg(16) xl(24) 2xl(32), with calc() of named tokens for larger values (house style, e.g. calc(var(--space-2xl) * 7 + var(--space-lg))). Font sizes are raw rem (no --font-size-* tokens exist) and border widths are raw px (--border is a color, not a width). All Command Center CSS is remapped onto these. A token-validity guard test (CommandCenter.token-validity.css.test.ts) now fails if any component CSS references a custom property not defined in styles.css, so this class of bug cannot recur. The bug slipped past the recent FN-66xx work because those tests ran in jsdom, which does not resolve CSS custom properties or compute layout.
 */
 
 /* Command Center shell.
@@ -34,7 +37,7 @@ The Command Center must remain scrollable on mobile inside the overflow-hidden .
   align-items: center;
   gap: var(--space-sm);
   margin: 0;
-  font-size: 1rem;
+  font-size: 1.125rem;
 }
 
 /* ---- Tabs ---- */
@@ -54,7 +57,7 @@ The Command Center must remain scrollable on mobile inside the overflow-hidden .
   color: var(--text-muted);
   padding: var(--space-sm) var(--space-md);
   cursor: pointer;
-  font-size: 0.875rem;
+  font-size: 0.8125rem;
   transition: color var(--transition-fast), border-color var(--transition-fast);
 }
 
@@ -94,13 +97,13 @@ The Command Center must remain scrollable on mobile inside the overflow-hidden .
 
 .cc-stat-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(min(100%, calc(calc(var(--space-2xl) * 2 + var(--space-lg)) * 2)), 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, calc(var(--space-2xl) * 5)), 1fr));
   gap: var(--space-md);
 }
 
 /*
 FNXC:CommandCenterStyling 2026-06-18-22:38:
-FN-6680 standardizes the Command Center card rhythm across overview, area, table, team, and system chart surfaces: use --space-3 padding/gaps, --border-width solid --border-subtle, --radius-md, and --surface-1 so mobile and tablet charts do not look like separate components.
+FN-6680 standardizes the Command Center card rhythm across overview, area, table, team, and system chart surfaces: use --space-md padding/gaps, 1px solid --border-subtle, --radius-md, and --surface-1 so mobile and tablet charts do not look like separate components.
 */
 .cc-stat-card {
   display: flex;
@@ -114,12 +117,12 @@ FN-6680 standardizes the Command Center card rhythm across overview, area, table
 }
 
 .cc-stat-label {
-  font-size: 0.875rem;
+  font-size: 0.8125rem;
   color: var(--text-muted);
 }
 
 .cc-stat-value {
-  font-size: 1.25rem;
+  font-size: 1.5rem;
   font-variant-numeric: tabular-nums;
   color: var(--text);
 }
@@ -145,7 +148,7 @@ The GitHub closed-at backfill control lives inside the existing Fixed by Fusion 
   flex-direction: column;
   gap: var(--space-xs);
   color: var(--text-muted);
-  font-size: 0.8rem;
+  font-size: 0.75rem;
 }
 
 .cc-github-backfill-status--error {
@@ -175,7 +178,7 @@ FN-6680 keeps the FN-6664 live/chart shrink contract but replaces hardcoded trac
 .cc-live-strip {
   position: relative;
   display: grid;
-  grid-template-columns: minmax(calc(calc(var(--space-2xl) * 2 + var(--space-lg)) * 2), 1fr) minmax(calc((calc(var(--space-2xl) * 2 + var(--space-lg)) * 3) + var(--space-lg)), 2fr) minmax(calc(calc(var(--space-2xl) * 2 + var(--space-lg)) * 2), 1fr);
+  grid-template-columns: minmax(calc(var(--space-2xl) * 5), 1fr) minmax(calc(var(--space-2xl) * 8), 2fr) minmax(calc(var(--space-2xl) * 5), 1fr);
   align-items: center;
   gap: var(--space-md);
   padding: var(--space-md);
@@ -186,7 +189,7 @@ FN-6680 keeps the FN-6664 live/chart shrink contract but replaces hardcoded trac
     var(--surface-1);
   box-shadow: 0 0 var(--space-lg) color-mix(in srgb, var(--accent) 18%, transparent);
   overflow: hidden;
-  font-size: 0.875rem;
+  font-size: 0.8125rem;
 }
 
 .cc-live-strip::before {
@@ -239,7 +242,7 @@ FN-6680 keeps the FN-6664 live/chart shrink contract but replaces hardcoded trac
 
 .cc-live-metric-value {
   color: var(--text);
-  font-size: 1rem;
+  font-size: 1.125rem;
   font-weight: 700;
   font-variant-numeric: tabular-nums;
 }
@@ -266,7 +269,7 @@ Overview token totals now live-poll and should visibly count up on change in bot
 .cc-live-metric-label,
 .cc-live-trend-label {
   color: var(--text-muted);
-  font-size: 0.8rem;
+  font-size: 0.75rem;
   text-transform: uppercase;
   letter-spacing: 0.04em;
 }
@@ -369,7 +372,7 @@ Overview charts must use dashboard tokens only and keep motion decorative; anima
 .cc-overview-chart-header p {
   margin: 0;
   color: var(--text-muted);
-  font-size: 0.875rem;
+  font-size: 0.8125rem;
 }
 
 .cc-overview-chart-card .cc-bar-chart,
@@ -387,7 +390,7 @@ Overview recharts cards use token-derived height so ResponsiveContainer can rend
 .cc-overview-chart-card .cc-recharts-chart,
 .cc-overview-chart-card .cc-recharts-empty {
   inline-size: 100%;
-  block-size: calc(calc(var(--space-2xl) * 2 + var(--space-lg)) * 3);
+  block-size: calc(var(--space-2xl) * 7 + var(--space-lg));
   min-inline-size: 0;
 }
 
@@ -470,7 +473,7 @@ The Command Center subtree previously had no tablet tier, so at 769px–1024px t
 
   .cc-stat-grid,
   .cc-area .cc-stat-grid {
-    grid-template-columns: repeat(auto-fit, minmax(min(100%, calc(calc(var(--space-2xl) * 2 + var(--space-lg)) * 2)), 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, calc(var(--space-2xl) * 5)), 1fr));
   }
 }
 

@@ -413,13 +413,13 @@ describe("CommandCenter mobile scroll regression (FN-6595)", () => {
 
     expect(styles).toContain(".cc-tabpanel");
     expect(styles).toContain("overflow-x: hidden");
-    expect(styles).toContain("grid-template-columns: minmax(0, 1fr) minmax(var(--space-12), 2fr)");
+    expect(styles).toContain("grid-template-columns: minmax(0, 1fr) minmax(calc(var(--space-2xl) + var(--space-lg)), 2fr)");
     expect(styles).toContain(".cc-line-chart");
     expect(styles).toContain(".cc-recharts-chart");
-    expect(styles).toContain("block-size: calc(var(--space-20) * 3)");
+    expect(styles).toContain("block-size: calc(var(--space-2xl) * 7 + var(--space-lg))");
     expect(styles).toContain("aspect-ratio: auto");
     expect(styles).toContain(".cc-radial-gauge-ring");
-    expect(styles).toContain("inline-size: clamp(var(--space-20), 44vw, var(--space-32))");
+    expect(styles).toContain("inline-size: clamp(calc(var(--space-2xl) * 2 + var(--space-lg)), 44vw, calc(var(--space-2xl) * 4))");
     expect(styles).toContain("min-inline-size: 0");
     expect(styles).toContain(".cc-token-series-axis");
     expect(styles).toContain("overflow-wrap: anywhere");

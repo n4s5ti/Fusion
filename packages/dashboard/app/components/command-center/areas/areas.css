@@ -34,7 +34,7 @@ FN-6680 preserves the FN-6664 section rhythm while adding real-layout shrink gua
 
 .cc-area-section-title {
   margin: 0;
-  font-size: 0.875rem;
+  font-size: 0.8125rem;
   font-weight: 600;
   color: var(--text-muted);
   text-transform: uppercase;
@@ -48,19 +48,19 @@ FN-6683 recharts wrappers must stay responsive without creating an inner scroll 
 .cc-area .cc-recharts-chart,
 .cc-area .cc-recharts-empty {
   inline-size: 100%;
-  block-size: calc(calc(var(--space-2xl) * 2 + var(--space-lg)) * 3);
+  block-size: calc(var(--space-2xl) * 7 + var(--space-lg));
   min-inline-size: 0;
 }
 
 /* Reuse the shell's stat-grid/stat-card look. */
 .cc-area .cc-stat-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(min(100%, calc(calc(var(--space-2xl) * 2 + var(--space-lg)) * 2)), 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, calc(var(--space-2xl) * 5)), 1fr));
   gap: var(--space-md);
 }
 
 .cc-stat-sub {
-  font-size: 0.8rem;
+  font-size: 0.75rem;
   color: var(--text-muted);
 }
 
@@ -131,7 +131,7 @@ FN-6680 keeps table-heavy chart areas on the same --border-width/--border-subtle
 .cc-table {
   inline-size: 100%;
   border-collapse: collapse;
-  font-size: 0.875rem;
+  font-size: 0.8125rem;
   font-variant-numeric: tabular-nums;
 }
 
@@ -211,13 +211,13 @@ FN-6680 keeps table-heavy chart areas on the same --border-width/--border-subtle
 }
 
 .cc-pricing-note {
-  font-size: 0.8rem;
+  font-size: 0.75rem;
   color: var(--text-muted);
 }
 
 /*
 FNXC:CommandCenterStyling 2026-06-18-22:38:
-The Team view must use dashboard design tokens only, preserve .cc-tabpanel as the scroll owner on mobile, and match the shared card rhythm (--space-3 gap/padding, --border-width solid --border-subtle, --radius-md, --surface-1) while keeping decorative motion duration-token based with reduced-motion disabled.
+The Team view must use dashboard design tokens only, preserve .cc-tabpanel as the scroll owner on mobile, and match the shared card rhythm (--space-md gap/padding, 1px solid --border-subtle, --radius-md, --surface-1) while keeping decorative motion duration-token based with reduced-motion disabled.
 */
 .cc-team-chart-grid {
   display: grid;
@@ -248,7 +248,7 @@ The Team view must use dashboard design tokens only, preserve .cc-tabpanel as th
 
 .cc-muted-hint {
   margin: 0;
-  font-size: 0.875rem;
+  font-size: 0.8125rem;
 }
 
 .cc-team-agent-cell {
@@ -269,7 +269,7 @@ The Team view must use dashboard design tokens only, preserve .cc-tabpanel as th
 }
 
 .cc-team-agent-role {
-  font-size: 0.8rem;
+  font-size: 0.75rem;
   text-transform: capitalize;
 }
 
@@ -296,7 +296,7 @@ Tablet Command Center areas share the FN-6679 overflow fix with the shell: area 
 */
 @media (min-width: 769px) and (max-width: 1024px) {
   .cc-area .cc-stat-grid {
-    grid-template-columns: repeat(auto-fit, minmax(min(100%, calc(calc(var(--space-2xl) * 2 + var(--space-lg)) * 2)), 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, calc(var(--space-2xl) * 5)), 1fr));
   }
 
   .cc-team-chart-grid {

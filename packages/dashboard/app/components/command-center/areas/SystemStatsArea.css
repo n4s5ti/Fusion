@@ -9,7 +9,7 @@ The Command Center System area replaces the standalone System Stats modal with g
   justify-content: flex-end;
   gap: var(--space-sm);
   color: var(--text-muted);
-  font-size: 0.875rem;
+  font-size: 0.8125rem;
 }
 
 .cc-system-refresh .btn-icon {
@@ -73,7 +73,7 @@ System control cards sit beside chart/stat cards, so FN-6680 gives them the same
 .cc-system-toggle-row,
 .cc-system-threshold-row {
   color: var(--text);
-  font-size: 0.875rem;
+  font-size: 0.8125rem;
 }
 
 .cc-system-threshold-controls input[type="range"] {
@@ -87,7 +87,7 @@ System control cards sit beside chart/stat cards, so FN-6680 gives them the same
 .cc-system-note {
   margin: 0;
   color: var(--text-muted);
-  font-size: 0.875rem;
+  font-size: 0.8125rem;
 }
 
 .cc-system-note--error,

@@ -49,7 +49,7 @@ Raw rgba fallbacks are replaced with byte-equivalent concrete-hex color-mix fall
   align-items: center;
   justify-content: space-between;
   gap: var(--space-sm);
-  font-size: 0.85rem;
+  font-size: 0.8125rem;
   color: var(--text-muted);
 }
 
