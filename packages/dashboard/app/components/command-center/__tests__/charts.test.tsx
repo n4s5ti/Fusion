@@ -145,6 +145,22 @@ describe("TokenSeriesChart", () => {
   });
 });
 
+function numericAttribute(element: Element, name: string): number {
+  return Number(element.getAttribute(name));
+}
+
+function expectLineChartPointsInsideViewBox(chart: Element): void {
+  for (const point of Array.from(chart.querySelectorAll(".cc-line-chart-point"))) {
+    const cx = numericAttribute(point, "cx");
+    const cy = numericAttribute(point, "cy");
+    const r = numericAttribute(point, "r");
+    expect(cx).toBeGreaterThanOrEqual(r);
+    expect(cx).toBeLessThanOrEqual(100 - r);
+    expect(cy).toBeGreaterThanOrEqual(r);
+    expect(cy).toBeLessThanOrEqual(100 - r);
+  }
+}
+
 describe("LineChart", () => {
   it("renders a populated finite SVG line with an accessible label", () => {
     render(<LineChart ariaLabel="activity trend" series={[{ label: "messages", values: [2, 4, 1] }]} />);
@@ -156,14 +172,16 @@ describe("LineChart", () => {
     expect(line).toBeTruthy();
     expect(points).not.toBe("");
     expect(points).not.toMatch(/NaN|Infinity/);
+    expectLineChartPointsInsideViewBox(chart);
   });
 
-  it("renders all-zero values as valid baseline geometry without NaN", () => {
+  it("renders all-zero values as valid baseline geometry without NaN or edge clipping", () => {
     render(<LineChart ariaLabel="zero trend" series={[{ label: "zero", values: [0, 0] }]} />);
 
-    const points = screen.getByRole("img", { name: "zero trend" }).querySelector(".cc-line-chart-path")?.getAttribute("points") ?? "";
-    expect(points).toBe("0,100 100,100");
+    const chart = screen.getByRole("img", { name: "zero trend" });
+    const points = chart.querySelector(".cc-line-chart-path")?.getAttribute("points") ?? "";
     expect(points).not.toMatch(/NaN|Infinity/);
+    expectLineChartPointsInsideViewBox(chart);
   });
 
   it("renders a single-point series as a visible point without a malformed line", () => {
@@ -174,6 +192,17 @@ describe("LineChart", () => {
     const point = chart.querySelector(".cc-line-chart-point");
     expect(point?.getAttribute("cx")).toBe("50");
     expect(point?.getAttribute("cy")).not.toMatch(/NaN|Infinity/);
+    expectLineChartPointsInsideViewBox(chart);
+  });
+
+  it("keeps max-value endpoints inside the SVG viewBox instead of clipping them", () => {
+    render(<LineChart ariaLabel="edge trend" series={[{ label: "edge", values: [0, 10] }]} />);
+
+    const chart = screen.getByRole("img", { name: "edge trend" });
+    const points = chart.querySelector(".cc-line-chart-path")?.getAttribute("points") ?? "";
+    expect(points).not.toBe("0,100 100,0");
+    expect(points).not.toMatch(/NaN|Infinity/);
+    expectLineChartPointsInsideViewBox(chart);
   });
 
   it("renders an empty series as an empty valid SVG without throwing", () => {

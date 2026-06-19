@@ -194,6 +194,27 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
+function expectRechartsWrapperWithin(testId: string, label: string): void {
+  const section = screen.getByTestId(testId);
+  const chart = within(section).getByRole("img", { name: label });
+  expect(chart.classList.contains("cc-recharts-chart") || chart.classList.contains("cc-recharts-empty")).toBe(true);
+  expect(chart.outerHTML).not.toMatch(/NaN|Infinity/);
+}
+
+function expectSvgLinePointsInsideViewBox(testId: string, label: string): void {
+  const section = screen.getByTestId(testId);
+  const chart = within(section).getByRole("img", { name: label });
+  for (const point of Array.from(chart.querySelectorAll(".cc-line-chart-point"))) {
+    const cx = Number(point.getAttribute("cx"));
+    const cy = Number(point.getAttribute("cy"));
+    const r = Number(point.getAttribute("r"));
+    expect(cx).toBeGreaterThanOrEqual(r);
+    expect(cx).toBeLessThanOrEqual(100 - r);
+    expect(cy).toBeGreaterThanOrEqual(r);
+    expect(cy).toBeLessThanOrEqual(100 - r);
+  }
+}
+
 describe("useAnalyticsArea", () => {
   it("polls only when pollMs is provided and clears the interval on unmount", async () => {
     vi.useFakeTimers();
@@ -284,6 +305,13 @@ describe("ActivityArea", () => {
     expect(screen.getByTestId("cc-activity-agent-runs-sparkline")).toBeTruthy();
     expect(screen.getByRole("img", { name: "Agent runs / day" })).toBeTruthy();
     expect(screen.getByTestId("cc-activity-line-throughput")).toBeTruthy();
+    expectRechartsWrapperWithin("cc-activity-line", "Activity trend");
+    expectRechartsWrapperWithin("cc-activity-pie", "Agent run outcome share");
+    expectSvgLinePointsInsideViewBox("cc-activity-line-messages", "Messages / day");
+    expectSvgLinePointsInsideViewBox("cc-activity-line-agents", "Active agents / day");
+    expectSvgLinePointsInsideViewBox("cc-activity-line-nodes", "Active nodes / day");
+    expectSvgLinePointsInsideViewBox("cc-activity-line-throughput", "Throughput / day");
+    expect(within(screen.getByTestId("cc-activity-agent-runs-sparkline")).getByRole("img", { name: "Agent runs / day" }).classList).toContain("cc-sparkline");
   });
 
   it("renders zero agent-run cards when counts are zero and other activity exists", async () => {
@@ -781,6 +809,10 @@ describe("TeamArea", () => {
     expect(screen.getByTestId("cc-team-tokens-chart")).toBeTruthy();
     expect(screen.getByTestId("cc-team-completed-chart")).toBeTruthy();
     expect(screen.getByTestId("cc-team-pie").textContent).not.toContain("NaN");
+    expectRechartsWrapperWithin("cc-team-pie", "Token share by agent");
+    expect(within(screen.getByTestId("cc-team-tokens-chart")).getByRole("list", { name: "Tokens by agent" }).classList).toContain("cc-bar-chart");
+    expect(within(screen.getByTestId("cc-team-completed-chart")).getByRole("list", { name: "Tasks done by agent" }).classList).toContain("cc-bar-chart");
+    expect(within(screen.getByTestId("cc-team-spread-chart")).getByRole("img", { name: "Team spread" }).classList).toContain("cc-sparkline");
   });
 
   it("keeps the team pie safe for single-item and non-finite data", async () => {

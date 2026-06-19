@@ -298,6 +298,18 @@ Line-chart motion is decorative, token-timed, and disabled for reduced-motion us
   }
 }
 
+/* ---- Recharts wrappers ---- */
+/*
+FNXC:CommandCenterCharts 2026-06-19-05:24:
+ResponsiveContainer measures its direct parent. Keep the shared recharts wrapper non-zero by default so Activity, Team, Overview, and any future Command Center chart surface render populated data instead of a blank zero-height box; scoped area/overview CSS may restate this size but must not remove the measurable block axis.
+*/
+.cc-recharts-chart,
+.cc-recharts-empty {
+  inline-size: 100%;
+  block-size: calc(var(--space-2xl) * 7 + var(--space-lg));
+  min-inline-size: 0;
+}
+
 /* ---- RadialGauge ---- */
 .cc-radial-gauge {
   min-inline-size: 0;

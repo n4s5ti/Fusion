@@ -65,6 +65,7 @@ describe("CommandCenter.mobile-chart-layout.css", () => {
   });
 
   it("keeps recharts ResponsiveContainer parents sized without becoming scroll owners", () => {
+    expect(cssContent).toMatch(/\.cc-recharts-chart,[\s\S]*\.cc-recharts-empty\s*\{[\s\S]*inline-size:\s*100%;[\s\S]*block-size:\s*calc\(var\(--space-2xl\)\s*\*\s*7\s*\+\s*var\(--space-lg\)\);[\s\S]*min-inline-size:\s*0/);
     expect(cssContent).toMatch(/\.cc-overview-chart-card \.cc-recharts-chart,[\s\S]*\.cc-overview-chart-card \.cc-recharts-empty\s*\{[\s\S]*inline-size:\s*100%;[\s\S]*block-size:\s*calc\(var\(--space-2xl\)\s*\*\s*7\s*\+\s*var\(--space-lg\)\);[\s\S]*min-inline-size:\s*0/);
     expect(cssContent).toMatch(/\.cc-area \.cc-recharts-chart,[\s\S]*\.cc-area \.cc-recharts-empty\s*\{[\s\S]*inline-size:\s*100%;[\s\S]*block-size:\s*calc\(var\(--space-2xl\)\s*\*\s*7\s*\+\s*var\(--space-lg\)\);[\s\S]*min-inline-size:\s*0/);
     expect(cssContent).not.toMatch(/\.cc-recharts-(?:chart|empty)[^{]*\{[^}]*overflow-y:\s*(?:auto|scroll)/);

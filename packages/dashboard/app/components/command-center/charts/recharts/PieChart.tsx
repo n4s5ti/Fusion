@@ -7,6 +7,7 @@ import {
   Tooltip,
 } from "recharts";
 import { getCommandCenterChartColor, getCommandCenterChartTheme } from "./theme";
+import "../charts.css";
 
 export interface PieChartDatum {
   label: string;
@@ -60,6 +61,9 @@ function responsiveDimension(value: number | string | undefined): ResponsiveDime
 /**
  * FNXC:CommandCenterCharts 2026-06-18-21:47:
  * User requested real graphical pie + line charts on every Command Center surface using a proper chart library (recharts); this shared pie wrapper is token-themed, responsive, reduced-motion aware, and filters zero/NaN/negative values before recharts can receive invalid geometry.
+ *
+ * FNXC:CommandCenterCharts 2026-06-19-05:24:
+ * Recharts ResponsiveContainer requires a measurable parent height. Import the shared chart CSS here so pie charts keep the same non-zero token-sized wrapper and empty fallback on Activity, Team, Overview, and other Command Center surfaces.
  */
 export function PieChart({ data, ariaLabel, width, height, emptyLabel = "No chart data" }: PieChartProps) {
   const theme = getCommandCenterChartTheme();

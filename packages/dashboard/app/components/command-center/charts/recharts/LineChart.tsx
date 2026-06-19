@@ -9,6 +9,7 @@ import {
   YAxis,
 } from "recharts";
 import { getCommandCenterChartColor, getCommandCenterChartTheme } from "./theme";
+import "../charts.css";
 
 export interface LineChartSeries {
   label: string;
@@ -80,6 +81,9 @@ function responsiveDimension(value: number | string | undefined): ResponsiveDime
 /**
  * FNXC:CommandCenterCharts 2026-06-18-21:52:
  * User requested real graphical pie + line charts on every Command Center surface using a proper chart library (recharts); this shared line wrapper preserves the existing series shape while coercing zero/NaN/Infinity inputs into safe responsive, token-themed, reduced-motion-aware recharts data.
+ *
+ * FNXC:CommandCenterCharts 2026-06-19-05:24:
+ * Recharts ResponsiveContainer renders blank when its parent has no measurable block-size. Import the shared chart CSS here so every Command Center surface using this wrapper gets the token-sized default parent height even if it does not also render a hand-rolled chart primitive.
  */
 export function LineChart({ series, ariaLabel, width, height, emptyLabel = "No chart data" }: LineChartProps) {
   const theme = getCommandCenterChartTheme();
