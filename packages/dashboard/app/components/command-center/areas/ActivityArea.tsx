@@ -4,11 +4,17 @@ import type { ActivityAnalytics } from "@fusion/core";
 import type { DateRange } from "../DateRangePicker";
 import { LineChart } from "../charts/LineChart";
 import { Sparkline } from "../charts/Sparkline";
+import { LineChart as RechartsLineChart, PieChart } from "../charts/recharts";
 import { AreaShell } from "./AreaShell";
 import { useAnalyticsArea } from "./useAnalyticsArea";
 import { formatCount, isInvalidRange } from "./areaShared";
 
 const ACTIVITY_LIVE_REFRESH_MS = 15_000;
+
+/*
+FNXC:CommandCenterCharts 2026-06-18-23:34:
+The Activity surface must add FN-6682 recharts affordances without replacing the existing hand-rolled line/sparkline testids or live-refresh behavior. Reuse the current daily and agent-run outcome analytics; never introduce a new endpoint or fabricate missing dimensions.
+*/
 
 /**
  * FNXC:CommandCenter 2026-06-18-14:29:
@@ -27,6 +33,14 @@ export function ActivityArea({ range }: { range: DateRange }) {
     () => daily.map((d) => d.messages + d.activeAgents + d.activeNodes),
     [daily],
   );
+  const rechartsLineSeries = useMemo(
+    () => [
+      { label: t("commandCenter.activity.messages", "Messages"), values: messagesSeries },
+      { label: t("commandCenter.activity.activeAgents", "Active agents"), values: agentsSeries },
+      { label: t("commandCenter.activity.agentRuns", "Agent runs"), values: agentRunsSeries },
+    ],
+    [agentRunsSeries, agentsSeries, messagesSeries, t],
+  );
   const invalidRange = isInvalidRange(range);
   const isInitialLoading = isLoading && data === null;
 
@@ -41,6 +55,14 @@ export function ActivityArea({ range }: { range: DateRange }) {
   }, [invalidRange, reload]);
 
   const agentRuns = data?.agentRuns ?? { total: 0, active: 0, completed: 0, failed: 0 };
+  const agentRunPieData = useMemo(
+    () => [
+      { label: t("commandCenter.activity.agentRunsActive", "Active"), value: agentRuns.active },
+      { label: t("commandCenter.activity.agentRunsCompleted", "Completed"), value: agentRuns.completed },
+      { label: t("commandCenter.activity.agentRunsFailed", "Failed"), value: agentRuns.failed },
+    ].filter((entry) => entry.value > 0),
+    [agentRuns.active, agentRuns.completed, agentRuns.failed, t],
+  );
   const isEmpty =
     !data ||
     (data.sessions === 0 &&
@@ -97,6 +119,26 @@ export function ActivityArea({ range }: { range: DateRange }) {
           </div>
         </div>
       </div>
+
+      {daily.length > 0 ? (
+        <div className="cc-area-section" data-testid="cc-activity-line">
+          <h3 className="cc-area-section-title">{t("commandCenter.activity.rechartsLine", "Activity trend")}</h3>
+          <RechartsLineChart
+            series={rechartsLineSeries}
+            ariaLabel={t("commandCenter.activity.rechartsLine", "Activity trend")}
+          />
+        </div>
+      ) : null}
+
+      {agentRunPieData.length > 0 ? (
+        <div className="cc-area-section" data-testid="cc-activity-pie">
+          <h3 className="cc-area-section-title">{t("commandCenter.activity.agentRunOutcomeShare", "Agent run outcome share")}</h3>
+          <PieChart
+            data={agentRunPieData}
+            ariaLabel={t("commandCenter.activity.agentRunOutcomeShare", "Agent run outcome share")}
+          />
+        </div>
+      ) : null}
 
       <div className="cc-area-section" data-testid="cc-activity-line-messages">
         <h3 className="cc-area-section-title">{t("commandCenter.activity.messagesPerDay", "Messages / day")}</h3>

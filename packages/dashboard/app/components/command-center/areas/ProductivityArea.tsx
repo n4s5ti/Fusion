@@ -3,9 +3,15 @@ import { useTranslation } from "react-i18next";
 import type { ProductivityAnalytics } from "@fusion/core";
 import type { DateRange } from "../DateRangePicker";
 import { Bar } from "../charts/Bar";
+import { PieChart } from "../charts/recharts";
 import { AreaShell } from "./AreaShell";
 import { useAnalyticsArea } from "./useAnalyticsArea";
 import { formatCount } from "./areaShared";
+
+/*
+FNXC:CommandCenterCharts 2026-06-18-23:40:
+ProductivityAnalytics exposes a categorical language distribution but no per-day throughput series. Add the real language pie from already-fetched data, preserve the bar/stat affordances, and document that a line chart is intentionally omitted until a genuine trend source exists.
+*/
 
 /**
  * Productivity area. Per the plan's A5 framing, LOC and tool/file counts are
@@ -30,6 +36,15 @@ export function ProductivityArea({ range }: { range: DateRange }) {
         label: l.language,
         value: l.count,
         valueLabel: formatCount(l.count),
+      })),
+    [data?.byLanguage],
+  );
+
+  const languagePieData = useMemo(
+    () =>
+      (data?.byLanguage ?? []).slice(0, 12).map((l) => ({
+        label: l.language,
+        value: l.count,
       })),
     [data?.byLanguage],
   );
@@ -93,6 +108,18 @@ export function ProductivityArea({ range }: { range: DateRange }) {
         </h3>
         <Bar data={languageBars} ariaLabel={t("commandCenter.productivity.byLanguage", "Files by language")} />
       </div>
+
+      {languagePieData.length > 0 ? (
+        <div className="cc-area-section" data-testid="cc-productivity-pie">
+          <h3 className="cc-area-section-title">
+            {t("commandCenter.productivity.languagePie", "Language share")}
+          </h3>
+          <PieChart
+            data={languagePieData}
+            ariaLabel={t("commandCenter.productivity.languagePie", "Language share")}
+          />
+        </div>
+      ) : null}
     </AreaShell>
   );
 }

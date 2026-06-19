@@ -17,6 +17,7 @@ import { MissionControlPanel } from "./MissionControlPanel";
 import { SdlcFunnel } from "./SdlcFunnel";
 import { Bar, type BarDatum } from "./charts/Bar";
 import { Sparkline } from "./charts/Sparkline";
+import { LineChart as RechartsLineChart, PieChart } from "./charts/recharts";
 import { useAnalyticsArea } from "./areas/useAnalyticsArea";
 import { formatCost, formatCount, isInvalidRange, rangeQuery } from "./areas/areaShared";
 import type { SignalsAnalytics } from "./areas/SignalsArea";
@@ -71,6 +72,9 @@ interface OverviewStatCard {
 /*
 FNXC:CommandCenter 2026-06-17-00:00:
 Overview is the Command Center landing surface, so it must reflect real analytics instead of shell placeholders. Show loading while core analytics have not settled, show the empty state only after settled zero data, include the agent-runs card as a first-class activity signal, and treat Signals as best-effort because that endpoint can be absent without invalidating tokens/tools/activity metrics.
+
+FNXC:CommandCenter 2026-06-18-23:45:
+FN-6683 adds real Overview pie and line charts by reusing the already-fetched tokens and activity analytics. Keep the existing overview bars, sparkline, live strip, funnel, and loading/error/empty branches intact; no new endpoint is allowed for these additive affordances.
 */
 const OVERVIEW_TOKEN_REFRESH_MS = 15_000;
 
@@ -177,9 +181,21 @@ function OverviewTab({ range }: { range: DateRange }) {
         })),
     [tools.data?.byCategory],
   );
+  const overviewPieData = useMemo(
+    () => tokensByModelData.map((entry) => ({ label: entry.label, value: entry.value })),
+    [tokensByModelData],
+  );
   const dailyActivityValues = useMemo(
     () => (activity.data?.daily ?? []).map((day) => day.messages + day.activeAgents + (day.agentRuns ?? 0)),
     [activity.data?.daily],
+  );
+  const overviewLineSeries = useMemo(
+    () => [
+      { label: t("commandCenter.activity.messages", "Messages"), values: (activity.data?.daily ?? []).map((day) => day.messages) },
+      { label: t("commandCenter.activity.activeAgents", "Active agents"), values: (activity.data?.daily ?? []).map((day) => day.activeAgents) },
+      { label: t("commandCenter.activity.agentRuns", "Agent runs"), values: (activity.data?.daily ?? []).map((day) => day.agentRuns) },
+    ],
+    [activity.data?.daily, t],
   );
   const activityTrendValues =
     dailyActivityValues.length > 0
@@ -335,6 +351,15 @@ function OverviewTab({ range }: { range: DateRange }) {
               <Bar data={tokensByModelData} ariaLabel={t("commandCenter.overview.tokensByModel", "Tokens by model")} />
             </div>
           ) : null}
+          {overviewPieData.length > 0 ? (
+            <div className="card cc-overview-chart-card" data-testid="cc-overview-pie">
+              <div className="cc-overview-chart-header">
+                <h3 className="cc-area-section-title">{t("commandCenter.overview.tokensByModelPie", "Token share by model")}</h3>
+                <p>{t("commandCenter.overview.tokensByModelPieHint", "Top model token share in this range")}</p>
+              </div>
+              <PieChart data={overviewPieData} ariaLabel={t("commandCenter.overview.tokensByModelPie", "Token share by model")} />
+            </div>
+          ) : null}
           {toolCategoryData.length > 0 ? (
             <div className="card cc-overview-chart-card" data-testid="command-center-overview-chart-tools">
               <div className="cc-overview-chart-header">
@@ -353,6 +378,18 @@ function OverviewTab({ range }: { range: DateRange }) {
               <Sparkline
                 values={dailyActivityValues}
                 ariaLabel={t("commandCenter.overview.dailyActivityAria", "Daily activity trend")}
+              />
+            </div>
+          ) : null}
+          {dailyActivityValues.length > 0 ? (
+            <div className="card cc-overview-chart-card cc-overview-chart-card--trend" data-testid="cc-overview-line">
+              <div className="cc-overview-chart-header">
+                <h3 className="cc-area-section-title">{t("commandCenter.overview.dailyActivityLine", "Daily activity line")}</h3>
+                <p>{t("commandCenter.overview.dailyActivityLineHint", "Messages, agents, and runs by day")}</p>
+              </div>
+              <RechartsLineChart
+                series={overviewLineSeries}
+                ariaLabel={t("commandCenter.overview.dailyActivityLine", "Daily activity line")}
               />
             </div>
           ) : null}

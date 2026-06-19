@@ -3,9 +3,15 @@ import { useTranslation } from "react-i18next";
 import type { ToolAnalytics } from "@fusion/core";
 import type { DateRange } from "../DateRangePicker";
 import { Bar } from "../charts/Bar";
+import { PieChart } from "../charts/recharts";
 import { AreaShell } from "./AreaShell";
 import { useAnalyticsArea } from "./useAnalyticsArea";
 import { formatCount } from "./areaShared";
+
+/*
+FNXC:CommandCenterCharts 2026-06-18-23:29:
+The Tools surface has categorical tool-call analytics but no per-day tool trend in ToolAnalytics. Add only the real category pie from already-fetched data and leave the existing bar/summary affordances unchanged; do not fabricate a line series.
+*/
 
 /**
  * Tools area: autonomy ratio readout + tool categories rendered as a bar chart
@@ -32,6 +38,15 @@ export function ToolsArea({ range }: { range: DateRange }) {
         label: c.category,
         value: c.count,
         valueLabel: formatCount(c.count),
+      })),
+    [sortedCategories],
+  );
+
+  const pieData = useMemo(
+    () =>
+      sortedCategories.map((c) => ({
+        label: c.category,
+        value: c.count,
       })),
     [sortedCategories],
   );
@@ -83,6 +98,13 @@ export function ToolsArea({ range }: { range: DateRange }) {
         <h3 className="cc-area-section-title">{t("commandCenter.tools.categoriesTitle", "Tool categories")}</h3>
         <Bar data={barData} ariaLabel={t("commandCenter.tools.categoriesTitle", "Tool categories")} />
       </div>
+
+      {pieData.length > 0 ? (
+        <div className="cc-area-section" data-testid="cc-tools-pie">
+          <h3 className="cc-area-section-title">{t("commandCenter.tools.pieChart", "Tool category share")}</h3>
+          <PieChart data={pieData} ariaLabel={t("commandCenter.tools.pieChart", "Tool category share")} />
+        </div>
+      ) : null}
     </AreaShell>
   );
 }

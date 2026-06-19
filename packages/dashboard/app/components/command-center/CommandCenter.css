@@ -373,9 +373,22 @@ Overview charts must use dashboard tokens only and keep motion decorative; anima
 }
 
 .cc-overview-chart-card .cc-bar-chart,
-.cc-overview-chart-card .cc-sparkline {
+.cc-overview-chart-card .cc-sparkline,
+.cc-overview-chart-card .cc-recharts-chart,
+.cc-overview-chart-card .cc-recharts-empty {
   position: relative;
   z-index: 1;
+}
+
+/*
+FNXC:CommandCenterCharts 2026-06-18-23:49:
+Overview recharts cards use token-derived height so ResponsiveContainer can render without adding an inner scroll container; .cc-tabpanel remains the only vertical scroller at mobile widths.
+*/
+.cc-overview-chart-card .cc-recharts-chart,
+.cc-overview-chart-card .cc-recharts-empty {
+  inline-size: 100%;
+  block-size: calc(var(--space-20) * 3);
+  min-inline-size: 0;
 }
 
 .cc-overview-chart-card .cc-sparkline {

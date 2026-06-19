@@ -292,8 +292,12 @@ describe("CommandCenter shell", () => {
     expect(screen.queryByTestId("command-center-empty")).toBeNull();
     expect(screen.getByTestId("command-center-overview-loading")).toBeTruthy();
     expect(screen.queryByTestId("command-center-overview-charts")).toBeNull();
+    expect(screen.queryByTestId("cc-overview-pie")).toBeNull();
+    expect(screen.queryByTestId("cc-overview-line")).toBeNull();
     await screen.findByTestId("command-center-empty");
     expect(screen.queryByTestId("command-center-overview-charts")).toBeNull();
+    expect(screen.queryByTestId("cc-overview-pie")).toBeNull();
+    expect(screen.queryByTestId("cc-overview-line")).toBeNull();
   });
 
   it("renders the Overview agent-runs card when run data is the only activity", async () => {
@@ -339,6 +343,10 @@ describe("CommandCenter shell", () => {
     expect(within(charts).getByText("Tokens by model")).toBeTruthy();
     expect(within(screen.getByTestId("command-center-overview-chart-tokens")).getByText("gpt-4o")).toBeTruthy();
     expect(within(screen.getByTestId("command-center-overview-chart-tools")).getByText("read")).toBeTruthy();
+    expect(screen.getByTestId("cc-overview-pie")).toBeTruthy();
+    expect(screen.getByTestId("cc-overview-line")).toBeTruthy();
+    expect(screen.getByRole("img", { name: "Token share by model" })).toBeTruthy();
+    expect(screen.getByRole("img", { name: "Daily activity line" })).toBeTruthy();
     expect(screen.getByRole("img", { name: "Daily activity trend" })).toBeTruthy();
   });
 
@@ -464,8 +472,10 @@ describe("CommandCenter shell", () => {
 
     await screen.findByTestId("command-center-overview-charts");
     expect(screen.getByTestId("command-center-overview-chart-tokens")).toBeTruthy();
+    expect(screen.getByTestId("cc-overview-pie")).toBeTruthy();
     expect(screen.queryByTestId("command-center-overview-chart-tools")).toBeNull();
     expect(screen.getByTestId("command-center-overview-chart-activity")).toBeTruthy();
+    expect(screen.getByTestId("cc-overview-line")).toBeTruthy();
   });
 
   it("handles empty, undefined, single-item, and zero chart data without NaN output", async () => {
@@ -499,9 +509,12 @@ describe("CommandCenter shell", () => {
 
     await screen.findByTestId("command-center-overview-charts");
     expect(screen.getByTestId("command-center-overview-chart-tokens").textContent).toContain("idle-model");
+    expect(screen.getByTestId("cc-overview-pie")).toBeTruthy();
     expect(screen.queryByTestId("command-center-overview-chart-tools")).toBeNull();
     expect(screen.getByTestId("command-center-overview-chart-activity")).toBeTruthy();
-    expect(screen.getByTestId("command-center-panel-overview").textContent).not.toContain("NaN");
+    expect(screen.getByTestId("cc-overview-line")).toBeTruthy();
+    expect(screen.getByTestId("cc-overview-pie").textContent).not.toContain("NaN");
+    expect(screen.getByTestId("cc-overview-line").textContent).not.toContain("NaN");
   });
 
   it("keeps Overview populated when the signals endpoint is missing", async () => {
@@ -530,6 +543,8 @@ describe("CommandCenter shell", () => {
     expect(screen.queryByTestId("command-center-overview-loading")).toBeNull();
     expect(screen.queryByTestId("command-center-empty")).toBeNull();
     expect(screen.queryByTestId("command-center-overview-charts")).toBeNull();
+    expect(screen.queryByTestId("cc-overview-pie")).toBeNull();
+    expect(screen.queryByTestId("cc-overview-line")).toBeNull();
   });
 
   it("re-fetches and re-derives the Overview empty state when the range changes", async () => {

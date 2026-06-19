@@ -41,6 +41,17 @@ FN-6680 preserves the FN-6664 section rhythm while adding real-layout shrink gua
   letter-spacing: 0.04em;
 }
 
+/*
+FNXC:CommandCenterCharts 2026-06-18-23:24:
+FN-6683 recharts wrappers must stay responsive without creating an inner scroll owner or fixed pixel box. Give chart sections a token-sized block axis so ResponsiveContainer can measure while .cc-tabpanel remains the vertical scroll container on mobile.
+*/
+.cc-area .cc-recharts-chart,
+.cc-area .cc-recharts-empty {
+  inline-size: 100%;
+  block-size: calc(var(--space-20) * 3);
+  min-inline-size: 0;
+}
+
 /* Reuse the shell's stat-grid/stat-card look. */
 .cc-area .cc-stat-grid {
   display: grid;

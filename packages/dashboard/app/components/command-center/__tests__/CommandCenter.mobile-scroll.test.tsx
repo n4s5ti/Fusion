@@ -305,7 +305,7 @@ function assertScrollOwnerContract(panel: HTMLElement) {
 function assertNoChartScrollSteal(panel: HTMLElement) {
   // FN-6680: jsdom does not compute real flex/grid layout, so this guards rule presence and scroll-owner structure only; the CSS-string regression plus Blink audit cover actual mobile pixel layout.
   const chartContainers = panel.querySelectorAll<HTMLElement>(
-    ".cc-bar-chart, .cc-bar-row, .cc-sparkline, .cc-line-chart, .cc-radial-gauge, .cc-funnel, .cc-token-series, .cc-token-series-plot, .cc-overview-chart-card, .cc-team-chart-panel, .cc-stat-card",
+    ".cc-bar-chart, .cc-bar-row, .cc-sparkline, .cc-line-chart, .cc-recharts-chart, .cc-recharts-empty, .cc-radial-gauge, .cc-funnel, .cc-token-series, .cc-token-series-plot, .cc-overview-chart-card, .cc-team-chart-panel, .cc-stat-card",
   );
   expect(chartContainers.length).toBeGreaterThan(0);
   for (const container of chartContainers) {
@@ -368,6 +368,8 @@ describe("CommandCenter mobile scroll regression (FN-6595)", () => {
 
     await screen.findByTestId("command-center-overview-charts");
     expect(screen.getByTestId("command-center-overview-chart-tokens")).toBeTruthy();
+    expect(screen.getByTestId("cc-overview-pie")).toBeTruthy();
+    expect(screen.getByTestId("cc-overview-line")).toBeTruthy();
     expect(screen.getByTestId("command-center-live-tasks-in-progress")).toBeTruthy();
     assertScrollOwnerContract(screen.getByTestId("command-center-panel-overview"));
   });
@@ -399,6 +401,8 @@ describe("CommandCenter mobile scroll regression (FN-6595)", () => {
     expect(styles).toContain("overflow-x: hidden");
     expect(styles).toContain("grid-template-columns: minmax(0, 1fr) minmax(var(--space-12), 2fr)");
     expect(styles).toContain(".cc-line-chart");
+    expect(styles).toContain(".cc-recharts-chart");
+    expect(styles).toContain("block-size: calc(var(--space-20) * 3)");
     expect(styles).toContain("aspect-ratio: auto");
     expect(styles).toContain(".cc-radial-gauge-ring");
     expect(styles).toContain("inline-size: clamp(var(--space-20), 44vw, var(--space-32))");

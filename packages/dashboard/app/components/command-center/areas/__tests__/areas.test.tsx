@@ -229,6 +229,10 @@ describe("ActivityArea", () => {
     expect(screen.getByTestId("cc-activity-agent-runs-completed").textContent).toContain("6");
     expect(screen.getByTestId("cc-activity-agent-runs-failed").textContent).toContain("1");
     expect(screen.getByTestId("cc-activity-stickiness").textContent).toContain("50%");
+    expect(screen.getByTestId("cc-activity-line")).toBeTruthy();
+    expect(screen.getByTestId("cc-activity-pie")).toBeTruthy();
+    expect(screen.getByRole("img", { name: "Activity trend" })).toBeTruthy();
+    expect(screen.getByRole("img", { name: "Agent run outcome share" })).toBeTruthy();
     expect(screen.getByTestId("cc-activity-line-messages")).toBeTruthy();
     expect(screen.getByTestId("cc-activity-line-agents")).toBeTruthy();
     expect(screen.getByTestId("cc-activity-line-nodes")).toBeTruthy();
@@ -270,10 +274,32 @@ describe("ActivityArea", () => {
     expect(screen.queryByTestId("cc-area-activity-empty")).toBeNull();
     expect(screen.getByTestId("cc-activity-agent-runs").textContent).toContain("2");
     expect(screen.getByTestId("cc-activity-agent-runs-sparkline")).toBeTruthy();
+    expect(screen.getByTestId("cc-activity-line")).toBeTruthy();
+    expect(screen.getByTestId("cc-activity-pie")).toBeTruthy();
   });
 
-  it("renders the empty state for zero activity without empty chart shells", async () => {
+  it("keeps activity recharts safe for single-item and non-finite data", async () => {
     apiMock.mockResolvedValue({
+      ...activityFixture(),
+      sessions: 1,
+      messages: 1,
+      activeNodes: 1,
+      activeAgents: 1,
+      agentRuns: { total: 1, active: 0, completed: 1, failed: 0 },
+      daily: [{ day: "2026-06-08", messages: Number.NaN, activeNodes: 1, activeAgents: Number.POSITIVE_INFINITY, agentRuns: -1 }],
+    });
+    render(<ActivityArea range={range7d} />);
+
+    await screen.findByTestId("cc-area-activity");
+    expect(screen.getByTestId("cc-activity-line")).toBeTruthy();
+    expect(screen.getByTestId("cc-activity-pie")).toBeTruthy();
+    expect(screen.getByTestId("cc-activity-line").textContent).not.toContain("NaN");
+    expect(screen.getByTestId("cc-activity-line").textContent).not.toContain("Infinity");
+    expect(screen.getByTestId("cc-activity-pie").textContent).not.toContain("NaN");
+  });
+
+  it("renders empty, loading, and error states without activity recharts shells", async () => {
+    apiMock.mockResolvedValueOnce({
       ...activityFixture(),
       sessions: 0,
       messages: 0,
@@ -283,14 +309,30 @@ describe("ActivityArea", () => {
       daily: [],
       stickiness: 0,
     });
-    render(<ActivityArea range={range7d} />);
+    const empty = render(<ActivityArea range={range7d} />);
 
     await screen.findByTestId("cc-area-activity-empty");
+    expect(screen.queryByTestId("cc-activity-line")).toBeNull();
+    expect(screen.queryByTestId("cc-activity-pie")).toBeNull();
     expect(screen.queryByTestId("cc-activity-line-messages")).toBeNull();
     expect(screen.queryByTestId("cc-activity-line-agents")).toBeNull();
     expect(screen.queryByTestId("cc-activity-line-nodes")).toBeNull();
     expect(screen.queryByTestId("cc-activity-agent-runs-sparkline")).toBeNull();
     expect(screen.queryByTestId("cc-activity-line-throughput")).toBeNull();
+    empty.unmount();
+
+    apiMock.mockImplementationOnce(() => new Promise(() => undefined));
+    const pending = render(<ActivityArea range={range7d} />);
+    expect(screen.getByTestId("cc-area-activity-loading")).toBeTruthy();
+    expect(screen.queryByTestId("cc-activity-line")).toBeNull();
+    expect(screen.queryByTestId("cc-activity-pie")).toBeNull();
+    pending.unmount();
+
+    apiMock.mockRejectedValueOnce(new Error("activity failed"));
+    render(<ActivityArea range={range7d} />);
+    await screen.findByTestId("cc-area-activity-error");
+    expect(screen.queryByTestId("cc-activity-line")).toBeNull();
+    expect(screen.queryByTestId("cc-activity-pie")).toBeNull();
   });
 
   it("polls activity while mounted, keeps content during refresh, and clears the interval on unmount", async () => {
@@ -341,6 +383,10 @@ describe("TokensArea", () => {
     expect(screen.getByTestId("cc-tokens-total").textContent).toContain("1,500");
     expect(screen.getByTestId("cc-tokens-cost").textContent).toContain("$12.50");
     expect(screen.getByTestId("cc-token-series-chart")).toBeTruthy();
+    expect(screen.getByTestId("cc-tokens-line")).toBeTruthy();
+    expect(screen.getByTestId("cc-tokens-pie")).toBeTruthy();
+    expect(screen.getByRole("img", { name: "Tokens trend" })).toBeTruthy();
+    expect(screen.getByRole("img", { name: "Token share by model" })).toBeTruthy();
     expect(screen.getByLabelText("2026-06-09: 900")).toBeTruthy();
     expect(screen.getByTestId("cc-tokens-row-gpt-4o")).toBeTruthy();
     expect(screen.getByTestId("cc-tokens-row-claude-sonnet")).toBeTruthy();
@@ -393,8 +439,8 @@ describe("TokensArea", () => {
     expect(lastCall).toContain("from=2026-05-01");
   });
 
-  it("renders the empty state with no token data (no crash)", async () => {
-    apiMock.mockResolvedValue({
+  it("renders empty, loading, and error states without token recharts shells", async () => {
+    apiMock.mockResolvedValueOnce({
       from: null,
       to: null,
       groupBy: "model",
@@ -403,8 +449,56 @@ describe("TokensArea", () => {
       groups: [],
       series: [],
     });
-    render(<TokensArea range={range7d} />);
+    const empty = render(<TokensArea range={range7d} />);
     await screen.findByTestId("cc-area-tokens-empty");
+    expect(screen.queryByTestId("cc-tokens-line")).toBeNull();
+    expect(screen.queryByTestId("cc-tokens-pie")).toBeNull();
+    empty.unmount();
+
+    apiMock.mockImplementationOnce(() => new Promise(() => undefined));
+    const pending = render(<TokensArea range={range7d} />);
+    expect(screen.getByTestId("cc-area-tokens-loading")).toBeTruthy();
+    expect(screen.queryByTestId("cc-tokens-line")).toBeNull();
+    expect(screen.queryByTestId("cc-tokens-pie")).toBeNull();
+    pending.unmount();
+
+    apiMock.mockRejectedValueOnce(new Error("tokens failed"));
+    render(<TokensArea range={range7d} />);
+    await screen.findByTestId("cc-area-tokens-error");
+    expect(screen.queryByTestId("cc-tokens-line")).toBeNull();
+    expect(screen.queryByTestId("cc-tokens-pie")).toBeNull();
+  });
+
+  it("renders token recharts with a single valid item", async () => {
+    apiMock.mockResolvedValue({
+      ...tokenFixture(),
+      groups: [tokenFixture().groups[0]],
+      series: [tokenFixture().series[0]],
+    });
+    render(<TokensArea range={range7d} />);
+
+    await screen.findByTestId("cc-area-tokens");
+    expect(screen.getByTestId("cc-tokens-line")).toBeTruthy();
+    expect(screen.getByTestId("cc-tokens-pie")).toBeTruthy();
+    expect(screen.getByTestId("cc-tokens-line").textContent).not.toContain("NaN");
+    expect(screen.getByTestId("cc-tokens-pie").textContent).not.toContain("NaN");
+  });
+
+  it("keeps token recharts safe for non-finite data", async () => {
+    apiMock.mockResolvedValue({
+      ...tokenFixture(),
+      totals: { ...tokenFixture().totals, totalTokens: 1 },
+      groups: [{ ...tokenFixture().groups[0], key: "broken-model", totalTokens: Number.NaN }],
+      series: [{ ...tokenFixture().series[0], inputTokens: Number.NaN, outputTokens: Number.POSITIVE_INFINITY, cachedTokens: -1, totalTokens: Number.NaN }],
+    });
+    render(<TokensArea range={range7d} />);
+
+    await screen.findByTestId("cc-area-tokens");
+    expect(screen.getByTestId("cc-tokens-line")).toBeTruthy();
+    expect(screen.getByTestId("cc-tokens-pie")).toBeTruthy();
+    expect(screen.getByTestId("cc-tokens-line").textContent).not.toContain("NaN");
+    expect(screen.getByTestId("cc-tokens-line").textContent).not.toContain("Infinity");
+    expect(screen.getByTestId("cc-tokens-pie").textContent).not.toContain("NaN");
   });
 
   // The critical SWR-identity regression: a revalidation that returns
@@ -473,6 +567,8 @@ describe("ToolsArea", () => {
     render(<ToolsArea range={range7d} />);
     await screen.findByTestId("cc-area-tools");
     expect(screen.getByTestId("cc-tools-autonomy").textContent).toContain("10.0:1");
+    expect(screen.getByTestId("cc-tools-pie")).toBeTruthy();
+    expect(screen.getByRole("img", { name: "Tool category share" })).toBeTruthy();
 
     // Sorted descending by count: read (20) first.
     const chart = screen.getByRole("list", { name: "Tool categories" });
@@ -480,8 +576,8 @@ describe("ToolsArea", () => {
     expect(labels[0]).toBe("read: 20");
   });
 
-  it("renders the empty state when there are no tool calls", async () => {
-    apiMock.mockResolvedValue({
+  it("renders empty, loading, and error states without tools pie shells", async () => {
+    apiMock.mockResolvedValueOnce({
       from: null,
       to: null,
       toolCalls: 0,
@@ -491,8 +587,58 @@ describe("ToolsArea", () => {
       autonomyRatio: 0,
       fullyAutonomous: true,
     });
-    render(<ToolsArea range={range7d} />);
+    const empty = render(<ToolsArea range={range7d} />);
     await screen.findByTestId("cc-area-tools-empty");
+    expect(screen.queryByTestId("cc-tools-pie")).toBeNull();
+    empty.unmount();
+
+    apiMock.mockImplementationOnce(() => new Promise(() => undefined));
+    const pending = render(<ToolsArea range={range7d} />);
+    expect(screen.getByTestId("cc-area-tools-loading")).toBeTruthy();
+    expect(screen.queryByTestId("cc-tools-pie")).toBeNull();
+    pending.unmount();
+
+    apiMock.mockRejectedValueOnce(new Error("tools failed"));
+    render(<ToolsArea range={range7d} />);
+    await screen.findByTestId("cc-area-tools-error");
+    expect(screen.queryByTestId("cc-tools-pie")).toBeNull();
+  });
+
+  it("renders the tools pie with a single valid category", async () => {
+    apiMock.mockResolvedValue({
+      from: "2026-06-08",
+      to: null,
+      toolCalls: 1,
+      byCategory: [{ category: "edit", count: 1 }],
+      sessions: 1,
+      interventions: { approvals: 0, userSteers: 0, total: 0 },
+      autonomyRatio: 1,
+      fullyAutonomous: true,
+    });
+    render(<ToolsArea range={range7d} />);
+
+    await screen.findByTestId("cc-area-tools");
+    expect(screen.getByTestId("cc-tools-pie")).toBeTruthy();
+    expect(screen.getByTestId("cc-tools-pie").textContent).not.toContain("NaN");
+  });
+
+  it("keeps the tools pie safe for non-finite category data", async () => {
+    apiMock.mockResolvedValue({
+      from: "2026-06-08",
+      to: null,
+      toolCalls: 1,
+      byCategory: [{ category: "broken", count: Number.NaN }],
+      sessions: 1,
+      interventions: { approvals: 0, userSteers: 0, total: 0 },
+      autonomyRatio: 1,
+      fullyAutonomous: true,
+    });
+    render(<ToolsArea range={range7d} />);
+
+    await screen.findByTestId("cc-area-tools");
+    expect(screen.getByTestId("cc-tools-pie")).toBeTruthy();
+    expect(screen.getByTestId("cc-tools-pie").textContent).not.toContain("NaN");
+    expect(screen.getByTestId("cc-tools-pie").textContent).not.toContain("Infinity");
   });
 });
 
@@ -515,6 +661,8 @@ describe("ProductivityArea", () => {
     // The commits outcome counter still shows a real number.
     expect(screen.getByTestId("cc-productivity-commits").textContent).toContain("4");
     expect(screen.getByRole("list", { name: "Files by language" })).toBeTruthy();
+    expect(screen.getByTestId("cc-productivity-pie")).toBeTruthy();
+    expect(screen.getByRole("img", { name: "Language share" })).toBeTruthy();
     expect(screen.getByTestId("cc-area-productivity").textContent).not.toContain("NaN");
   });
 
@@ -531,6 +679,7 @@ describe("ProductivityArea", () => {
     const { unmount } = render(<ProductivityArea range={range7d} />);
     await screen.findByTestId("cc-area-productivity-empty");
     expect(screen.queryByRole("list", { name: "Files by language" })).toBeNull();
+    expect(screen.queryByTestId("cc-productivity-pie")).toBeNull();
     unmount();
 
     apiMock.mockImplementationOnce(() => new Promise(() => undefined));
@@ -542,6 +691,25 @@ describe("ProductivityArea", () => {
     render(<ProductivityArea range={range7d} />);
     await screen.findByTestId("cc-area-productivity-error");
     expect(screen.getByTestId("cc-area-productivity-error").textContent).toContain("productivity failed");
+    expect(screen.queryByTestId("cc-productivity-pie")).toBeNull();
+  });
+
+  it("keeps the productivity pie safe for single-item and non-finite language data", async () => {
+    apiMock.mockResolvedValue({
+      from: "2026-06-08",
+      to: null,
+      modifiedFiles: 1,
+      byLanguage: [{ language: "broken", count: Number.NaN }],
+      commits: 0,
+      pullRequests: 0,
+      loc: { value: null, unavailable: true },
+    });
+    render(<ProductivityArea range={range7d} />);
+
+    await screen.findByTestId("cc-area-productivity");
+    expect(screen.getByTestId("cc-productivity-pie")).toBeTruthy();
+    expect(screen.getByTestId("cc-productivity-pie").textContent).not.toContain("NaN");
+    expect(screen.getByTestId("cc-productivity-pie").textContent).not.toContain("Infinity");
   });
 });
 

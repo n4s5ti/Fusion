@@ -13,6 +13,7 @@ import type {
 import type { DateRange } from "../DateRangePicker";
 import { Bar } from "../charts/Bar";
 import { TokenSeriesChart } from "../charts/TokenSeriesChart";
+import { LineChart as RechartsLineChart, PieChart } from "../charts/recharts";
 import { AreaShell } from "./AreaShell";
 import { useAnalyticsArea } from "./useAnalyticsArea";
 import { formatCost, formatCount } from "./areaShared";
@@ -21,6 +22,11 @@ type SortKey = "key" | "totalTokens" | "cost";
 
 const TOKENS_LIVE_REFRESH_MS = 15_000;
 const GRANULARITIES: TokenTimeGranularity[] = ["hour", "day", "week"];
+
+/*
+FNXC:CommandCenterCharts 2026-06-18-23:20:
+The Tokens surface must add real pie and line charts from already-fetched token analytics only. Keep the existing bars, tables, granularity controls, loading/error/empty branches, and testids intact while the FN-6682 recharts wrappers provide token-themed, non-finite-safe visuals.
+*/
 
 function costSortValue(cost: CostResult): number {
   return cost.unavailable || cost.usd === null ? -1 : cost.usd;
@@ -96,6 +102,28 @@ export function TokensArea({ range }: { range: DateRange }) {
     [groups, t],
   );
 
+  const pieData = useMemo(
+    () =>
+      [...groups]
+        .sort((a, b) => b.totalTokens - a.totalTokens)
+        .slice(0, 12)
+        .map((g) => ({
+          label: g.key ?? t("commandCenter.tokens.unknownModel", "(unknown)"),
+          value: g.totalTokens,
+        })),
+    [groups, t],
+  );
+
+  const lineSeries = useMemo(
+    () => [
+      { label: t("commandCenter.tokens.input", "Input"), values: series.map((point) => point.inputTokens) },
+      { label: t("commandCenter.tokens.output", "Output"), values: series.map((point) => point.outputTokens) },
+      { label: t("commandCenter.tokens.cached", "Cached"), values: series.map((point) => point.cachedTokens) },
+      { label: t("commandCenter.tokens.total", "Total"), values: series.map((point) => point.totalTokens) },
+    ],
+    [series, t],
+  );
+
   function toggleSort(key: SortKey) {
     if (key === sortKey) {
       setSortDir((d) => (d === 1 ? -1 : 1));
@@ -165,10 +193,27 @@ export function TokensArea({ range }: { range: DateRange }) {
         />
       </div>
 
+      {series.length > 0 ? (
+        <div className="cc-area-section" data-testid="cc-tokens-line">
+          <h3 className="cc-area-section-title">{t("commandCenter.tokens.rechartsLine", "Tokens trend")}</h3>
+          <RechartsLineChart
+            series={lineSeries}
+            ariaLabel={t("commandCenter.tokens.rechartsLine", "Tokens trend")}
+          />
+        </div>
+      ) : null}
+
       <div className="cc-area-section">
         <h3 className="cc-area-section-title">{t("commandCenter.tokens.byModelChart", "Tokens by model")}</h3>
         <Bar data={barData} ariaLabel={t("commandCenter.tokens.byModelChart", "Tokens by model")} />
       </div>
+
+      {pieData.length > 0 ? (
+        <div className="cc-area-section" data-testid="cc-tokens-pie">
+          <h3 className="cc-area-section-title">{t("commandCenter.tokens.pieChart", "Token share by model")}</h3>
+          <PieChart data={pieData} ariaLabel={t("commandCenter.tokens.pieChart", "Token share by model")} />
+        </div>
+      ) : null}
 
       <div className="cc-area-section">
         <h3 className="cc-area-section-title">{t("commandCenter.tokens.tableTitle", "Per-model breakdown")}</h3>
