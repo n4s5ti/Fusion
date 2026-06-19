@@ -327,6 +327,7 @@ export const COLOR_THEMES = [
   "lavender",
   "neon-bloom",
   "sepia",
+  "shadcn",
 ] as const;
 export type ColorTheme = (typeof COLOR_THEMES)[number];
 

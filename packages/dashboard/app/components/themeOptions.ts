@@ -67,4 +67,5 @@ export const COLOR_THEMES: { value: ColorTheme; label: string; className: string
   { value: "lavender", label: "Lavender", className: "theme-swatch-lavender" },
   { value: "neon-bloom", label: "Neon Bloom", className: "theme-swatch-neon-bloom" },
   { value: "sepia", label: "Sepia", className: "theme-swatch-sepia" },
+  { value: "shadcn", label: "Shadcn", className: "theme-swatch-shadcn" },
 ];

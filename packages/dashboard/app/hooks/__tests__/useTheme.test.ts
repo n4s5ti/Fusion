@@ -519,6 +519,34 @@ describe("useTheme", () => {
     document.head.removeChild(style);
   });
 
+  it("applies shadcn design tokens with neutralized glow effects", () => {
+    const style = document.createElement("style");
+    const baseCss = readFileSync(resolve(PACKAGE_ROOT, "app/styles.css"), "utf8");
+    const themeDataCss = readFileSync(resolve(PACKAGE_ROOT, "app/public/theme-data.css"), "utf8");
+    const shadcnBlock = themeDataCss.match(/\[data-color-theme="shadcn"\] \{(?<body>[\s\S]*?)\n\}/)?.groups?.body;
+    expect(shadcnBlock).toBeDefined();
+    style.textContent = `${baseCss}\n${themeDataCss}\nhtml[data-color-theme="shadcn"] {${shadcnBlock}\n}`;
+    document.head.appendChild(style);
+
+    localStorageMock[COLOR_THEME_STORAGE_KEY] = "shadcn";
+
+    renderHook(() => useTheme());
+
+    expect(document.documentElement.getAttribute("data-color-theme")).toBe("shadcn");
+
+    expect(shadcnBlock).toContain("--btn-border-width: 1px;");
+    expect(shadcnBlock).toContain("--accent: #fafafa;");
+    expect(shadcnBlock).toContain("--font-primary: \"Geist\"");
+    expect(shadcnBlock).toContain("--shadow-glow: none;");
+    expect(shadcnBlock).toContain("--glow-success: none;");
+    expect(shadcnBlock).toContain("--glow-warning: none;");
+    expect(shadcnBlock).toContain("--glow-danger: none;");
+    expect(shadcnBlock).toContain("--cta-glow: none;");
+    expect(shadcnBlock).not.toMatch(/--(?:shadow-glow|glow-success|glow-warning|glow-danger|cta-glow):\s*0 0/);
+
+    document.head.removeChild(style);
+  });
+
   it("supports all valid theme modes", () => {
     const { result } = renderHook(() => useTheme());
 
