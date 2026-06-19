@@ -19,6 +19,14 @@ function renderEdges(edges: GraphEdge[], highlightedEdgeIds?: Set<string>) {
   );
 }
 
+function expectEdgePaintsViaResolvableStyle(edge: SVGElement, expectedStroke: string, expectedStrokeWidth: string) {
+  expect(edge.getAttribute("stroke")).not.toBe(expectedStroke);
+  expect(edge.getAttribute("stroke-width")).not.toBe(expectedStrokeWidth);
+  expect(edge.getAttribute("strokeWidth")).not.toBe(expectedStrokeWidth);
+  expect(edge.style.stroke).toBe(expectedStroke);
+  expect(edge.style.strokeWidth).toBe(expectedStrokeWidth);
+}
+
 describe("GraphEdges", () => {
   afterEach(() => {
     cleanup();
@@ -26,8 +34,22 @@ describe("GraphEdges", () => {
   it("renders single edge", () => {
     renderEdges([{ source: "A", target: "B" }]);
     const edge = screen.getAllByTestId("dependency-edge")[0];
-    expect(edge.getAttribute("opacity")).toBe("1");
-    expect(edge.getAttribute("stroke")).toBe("var(--border)");
+    expect(edge.getAttribute("opacity")).toBeNull();
+    expectEdgePaintsViaResolvableStyle(edge, "var(--border)", "var(--btn-border-width)");
+  });
+
+  it("renders no edge paths when there are zero edges", () => {
+    renderEdges([]);
+    expect(screen.queryAllByTestId("dependency-edge")).toHaveLength(0);
+  });
+
+  it("renders arrowhead fill through resolvable style instead of a presentation attribute", () => {
+    const { container } = renderEdges([{ source: "A", target: "B" }]);
+    const arrowheadPath = container.querySelector("#dependency-graph-arrowhead path") as SVGPathElement | null;
+
+    expect(arrowheadPath).not.toBeNull();
+    expect(arrowheadPath?.getAttribute("fill")).not.toBe("var(--border)");
+    expect(arrowheadPath?.style.fill).toBe("var(--border)");
   });
 
   it("renders multiple edges", () => {
@@ -67,9 +89,13 @@ describe("GraphEdges", () => {
     const highlighted = all.find((edge) => edge.getAttribute("data-edge-id") === "A->B");
     const dimmed = all.find((edge) => edge.getAttribute("data-edge-id") === "A->C");
 
-    expect(highlighted?.getAttribute("opacity")).toBe("1");
+    expect(highlighted).toBeDefined();
+    expect(highlighted?.style.opacity).toBe("1");
+    expectEdgePaintsViaResolvableStyle(highlighted as SVGElement, "var(--todo)", "var(--space-xs)");
     expect(highlighted?.getAttribute("class") ?? "").toContain("graph-edge--highlighted");
-    expect(dimmed?.getAttribute("opacity")).toBe("0.15");
+    expect(dimmed).toBeDefined();
+    expect(dimmed?.style.opacity).toBe("0.15");
+    expectEdgePaintsViaResolvableStyle(dimmed as SVGElement, "var(--border)", "var(--btn-border-width)");
     expect(dimmed?.getAttribute("class") ?? "").toContain("graph-edge--dimmed");
   });
 });

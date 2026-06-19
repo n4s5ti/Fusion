@@ -13,6 +13,11 @@ interface GraphEdgesProps {
 const DEFAULT_NODE_WIDTH = 280;
 const DEFAULT_NODE_HEIGHT = 100;
 
+/**
+ * FNXC:DependencyGraphEdges 2026-06-19-08:59:
+ * Browser SVG presentation attributes do not resolve CSS custom properties, so dependency edge theme paint and widths must travel through real CSS via inline style or classes.
+ * Keep only literal SVG-safe values such as fill="none" as presentation attributes so dependency connector strokes and arrowheads remain visible across default, highlighted, and dimmed states.
+ */
 export function GraphEdges({
   edges,
   positions,
@@ -35,7 +40,7 @@ export function GraphEdges({
           orient="auto"
           markerUnits="strokeWidth"
         >
-          <path d="M 0 0 L 10 3.5 L 0 7 z" fill="var(--border)" />
+          <path d="M 0 0 L 10 3.5 L 0 7 z" style={{ fill: "var(--border)" }} />
         </marker>
       </defs>
       {edges.map((edge) => {
@@ -59,11 +64,13 @@ export function GraphEdges({
             className={`dependency-graph-edge${isActiveHighlight ? " graph-edge--highlighted" : ""}${hasHighlights && !isActiveHighlight ? " graph-edge--dimmed" : ""}`}
             d={`M ${x1} ${y1} C ${x1} ${controlY}, ${x2} ${controlY}, ${x2} ${y2}`}
             fill="none"
-            stroke={isActiveHighlight ? "var(--todo)" : "var(--border)"}
-            strokeWidth={isActiveHighlight ? "var(--space-xs)" : "var(--btn-border-width)"}
-            opacity={hasHighlights && !isActiveHighlight ? 0.15 : 1}
             markerEnd="url(#dependency-graph-arrowhead)"
-            style={{ transition: "opacity var(--transition-fast), stroke var(--transition-fast), stroke-width var(--transition-fast)" }}
+            style={{
+              opacity: hasHighlights && !isActiveHighlight ? 0.15 : 1,
+              stroke: isActiveHighlight ? "var(--todo)" : "var(--border)",
+              strokeWidth: isActiveHighlight ? "var(--space-xs)" : "var(--btn-border-width)",
+              transition: "opacity var(--transition-fast), stroke var(--transition-fast), stroke-width var(--transition-fast)",
+            }}
           />
         );
       })}

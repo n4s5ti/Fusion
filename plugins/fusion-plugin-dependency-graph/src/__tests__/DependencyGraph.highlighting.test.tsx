@@ -41,8 +41,22 @@ function createTask(id: string, dependencies: string[] = []): Task {
   } as Task;
 }
 
+function setViewportDimensions(width: number, height: number) {
+  Object.defineProperty(window, "innerWidth", { configurable: true, value: width });
+  Object.defineProperty(window, "innerHeight", { configurable: true, value: height });
+}
+
+function expectEdgePaintsViaResolvableStyle(edge: SVGElement, expectedStroke = "var(--border)", expectedStrokeWidth = "var(--btn-border-width)") {
+  expect(edge.getAttribute("stroke")).not.toBe(expectedStroke);
+  expect(edge.getAttribute("stroke-width")).not.toBe(expectedStrokeWidth);
+  expect(edge.getAttribute("strokeWidth")).not.toBe(expectedStrokeWidth);
+  expect(edge.style.stroke).toBe(expectedStroke);
+  expect(edge.style.strokeWidth).toBe(expectedStrokeWidth);
+}
+
 afterEach(() => {
   cleanup();
+  setViewportDimensions(1024, 768);
 });
 
 describe("DependencyGraph highlighting", () => {
@@ -97,12 +111,37 @@ describe("DependencyGraph highlighting", () => {
     const edgeAB = edges.find((edge) => edge.getAttribute("data-edge-id") === "B->A");
     const edgeCB = edges.find((edge) => edge.getAttribute("data-edge-id") === "C->B");
 
+    expect(edgeAB).toBeDefined();
     expect(edgeAB?.className.baseVal || edgeAB?.className).toContain("graph-edge--highlighted");
+    expectEdgePaintsViaResolvableStyle(edgeAB as SVGElement, "var(--todo)", "var(--space-xs)");
+    expect(edgeCB).toBeDefined();
     expect(edgeCB?.className.baseVal || edgeCB?.className).toContain("graph-edge--highlighted");
+    expectEdgePaintsViaResolvableStyle(edgeCB as SVGElement, "var(--todo)", "var(--space-xs)");
 
     fireEvent.doubleClick(screen.getByTestId("graph-task-node-C"));
     expect(onOpenDetail).toHaveBeenCalledTimes(1);
     expect(onOpenDetail).toHaveBeenCalledWith(expect.objectContaining({ id: "C" }));
+  });
+
+  it.each([
+    ["vertical desktop", 1200, 800],
+    ["horizontal mobile", 390, 844],
+  ] as const)("renders dependency chain edges with resolvable stroke in %s orientation", (_label, width, height) => {
+    setViewportDimensions(width, height);
+    render(<DependencyGraph tasks={tasks} onOpenDetail={vi.fn()} />);
+
+    const edges = screen.getAllByTestId("dependency-edge");
+    expect(edges.map((edge) => edge.getAttribute("data-edge-id")).sort()).toEqual(["B->A", "C->B"]);
+    for (const edge of edges) {
+      expectEdgePaintsViaResolvableStyle(edge);
+    }
+  });
+
+  it("does not render an edge when a dependency target is filtered out", () => {
+    const doneDependency = { ...createTask("Done"), column: "done" as const };
+    render(<DependencyGraph tasks={[createTask("Visible", ["Done"]), doneDependency]} onOpenDetail={vi.fn()} />);
+
+    expect(screen.queryAllByTestId("dependency-edge")).toHaveLength(0);
   });
 
   it("highlights only isolated node with no dependencies", () => {
