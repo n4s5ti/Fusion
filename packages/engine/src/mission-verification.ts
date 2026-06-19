@@ -501,6 +501,7 @@ export class TestExecutionVerificationCapability implements VerificationCapabili
         verifyLog,
         "reviewer",
         scrubbedEnv,
+        undefined,
         isolating,
       );
 
@@ -531,6 +532,7 @@ export class TestExecutionVerificationCapability implements VerificationCapabili
           verifyLog,
           "reviewer",
           scrubbedEnv,
+          undefined,
           isolating,
         );
 

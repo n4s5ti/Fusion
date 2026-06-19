@@ -324,14 +324,14 @@ export async function runVerificationCommand(
   agentLabel?: string,
   /** Optional extra environment variables to inject into the child process (merged over process.env). */
   extraEnv?: NodeJS.ProcessEnv,
+  /** Optional project-level per-command timeout override in milliseconds. Values <= 0 preserve the legacy default. */
+  timeoutMsOverride?: number,
   /**
    * Optional explicit sandbox backend. When omitted, the process-global backend
    * is resolved. Pass this to pin an isolating backend without mutating global
    * state (required for safe concurrent verification — see mission-verification).
    */
   backend?: SandboxBackend,
-  /** Optional project-level per-command timeout override in milliseconds. Values <= 0 preserve the legacy default. */
-  timeoutMsOverride?: number,
 ): Promise<VerificationCommandResult> {
   const logger = log ?? { log: console.log, error: console.error, warn: console.warn };
   const label = (agentLabel ?? "merger") as AgentRole;
