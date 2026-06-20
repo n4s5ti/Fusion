@@ -126,6 +126,12 @@ export default tseslint.config(
       "**/dist/**",
       "**/out/**",
       "**/build/**",
+      // FNXC:LintConfig 2026-06-20-03:19:
+      // Capacitor `npx cap sync` copies the dashboard web bundle (minified, gitignored,
+      // untracked) into the Android app. ESLint flat config does not read .gitignore,
+      // so these artifacts must be explicitly ignored or they flood lint with
+      // no-unused-expressions / no-undef errors (FN-6775).
+      "packages/mobile/android/app/src/main/assets/public/**",
       "coverage/**",
       // Project metadata (fn data, worktrees, etc.)
       ".fusion/**",
