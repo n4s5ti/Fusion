@@ -71,16 +71,16 @@ describe("pause-abort benign requeue-to-todo (FN-6782)", () => {
 
     await invokeGraphFailure(executor, task);
 
-    // Must NOT write status:"failed" — that was the storm trigger.
+    // FNXC:WorkflowLifecycle a todo pause-abort must NOT write status:"failed" — that was the storm trigger.
     const parkedFailed = store.updateTask.mock.calls.some(
       (call: unknown[]) => (call[1] as { status?: string } | undefined)?.status === "failed",
     );
     expect(parkedFailed).toBe(false);
-    // Benign log surfaced.
+    // FNXC:WorkflowLifecycle the benign-clear log must surface for observability.
     expect(logText(store)).toContain("benign, cleared for normal scheduling");
-    // pausedAborted marker cleared so the next dispatch starts clean.
+    // FNXC:WorkflowLifecycle the pausedAborted marker must be cleared so the next dispatch starts clean.
     expect((executor as any).pausedAborted.has(task.id)).toBe(false);
-    // Leaked worktree slot released.
+    // FNXC:WorkflowLifecycle the leaked worktree slot must be released to avoid board-wide concurrency blockage.
     expect((executor as any).activeWorktrees.has(task.id)).toBe(false);
   });
 

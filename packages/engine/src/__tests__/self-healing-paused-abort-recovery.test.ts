@@ -76,11 +76,11 @@ describe("recoverPausedAbortFailures", () => {
 
   it("clears a todo-column pause-abort park to schedulable (status:null) without moving it", async () => {
     const store = createMockStore([parkTask({ id: "FN-7000", column: "todo" })]);
-    const release = vi.fn();
+    const clearBinding = vi.fn().mockReturnValue(true);
     const manager = new SelfHealingManager(store, {
       rootDir: "/tmp/test-project",
       getExecutingTaskIds: () => new Set<string>(),
-      releaseExecutorWorktreeOwnership: release,
+      clearPhantomExecutorBinding: clearBinding as (taskId: string) => boolean | void,
     });
 
     const recovered = await manager.recoverPausedAbortFailures();
@@ -89,7 +89,9 @@ describe("recoverPausedAbortFailures", () => {
     expect(store.updateTask).toHaveBeenCalledWith("FN-7000", { status: null, error: null });
     // Already in todo — must NOT be moved.
     expect(store.moveTask).not.toHaveBeenCalled();
-    expect(release).toHaveBeenCalledWith("FN-7000");
+    // FNXC:WorkflowLifecycle A1 releases via the wired clearPhantomExecutorBinding,
+    // not the dead releaseExecutorWorktreeOwnership option (PR #1687 review).
+    expect(clearBinding).toHaveBeenCalledWith("FN-7000");
     expect(store.recordRunAuditEvent).toHaveBeenCalledWith(
       expect.objectContaining({ mutationType: "task:auto-recover-paused-abort-park", target: "FN-7000" }),
     );
@@ -128,5 +130,28 @@ describe("recoverPausedAbortFailures", () => {
 
     expect(recovered).toBe(0);
     expect(store.updateTask).not.toHaveBeenCalled();
+  });
+
+  // FNXC:WorkflowLifecycle greptile P1 (PR #1687): the method self-guards on
+  // global/engine pause at its own entry, so calling it directly (test/API path)
+  // while the operator has frozen the board must be a no-op.
+  it("self-guards: does nothing while globalPause is set", async () => {
+    const store = createMockStore([parkTask({ id: "FN-7000", column: "todo" })]);
+    (store.getSettings as ReturnType<typeof vi.fn>).mockResolvedValue({
+      autoMerge: true,
+      globalPause: true,
+      enginePaused: false,
+      maintenanceIntervalMs: 0,
+    } as unknown as Settings);
+    const manager = new SelfHealingManager(store, {
+      rootDir: "/tmp/test-project",
+      getExecutingTaskIds: () => new Set<string>(),
+    });
+
+    const recovered = await manager.recoverPausedAbortFailures();
+
+    expect(recovered).toBe(0);
+    expect(store.updateTask).not.toHaveBeenCalled();
+    expect(store.moveTask).not.toHaveBeenCalled();
   });
 });

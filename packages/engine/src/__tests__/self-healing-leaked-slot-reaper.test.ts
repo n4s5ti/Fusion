@@ -77,7 +77,7 @@ describe("reapLeakedConcurrencySlots", () => {
       rootDir: "/tmp/test-project",
       listWorktreeHolders: () => holders,
       getExecutingTaskIds: () => new Set<string>(executing),
-      clearPhantomExecutorBinding,
+      clearPhantomExecutorBinding: clearPhantomExecutorBinding as (taskId: string) => boolean | void,
     });
   }
 

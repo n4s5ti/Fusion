@@ -413,6 +413,16 @@ const ORPHANED_WITH_WORKTREE_GRACE_MS = 300_000;
 const MAX_TASK_DONE_RETRIES = 3;
 export const MAX_WORKTREE_SESSION_RETRIES = 3;
 /**
+ * FNXC:WorkflowLifecycle 2026-06-20-00:00: single source of truth for the
+ * pause-abort park error message markers. The executor's handleGraphFailure
+ * builds the parked-failure message from these, and `recoverPausedAbortFailures`
+ * matches on them — sharing the constants prevents the recovery predicate from
+ * silently drifting if the message text is ever edited (greptile review on
+ * PR #1687: a string-coupled predicate breaks with no compile-time signal).
+ */
+export const PAUSE_ABORT_PARK_ERROR_MARKER = "Workflow graph failure surfaced after paused";
+export const PAUSE_ABORT_PARK_OPERATOR_MARKER = "operator action required";
+/**
  * FNXC:AutoMergeRetries 2026-06-17-04:20:
  * Keep this export as the historical default seed for tests and dashboard fallback alignment, but SelfHealingManager must call resolveMaxAutoMergeRetries(settings) at decision points so configured projects do not recover or stall at the old fixed value.
  */
@@ -7913,14 +7923,22 @@ export class SelfHealingManager {
    */
   async recoverPausedAbortFailures(): Promise<number> {
     try {
+      // FNXC:WorkflowLifecycle 2026-06-20-00:00: self-guard against global/engine
+      // pause at the method entry, not just the batch-2 runner. This method is
+      // public and exercised directly (tests, potential API path); without this,
+      // calling it while paused would requeue tasks the operator intentionally
+      // froze (greptile P1, PR #1687). Mirrors every peer recovery func.
+      const settings = await this.store.getSettings();
+      if (settings.globalPause || settings.enginePaused) return 0;
+
       const executingIds = this.options.getExecutingTaskIds?.() ?? new Set<string>();
       const tasks = await this.store.listTasks({ slim: true });
 
       const isPausedAbortPark = (t: Task): boolean =>
         t.status === "failed" &&
         typeof t.error === "string" &&
-        t.error.includes("operator action required") &&
-        t.error.includes("Workflow graph failure surfaced after paused");
+        t.error.includes(PAUSE_ABORT_PARK_OPERATOR_MARKER) &&
+        t.error.includes(PAUSE_ABORT_PARK_ERROR_MARKER);
 
       const parked = tasks.filter((t) =>
         isPausedAbortPark(t) &&
@@ -7940,9 +7958,22 @@ export class SelfHealingManager {
       let recovered = 0;
       for (const task of parked) {
         try {
-          // Re-read to avoid acting on a stale snapshot after awaits.
+          // FNXC:WorkflowLifecycle 2026-06-20-00:00: re-read AND re-validate the
+          // FULL predicate against the refreshed row with a FRESH executing set
+          // before mutating — the outer snapshot can go stale across awaits, so a
+          // task that became ineligible (paused, user-paused, started executing,
+          // or moved to a non-recoverable column) must not get a backward move
+          // applied (coderabbit Major + greptile, PR #1687).
           const fresh = await this.store.getTask(task.id);
-          if (!fresh || !isPausedAbortPark(fresh) || fresh.paused || executingIds.has(fresh.id)) {
+          const latestExecutingIds = this.options.getExecutingTaskIds?.() ?? new Set<string>();
+          if (
+            !fresh ||
+            !isPausedAbortPark(fresh) ||
+            fresh.paused ||
+            fresh.userPaused ||
+            latestExecutingIds.has(fresh.id) ||
+            !(fresh.column === "todo" || fresh.column === "in-progress")
+          ) {
             continue;
           }
 
@@ -7956,21 +7987,32 @@ export class SelfHealingManager {
           }
           // Release any in-memory worktree ownership the leaked park may still
           // pin, so the requeued task does not re-block the concurrency gate.
-          this.options.releaseExecutorWorktreeOwnership?.(task.id);
+          // FNXC:WorkflowLifecycle 2026-06-20-00:00: use clearPhantomExecutorBinding
+          // (wired + live-session-refusal guarded), NOT releaseExecutorWorktreeOwnership
+          // which is a declared-but-never-wired option — it would silently no-op.
+          this.options.clearPhantomExecutorBinding?.(task.id);
 
           await this.store.logEntry(
             task.id,
             "Auto-recovered: pause-abort park cleared — requeued for normal scheduling",
           );
-          await this.store.recordRunAuditEvent?.({
-            taskId: task.id,
-            agentId: "self-healing",
-            runId: generateSyntheticRunId("self-healing", task.id),
-            domain: "database",
-            mutationType: "task:auto-recover-paused-abort-park",
-            target: task.id,
-            metadata: { fromColumn: fresh.column },
-          });
+          // FNXC:WorkflowLifecycle 2026-06-20-00:00: audit emission is strictly
+          // best-effort — an audit throw AFTER the successful state mutation must
+          // not drop into the per-task catch and falsely log "recovery failed" /
+          // skip the recovered++ (coderabbit, PR #1687).
+          try {
+            await this.store.recordRunAuditEvent?.({
+              taskId: task.id,
+              agentId: "self-healing",
+              runId: generateSyntheticRunId("self-healing", task.id),
+              domain: "database",
+              mutationType: "task:auto-recover-paused-abort-park",
+              target: task.id,
+              metadata: { fromColumn: fresh.column },
+            });
+          } catch (auditErr: unknown) {
+            log.warn(`Pause-abort park audit emission failed for ${task.id}: ${auditErr instanceof Error ? auditErr.message : String(auditErr)}`);
+          }
           log.log(`Recovered pause-abort park ${task.id}: ${task.title || task.description?.slice(0, 60) || "(untitled)"}`);
           recovered++;
         } catch (err: unknown) { const errorMessage = err instanceof Error ? err.message : String(err);

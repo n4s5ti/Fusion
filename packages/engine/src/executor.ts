@@ -158,7 +158,7 @@ import {
   isMissingWorktreeSessionStartFailure,
 } from "./restart-recovery-coordinator.js";
 import { BranchWorktreeAutoRecoveryHandler } from "./auto-recovery-handlers/branch-worktree.js";
-import { autoRecoverWorktreeSessionStartFailure, MAX_WORKTREE_SESSION_RETRIES } from "./self-healing.js";
+import { autoRecoverWorktreeSessionStartFailure, MAX_WORKTREE_SESSION_RETRIES, PAUSE_ABORT_PARK_ERROR_MARKER, PAUSE_ABORT_PARK_OPERATOR_MARKER } from "./self-healing.js";
 import { ContaminationAutoRecoveryHandler } from "./auto-recovery-handlers/contamination.js";
 import { createFileScopeAutoRecoveryHandler } from "./auto-recovery-handlers/file-scope.js";
 import { ReadonlyViolationError, filterCustomToolsForReadonly } from "./workflow-step-tool-policy.js";
@@ -6652,15 +6652,15 @@ export class TaskExecutor {
           // non-todo columns (e.g. in-review), per FN-6478.
           if (live.column === "todo") {
             this.clearPausedAborted(task.id);
-            // FN-6782 leak fix: a task parked back to `todo` must not keep
-            // pinning its in-memory worktree slot. The execute() finally does
-            // not delete activeWorktrees on this early-return path, so without
-            // this release the slot leaks — a `todo` task stays a maxWorktrees
-            // holder and concurrency-blocks the whole queue (the FN-6756
-            // "in todo yet still a holder, maxWorktrees=3/3" symptom). Mirror
-            // clearPhantomExecutorBinding's release semantics. Safe here:
-            // handleGraphFailure is terminal for this run (no seam re-entry),
-            // and the next dispatch re-acquires a fresh worktree.
+            // FNXC:WorkflowLifecycle 2026-06-20-00:00: FN-6782 leak fix — a task
+            // parked back to `todo` must not keep pinning its in-memory worktree
+            // slot. The execute() finally does not delete activeWorktrees on this
+            // early-return path, so without this release the slot leaks — a `todo`
+            // task stays a maxWorktrees holder and concurrency-blocks the whole
+            // queue (the FN-6756 "in todo yet still a holder, maxWorktrees=3/3"
+            // symptom). Mirror clearPhantomExecutorBinding's release semantics.
+            // Safe here: handleGraphFailure is terminal for this run (no seam
+            // re-entry), and the next dispatch re-acquires a fresh worktree.
             this.activeWorktrees.delete(task.id);
             const todoBenign = `Workflow graph run ended during ${pauseProvenance} with task re-queued to todo — benign, cleared for normal scheduling`;
             executorLog.log(`${task.id}: ${todoBenign}`);
@@ -6669,7 +6669,10 @@ export class TaskExecutor {
             return;
           }
           const failedNode = result.visitedNodeIds[result.visitedNodeIds.length - 1] ?? "unknown";
-          const message = `Workflow graph failure surfaced after paused ${pauseProvenance} in '${live.column}' at node '${failedNode}' — operator action required; retry or explicitly unpause/resume after inspecting the task`;
+          // FNXC:WorkflowLifecycle 2026-06-20-00:00: build the parked-failure
+          // message from the shared markers so self-healing's recoverPausedAbortFailures
+          // predicate cannot drift out of sync with this text (PR #1687 review).
+          const message = `${PAUSE_ABORT_PARK_ERROR_MARKER} ${pauseProvenance} in '${live.column}' at node '${failedNode}' — ${PAUSE_ABORT_PARK_OPERATOR_MARKER}; retry or explicitly unpause/resume after inspecting the task`;
           executorLog.warn(`${task.id}: ${message}`);
           await this.store.logEntry(task.id, message, undefined, this.getRunContextFor(task.id));
           if (live.column !== "done" && live.column !== "archived" && live.status == null && live.error == null) {
