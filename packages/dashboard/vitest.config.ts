@@ -282,9 +282,12 @@ Quarantine the concurrency-sensitive workflow editor file under the deletion rat
 FNXC:DashboardTestQuarantine 2026-06-19-15:40:
 FN-6742 rescued session-cross-tab before the 2026-07-03 deletion ratchet by reproducing ENOTEMPTY in dashboard-api-quality-backfill and fixing the test-owned route/close-callback teardown seam.
 Keep it out of this exclude list so loaded API shards keep exercising cross-tab locking, beacon release, stale-lock expiry, SSE summaries, and stale-session cleanup.
+
+FNXC:DashboardTestQuarantine 2026-06-19-16:50:
+FN-6743 rescued QuickEntryBox's third quarantine cycle by replacing the ref-gated post-submit focus effect with a resolved-submit focus trigger and broadening desktop/mobile submit coverage.
+Keep QuickEntryBox out of this exclude list so the dashboard app lanes exercise Enter, Save, duplicate-confirmed creation, mobile non-focus, and failure-preserves-draft focus invariants.
 */
 const quarantinedDashboardTests: string[] = [
-  "app/components/__tests__/QuickEntryBox.test.tsx",
   "app/components/__tests__/WorkflowNodeEditor.test.tsx",
 ];
 
