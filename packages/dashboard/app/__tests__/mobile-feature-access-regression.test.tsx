@@ -170,7 +170,8 @@ describe("Mobile Feature Access Regression Guard", () => {
 
     fireEvent.click(screen.getByTestId("mobile-nav-tab-more"));
 
-    expect(screen.getByTestId("mobile-more-item-mailbox")).toBeDefined();
+    expect(screen.getByTestId("mobile-nav-tab-mailbox")).toBeDefined();
+    expect(screen.queryByTestId("mobile-more-item-mailbox")).toBeNull();
     expect(screen.getByTestId("mobile-more-item-git")).toBeDefined();
     expect(screen.getByTestId("mobile-more-item-terminal")).toBeDefined();
     expect(screen.getByTestId("mobile-more-item-files")).toBeDefined();

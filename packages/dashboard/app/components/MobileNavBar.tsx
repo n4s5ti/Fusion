@@ -138,7 +138,6 @@ export function MobileNavBar({
   keyboardOpen = false,
   onOpenSettings,
   onOpenActivityLog,
-  onOpenMailbox,
   mailboxUnreadCount = 0,
   mailboxPendingApprovalCount = 0,
   chatHasUnreadResponse = false,
@@ -375,6 +374,11 @@ export function MobileNavBar({
         </button>
 
 
+        {/*
+        FNXC:Navigation 2026-06-19-12:30:
+        Mailbox is a top-level mobile tab only and must not be duplicated in the three-dot More sheet; Todos lives only in the three-dot overflow/More menu, never the main tab list.
+        Keep unread and pending-approval indicators on this surviving Mailbox tab so removing the More-sheet duplicate does not hide mailbox state.
+        */}
         <button
           type="button"
           className={`mobile-nav-tab${view === "mailbox" ? " mobile-nav-tab--active" : ""}`}
@@ -469,22 +473,6 @@ export function MobileNavBar({
                 {shellConnectionControl}
               </div>
             ) : null}
-
-            <button
-              type="button"
-              className="mobile-more-item"
-              data-testid="mobile-more-item-mailbox"
-              onClick={() => handleMoreAction(onOpenMailbox)}
-            >
-              <Mail />
-              <span>{t("nav.mailbox", "Mailbox")}</span>
-              {mailboxUnreadCount > 0 && (
-                <span className="mobile-more-item-badge mobile-more-item-badge--unread">{formatCount(mailboxUnreadCount)}</span>
-              )}
-              {mailboxPendingApprovalCount > 0 && (
-                <span className="mobile-more-item-badge">{formatCount(mailboxPendingApprovalCount)}</span>
-              )}
-            </button>
 
             <button
               type="button"

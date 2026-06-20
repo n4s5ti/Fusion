@@ -540,14 +540,19 @@ describe("Header", () => {
   });
 
   describe("todos navigation", () => {
-    it("shows Todos only in More views on desktop when enabled", () => {
-      renderHeader({ onChangeView: noop, onOpenTodos: vi.fn(), todosEnabled: true }, "desktop");
-      expect(screen.queryByTestId("todos-toggle-btn")).toBeNull();
+    for (const tier of ["desktop", "tablet"] as const) {
+      it(`shows Todos only in More views and Mailbox only top-level on ${tier}`, () => {
+        renderHeader({ onChangeView: noop, onOpenTodos: vi.fn(), todosEnabled: true }, tier);
 
-      fireEvent.click(screen.getByTestId("view-toggle-overflow-trigger"));
-      expect(screen.getAllByText("Todos")).toHaveLength(1);
-      expect(screen.getByTestId("view-overflow-todos")).toBeInTheDocument();
-    });
+        expect(screen.queryByTestId("todos-toggle-btn")).toBeNull();
+        expect(screen.getByTitle("Mailbox view")).toBeInTheDocument();
+
+        fireEvent.click(screen.getByTestId("view-toggle-overflow-trigger"));
+        expect(screen.getAllByText("Todos")).toHaveLength(1);
+        expect(screen.getByTestId("view-overflow-todos")).toBeInTheDocument();
+        expect(screen.queryByTestId("view-overflow-mailbox")).toBeNull();
+      });
+    }
 
     it("does not show Todos entry in More views when disabled", () => {
       renderHeader({ onChangeView: noop, onOpenTodos: vi.fn(), todosEnabled: false }, "desktop");

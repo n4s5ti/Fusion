@@ -121,6 +121,30 @@ describe("MobileNavBar", () => {
     expect(onOpenTodos).toHaveBeenCalled();
   });
 
+  it("Mailbox is a primary tab and is not duplicated in the More sheet", () => {
+    render(<MobileNavBar {...createDefaultProps()} mailboxUnreadCount={3} mailboxPendingApprovalCount={1} />);
+
+    expect(screen.getByTestId("mobile-nav-tab-mailbox")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId("mobile-nav-tab-more"));
+    expect(screen.queryByTestId("mobile-more-item-mailbox")).toBeNull();
+  });
+
+  it("Todos lives only in the More sheet, never a primary tab", () => {
+    render(
+      <MobileNavBar
+        {...createDefaultProps()}
+        onOpenTodos={vi.fn()}
+        experimentalFeatures={{ todoView: true }}
+      />,
+    );
+
+    expect(screen.queryByTestId("mobile-nav-tab-todos")).toBeNull();
+
+    fireEvent.click(screen.getByTestId("mobile-nav-tab-more"));
+    expect(screen.getByTestId("mobile-more-item-todos")).toBeInTheDocument();
+  });
+
   it("shows secrets in More and routes to secrets view", () => {
     const props = createDefaultProps();
     render(<MobileNavBar {...props} />);
@@ -304,15 +328,15 @@ describe("MobileNavBar", () => {
     expect(badge?.textContent).toBe("5");
   });
 
-  it("shows matching mailbox unread badge in the More sheet", () => {
+  it("keeps mailbox unread badge on the primary tab only", () => {
     render(<MobileNavBar {...createDefaultProps()} mailboxUnreadCount={7} />);
 
-    fireEvent.click(screen.getByTestId("mobile-nav-tab-more"));
+    const tabBadge = screen.getByTestId("mobile-nav-tab-mailbox").querySelector(".mobile-nav-tab-badge");
+    expect(tabBadge).toBeDefined();
+    expect(tabBadge?.textContent).toBe("7");
 
-    const moreItemBadge = screen.getByTestId("mobile-more-item-mailbox").querySelector(".mobile-more-item-badge");
-    expect(moreItemBadge).toBeDefined();
-    expect(moreItemBadge?.className).toContain("mobile-more-item-badge--unread");
-    expect(moreItemBadge?.textContent).toBe("7");
+    fireEvent.click(screen.getByTestId("mobile-nav-tab-more"));
+    expect(screen.queryByTestId("mobile-more-item-mailbox")).toBeNull();
   });
 
   it("tasks tab calls onChangeView with 'board' when coming from a non-tasks view", () => {
@@ -423,7 +447,8 @@ describe("MobileNavBar", () => {
     render(<MobileNavBar {...createDefaultProps()} />);
     fireEvent.click(screen.getByTestId("mobile-nav-tab-more"));
 
-    expect(screen.getByTestId("mobile-more-item-mailbox")).toBeDefined();
+    expect(screen.queryByTestId("mobile-more-item-mailbox")).toBeNull();
+    expect(screen.getByTestId("mobile-nav-tab-mailbox")).toBeDefined();
     expect(screen.getByTestId("mobile-more-item-activity")).toBeDefined();
     expect(screen.getByTestId("mobile-more-item-git")).toBeDefined();
     expect(screen.getByTestId("mobile-more-item-terminal")).toBeDefined();
