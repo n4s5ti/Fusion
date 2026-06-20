@@ -1,4 +1,5 @@
 import { BUILTIN_CODING_WORKFLOW_IR } from "./builtin-coding-workflow-ir.js";
+import { BUILTIN_LEAD_GENERATION_WORKFLOW_IR } from "./builtin-lead-generation-workflow-ir.js";
 import { BUILTIN_MARKETING_WORKFLOW_IR } from "./builtin-marketing-workflow-ir.js";
 import { BUILTIN_PR_WORKFLOW_IR } from "./builtin-pr-workflow-ir.js";
 import { BUILTIN_STEPWISE_CODING_WORKFLOW_IR } from "./builtin-stepwise-coding-workflow-ir.js";
@@ -339,6 +340,25 @@ export const BUILTIN_WORKFLOWS: WorkflowDefinition[] = [
       "await-rebase": { x: 740, y: 320 },
       "pr-merge": { x: 740, y: 160 },
       end: { x: 910, y: 160 },
+    },
+    createdAt: BUILTIN_TS,
+    updatedAt: BUILTIN_TS,
+  },
+  {
+    id: "builtin:lead-generation",
+    name: "Lead generation (built-in)",
+    description:
+      "A business pipeline for sourcing, qualifying, enriching, and contacting leads with custom lead fields and stage columns. Requires the workflow graph executor for custom board columns.",
+    kind: "workflow",
+    ir: BUILTIN_LEAD_GENERATION_WORKFLOW_IR,
+    layout: {
+      start: { x: 60, y: 160 },
+      "source-prospects": { x: 230, y: 160 },
+      "qualify-lead": { x: 400, y: 160 },
+      "qualification-gate": { x: 570, y: 160 },
+      "enrich-lead": { x: 740, y: 160 },
+      "draft-outreach": { x: 910, y: 160 },
+      end: { x: 1080, y: 160 },
     },
     createdAt: BUILTIN_TS,
     updatedAt: BUILTIN_TS,

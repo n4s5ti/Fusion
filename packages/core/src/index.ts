@@ -122,6 +122,7 @@ export { resolveWorkflowOptionalSteps } from "./workflow-optional-steps.js";
 export type { ResolvedWorkflowOptionalStep } from "./workflow-optional-steps.js";
 export { BUILTIN_STEPWISE_CODING_WORKFLOW_IR } from "./builtin-stepwise-coding-workflow-ir.js";
 export { BUILTIN_PR_WORKFLOW_IR } from "./builtin-pr-workflow-ir.js";
+export { BUILTIN_LEAD_GENERATION_WORKFLOW_IR } from "./builtin-lead-generation-workflow-ir.js";
 export {
   BUILTIN_WORKFLOW_SETTINGS,
   BUILTIN_MOVED_WORKFLOW_SETTINGS,

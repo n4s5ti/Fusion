@@ -95,6 +95,16 @@ describe("built-in workflows", () => {
     expect(serializeWorkflowIr(reparsed)).toBe(serialized);
   });
 
+  it("includes the lead-generation built-in after existing built-ins without disturbing default order", () => {
+    const leadGeneration = getBuiltinWorkflow("builtin:lead-generation");
+    expect(leadGeneration).toBeDefined();
+    expect(leadGeneration!.kind).toBe("workflow");
+    expect(defaultEnabledBuiltinWorkflowIds()).toContain("builtin:lead-generation");
+    expect(BUILTIN_WORKFLOWS.findIndex((workflow) => workflow.id === "builtin:lead-generation")).toBeGreaterThan(
+      BUILTIN_WORKFLOWS.findIndex((workflow) => workflow.id === "builtin:pr-workflow"),
+    );
+  });
+
   it("default workflow column ids equal the legacy enum values, in legacy order (KTD-1)", () => {
     expect(BUILTIN_CODING_WORKFLOW_IR.version).toBe("v2");
     if (BUILTIN_CODING_WORKFLOW_IR.version !== "v2") throw new Error("expected v2");
