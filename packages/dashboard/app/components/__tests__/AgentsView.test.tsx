@@ -105,6 +105,7 @@ const mockResizeObserverDisconnect = vi.fn();
 describe("AgentsView", () => {
   const mockAddToast = vi.fn();
   const projectId = "proj_123";
+  const agentsSidebarWidthKey = "kb-dashboard-agents-sidebar-width";
 
   const mockAgents: Agent[] = [
     {
@@ -308,6 +309,121 @@ describe("AgentsView", () => {
 
       expect(container.querySelector(".agent-card--selected")).toBeTruthy();
       expect(container.querySelector(".agents-sidebar-quick-controls")).toBeNull();
+    });
+
+    it.each(["desktop", "tablet"] as const)("renders an accessible resize handle on %s split layouts", async (mode) => {
+      mockViewportMode.mockReturnValue(mode);
+      const { container } = render(<AgentsView addToast={mockAddToast} projectId={projectId} />);
+
+      const handle = await screen.findByTestId("agents-sidebar-resize-handle");
+      expect(handle).toHaveAttribute("role", "separator");
+      expect(handle).toHaveAttribute("aria-orientation", "vertical");
+      expect(handle).toHaveAttribute("aria-valuemin", "260");
+      expect(handle).toHaveAttribute("aria-valuemax", "520");
+      expect(handle).toHaveAttribute("aria-valuenow", "320");
+      expect(container.querySelector<HTMLElement>(".agents-split-layout")?.style.gridTemplateColumns).toBe("320px var(--space-sm) minmax(0, 1fr)");
+    });
+
+    it("does not render the resize handle or inline split width on mobile", async () => {
+      mockViewportMode.mockReturnValue("mobile");
+      const { container } = render(<AgentsView addToast={mockAddToast} projectId={projectId} />);
+
+      await waitFor(() => {
+        expect(screen.getByText("Agents")).toBeTruthy();
+      });
+
+      expect(screen.queryByTestId("agents-sidebar-resize-handle")).toBeNull();
+      expect(container.querySelector<HTMLElement>(".agents-split-layout")?.style.gridTemplateColumns).toBe("");
+    });
+
+    it.each([
+      { label: "no stored value", stored: null, expected: 320 },
+      { label: "valid stored value", stored: "410", expected: 410 },
+      { label: "corrupt stored value", stored: "not-a-number", expected: 320 },
+      { label: "above max stored value", stored: "999", expected: 520 },
+      { label: "below min stored value", stored: "10", expected: 260 },
+    ])("initializes sidebar width from $label", async ({ stored, expected }) => {
+      if (stored !== null) {
+        localStorage.setItem(scopedKey(agentsSidebarWidthKey, projectId), stored);
+      }
+
+      const { container } = render(<AgentsView addToast={mockAddToast} projectId={projectId} />);
+
+      const handle = await screen.findByTestId("agents-sidebar-resize-handle");
+      expect(handle).toHaveAttribute("aria-valuenow", String(expected));
+      expect(container.querySelector<HTMLElement>(".agents-split-layout")?.style.gridTemplateColumns).toBe(`${expected}px var(--space-sm) minmax(0, 1fr)`);
+    });
+
+    it("supports keyboard resizing with project-scoped persistence and clamping", async () => {
+      localStorage.setItem(scopedKey(agentsSidebarWidthKey, projectId), "515");
+      render(<AgentsView addToast={mockAddToast} projectId={projectId} />);
+
+      const handle = await screen.findByTestId("agents-sidebar-resize-handle");
+
+      fireEvent.keyDown(handle, { key: "ArrowRight", shiftKey: true });
+      await waitFor(() => {
+        expect(handle).toHaveAttribute("aria-valuenow", "520");
+        expect(localStorage.getItem(scopedKey(agentsSidebarWidthKey, projectId))).toBe("520");
+      });
+
+      fireEvent.keyDown(handle, { key: "ArrowLeft", shiftKey: true });
+      expect(handle).toHaveAttribute("aria-valuenow", "470");
+      expect(localStorage.getItem(scopedKey(agentsSidebarWidthKey, projectId))).toBe("470");
+
+      fireEvent.keyDown(handle, { key: "ArrowLeft" });
+      expect(handle).toHaveAttribute("aria-valuenow", "460");
+      expect(localStorage.getItem(scopedKey(agentsSidebarWidthKey, projectId))).toBe("460");
+    });
+
+    it("clamps keyboard resizing at the minimum width", async () => {
+      localStorage.setItem(scopedKey(agentsSidebarWidthKey, projectId), "260");
+      render(<AgentsView addToast={mockAddToast} projectId={projectId} />);
+
+      const handle = await screen.findByTestId("agents-sidebar-resize-handle");
+      fireEvent.keyDown(handle, { key: "ArrowLeft", shiftKey: true });
+
+      expect(handle).toHaveAttribute("aria-valuenow", "260");
+      expect(localStorage.getItem(scopedKey(agentsSidebarWidthKey, projectId))).toBe("260");
+    });
+
+    it("supports pointer drag resizing with capture, cleanup, persistence, and max clamping", async () => {
+      localStorage.setItem(scopedKey(agentsSidebarWidthKey, projectId), "500");
+      const { container } = render(<AgentsView addToast={mockAddToast} projectId={projectId} />);
+      const handle = await screen.findByTestId("agents-sidebar-resize-handle");
+      const setPointerCapture = vi.fn();
+      const releasePointerCapture = vi.fn();
+      Object.defineProperty(handle, "setPointerCapture", { configurable: true, value: setPointerCapture });
+      Object.defineProperty(handle, "releasePointerCapture", { configurable: true, value: releasePointerCapture });
+
+      fireEvent.pointerDown(handle, { pointerId: 1, clientX: 300 });
+      expect(setPointerCapture).toHaveBeenCalledWith(1);
+      expect(document.body.style.userSelect).toBe("none");
+
+      fireEvent.pointerMove(document, { pointerId: 1, clientX: 400 });
+      await waitFor(() => {
+        expect(handle).toHaveAttribute("aria-valuenow", "520");
+      });
+      expect(container.querySelector<HTMLElement>(".agents-split-layout")?.style.gridTemplateColumns).toBe("520px var(--space-sm) minmax(0, 1fr)");
+
+      fireEvent.pointerUp(document, { pointerId: 1 });
+      expect(releasePointerCapture).toHaveBeenCalledWith(1);
+      expect(document.body.style.userSelect).toBe("");
+      expect(localStorage.getItem(scopedKey(agentsSidebarWidthKey, projectId))).toBe("520");
+    });
+
+    it("supports pointer drag resizing with min clamping", async () => {
+      localStorage.setItem(scopedKey(agentsSidebarWidthKey, projectId), "300");
+      render(<AgentsView addToast={mockAddToast} projectId={projectId} />);
+      const handle = await screen.findByTestId("agents-sidebar-resize-handle");
+
+      fireEvent.pointerDown(handle, { pointerId: 2, clientX: 300 });
+      fireEvent.pointerMove(document, { pointerId: 2, clientX: 0 });
+      await waitFor(() => {
+        expect(handle).toHaveAttribute("aria-valuenow", "260");
+      });
+      fireEvent.pointerUp(document, { pointerId: 2 });
+
+      expect(localStorage.getItem(scopedKey(agentsSidebarWidthKey, projectId))).toBe("260");
     });
 
     it("supports mobile drill-in detail with back navigation", async () => {
@@ -1343,6 +1459,22 @@ describe("AgentsView", () => {
       await waitFor(() => {
         expect(mockFetchOrgTree).toHaveBeenCalledWith(projectId, { includeEphemeral: false });
       });
+    });
+
+    it("does not render the split resize handle in org chart view", async () => {
+      mockFetchOrgTree.mockResolvedValue(orgTree);
+      const { container } = render(<AgentsView addToast={mockAddToast} />);
+
+      expect(await screen.findByTestId("agents-sidebar-resize-handle")).toBeTruthy();
+
+      fireEvent.click(screen.getByRole("button", { name: "Org Chart view" }));
+
+      await waitFor(() => {
+        expect(container.querySelector(".agents-org-full-view")).toBeTruthy();
+      });
+
+      expect(screen.queryByTestId("agents-sidebar-resize-handle")).toBeNull();
+      expect(container.querySelector(".agents-split-layout")).toBeNull();
     });
 
     it("renders org chart nodes and opens detail view when clicking a node", async () => {

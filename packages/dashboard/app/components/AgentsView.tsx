@@ -63,6 +63,28 @@ const ORG_CHART_SCALE_MAX = 3;
 const ORG_CHART_KEYBOARD_PAN_STEP = 16;
 const ORG_CHART_OVERSCROLL = 32;
 
+/*
+FNXC:AgentsView 2026-06-20-00:00:
+The Agents split view needs a wider tablet default than the old fixed CSS column and the sidebar must be user-resizable on non-mobile viewports.
+Persist the clamped width per project so desktop and tablet users keep their preferred agent-list/detail balance without affecting the stacked mobile layout.
+*/
+const AGENTS_SIDEBAR_DEFAULT_WIDTH = 320;
+const AGENTS_SIDEBAR_MIN_WIDTH = 260;
+const AGENTS_SIDEBAR_MAX_WIDTH = 520;
+const AGENTS_SIDEBAR_WIDTH_STORAGE_KEY = "kb-dashboard-agents-sidebar-width";
+
+function clampAgentsSidebarWidth(width: number): number {
+  return Math.max(AGENTS_SIDEBAR_MIN_WIDTH, Math.min(AGENTS_SIDEBAR_MAX_WIDTH, width));
+}
+
+function readAgentsSidebarWidth(projectId?: string): number {
+  if (typeof window === "undefined") return AGENTS_SIDEBAR_DEFAULT_WIDTH;
+  const stored = getScopedItem(AGENTS_SIDEBAR_WIDTH_STORAGE_KEY, projectId);
+  const parsed = stored ? Number(stored) : NaN;
+  if (!Number.isFinite(parsed)) return AGENTS_SIDEBAR_DEFAULT_WIDTH;
+  return clampAgentsSidebarWidth(parsed);
+}
+
 function getStateBadgeClass(state: AgentState): string {
   switch (state) {
     case "running":
@@ -272,6 +294,7 @@ export function AgentsView({ addToast, projectId, onOpenTaskLogs, agentOnboardin
   const [showSystemAgents, setShowSystemAgents] = useState(false);
   const viewportMode = useViewportMode();
   const isMobileViewport = viewportMode === "mobile";
+  const [sidebarWidth, setSidebarWidth] = useState<number>(() => readAgentsSidebarWidth(projectId));
   const [filterState, setFilterState] = useState<AgentState | "all">("all");
   const { agents, stats, isLoading, loadAgents, refreshAgents } = useAgents(projectId, {
     filterState,
@@ -321,6 +344,10 @@ export function AgentsView({ addToast, projectId, onOpenTaskLogs, agentOnboardin
   const controlsPanelId = useId();
 
   useEffect(() => {
+    setSidebarWidth(readAgentsSidebarWidth(projectId));
+  }, [projectId]);
+
+  useEffect(() => {
     const saved = getScopedItem("fn-agent-view", projectId);
     if (saved === "list" || saved === "board" || saved === "org") {
       setAgentView(saved);
@@ -342,6 +369,59 @@ export function AgentsView({ addToast, projectId, onOpenTaskLogs, agentOnboardin
   useEffect(() => {
     setScopedItem(ORG_CHART_LAYOUT_STORAGE_KEY, orgChartLayoutPreference, projectId);
   }, [orgChartLayoutPreference, projectId]);
+
+  const persistSidebarWidth = useCallback((width: number) => {
+    try {
+      setScopedItem(AGENTS_SIDEBAR_WIDTH_STORAGE_KEY, String(width), projectId);
+    } catch {
+      // Ignore storage errors.
+    }
+  }, [projectId]);
+
+  const handleSidebarResizeStart = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
+    if (isMobileViewport) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const handle = event.currentTarget;
+    if (typeof handle.setPointerCapture === "function") {
+      handle.setPointerCapture(event.pointerId);
+    }
+    const startX = event.clientX;
+    const startWidth = sidebarWidth;
+    let latestWidth = startWidth;
+    document.body.style.userSelect = "none";
+
+    const onPointerMove = (moveEvent: PointerEvent) => {
+      const deltaX = moveEvent.clientX - startX;
+      const nextWidth = clampAgentsSidebarWidth(startWidth + deltaX);
+      latestWidth = nextWidth;
+      setSidebarWidth(nextWidth);
+    };
+
+    const onPointerUp = (upEvent: PointerEvent) => {
+      if (typeof handle.releasePointerCapture === "function") {
+        handle.releasePointerCapture(upEvent.pointerId);
+      }
+      document.body.style.userSelect = "";
+      document.removeEventListener("pointermove", onPointerMove);
+      document.removeEventListener("pointerup", onPointerUp);
+      persistSidebarWidth(latestWidth);
+    };
+
+    document.addEventListener("pointermove", onPointerMove);
+    document.addEventListener("pointerup", onPointerUp);
+  }, [isMobileViewport, persistSidebarWidth, sidebarWidth]);
+
+  const handleSidebarResizeKeyDown = useCallback((event: ReactKeyboardEvent<HTMLDivElement>) => {
+    if (isMobileViewport) return;
+    if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+    event.preventDefault();
+    const step = event.shiftKey ? 50 : 10;
+    const delta = event.key === "ArrowLeft" ? -step : step;
+    const nextWidth = clampAgentsSidebarWidth(sidebarWidth + delta);
+    setSidebarWidth(nextWidth);
+    persistSidebarWidth(nextWidth);
+  }, [isMobileViewport, persistSidebarWidth, sidebarWidth]);
 
   const [editingRoleForAgent, setEditingRoleForAgent] = useState<string | null>(null);
   const roleSelectRef = useRef<HTMLSelectElement>(null);
@@ -1547,7 +1627,10 @@ export function AgentsView({ addToast, projectId, onOpenTaskLogs, agentOnboardin
           </div>
         </div>
       ) : (
-      <div className="agents-split-layout">
+      <div
+        className="agents-split-layout"
+        style={isMobileViewport ? undefined : { gridTemplateColumns: `${sidebarWidth}px var(--space-sm) minmax(0, 1fr)` }}
+      >
         <div className={`agents-split-sidebar${isMobileDetailOpen ? " agents-split-sidebar--hidden-mobile" : ""}`}>
           <div className="agents-view-content">
         {/* Agent Collection */}
@@ -1968,6 +2051,22 @@ export function AgentsView({ addToast, projectId, onOpenTaskLogs, agentOnboardin
           </div>
 
         </div>
+
+        {!isMobileViewport && (
+          <div
+            className="agents-split-resize-handle"
+            data-testid="agents-sidebar-resize-handle"
+            role="separator"
+            aria-orientation="vertical"
+            aria-valuemin={AGENTS_SIDEBAR_MIN_WIDTH}
+            aria-valuemax={AGENTS_SIDEBAR_MAX_WIDTH}
+            aria-valuenow={sidebarWidth}
+            aria-label={t("agents.resizeSidebar", "Resize agents sidebar")}
+            tabIndex={0}
+            onPointerDown={handleSidebarResizeStart}
+            onKeyDown={handleSidebarResizeKeyDown}
+          />
+        )}
 
         <div className={`agents-split-detail${isMobileViewport && !selectedAgentId ? " agents-split-detail--hidden-mobile" : ""}`}>
           {selectedAgentId ? (
