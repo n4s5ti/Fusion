@@ -748,7 +748,7 @@ export function Header({
             height={24}
             viewBox="0 0 128 128"
             fill="none"
-            aria-label="Fusion logo"
+            aria-label={t("header.fusionLogo")}
             role="img"
           >
             <circle
@@ -763,7 +763,7 @@ export function Header({
               fill="currentColor"
             />
           </svg>
-          <h1 className="logo">Fusion</h1>
+          <h1 className="logo">{t("appName", "Fusion")}</h1>
         </div>
 
         {/* Mobile Project Switch - dropdown trigger next to logo when at least one project exists (mobile only) */}

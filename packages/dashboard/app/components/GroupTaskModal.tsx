@@ -147,7 +147,7 @@ export function GroupTaskModal({ isOpen, onClose, groupId, projectId, onOpenMemb
               {group.prUrl && (
                 <section className="card group-task-modal-pr">
                   <a className="btn" href={group.prUrl} target="_blank" rel="noreferrer">
-                    PR #{group.prNumber ?? "—"} ({group.prState}) <ExternalLink />
+                    {t("groups.prLinkLabel", "PR #{{number}} ({{state}})", { number: group.prNumber ?? "—", state: group.prState })} <ExternalLink />
                   </a>
                 </section>
               )}

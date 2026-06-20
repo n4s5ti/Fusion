@@ -191,9 +191,9 @@ export function AgentOnboardingModal({ isOpen, onClose, onCreated, addToast, pro
 
   return (
     <div className="modal-overlay open" role="presentation">
-      <div className="modal modal-lg agent-onboarding-modal" role="dialog" aria-modal="true" aria-label="Agent onboarding">
+      <div className="modal modal-lg agent-onboarding-modal" role="dialog" aria-modal="true" aria-label={t("agents.onboarding.title", "Agent Onboarding")}>
         <div className="modal-header">
-          <h3>{t("agents.onboarding", "Agent Onboarding")}</h3>
+          <h3>{t("agents.onboarding.title", "Agent Onboarding")}</h3>
           <button className="modal-close" onClick={() => void handleClose()} aria-label={t("common.close", "Close")}>×</button>
         </div>
 

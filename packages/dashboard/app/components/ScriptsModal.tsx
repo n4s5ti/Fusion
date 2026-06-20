@@ -181,7 +181,7 @@ export function ScriptsModal({ isOpen, onClose, addToast, projectId, onRunScript
         className="modal scripts-modal"
         role="dialog"
         aria-modal="true"
-        aria-label="Scripts"
+        aria-label={t("scripts.title", "Scripts")}
       >
         {/* Header */}
         <div className="modal-header">

@@ -180,7 +180,7 @@ export function RoutingTab({ task, settings, addToast, onTaskUpdated }: RoutingT
           <option value="">{t("routing.useProjectDefault", "Use project default")}</option>
           {sortedNodes.map((node) => (
             <option key={node.id} value={node.id} title={`Status: ${node.status}`}>
-              {node.name} ({node.type}) — {node.status}
+              {t("routing.nodeOptionLabel", "{{name}} ({{type}}) — {{status}}", { name: node.name, type: node.type, status: node.status })}
             </option>
           ))}
         </select>

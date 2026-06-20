@@ -120,20 +120,20 @@ export function CliBinaryPanel({ defer = false }: Props) {
           {status.binary.installed ? (
             <ul className="cli-binary-info-list">
               <li>
-                <span>Binary:</span>
+                <span>{t("cliBinary.binaryLabel", "Binary:")}</span>
                 <code>{status.binary.binary}</code>
               </li>
               {status.binary.path && (
                 <li>
-                  <span>Path:</span>
+                  <span>{t("cliBinary.pathLabel", "Path:")}</span>
                   <code>{status.binary.path}</code>
                 </li>
               )}
               <li>
-                <span>Version:</span>
+                <span>{t("cliBinary.versionLabel", "Version:")}</span>
                 <code>{status.binary.version ?? "unknown"}</code>
                 <span className="cli-binary-expected">
-                  (expected {status.expectedVersion})
+                  {t("cliBinary.expectedVersion", "(expected {{version}})", { version: status.expectedVersion })}
                 </span>
               </li>
             </ul>

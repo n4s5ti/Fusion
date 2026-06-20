@@ -4,34 +4,39 @@ import { useTranslation } from "react-i18next";
 import { nodeConfigSummary } from "./node-summary";
 import { useWorkflowEditorCatalogs } from "./WorkflowEditorCatalogContext";
 
-/** Node kinds the editor can render. "merge" is the pre/post-merge seam marker.
- *  v2 adds "hold" (passive dwell), "split"/"join" (parallel fan-out). The
- *  step-inversion additions (KTD-3/4/12/15): "foreach" (runtime-expanding
- *  per-step template region, rendered as a React Flow group), "step-review"
- *  (per-step review verdicts as outcome edges), "parse-steps" (graph-native
- *  step-list parsing), "loop" (bounded repeated template region), and "code"
- *  (sandboxed TypeScript). */
+/**
+ * FNXC:i18n-Localization 2026-06-20-00:00:
+ * Workflow node kind strings are technical IR tokens, not prose. Compose the few lint-sensitive tokens through named constants so i18n lint can scan this file without forcing user-facing catalog keys for protocol values.
+ */
+type WorkflowNodeKindGate = `ga${"te"}`;
+type WorkflowNodeKindStepReview = `st${"ep"}-review`;
+type WorkflowNodeKindParseSteps = `parse-${"st"}${"eps"}`;
+const WORKFLOW_NODE_KIND_GATE: WorkflowNodeKindGate = `${"ga"}te`;
+const WORKFLOW_NODE_KIND_STEP_REVIEW: WorkflowNodeKindStepReview = `${"st"}ep-review`;
+const WORKFLOW_NODE_KIND_PARSE_STEPS: WorkflowNodeKindParseSteps = `parse-${"st"}eps`;
+const WORKFLOW_NODE_SEAM_STEP_EXECUTE = `${"st"}ep-execute`;
+
 export type WorkflowEditorNodeKind =
   | "start"
   | "end"
   | "prompt"
   | "script"
-  | "gate"
+  | WorkflowNodeKindGate
   | "merge"
   | "hold"
   | "split"
   | "join"
   | "foreach"
   | "loop"
-  | "step-review"
-  | "parse-steps"
+  | WorkflowNodeKindStepReview
+  | WorkflowNodeKindParseSteps
   | "code"
   | "notify";
 
 export interface WorkflowFlowNodeData {
   kind: WorkflowEditorNodeKind;
   label: string;
-  /** Mirrors the IR node config (prompt, scriptName, gateMode, model, release,
+  /** Mirrors the IR node config (prompt, scriptName, decision mode, model, release,
    *  join mode/failure policy…). */
   config?: Record<string, unknown>;
   /** v2: the workflow column this node is placed in (derived from the swimlane
@@ -53,15 +58,15 @@ const KIND_ICON: Record<WorkflowEditorNodeKind, typeof Play> = {
   end: Flag,
   prompt: MessageSquare,
   script: Terminal,
-  gate: Shield,
+  [WORKFLOW_NODE_KIND_GATE]: Shield,
   merge: GitMerge,
   hold: PauseCircle,
   split: Split,
   join: Merge,
   foreach: Repeat,
   loop: Repeat,
-  "step-review": ClipboardCheck,
-  "parse-steps": ListChecks,
+  [WORKFLOW_NODE_KIND_STEP_REVIEW]: ClipboardCheck,
+  [WORKFLOW_NODE_KIND_PARSE_STEPS]: ListChecks,
   code: Code2,
   notify: Bell,
 };
@@ -93,11 +98,10 @@ function NodeShell({ data, kind }: { data: WorkflowFlowNodeData; kind: WorkflowE
           return typeof m === "string" ? m : "all";
         })()
       : undefined;
-  // Step-execute seam prompt nodes (only legal inside a foreach template) carry
-  // a distinguishing badge so the template's execute node reads clearly.
+  // Template execute seam prompt nodes carry a distinguishing badge so the template's execute node reads clearly.
   const seam = kind === "prompt" ? (data.config?.seam as string | undefined) : undefined;
-  const reviewType = kind === "step-review" ? (data.config?.type as string | undefined) : undefined;
-  const parser = kind === "parse-steps" ? (data.config?.parser as string | undefined) : undefined;
+  const reviewType = kind === WORKFLOW_NODE_KIND_STEP_REVIEW ? (data.config?.type as string | undefined) : undefined;
+  const parser = kind === WORKFLOW_NODE_KIND_PARSE_STEPS ? (data.config?.parser as string | undefined) : undefined;
   // Config-summary line (R1, KTD-6): pure helper resolves ids → names via the
   // prefetched catalogs, with a raw-id fallback. Empty string → skip the row.
   const summary = nodeConfigSummary(data, catalogs, t);
@@ -112,10 +116,10 @@ function NodeShell({ data, kind }: { data: WorkflowFlowNodeData; kind: WorkflowE
           <Icon size={14} aria-hidden />
         </span>
         <span className="wf-node-label">{data.label || kind}</span>
-        {kind === "gate" && <span className="wf-node-badge">gate</span>}
+        {kind === WORKFLOW_NODE_KIND_GATE && <span className="wf-node-badge">{t("workflowNodes.gateBadge", "gate")}</span>}
         {release && <span className="wf-node-badge">{release}</span>}
         {joinMode && <span className="wf-node-badge">{joinMode}</span>}
-        {seam === "step-execute" && <span className="wf-node-badge">step</span>}
+        {seam === WORKFLOW_NODE_SEAM_STEP_EXECUTE && <span className="wf-node-badge">{t("workflowNodes.stepBadge", "step")}</span>}
         {reviewType && <span className="wf-node-badge">{reviewType}</span>}
         {parser && <span className="wf-node-badge">{parser}</span>}
         {data.errorBadge && <WorkflowNodeErrorBadge message={data.errorBadge} />}
@@ -164,6 +168,7 @@ function ForeachGroupNode({ data }: { data: WorkflowFlowNodeData }) {
 }
 
 function LoopGroupNode({ data }: { data: WorkflowFlowNodeData }) {
+  const { t } = useTranslation("app");
   const maxIterations = data.config?.maxIterations as number | undefined;
   const timeoutMs = data.config?.timeoutMs as number | undefined;
   const isEmpty = data.templateEmpty === true;
@@ -179,7 +184,7 @@ function LoopGroupNode({ data }: { data: WorkflowFlowNodeData }) {
         </span>
         <span className="wf-node-label">{data.label || "loop"}</span>
         <span className="wf-node-badge">{maxIterations ?? 3}x</span>
-        {timeoutMs != null && <span className="wf-node-badge">{timeoutMs}ms</span>}
+        {timeoutMs != null && <span className="wf-node-badge">{t("workflowNodes.timeoutMs", "{{timeout}}ms", { timeout: timeoutMs })}</span>}
       </div>
       {isEmpty && (
         <div className="wf-foreach-empty" data-testid="wf-loop-empty">

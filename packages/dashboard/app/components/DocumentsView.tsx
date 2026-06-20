@@ -411,7 +411,7 @@ export function DocumentsView({ projectId, addToast, onOpenDetail, onSendSelecti
         </div>
 
         <div className="documents-controls-row">
-          <div className="documents-tab-bar" role="tablist" aria-label="Documents sections">
+          <div className="documents-tab-bar" role="tablist" aria-label={t("documents.sectionsLabel", "Documents sections")}>
             <button
               className={`btn documents-tab${activeTab === "project" ? " active" : ""}`}
               role="tab"
@@ -498,7 +498,7 @@ export function DocumentsView({ projectId, addToast, onOpenDetail, onSendSelecti
           ) : (
             <div className={`documents-project-layout${isMobile ? " documents-project-layout--mobile" : ""}`}>
               {(!isMobile || !selectedFile) && (
-                <aside className="documents-view-sidebar" aria-label="Project markdown files">
+                <aside className="documents-view-sidebar" aria-label={t("documents.projectMarkdownFilesLabel", "Project markdown files")}>
                   <ul className="markdown-file-list">
                     {filteredProjectFiles.map((file) => {
                       const isSelected = selectedFile?.path === file.path;
@@ -524,7 +524,7 @@ export function DocumentsView({ projectId, addToast, onOpenDetail, onSendSelecti
               )}
 
               {(!isMobile || selectedFile) && (
-                <section className="documents-view-main" aria-label="Project file content preview">
+                <section className="documents-view-main" aria-label={t("documents.projectFilePreviewLabel", "Project file content preview")}>
                   {isMobile && selectedFile && (
                     <button
                       className="btn btn-sm documents-mobile-back"

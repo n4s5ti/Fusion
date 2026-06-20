@@ -103,7 +103,7 @@ export function AgentRunHistory({ agentId, projectId, onRunClick }: AgentRunHist
               )}
               {usage && (
                 <span className="badge text-secondary">
-                  {((usage.inputTokens + usage.outputTokens) / 1000).toFixed(1)}k tokens
+                  {t("agents.kTokens", "{{count}}k tokens", { count: Number(((usage.inputTokens + usage.outputTokens) / 1000).toFixed(1)) })}
                 </span>
               )}
               {run.triggerDetail && (

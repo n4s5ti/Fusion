@@ -560,7 +560,7 @@ export function RoutineEditor({ routine, onSubmit, onCancel, scope: formScope, p
           ) : (
             <small>
               {cronPreset === "custom" ? (
-                <>{t("schedule.cronCustomHint", "min hour day month weekday")} — <a href="https://crontab.guru" target="_blank" rel="noopener noreferrer">crontab.guru</a></>
+                <>{t("schedule.cronCustomHint", "min hour day month weekday")} — <a href="https://crontab.guru" target="_blank" rel="noopener noreferrer">{t("schedule.crontabGuru", "crontab.guru")}</a></>
               ) : (
                 t("schedule.cronAutoFilledHint", "Auto-filled from preset: {{expression}}", { expression: cronExpression })
               )}

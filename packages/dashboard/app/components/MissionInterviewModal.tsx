@@ -1517,7 +1517,7 @@ function MissionPlanReview({
                                       )}
                                       {feature.acceptanceCriteria && (
                                         <p className="roadmap-feature-text--italic">
-                                          AC: {feature.acceptanceCriteria}
+                                          {t("missions.acceptanceCriteriaPrefix", "AC:")} {feature.acceptanceCriteria}
                                         </p>
                                       )}
                                     </div>

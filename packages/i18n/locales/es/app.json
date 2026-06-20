@@ -31,6 +31,12 @@
     "update": "Actualizar",
     "yes": "Sí"
   },
+  "activityFeed": {
+    "emptyHint": "",
+    "eventCount_one": "",
+    "eventCount_other": "",
+    "noRecentActivity": ""
+  },
   "activityLog": {
     "activeFilters": "Filtros activos:",
     "allEvents": "Todos los eventos",
@@ -64,6 +70,7 @@
     "noActivityRecorded": "Sin actividad grabada aún",
     "noMatchingActivity": "Ninguna actividad coincide con los filtros actuales",
     "notMerged": "No fusionado",
+    "projectFilterBadge": "",
     "refresh": "Actualizar",
     "time": {
       "daysAgo_one": "",
@@ -74,7 +81,8 @@
       "minutesAgo_one": "",
       "minutesAgo_other": ""
     },
-    "title": "Registro de actividad"
+    "title": "Registro de actividad",
+    "typeFilterBadge": ""
   },
   "agentError": {
     "copied": "Copiado",
@@ -354,6 +362,7 @@
     "bundleTitle": "Paquete",
     "cacheHitRatio": "Tasa de caché",
     "cacheReadTokens": "Lectura caché",
+    "cacheWindowSummary": "",
     "cacheWriteTokens": "Escritura caché",
     "cancel": "Cancelar",
     "cancelCustomInterval": "Cancelar intervalo personalizado",
@@ -361,6 +370,8 @@
     "chainOfCommand": "Cadena de mando",
     "change": "Cambiar",
     "changeRole": "Haz clic para cambiar el rol",
+    "charactersCount_one": "",
+    "charactersCount_other": "",
     "chooseFile": "Elegir archivo",
     "clearAgents": "Borrar agentes",
     "clearSkills": "Borrar habilidades",
@@ -408,6 +419,7 @@
     "deleteTitle": "Eliminar agente",
     "deletionNotAvailable": "La eliminación no está disponible mientras el agente está en ejecución.",
     "deletionPermanent": "Esto eliminará permanentemente el agente y todos los datos asociados.",
+    "detailLoadingLabel": "",
     "details": "Detalles",
     "dialogAriaLabel": "Crear nuevo agente",
     "dialogTitle": "Nuevo agente",
@@ -452,6 +464,7 @@
     "from": "De",
     "generateHint": "Describe el rol de tu agente y deja que la IA genere una especificación",
     "generateWithAI": "Generar con IA",
+    "generateWithAiLabel": "",
     "generation": {
       "collapse": "Contraer",
       "expand": "Expandir",
@@ -536,9 +549,12 @@
     "importingAgentsAndSkills": "Importando {{agentCount}} agente{{agentPlural}} y {{skillCount}} habilidad{{skillPlural}}...",
     "importingSkills_one": "",
     "importingSkills_other": "",
+    "importReportsTo": "",
+    "importSkills": "",
     "inbox": "Bandeja de entrada",
     "inheritingProjectDefault": "Heredando el valor predeterminado del proyecto",
     "inheritProjectDefault": "Heredar predeterminado del proyecto",
+    "inlineInstructions": "",
     "inlineMemoryFieldHint": "Esta memoria está integrada directamente en el contexto del agente.",
     "inlineMemoryHint": "Memoria corta inyectada en cada heartbeat.",
     "inlineMemoryLabel": "Memoria en línea",
@@ -564,6 +580,8 @@
     "intentPrompt": "¿Qué desea que haga este agente?",
     "interval": "Intervalo",
     "interviewDraftApplied": "Borrador de entrevista aplicado",
+    "kTokens_one": "",
+    "kTokens_other": "",
     "last24h": "Últimas 24h",
     "last7d": "Últimos 7 días",
     "lastHeartbeat": "Última: {{time}}",
@@ -753,6 +771,7 @@
     "output": "Salida",
     "outputTokens": "Tokens de salida",
     "overview": "Descripción general",
+    "overviewLabel": "",
     "parsing": "Analizando…",
     "pause": "Pausar",
     "pauseAction": "Pausar",
@@ -1037,7 +1056,6 @@
     "templateCompact": "Compacto",
     "templateDefault": "Predeterminado",
     "thinkingHigh": "Alto",
-    "thinkingXhigh": "Muy alto",
     "thinkingLevel": "Nivel de pensamiento",
     "thinkingLow": "Bajo",
     "thinkingMedium": "Medio",
@@ -1045,6 +1063,7 @@
     "thinkingOff": "Desactivado",
     "thinkingXhigh": "Muy alto",
     "throughput": "Rendimiento",
+    "timeSinceLastHeartbeat": "",
     "title": "Agentes",
     "titleLabel": "Título",
     "titlePlaceholder": "p. ej. Revisor de código senior",
@@ -1091,6 +1110,7 @@
     },
     "testMode": "Modo de prueba — sin llamadas reales de IA"
   },
+  "appName": "",
   "approval": {
     "dismissBanner": "Descartar pancarta de notificación de aprobación",
     "needAttention_one": "",
@@ -1174,6 +1194,9 @@
     "mergeIntoMain": "Fusionar grupo con main",
     "openPr": "Abrir PR",
     "unavailable": "Grupo de ramas no disponible"
+  },
+  "branchGroups": {
+    "prNumber": ""
   },
   "capacity": {
     "dismiss": "Descartar advertencia de capacidad",
@@ -1322,9 +1345,13 @@
     "thinking": "Pensando",
     "thinkingLabel": "Pensando",
     "thinkingStatus": "Pensando…",
+    "toolArgsLabel": "",
+    "toolArgsPreview": "",
     "toolCalls": "Llamadas a herramientas",
     "toolCallsCount_one": "",
     "toolCallsCount_other": "",
+    "toolResultLabel": "",
+    "toolResultPreview": "",
     "typeMessage": "Escribe un mensaje...",
     "unreadMessages": "Mensajes no leídos",
     "untitledSession": "Sin título",
@@ -1353,9 +1380,11 @@
     "versionMismatchSuffix": "Actualiza para mantenerte sincronizado."
   },
   "cliBinary": {
+    "binaryLabel": "",
     "checking": "Verificando…",
     "copied": "Copiado",
     "copy": "Copiar",
+    "expectedVersion": "",
     "failedExit": "Instalación fallida (código de salida {{code}})",
     "heading": "Binario CLI",
     "help": "Instalar la CLI global le permite ejecutar fn y fusion desde cualquier terminal. Las automatizaciones y scripts funcionan sin ella a través de npx, pero una instalación global es más rápida y conveniente.",
@@ -1363,13 +1392,15 @@
     "installWithNpm": "Instalar con npm",
     "notOnPath": "Ni fn ni fusion se encontraron en PATH.",
     "orCopyLabel": "O copie y ejecute usted mismo:",
+    "pathLabel": "",
     "refresh": "Actualizar",
     "reinstall": "Reinstalar",
     "stateCheckDisabled": "Verificación deshabilitada",
     "stateInstalled": "Instalado",
     "stateMissing": "No instalado",
     "stateVersionMismatch": "Versión no coincide",
-    "succeededDuration": "Instalación exitosa en {{duration}} s"
+    "succeededDuration": "Instalación exitosa en {{duration}} s",
+    "versionLabel": ""
   },
   "cliChat": {
     "queued_one": "",
@@ -1509,7 +1540,6 @@
         "title": ""
       },
       "orgChart": {
-        "description": "",
         "empty": "",
         "error": "",
         "loading": "",
@@ -1637,17 +1667,24 @@
       "uniqueModels": ""
     },
     "productivity": {
+      "averageDuration": "",
       "byLanguage": "",
       "commits": "",
+      "completedTasks": "",
+      "durationTitle": "",
+      "durationUnavailable": "",
       "hoursSaved": "",
       "hoursSavedEstimate": "",
       "hoursSavedUnavailable": "",
       "languagePie": "",
       "loc": "",
       "locUnavailable": "",
+      "medianDuration": "",
       "modifiedFiles": "",
       "outcomesTitle": "",
+      "p90Duration": "",
       "pullRequests": "",
+      "totalDuration": "",
       "volumeHint": "",
       "volumeTitle": ""
     },
@@ -1694,6 +1731,7 @@
       "ecosystem": "",
       "github": "",
       "missionControl": "",
+      "nodes": "",
       "overview": "",
       "productivity": "",
       "reliability": "",
@@ -1910,6 +1948,8 @@
     "clear": "Borrar",
     "command": "Comando",
     "configuration": "Configuración",
+    "configurationLabel": "",
+    "controlsHeaderLabel": "",
     "embedded": "Integrado",
     "embeddedPreviewDisabled": "La vista previa integrada está deshabilitada. Abra su aplicación en una pestaña del navegador separada.",
     "enterFullscreen": "Entrar en registros de pantalla completa",
@@ -1928,6 +1968,7 @@
     "loadingOlderLogs": "Cargando registros más antiguos…",
     "loadOlderLogs": "Cargar registros más antiguos",
     "logs": "Registros",
+    "logsLabel": "",
     "lostConnection": "Conexión de flujo de registro perdida.",
     "manual": "Manual",
     "matchCount_one": "",
@@ -1946,6 +1987,7 @@
     "preview": "Vista previa",
     "previewBlocked": "Vista previa bloqueada",
     "previewFailed": "Vista previa fallida",
+    "previewLabel": "",
     "previewUrlOverride": "Anular URL de vista previa",
     "refreshPreview": "Actualizar vista previa",
     "restart": "Reiniciar",
@@ -2124,14 +2166,17 @@
     "noTaskDocuments": "Sin documentos de tarea aún.",
     "openTask": "Abrir tarea",
     "plain": "Bruto",
+    "projectFilePreviewLabel": "",
     "projectFiles": "archivos del proyecto",
     "projectFilesTab": "Archivos del proyecto",
+    "projectMarkdownFilesLabel": "",
     "resultCount_one": "",
     "resultCount_other": "",
     "retry": "Reintentar",
     "retryLoading": "Reintentar cargar documentos",
     "searchProjectFiles": "Buscar archivos markdown del proyecto…",
     "searchTaskDocuments": "Buscar documentos de tareas…",
+    "sectionsLabel": "",
     "selectFile": "Seleccione un archivo markdown para ver su contenido.",
     "showHidden": "Mostrar archivos de proyecto ocultos",
     "showHiddenFiles": "Mostrar archivos ocultos",
@@ -2185,6 +2230,12 @@
     "failedToLoadFile": "Error al cargar el archivo",
     "failedToSaveFile": "Error al guardar el archivo"
   },
+  "errorBoundary": {
+    "genericError": "",
+    "reloadPage": "",
+    "retry": "",
+    "sectionError": ""
+  },
   "evals": {
     "allRuns": "Todas las ejecuciones",
     "disabledTitle": "Las evaluaciones programadas están deshabilitadas",
@@ -2223,6 +2274,8 @@
     "overlapBottleneck_one": "",
     "overlapBottleneck_other": "",
     "overlapQueue": "Cola de superposición",
+    "overlapSummary_one": "",
+    "overlapSummary_other": "",
     "queued": "En cola",
     "running": "En ejecución",
     "secondsAgo_one": "",
@@ -2233,7 +2286,8 @@
     "stateRunning": "Ejecutando",
     "status": "Estado del ejecutor",
     "stuck": "Atascado",
-    "temporary": "Temporal"
+    "temporary": "Temporal",
+    "todoStatus": ""
   },
   "fileBrowser": {
     "back": "Volver a la lista de archivos",
@@ -2640,6 +2694,7 @@
     "stashDropped": "Stash eliminado",
     "stashMessagePlaceholder": "Mensaje del stash (opcional)",
     "stashPopped": "Stash aplicado y eliminado",
+    "stashRef": "",
     "statusLabelBranch": "Rama",
     "statusLabelCommit": "Commit",
     "statusLabelIntegrationBranch": "Rama de integración",
@@ -2693,6 +2748,13 @@
     "worktreesTotal_one": "",
     "worktreesTotal_other": ""
   },
+  "githubStarPrompt": {
+    "body": "",
+    "dismissLabel": "",
+    "regionLabel": "",
+    "starOnGitHub": "",
+    "title": ""
+  },
   "goals": {
     "activeCount_one": "",
     "activeCount_other": "",
@@ -2728,6 +2790,9 @@
     "unlinkMission": "",
     "unlinkMissionError": "",
     "updateError": "No se puede actualizar el estado del objetivo ahora. Por favor, intenta de nuevo."
+  },
+  "groups": {
+    "prLinkLabel": ""
   },
   "groupTask": {
     "abandonGroup": "",
@@ -2767,6 +2832,7 @@
     "documentsView": "Vista documentos",
     "engineOptions": "Opciones del motor",
     "evalsView": "Evaluaciones",
+    "fusionLogo": "",
     "gitManager": "Gestor Git",
     "goalsView": "Objetivos",
     "importFromGitHub": "Importar desde GitHub",
@@ -2786,7 +2852,6 @@
     "moreHeaderActions": "Más acciones de encabezado",
     "moreViews": "Más vistas",
     "noBaseBranch": "Sin rama base",
-    "nodes": "Nodos",
     "noScriptsAddOne": "Sin scripts — agregar uno…",
     "noScriptsConfigured": "Sin scripts configurados",
     "noWorkingBranch": "Sin rama de trabajo",
@@ -2927,6 +2992,7 @@
     "archiveTitle": "Archivar esta información",
     "archiving": "Archivando \"{{title}}\"...",
     "backlogHealth": "Salud del trabajo pendiente",
+    "categoriesLabel": "",
     "configureModel": "Configurar el modelo de generación de información",
     "configureModelTitle": "Configurar modelo",
     "createTaskLabel": "Crear tarea desde esta información",
@@ -3016,6 +3082,9 @@
     "useMissionContext": "Usar contexto de misión",
     "verificationCriteria": "Criterios de verificación",
     "yes": "Sí"
+  },
+  "issues": {
+    "noIssuesFound": ""
   },
   "lane": {
     "collapse": "",
@@ -3129,8 +3198,7 @@
     "unpauseUnavailable": "La acción de reanudar no está disponible",
     "useProjectDefault": "Usar predeterminado del proyecto",
     "viewOptions": "Opciones de vista",
-    "workflowLabel": "",
-    "workflowSelectLabel": ""
+    "workflowLabel": ""
   },
   "mailbox": {
     "agent": "Agente",
@@ -3199,6 +3267,7 @@
     "replyingTo": "Respondiendo a {{preview}}",
     "replyingToMessage": "Respondiendo al mensaje",
     "replyLoadFailed": "Error al cargar el mensaje de respuesta. Haz clic para reintentar.",
+    "resizeMessageListPane": "",
     "selectMessageToRead": "Seleccione un mensaje para leer",
     "system": "Sistema",
     "timeDaysAgo_one": "",
@@ -3212,6 +3281,7 @@
     "to": "Para",
     "toLabel": "Para:",
     "toPrefix": "Para: {{recipient}}",
+    "toRecipient": "",
     "typeAgentToAgent": "Agente ↔ Agente",
     "typeAgentToUser": "Agente → Usted",
     "typeSystem": "Sistema",
@@ -3387,11 +3457,13 @@
   "missions": {
     "acceptance": "Criterios de aceptación:",
     "acceptanceCriteriaOptional": "Criterios de aceptación (opcional)",
+    "acceptanceCriteriaPrefix": "",
     "actionGenerating": "Generando…",
     "actionResume": "Reanudar",
     "actionRetry": "Reintentar",
     "actionReview": "Revisar",
     "activateSlice": "Activar el segmento",
+    "activityCount": "",
     "activityTime": "Actividad {{time}}",
     "actual": "Actual: {{value}}",
     "addAssertion": "Añadir aserción",
@@ -3518,6 +3590,7 @@
     "filterSlices": "Eventos de segmento e hito",
     "filterStateChanges": "Cambios de estado",
     "filterTasks": "Eventos de tarea",
+    "fixLineageButton": "",
     "generatedFixFeatures": "Funcionalidades de corrección generadas:",
     "generatedFixFeaturesTitle": "Funcionalidades de corrección generadas",
     "generatedFromFeature": "Generado desde la funcionalidad: {{id}}",
@@ -3545,6 +3618,8 @@
     "linkButton": "Vincular",
     "linkedCount_one": "",
     "linkedCount_other": "",
+    "linkedCountShort_one": "",
+    "linkedCountShort_other": "",
     "linkedFeaturesCount_one": "",
     "linkedFeaturesCount_other": "",
     "linkedFeaturesLabel": "Funcionalidades vinculadas",
@@ -3605,6 +3680,7 @@
     "planStateNeedsUpdate": "Necesita actualización",
     "planStateNotPlanned": "Sin planificar",
     "planStatePlanned": "Planificado",
+    "planTargetTitle": "",
     "planTitle": "Planificar una misión con IA",
     "prepareQuestion": "Preparando la siguiente pregunta...",
     "progressText_one": "",
@@ -3711,6 +3787,7 @@
     "updateButton": "Actualizar",
     "updated": "Misión actualizada",
     "validateFeature": "Validar la funcionalidad",
+    "validationRoundAttempts": "",
     "validationRoundsCount_one": "",
     "validationRoundsCount_other": "",
     "validationRoundsLabel_one": "",
@@ -3775,7 +3852,6 @@
     "options": {
       "default": "Predeterminado",
       "high": "Alto",
-      "xhigh": "Muy alto",
       "low": "Bajo",
       "medium": "Medio",
       "minimal": "Mínimo",
@@ -3827,10 +3903,12 @@
     "board": "Tablero",
     "chat": "Chat",
     "chatUnreadAriaLabel": "Respuesta de chat no leída",
+    "collapseSidebar": "",
     "commandCenter": "",
     "devServer": "Servidor de desarrollo",
     "documents": "Documentos",
     "evals": "Evaluaciones",
+    "expandSidebar": "",
     "files": "Archivos",
     "gitManager": "Gestor Git",
     "goals": "Objetivos",
@@ -3845,16 +3923,17 @@
     "missions": "Misiones",
     "more": "Más",
     "moreSheetTitle": "Navegar",
-    "nodes": "Nodos",
     "noScriptsAddOne": "Sin scripts — agregar uno…",
     "planning": "Planificación",
     "primaryNavAriaLabel": "Navegación principal",
     "projects": "Proyectos",
     "research": "Investigación",
+    "resizeSidebar": "",
     "scriptsSubmenuAriaLabel": "Submenú de scripts",
     "secrets": "Secretos",
     "settings": "Configuración",
     "showScriptsAriaLabel": "Mostrar scripts",
+    "sidebarAriaLabel": "",
     "skills": "Habilidades",
     "stashRecovery": "Recuperación de stash",
     "tasks": "Tareas",
@@ -3960,12 +4039,14 @@
     "discoverBeforeAdding": "Descubra proyectos remotos antes de agregar este nodo.",
     "discoveredCount_one": "",
     "discoveredCount_other": "",
+    "discoveredRemoteProjectsLabel": "",
     "discovering": "Descubriendo...",
     "discoverRemoteProjects": "Descubrir proyectos remotos",
     "discoveryFailed": "No se pudieron descubrir proyectos remotos",
     "dismissError": "Descartar error",
     "docker": "Docker",
     "dockerBadge": "Nodo Docker administrado",
+    "dockerConfigMeta": "",
     "dockerConfigSaveFailed": "Error al guardar la configuración de Docker",
     "dockerConfigSaveSuccess": "Configuración de Docker guardada",
     "dockerConfiguration": "Configuración de Docker",
@@ -4083,6 +4164,7 @@
       "name": "Servidor de compilación",
       "optional": "Opcional"
     },
+    "projectPathMappingsLabel": "",
     "provideManually": "Proporcionar clave manualmente",
     "pulling": "Descargando…",
     "pullSettings": "Descargar ajustes",
@@ -4280,6 +4362,9 @@
     "tabCliAutoDerve": "CLI local (derivación automática)",
     "testFailed": "La prueba falló — consulta el estado anterior.",
     "unreachable": "{{reason}}"
+  },
+  "piExtensions": {
+    "filterHint": ""
   },
   "piManager": {
     "addButton": "Añadir",
@@ -4884,6 +4969,7 @@
     "createTask": "Crear tarea",
     "createTaskButton": "Crear tarea",
     "createTaskTitle": "Crear tarea desde hallazgo",
+    "currentDefaults": "",
     "defaultFindingHeading": "Hallazgo de investigación",
     "descriptionLabel": "Descripción",
     "disabled": "La investigación está desactivada para este proyecto.",
@@ -4906,6 +4992,7 @@
     "noRunsYet": "Aún no hay ejecuciones",
     "noSourcesAvailable": "No hay fuentes de investigación habilitadas disponibles para este proyecto.",
     "noSummaryYet": "Sin resumen por ahora.",
+    "notSet": "",
     "openAuthSettings": "Abrir configuración de autenticación",
     "openResearchSettings": "Abrir configuración de investigación",
     "priorityHigh": "Alto",
@@ -4966,6 +5053,7 @@
     "intro": "Ver el nodo de ejecución efectivo y controlar la anulación del nodo por tarea.",
     "localNoConfiguration": "Local (sin enrutamiento configurado)",
     "lockedWhileActive": "El enrutamiento está bloqueado mientras esta tarea está activa. No se puede cambiar la anulación del nodo hasta que la tarea ya no esté activa.",
+    "nodeOptionLabel": "",
     "nodeUnavailable": "nodo no disponible o desconocido",
     "overrideCleared": "Anulación de nodo borrada",
     "overrideSection": "Anulación de nodo",
@@ -4982,6 +5070,9 @@
     "unavailablePolicy": "Política de nodo no disponible",
     "unhealthy": "No saludable",
     "useProjectDefault": "Usar predeterminado del proyecto"
+  },
+  "runtimes": {
+    "nousResearchLogoAlt": ""
   },
   "schedule": {
     "actionAiPrompt": "Indicación de IA",
@@ -5048,6 +5139,7 @@
     "cronPresetMonthly": "Cada mes (día 1)",
     "cronPresetWeekly": "Cada semana (lunes)",
     "cronRequired": "Se requiere expresión cron para horarios personalizados",
+    "crontabGuru": "",
     "delete": "Eliminar",
     "deleteError": "Error al eliminar rutina",
     "deleteMessage": "¿Eliminar la programación {{name}}? Esta acción no se puede deshacer.",
@@ -5102,6 +5194,7 @@
     "globalScope": "Automatizaciones globales (a nivel de usuario)",
     "globalScoped": "Este horario se creará en alcance global.",
     "globalScopeTitle": "Alcance global",
+    "lastLabel": "",
     "loadRoutinesError": "Error al cargar rutinas",
     "manualTriggerInfo": "Esta rutina se activará manualmente desde el panel o la API.",
     "modeAriaLabel": "Modo de ejecución",
@@ -5124,6 +5217,7 @@
     "newAutomation": "Nueva automatización",
     "newRoutineHeading": "Nueva rutina",
     "newTitle": "Nueva programación",
+    "nextLabel": "",
     "noActiveProject": "Sin proyecto activo. Los horarios se crearán en alcance global.",
     "noAutomations": "Sin automatizaciones aún",
     "noStepsEmpty": "Aún no se han añadido pasos. Agregue un comando o un paso de prompt de IA para comenzar.",
@@ -5154,6 +5248,7 @@
     "runNameNow": "Ejecutar {{name}} ahora",
     "running": "Ejecutando…",
     "runNow": "Ejecutar ahora",
+    "runsLabel": "",
     "saveChanges": "Guardar cambios",
     "saveStep": "Guardar paso",
     "saving": "Guardando…",
@@ -5232,6 +5327,9 @@
     "webhookSecretHint": "Secreto HMAC para verificación de firma. Deja vacío para webhooks sin autenticación.",
     "webhookSecretLabel": "Secreto del webhook (opcional)",
     "webhookSecretPlaceholder": "Opcional: deja vacío para webhooks sin autenticación"
+  },
+  "scripts": {
+    "title": ""
   },
   "scriptsModal": {
     "addScript": "Añadir script",
@@ -5660,6 +5758,7 @@
       "enabling": "Activando…",
       "notConnected": "✗ No conectado",
       "probing": "Sondeo de CLI local…",
+      "providerName": "",
       "test": "Probar",
       "testing": "Probando…"
     },
@@ -5695,6 +5794,7 @@
     "githubConnectionFailed": "La conexión falló o expiró.",
     "githubOauthConnected": "GitHub OAuth está conectado. Puedes importar issues y rastrear pull requests.",
     "githubOauthNotConnected": "GitHub OAuth no está conectado aún. Puedes configurarlo en Ajustes → Autenticación, o continuar ahora y conectarte más tarde.",
+    "githubProvider": "",
     "githubSkipped": "Se omitió GitHub. Puedes conectarte en cualquier momento desde Ajustes → Autenticación.",
     "goBackToStep": "Volver a {{label}}",
     "goToDashboard": "Ir al panel",
@@ -5953,6 +6053,9 @@
     "revisionTitle": "Pedir a la IA que revise",
     "saving": "Guardando…",
     "view": "Ver"
+  },
+  "stash": {
+    "copyReference": ""
   },
   "stashRecovery": {
     "applied": "Aplicado",
@@ -6710,7 +6813,6 @@
     "subtaskButton": "Subtarea",
     "thinkingDefault": "Predeterminado ({{level}})",
     "thinkingHigh": "Alto",
-    "thinkingXhigh": "Muy alto",
     "thinkingLabel": "Pensamiento",
     "thinkingLow": "Bajo",
     "thinkingMedium": "Medio",
@@ -6971,6 +7073,7 @@
     "workflowCheck": "Verificación de flujo de trabajo"
   },
   "terminal": {
+    "arrowKeysLabel": "",
     "clear": "Limpiar",
     "clearTerminal": "Limpiar terminal",
     "closeTab": "Cerrar pestaña",
@@ -7289,6 +7392,7 @@
     "foreachSequential": "Secuencial",
     "foreachShared": "Árbol de trabajo compartido",
     "foreachWorktree": "Árbol de trabajo por paso",
+    "gateBadge": "",
     "gateBlocks": "Compuerta (bloquea)",
     "gateMode": "Modo de compuerta",
     "insertTemplate": "Insertar plantilla {{name}}",
@@ -7345,6 +7449,7 @@
     "startEntryColumn": "",
     "startEntryColumnAuto": "",
     "startNote": "",
+    "stepBadge": "",
     "stepExecuteLabel": "Ejecutar paso",
     "templateFilterLabel": "Filtrar plantillas",
     "templateFilterPlaceholder": "Filtrar plantillas",
@@ -7353,6 +7458,7 @@
     "templatesFragments": "Fragmentos",
     "templatesPluginSteps": "Pasos de plugin",
     "templatesSection": "Plantillas",
+    "timeoutMs": "",
     "trivialGraphHint": "Este flujo de trabajo solo ejecuta inicio → fin. Añade pasos desde la paleta superior para construirlo."
   },
   "workflows": {
@@ -7418,14 +7524,6 @@
     "templateSectionBuiltin": "Flujos de trabajo integrados",
     "templateSectionYours": "Tus flujos de trabajo"
   },
-  "workflowSwitcher": {
-    "countsAria": "{{todoLabel}}: {{todo}}, {{inProgressLabel}}: {{inProgress}}, {{doneLabel}}: {{done}}",
-    "done": "Done",
-    "inProgress": "In Progress",
-    "label": "Workflow",
-    "todo": "Todo",
-    "triggerAria": "Select workflow. Current workflow: {{name}}"
-  },
   "workflowSelector": {
     "switchActiveMessage": "",
     "switchActiveTitle": "",
@@ -7484,6 +7582,14 @@
     "valuesTab": "",
     "widget": "",
     "widgetDefault": ""
+  },
+  "workflowSwitcher": {
+    "countsAria": "{{todoLabel}}: {{todo}}, {{inProgressLabel}}: {{inProgress}}, {{doneLabel}}: {{done}}",
+    "done": "Done",
+    "inProgress": "In Progress",
+    "label": "Workflow",
+    "todo": "Todo",
+    "triggerAria": "Select workflow. Current workflow: {{name}}"
   },
   "workspace": {
     "projectRoot": "Raíz del proyecto",

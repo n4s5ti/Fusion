@@ -328,10 +328,12 @@ export function PiExtensionsManager({ addToast, projectId }: PiExtensionsManager
                       <div className="pi-ext-package-actions">
                         {isObject && hasFilters && (
                           <span className="pi-ext-filter-hint">
-                            {(pkg as { extensions?: string[] }).extensions?.length ?? 0} ext,{" "}
-                            {(pkg as { skills?: string[] }).skills?.length ?? 0} skill,{" "}
-                            {(pkg as { prompts?: string[] }).prompts?.length ?? 0} prompt,{" "}
-                            {(pkg as { themes?: string[] }).themes?.length ?? 0} theme
+                            {t("piExtensions.filterHint", "{{extensions}} ext, {{skills}} skill, {{prompts}} prompt, {{themes}} theme", {
+                              extensions: (pkg as { extensions?: string[] }).extensions?.length ?? 0,
+                              skills: (pkg as { skills?: string[] }).skills?.length ?? 0,
+                              prompts: (pkg as { prompts?: string[] }).prompts?.length ?? 0,
+                              themes: (pkg as { themes?: string[] }).themes?.length ?? 0,
+                            })}
                           </span>
                         )}
                         <button

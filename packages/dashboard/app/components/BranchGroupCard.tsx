@@ -158,7 +158,7 @@ export function BranchGroupCard({ groupId, projectId }: BranchGroupCardProps) {
           <span className="badge">{group.prState === "merged" ? "Group PR merged" : "Group PR closed"}</span>
           {group.prUrl && (
             <a className="btn" href={group.prUrl} target="_blank" rel="noreferrer">
-              <GitPullRequest size={14} /> PR #{group.prNumber ?? "—"}
+              <GitPullRequest size={14} /> {t("branchGroups.prNumber", "PR #{{number}}", { number: group.prNumber ?? "—" })}
               <ExternalLink size={12} />
             </a>
           )}
@@ -169,7 +169,7 @@ export function BranchGroupCard({ groupId, projectId }: BranchGroupCardProps) {
         <div className="branch-group-card-actions">
           {group.prUrl && (
             <a className="btn" href={group.prUrl} target="_blank" rel="noreferrer">
-              <GitPullRequest size={14} /> PR #{group.prNumber ?? "—"}
+              <GitPullRequest size={14} /> {t("branchGroups.prNumber", "PR #{{number}}", { number: group.prNumber ?? "—" })}
               <ExternalLink size={12} />
             </a>
           )}

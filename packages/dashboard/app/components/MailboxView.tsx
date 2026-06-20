@@ -892,7 +892,7 @@ export function MailboxView({
               <div className="mailbox-item-content">
                 <div className="mailbox-item-header">
                   <span className="mailbox-item-to">
-                    To: {getParticipantLabel(msg.toId, msg.toType)}
+                    {t("mailbox.toRecipient", "To: {{recipient}}", { recipient: getParticipantLabel(msg.toId, msg.toType) })}
                   </span>
                   <span className="mailbox-item-time">{formatTimestamp(msg.createdAt, t)}</span>
                 </div>
@@ -1089,7 +1089,7 @@ export function MailboxView({
                     <div className="mailbox-item-content">
                       <div className="mailbox-item-header">
                         <span className="mailbox-item-to">
-                          To: {getParticipantLabel(msg.toId, msg.toType)}
+                          {t("mailbox.toRecipient", "To: {{recipient}}", { recipient: getParticipantLabel(msg.toId, msg.toType) })}
                         </span>
                         <span className="mailbox-item-time">{formatTimestamp(msg.createdAt, t)}</span>
                       </div>
@@ -1292,7 +1292,7 @@ export function MailboxView({
               data-testid="mailbox-split-resize-handle"
               role="separator"
               aria-orientation="vertical"
-              aria-label="Resize message list pane"
+              aria-label={t("mailbox.resizeMessageListPane", "Resize message list pane")}
               tabIndex={0}
               aria-valuemin={MAILBOX_SIDEBAR_MIN_WIDTH}
               aria-valuemax={Math.round(getMailboxSidebarMaxWidth(splitLayoutRef.current?.clientWidth ?? sidebarWidth / MAILBOX_SIDEBAR_MAX_RATIO))}

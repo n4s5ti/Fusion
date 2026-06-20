@@ -31,6 +31,12 @@
     "update": "更新",
     "yes": "是"
   },
+  "activityFeed": {
+    "emptyHint": "",
+    "eventCount_one": "",
+    "eventCount_other": "",
+    "noRecentActivity": ""
+  },
   "activityLog": {
     "activeFilters": "活跃过滤器：",
     "allEvents": "所有事件",
@@ -64,6 +70,7 @@
     "noActivityRecorded": "尚未记录活动",
     "noMatchingActivity": "没有活动与当前过滤器匹配",
     "notMerged": "未合并",
+    "projectFilterBadge": "",
     "refresh": "刷新",
     "time": {
       "daysAgo_one": "",
@@ -74,7 +81,8 @@
       "minutesAgo_one": "",
       "minutesAgo_other": ""
     },
-    "title": "活动日志"
+    "title": "活动日志",
+    "typeFilterBadge": ""
   },
   "agentError": {
     "copied": "已复制",
@@ -354,6 +362,7 @@
     "bundleTitle": "代码包",
     "cacheHitRatio": "缓存命中率",
     "cacheReadTokens": "缓存读取",
+    "cacheWindowSummary": "",
     "cacheWriteTokens": "缓存写入",
     "cancel": "取消",
     "cancelCustomInterval": "取消自定义间隔",
@@ -361,6 +370,8 @@
     "chainOfCommand": "指挥链",
     "change": "更改",
     "changeRole": "点击更改角色",
+    "charactersCount_one": "",
+    "charactersCount_other": "",
     "chooseFile": "选择文件",
     "clearAgents": "清除代理",
     "clearSkills": "清除技能",
@@ -408,6 +419,7 @@
     "deleteTitle": "删除智能体",
     "deletionNotAvailable": "代理运行时无法删除。",
     "deletionPermanent": "这将永久删除代理及其所有相关数据。",
+    "detailLoadingLabel": "",
     "details": "详情",
     "dialogAriaLabel": "创建新代理",
     "dialogTitle": "新代理",
@@ -452,6 +464,7 @@
     "from": "来自",
     "generateHint": "描述代理的角色，让 AI 生成规格说明",
     "generateWithAI": "使用 AI 生成",
+    "generateWithAiLabel": "",
     "generation": {
       "collapse": "折叠",
       "expand": "展开",
@@ -536,9 +549,12 @@
     "importingAgentsAndSkills": "正在导入 {{agentCount}} 个 Agent 和 {{skillCount}} 个技能...",
     "importingSkills_one": "",
     "importingSkills_other": "",
+    "importReportsTo": "",
+    "importSkills": "",
     "inbox": "收件箱",
     "inheritingProjectDefault": "继承项目默认值",
     "inheritProjectDefault": "继承项目默认",
+    "inlineInstructions": "",
     "inlineMemoryFieldHint": "此记忆直接嵌入代理的上下文中。",
     "inlineMemoryHint": "每次心跳时注入的简短记忆。",
     "inlineMemoryLabel": "内联记忆",
@@ -564,6 +580,8 @@
     "intentPrompt": "您希望此代理执行什么操作？",
     "interval": "间隔",
     "interviewDraftApplied": "访谈草稿已应用",
+    "kTokens_one": "",
+    "kTokens_other": "",
     "last24h": "最近 24 小时",
     "last7d": "最近 7 天",
     "lastHeartbeat": "上次：{{time}}",
@@ -753,6 +771,7 @@
     "output": "输出",
     "outputTokens": "输出令牌",
     "overview": "概览",
+    "overviewLabel": "",
     "parsing": "正在解析…",
     "pause": "暂停",
     "pauseAction": "暂停",
@@ -1037,7 +1056,6 @@
     "templateCompact": "紧凑",
     "templateDefault": "默认",
     "thinkingHigh": "高",
-    "thinkingXhigh": "极高",
     "thinkingLevel": "思考级别",
     "thinkingLow": "低",
     "thinkingMedium": "中",
@@ -1045,6 +1063,7 @@
     "thinkingOff": "关闭",
     "thinkingXhigh": "极高",
     "throughput": "吞吐量",
+    "timeSinceLastHeartbeat": "",
     "title": "智能体",
     "titleLabel": "标题",
     "titlePlaceholder": "例如：高级代码审查员",
@@ -1091,6 +1110,7 @@
     },
     "testMode": "测试模式 — 无实际 AI 调用"
   },
+  "appName": "",
   "approval": {
     "dismissBanner": "关闭审批通知横幅",
     "needAttention_one": "",
@@ -1174,6 +1194,9 @@
     "mergeIntoMain": "合并组到主分支",
     "openPr": "打开 PR",
     "unavailable": "分支组不可用"
+  },
+  "branchGroups": {
+    "prNumber": ""
   },
   "capacity": {
     "dismiss": "关闭容量警告",
@@ -1322,9 +1345,13 @@
     "thinking": "思考中",
     "thinkingLabel": "思考",
     "thinkingStatus": "思考中……",
+    "toolArgsLabel": "",
+    "toolArgsPreview": "",
     "toolCalls": "工具调用",
     "toolCallsCount_one": "",
     "toolCallsCount_other": "",
+    "toolResultLabel": "",
+    "toolResultPreview": "",
     "typeMessage": "输入消息...",
     "unreadMessages": "未读消息",
     "untitledSession": "无标题",
@@ -1353,9 +1380,11 @@
     "versionMismatchSuffix": "更新以保持同步。"
   },
   "cliBinary": {
+    "binaryLabel": "",
     "checking": "检查中…",
     "copied": "已复制",
     "copy": "复制",
+    "expectedVersion": "",
     "failedExit": "安装失败（退出代码 {{code}}）",
     "heading": "CLI 二进制文件",
     "help": "安装全局 CLI 可以让您从任何终端运行 fn 和 fusion。自动化和脚本可以通过 npx 工作而不需要它，但全局安装更快更方便。",
@@ -1363,13 +1392,15 @@
     "installWithNpm": "使用 npm 安装",
     "notOnPath": "在 PATH 上未找到 fn 或 fusion。",
     "orCopyLabel": "或自行复制并运行：",
+    "pathLabel": "",
     "refresh": "刷新",
     "reinstall": "重新安装",
     "stateCheckDisabled": "检查已禁用",
     "stateInstalled": "已安装",
     "stateMissing": "未安装",
     "stateVersionMismatch": "版本不匹配",
-    "succeededDuration": "安装成功，耗时 {{duration}} 秒"
+    "succeededDuration": "安装成功，耗时 {{duration}} 秒",
+    "versionLabel": ""
   },
   "cliChat": {
     "queued_one": "",
@@ -1509,7 +1540,6 @@
         "title": ""
       },
       "orgChart": {
-        "description": "",
         "empty": "",
         "error": "",
         "loading": "",
@@ -1637,17 +1667,24 @@
       "uniqueModels": ""
     },
     "productivity": {
+      "averageDuration": "",
       "byLanguage": "",
       "commits": "",
+      "completedTasks": "",
+      "durationTitle": "",
+      "durationUnavailable": "",
       "hoursSaved": "",
       "hoursSavedEstimate": "",
       "hoursSavedUnavailable": "",
       "languagePie": "",
       "loc": "",
       "locUnavailable": "",
+      "medianDuration": "",
       "modifiedFiles": "",
       "outcomesTitle": "",
+      "p90Duration": "",
       "pullRequests": "",
+      "totalDuration": "",
       "volumeHint": "",
       "volumeTitle": ""
     },
@@ -1694,6 +1731,7 @@
       "ecosystem": "",
       "github": "",
       "missionControl": "",
+      "nodes": "",
       "overview": "",
       "productivity": "",
       "reliability": "",
@@ -1910,6 +1948,8 @@
     "clear": "清除",
     "command": "命令",
     "configuration": "配置",
+    "configurationLabel": "",
+    "controlsHeaderLabel": "",
     "embedded": "嵌入式",
     "embeddedPreviewDisabled": "嵌入式预览已禁用。在单独的浏览器标签页中打开您的应用程序。",
     "enterFullscreen": "进入日志全屏",
@@ -1928,6 +1968,7 @@
     "loadingOlderLogs": "加载较早的日志中…",
     "loadOlderLogs": "加载较早的日志",
     "logs": "日志",
+    "logsLabel": "",
     "lostConnection": "日志流连接已断开。",
     "manual": "手动",
     "matchCount_one": "",
@@ -1946,6 +1987,7 @@
     "preview": "预览",
     "previewBlocked": "预览被阻止",
     "previewFailed": "预览失败",
+    "previewLabel": "",
     "previewUrlOverride": "预览URL覆盖",
     "refreshPreview": "刷新预览",
     "restart": "重启",
@@ -2124,14 +2166,17 @@
     "noTaskDocuments": "还没有任务文档。",
     "openTask": "打开任务",
     "plain": "纯文本",
+    "projectFilePreviewLabel": "",
     "projectFiles": "项目文件",
     "projectFilesTab": "项目文件",
+    "projectMarkdownFilesLabel": "",
     "resultCount_one": "",
     "resultCount_other": "",
     "retry": "重试",
     "retryLoading": "重试加载文档",
     "searchProjectFiles": "搜索项目Markdown文件…",
     "searchTaskDocuments": "搜索任务文档…",
+    "sectionsLabel": "",
     "selectFile": "选择Markdown文件以查看其内容。",
     "showHidden": "显示隐藏的项目文件",
     "showHiddenFiles": "显示隐藏文件",
@@ -2185,6 +2230,12 @@
     "failedToLoadFile": "加载文件失败",
     "failedToSaveFile": "保存文件失败"
   },
+  "errorBoundary": {
+    "genericError": "",
+    "reloadPage": "",
+    "retry": "",
+    "sectionError": ""
+  },
   "evals": {
     "allRuns": "所有运行",
     "disabledTitle": "定时评估已禁用",
@@ -2223,6 +2274,8 @@
     "overlapBottleneck_one": "",
     "overlapBottleneck_other": "",
     "overlapQueue": "重叠队列",
+    "overlapSummary_one": "",
+    "overlapSummary_other": "",
     "queued": "已排队",
     "running": "运行中",
     "secondsAgo_one": "",
@@ -2233,7 +2286,8 @@
     "stateRunning": "运行中",
     "status": "执行器状态",
     "stuck": "卡顿",
-    "temporary": "临时"
+    "temporary": "临时",
+    "todoStatus": ""
   },
   "fileBrowser": {
     "back": "返回文件列表",
@@ -2640,6 +2694,7 @@
     "stashDropped": "储藏已丢弃",
     "stashMessagePlaceholder": "储藏信息（可选）",
     "stashPopped": "已弹出储藏",
+    "stashRef": "",
     "statusLabelBranch": "分支",
     "statusLabelCommit": "提交",
     "statusLabelIntegrationBranch": "集成分支",
@@ -2693,6 +2748,13 @@
     "worktreesTotal_one": "",
     "worktreesTotal_other": ""
   },
+  "githubStarPrompt": {
+    "body": "",
+    "dismissLabel": "",
+    "regionLabel": "",
+    "starOnGitHub": "",
+    "title": ""
+  },
   "goals": {
     "activeCount_one": "",
     "activeCount_other": "",
@@ -2728,6 +2790,9 @@
     "unlinkMission": "",
     "unlinkMissionError": "",
     "updateError": "现在无法更新目标状态。请重试。"
+  },
+  "groups": {
+    "prLinkLabel": ""
   },
   "groupTask": {
     "abandonGroup": "",
@@ -2767,6 +2832,7 @@
     "documentsView": "文档视图",
     "engineOptions": "引擎选项",
     "evalsView": "评估",
+    "fusionLogo": "",
     "gitManager": "Git 管理",
     "goalsView": "目标",
     "importFromGitHub": "从 GitHub 导入",
@@ -2786,7 +2852,6 @@
     "moreHeaderActions": "更多标题栏操作",
     "moreViews": "更多视图",
     "noBaseBranch": "无基础分支",
-    "nodes": "节点",
     "noScriptsAddOne": "暂无脚本，添加一个…",
     "noScriptsConfigured": "未配置脚本",
     "noWorkingBranch": "无工作分支",
@@ -2927,6 +2992,7 @@
     "archiveTitle": "存档此洞察",
     "archiving": "正在存档\"{{title}}\"...",
     "backlogHealth": "积压健康",
+    "categoriesLabel": "",
     "configureModel": "配置洞察生成模型",
     "configureModelTitle": "配置模型",
     "createTaskLabel": "从此洞察创建任务",
@@ -3016,6 +3082,9 @@
     "useMissionContext": "使用任务上下文",
     "verificationCriteria": "验证标准",
     "yes": "是"
+  },
+  "issues": {
+    "noIssuesFound": ""
   },
   "lane": {
     "collapse": "",
@@ -3129,8 +3198,7 @@
     "unpauseUnavailable": "恢复操作不可用",
     "useProjectDefault": "使用项目默认",
     "viewOptions": "视图选项",
-    "workflowLabel": "",
-    "workflowSelectLabel": ""
+    "workflowLabel": ""
   },
   "mailbox": {
     "agent": "代理",
@@ -3199,6 +3267,7 @@
     "replyingTo": "回复 {{preview}}",
     "replyingToMessage": "回复消息",
     "replyLoadFailed": "加载回复消息失败。点击重试。",
+    "resizeMessageListPane": "",
     "selectMessageToRead": "选择要阅读的消息",
     "system": "系统",
     "timeDaysAgo_one": "",
@@ -3212,6 +3281,7 @@
     "to": "至",
     "toLabel": "至：",
     "toPrefix": "至：{{recipient}}",
+    "toRecipient": "",
     "typeAgentToAgent": "代理 ↔ 代理",
     "typeAgentToUser": "代理 → 你",
     "typeSystem": "系统",
@@ -3387,11 +3457,13 @@
   "missions": {
     "acceptance": "验收标准：",
     "acceptanceCriteriaOptional": "验收标准（可选）",
+    "acceptanceCriteriaPrefix": "",
     "actionGenerating": "生成中…",
     "actionResume": "继续",
     "actionRetry": "重试",
     "actionReview": "审核",
     "activateSlice": "激活切片",
+    "activityCount": "",
     "activityTime": "活动 {{time}}",
     "actual": "实际：{{value}}",
     "addAssertion": "添加断言",
@@ -3518,6 +3590,7 @@
     "filterSlices": "切片和里程碑事件",
     "filterStateChanges": "状态变更",
     "filterTasks": "任务事件",
+    "fixLineageButton": "",
     "generatedFixFeatures": "已生成修复功能：",
     "generatedFixFeaturesTitle": "已生成修复功能",
     "generatedFromFeature": "从功能生成：{{id}}",
@@ -3545,6 +3618,8 @@
     "linkButton": "链接",
     "linkedCount_one": "",
     "linkedCount_other": "",
+    "linkedCountShort_one": "",
+    "linkedCountShort_other": "",
     "linkedFeaturesCount_one": "",
     "linkedFeaturesCount_other": "",
     "linkedFeaturesLabel": "关联功能",
@@ -3605,6 +3680,7 @@
     "planStateNeedsUpdate": "需要更新",
     "planStateNotPlanned": "未规划",
     "planStatePlanned": "已规划",
+    "planTargetTitle": "",
     "planTitle": "用 AI 规划任务",
     "prepareQuestion": "准备下一个问题...",
     "progressText_one": "",
@@ -3711,6 +3787,7 @@
     "updateButton": "更新",
     "updated": "任务已更新",
     "validateFeature": "验证功能",
+    "validationRoundAttempts": "",
     "validationRoundsCount_one": "",
     "validationRoundsCount_other": "",
     "validationRoundsLabel_one": "",
@@ -3775,7 +3852,6 @@
     "options": {
       "default": "默认值",
       "high": "高",
-      "xhigh": "极高",
       "low": "低",
       "medium": "中等",
       "minimal": "最小",
@@ -3827,10 +3903,12 @@
     "board": "看板",
     "chat": "聊天",
     "chatUnreadAriaLabel": "未读聊天回复",
+    "collapseSidebar": "",
     "commandCenter": "",
     "devServer": "开发服务器",
     "documents": "文档",
     "evals": "评估",
+    "expandSidebar": "",
     "files": "文件",
     "gitManager": "Git 管理器",
     "goals": "目标",
@@ -3845,16 +3923,17 @@
     "missions": "任务集",
     "more": "更多",
     "moreSheetTitle": "导航",
-    "nodes": "节点",
     "noScriptsAddOne": "无脚本 — 添加一个…",
     "planning": "规划",
     "primaryNavAriaLabel": "主导航",
     "projects": "项目",
     "research": "研究",
+    "resizeSidebar": "",
     "scriptsSubmenuAriaLabel": "脚本子菜单",
     "secrets": "密钥",
     "settings": "设置",
     "showScriptsAriaLabel": "显示脚本",
+    "sidebarAriaLabel": "",
     "skills": "技能",
     "stashRecovery": "储藏恢复",
     "tasks": "任务",
@@ -3960,12 +4039,14 @@
     "discoverBeforeAdding": "在添加此节点之前发现远程项目。",
     "discoveredCount_one": "",
     "discoveredCount_other": "",
+    "discoveredRemoteProjectsLabel": "",
     "discovering": "正在发现...",
     "discoverRemoteProjects": "发现远程项目",
     "discoveryFailed": "无法发现远程项目",
     "dismissError": "关闭错误",
     "docker": "Docker",
     "dockerBadge": "托管 Docker 节点",
+    "dockerConfigMeta": "",
     "dockerConfigSaveFailed": "保存 Docker 配置失败",
     "dockerConfigSaveSuccess": "Docker 配置已保存",
     "dockerConfiguration": "Docker 配置",
@@ -4083,6 +4164,7 @@
       "name": "构建服务器",
       "optional": "可选"
     },
+    "projectPathMappingsLabel": "",
     "provideManually": "手动提供密钥",
     "pulling": "拉取中…",
     "pullSettings": "拉取设置",
@@ -4280,6 +4362,9 @@
     "tabCliAutoDerve": "本地 CLI(自动派生)",
     "testFailed": "测试失败——查看上面的状态。",
     "unreachable": "{{reason}}"
+  },
+  "piExtensions": {
+    "filterHint": ""
   },
   "piManager": {
     "addButton": "添加",
@@ -4884,6 +4969,7 @@
     "createTask": "创建任务",
     "createTaskButton": "创建任务",
     "createTaskTitle": "从发现创建任务",
+    "currentDefaults": "",
     "defaultFindingHeading": "研究发现",
     "descriptionLabel": "描述",
     "disabled": "此项目的研究功能已禁用。",
@@ -4906,6 +4992,7 @@
     "noRunsYet": "尚无研究运行",
     "noSourcesAvailable": "此项目没有可用的已启用研究来源。",
     "noSummaryYet": "尚无总结。",
+    "notSet": "",
     "openAuthSettings": "打开身份验证设置",
     "openResearchSettings": "打开研究设置",
     "priorityHigh": "高",
@@ -4966,6 +5053,7 @@
     "intro": "查看有效执行节点并控制每个任务的节点覆盖。",
     "localNoConfiguration": "本地（未配置路由）",
     "lockedWhileActive": "此任务处于活动状态时路由被锁定。在任务不再活动之前，无法更改节点覆盖。",
+    "nodeOptionLabel": "",
     "nodeUnavailable": "节点不可用或未知",
     "overrideCleared": "节点覆盖已清除",
     "overrideSection": "节点覆盖",
@@ -4982,6 +5070,9 @@
     "unavailablePolicy": "不可用节点策略",
     "unhealthy": "不健康",
     "useProjectDefault": "使用项目默认值"
+  },
+  "runtimes": {
+    "nousResearchLogoAlt": ""
   },
   "schedule": {
     "actionAiPrompt": "AI 提示",
@@ -5048,6 +5139,7 @@
     "cronPresetMonthly": "每月（1日）",
     "cronPresetWeekly": "每周（周一）",
     "cronRequired": "自定义日程需要 cron 表达式",
+    "crontabGuru": "",
     "delete": "删除",
     "deleteError": "删除例程失败",
     "deleteMessage": "删除计划 {{name}}？此操作无法撤销。",
@@ -5102,6 +5194,7 @@
     "globalScope": "全局(用户级)自动化",
     "globalScoped": "此日程将在全球范围内创建。",
     "globalScopeTitle": "全球范围",
+    "lastLabel": "",
     "loadRoutinesError": "加载例程失败",
     "manualTriggerInfo": "此例程将通过控制台或 API 手动触发。",
     "modeAriaLabel": "执行模式",
@@ -5124,6 +5217,7 @@
     "newAutomation": "新自动化",
     "newRoutineHeading": "新建例程",
     "newTitle": "新日程",
+    "nextLabel": "",
     "noActiveProject": "没有活跃的项目。日程将在全球范围内创建。",
     "noAutomations": "还没有自动化",
     "noStepsEmpty": "尚未添加步骤。添加命令或 AI 提示步骤以开始。",
@@ -5154,6 +5248,7 @@
     "runNameNow": "立即运行 {{name}}",
     "running": "运行中…",
     "runNow": "立即运行",
+    "runsLabel": "",
     "saveChanges": "保存更改",
     "saveStep": "保存步骤",
     "saving": "保存中…",
@@ -5232,6 +5327,9 @@
     "webhookSecretHint": "用于签名验证的 HMAC 密钥。无需身份验证的 webhook 请留空。",
     "webhookSecretLabel": "Webhook 密钥（可选）",
     "webhookSecretPlaceholder": "可选——无需身份验证的 webhook 请留空"
+  },
+  "scripts": {
+    "title": ""
   },
   "scriptsModal": {
     "addScript": "添加脚本",
@@ -5660,6 +5758,7 @@
       "enabling": "启用中…",
       "notConnected": "✗ 未连接",
       "probing": "探测本地 CLI…",
+      "providerName": "",
       "test": "测试",
       "testing": "测试中…"
     },
@@ -5695,6 +5794,7 @@
     "githubConnectionFailed": "连接失败或超时。",
     "githubOauthConnected": "GitHub OAuth 已连接。您可以导入问题并跟踪拉取请求。",
     "githubOauthNotConnected": "GitHub OAuth 尚未连接。您可以在设置 → 身份验证中进行设置，或者现在继续，稍后再连接。",
+    "githubProvider": "",
     "githubSkipped": "已跳过 GitHub。您随时可以从设置 → 身份验证进行连接。",
     "goBackToStep": "返回{{label}}",
     "goToDashboard": "前往仪表板",
@@ -5953,6 +6053,9 @@
     "revisionTitle": "要求 AI 修订",
     "saving": "保存中…",
     "view": "查看"
+  },
+  "stash": {
+    "copyReference": ""
   },
   "stashRecovery": {
     "applied": "已应用",
@@ -6710,7 +6813,6 @@
     "subtaskButton": "子任务",
     "thinkingDefault": "默认（{{level}}）",
     "thinkingHigh": "高",
-    "thinkingXhigh": "极高",
     "thinkingLabel": "思考",
     "thinkingLow": "低",
     "thinkingMedium": "中",
@@ -6971,6 +7073,7 @@
     "workflowCheck": "工作流检查"
   },
   "terminal": {
+    "arrowKeysLabel": "",
     "clear": "清空",
     "clearTerminal": "清空终端",
     "closeTab": "关闭标签页",
@@ -7289,6 +7392,7 @@
     "foreachSequential": "顺序",
     "foreachShared": "共享工作树",
     "foreachWorktree": "每步骤工作树",
+    "gateBadge": "",
     "gateBlocks": "关卡（阻断）",
     "gateMode": "关卡模式",
     "insertTemplate": "插入模板 {{name}}",
@@ -7345,6 +7449,7 @@
     "startEntryColumn": "",
     "startEntryColumnAuto": "",
     "startNote": "",
+    "stepBadge": "",
     "stepExecuteLabel": "步骤执行",
     "templateFilterLabel": "筛选模板",
     "templateFilterPlaceholder": "筛选模板",
@@ -7353,6 +7458,7 @@
     "templatesFragments": "片段",
     "templatesPluginSteps": "插件步骤",
     "templatesSection": "模板",
+    "timeoutMs": "",
     "trivialGraphHint": "此工作流仅运行开始→结束。从上方面板添加步骤以构建工作流。"
   },
   "workflows": {
@@ -7418,14 +7524,6 @@
     "templateSectionBuiltin": "内置工作流",
     "templateSectionYours": "我的工作流"
   },
-  "workflowSwitcher": {
-    "countsAria": "{{todoLabel}}: {{todo}}, {{inProgressLabel}}: {{inProgress}}, {{doneLabel}}: {{done}}",
-    "done": "Done",
-    "inProgress": "In Progress",
-    "label": "Workflow",
-    "todo": "Todo",
-    "triggerAria": "Select workflow. Current workflow: {{name}}"
-  },
   "workflowSelector": {
     "switchActiveMessage": "",
     "switchActiveTitle": "",
@@ -7484,6 +7582,14 @@
     "valuesTab": "",
     "widget": "",
     "widgetDefault": ""
+  },
+  "workflowSwitcher": {
+    "countsAria": "{{todoLabel}}: {{todo}}, {{inProgressLabel}}: {{inProgress}}, {{doneLabel}}: {{done}}",
+    "done": "Done",
+    "inProgress": "In Progress",
+    "label": "Workflow",
+    "todo": "Todo",
+    "triggerAria": "Select workflow. Current workflow: {{name}}"
   },
   "workspace": {
     "projectRoot": "项目根目录",

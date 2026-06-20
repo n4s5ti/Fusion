@@ -273,13 +273,13 @@ export function RoutineCard({ routine, onEdit, onDelete, onRun, onToggle, runnin
         {/* Timing info */}
         {routine.nextRunAt && routine.enabled && (
           <div className="routine-meta-item">
-            <span className="routine-meta-label">Next:</span>
+            <span className="routine-meta-label">{t("schedule.nextLabel", "Next:")}</span>
             <span title={routine.nextRunAt}>{relativeTime(routine.nextRunAt)}</span>
           </div>
         )}
         {routine.lastRunAt && (
           <div className="routine-meta-item">
-            <span className="routine-meta-label">Last:</span>
+            <span className="routine-meta-label">{t("schedule.lastLabel", "Last:")}</span>
             <span title={routine.lastRunAt}>{relativeTime(routine.lastRunAt)}</span>
           </div>
         )}
@@ -287,7 +287,7 @@ export function RoutineCard({ routine, onEdit, onDelete, onRun, onToggle, runnin
           <RunResultBadge result={routine.lastRunResult} />
         )}
         <div className="routine-meta-item">
-          <span className="routine-meta-label">Runs:</span>
+          <span className="routine-meta-label">{t("schedule.runsLabel", "Runs:")}</span>
           <span>{routine.runCount}</span>
         </div>
       </div>

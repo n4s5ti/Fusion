@@ -122,9 +122,9 @@ function truncateToolValue(value: string, maxLength: number): string {
   return `${value.slice(0, maxLength)}…`;
 }
 
-function formatToolArgsSummary(args?: Record<string, unknown>): string | null {
-  if (!args) return null;
-  const entries = Object.entries(args);
+function formatToolPayloadSummary(toolPayload?: Record<string, unknown>): string | null {
+  if (!toolPayload) return null;
+  const entries = Object.entries(toolPayload);
   if (entries.length === 0) return null;
   return entries
     .map(([key, value]) => {
@@ -140,13 +140,13 @@ function formatToolArgsSummary(args?: Record<string, unknown>): string | null {
     .join(", ");
 }
 
-function formatToolResultSummary(result: unknown): string | null {
-  if (result === undefined) return null;
-  if (typeof result === "string") return truncateToolValue(result, 200);
+function formatToolOutputSummary(toolOutput: unknown): string | null {
+  if (toolOutput === undefined) return null;
+  if (typeof toolOutput === "string") return truncateToolValue(toolOutput, 200);
   try {
-    return truncateToolValue(JSON.stringify(result), 200);
+    return truncateToolValue(JSON.stringify(toolOutput), 200);
   } catch {
-    return truncateToolValue(String(result), 200);
+    return truncateToolValue(String(toolOutput), 200);
   }
 }
 
@@ -181,14 +181,14 @@ function renderToolCalls(
 
     const isRunning = toolCall.status === "running";
     const isError = toolCall.status === "completed" && toolCall.isError;
-    const argsSummary = formatToolArgsSummary(toolCall.args);
-    const resultSummary = formatToolResultSummary(toolCall.result);
+    const payloadSummary = formatToolPayloadSummary(toolCall.args);
+    const outputSummary = formatToolOutputSummary(toolCall.result);
     const baseSummaryPreview = isRunning
-      ? argsSummary
-      : resultSummary
-        ? `result: ${resultSummary}`
-        : argsSummary
-          ? `args: ${argsSummary}`
+      ? payloadSummary
+      : outputSummary
+        ? t("chat.toolResultPreview", "result: {{summary}}", { summary: outputSummary })
+        : payloadSummary
+          ? t("chat.toolArgsPreview", "args: {{summary}}", { summary: payloadSummary })
           : null;
     const summaryPreview = compact ? null : baseSummaryPreview;
     const statusLabel = isRunning ? "running" : isError ? "error" : "completed";
@@ -206,16 +206,16 @@ function renderToolCalls(
           <span className="chat-tool-call-status-text">{statusLabel}</span>
         </summary>
         <div className="chat-tool-call-content">
-          {argsSummary && (
+          {payloadSummary && (
             <div className="chat-tool-call-row">
-              <span className="chat-tool-call-label">args</span>
-              <span className="chat-tool-call-value">{argsSummary}</span>
+              <span className="chat-tool-call-label">{t("chat.toolArgsLabel", "args")}</span>
+              <span className="chat-tool-call-value">{payloadSummary}</span>
             </div>
           )}
-          {resultSummary && (
+          {outputSummary && (
             <div className={`chat-tool-call-row${isError ? " chat-tool-call-row--error" : ""}`}>
-              <span className="chat-tool-call-label">result</span>
-              <span className="chat-tool-call-value">{resultSummary}</span>
+              <span className="chat-tool-call-label">{t("chat.toolResultLabel", "result")}</span>
+              <span className="chat-tool-call-value">{outputSummary}</span>
             </div>
           )}
         </div>
@@ -3508,7 +3508,7 @@ export function QuickChatFAB({
                 loading={fileMention.loading}
               />
               {showSkillMenu && (
-                <div className="chat-skill-menu" data-testid="quick-chat-skill-menu" role="listbox" aria-label="Skill suggestions">
+                <div className="chat-skill-menu" data-testid="quick-chat-skill-menu" role="listbox" aria-label={t("chat.skillSuggestions", "Skill suggestions")}>
                   {skillsLoading ? (
                     <div className="chat-skill-menu-empty">{t("chat.loadingSkills", "Loading skills…")}</div>
                   ) : filteredSkills.length === 0 ? (

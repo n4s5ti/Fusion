@@ -29,7 +29,7 @@ export function AgentsOverviewBar({
   const runningCount = activeAgents.filter((a) => a.state === "running").length;
 
   return (
-    <section className="agents-overview-bar" aria-label="Agents overview">
+    <section className="agents-overview-bar" aria-label={t("agents.overviewLabel", "Agents overview")}>
       <button
         type="button"
         className="agents-overview-bar__toggle"

@@ -227,7 +227,7 @@ export function HermesRuntimeCard() {
         >
           <img
             src="/brands/hermes-logo.svg"
-            alt="Nous Research"
+            alt={t("runtimes.nousResearchLogoAlt", "Nous Research")}
             style={{
               width: 28,
               height: 28,

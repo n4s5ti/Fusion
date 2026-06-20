@@ -244,13 +244,13 @@ export function ScheduleCard({ schedule, onEdit, onDelete, onRun, onToggle, runn
         </div>
         {schedule.nextRunAt && schedule.enabled && (
           <div className="schedule-meta-item">
-            <span className="schedule-meta-label">Next:</span>
+            <span className="schedule-meta-label">{t("schedule.nextLabel", "Next:")}</span>
             <span title={schedule.nextRunAt}>{relativeTime(schedule.nextRunAt)}</span>
           </div>
         )}
         {schedule.lastRunAt && (
           <div className="schedule-meta-item">
-            <span className="schedule-meta-label">Last:</span>
+            <span className="schedule-meta-label">{t("schedule.lastLabel", "Last:")}</span>
             <span title={schedule.lastRunAt}>{relativeTime(schedule.lastRunAt)}</span>
           </div>
         )}
@@ -258,7 +258,7 @@ export function ScheduleCard({ schedule, onEdit, onDelete, onRun, onToggle, runn
           <RunResultBadge result={schedule.lastRunResult} />
         )}
         <div className="schedule-meta-item">
-          <span className="schedule-meta-label">Runs:</span>
+          <span className="schedule-meta-label">{t("schedule.runsLabel", "Runs:")}</span>
           <span>{schedule.runCount}</span>
         </div>
       </div>

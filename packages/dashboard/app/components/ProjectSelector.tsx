@@ -389,12 +389,12 @@ export function ProjectSelector({
         aria-expanded={isOpen}
         aria-haspopup="listbox"
         aria-label={t("projectSelector.ariaLabel", "Select project")}
-        title={currentProject?.name ? t("projectSelector.switchProjectTitle", "Switch project (current: {{name}})", { name: currentProject.name }) : t("projectSelector.projectsTitle", "Projects")}
+        title={currentProject?.name ? t("projectSelector.switchProjectTitle", "Switch project (current: {{name}})", { name: currentProject.name }) : t("projectSelector.projectsTitle")}
         data-testid="project-selector-trigger"
       >
         <Folder size={16} className="project-selector__trigger-icon" />
         <span className="project-selector__trigger-text">
-          {currentProject?.name || t("projectSelector.projects", "Projects")}
+          {currentProject?.name || t("projectSelector.projects")}
         </span>
         <ChevronDown
           size={14}
@@ -407,7 +407,7 @@ export function ProjectSelector({
         <div
           className="project-selector__dropdown"
           role="listbox"
-          aria-label="Projects"
+          aria-label={t("projectSelector.projects")}
           onKeyDown={handleDropdownKeyDown}
           data-testid="project-selector-dropdown"
         >

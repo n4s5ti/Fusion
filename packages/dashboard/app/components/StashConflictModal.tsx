@@ -103,7 +103,7 @@ export default function StashConflictModal({
     const modalElement = modalRef.current;
     if (modalElement) {
       const focusable = getFocusableElements(modalElement);
-      const preferred = focusable.find((element) => element.getAttribute("aria-label") === "Copy stash reference") ?? focusable[0];
+      const preferred = focusable.find((element) => element.getAttribute("aria-label") === t("stash.copyReference")) ?? focusable[0];
       if (preferred) {
         preferred.focus();
       } else {
@@ -241,7 +241,7 @@ export default function StashConflictModal({
         ) : null}
         <div className="stash-conflict-modal__stash-row">
           <span>{stashDescriptor}</span>
-          <button type="button" className="btn btn-sm btn-icon" onClick={copyRef} aria-label="Copy stash reference">
+          <button type="button" className="btn btn-sm btn-icon" onClick={copyRef} aria-label={t("stash.copyReference")}>
             <Copy aria-hidden="true" />
           </button>
         </div>

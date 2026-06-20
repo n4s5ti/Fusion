@@ -314,12 +314,12 @@ export function ActivityLogModal({
             <span className="activity-log-filter-label">{t("activityLog.activeFilters", "Active filters:")}</span>
             {filteredProjectId !== "all" && (
               <span className="activity-log-filter-badge">
-                Project: {projects.find(p => p.id === filteredProjectId)?.name || filteredProjectId}
+                {t("activityLog.projectFilterBadge", "Project: {{project}}", { project: projects.find(p => p.id === filteredProjectId)?.name || filteredProjectId })}
               </span>
             )}
             {filteredType !== "all" && (
               <span className="activity-log-filter-badge">
-                Type: {EVENT_TYPE_LABELS[filteredType]}
+                {t("activityLog.typeFilterBadge", "Type: {{type}}", { type: EVENT_TYPE_LABELS[filteredType] })}
               </span>
             )}
             <button

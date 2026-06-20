@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { useTranslation } from "react-i18next";
 import type { IssueMentionItem } from "../api";
 import "./IssueMentionPopup.css";
 
@@ -19,6 +20,8 @@ export function IssueMentionPopup({
   onSelect,
   loading,
 }: IssueMentionPopupProps): ReactNode | null {
+  const { t } = useTranslation("app");
+
   if (!visible) return null;
 
   return (
@@ -38,7 +41,7 @@ export function IssueMentionPopup({
 
       {!loading && issues.length === 0 && (
         <div className="issue-mention-popup-empty" data-testid="issue-mention-empty">
-          No issues found
+          {t("issues.noIssuesFound", "No issues found")}
         </div>
       )}
 

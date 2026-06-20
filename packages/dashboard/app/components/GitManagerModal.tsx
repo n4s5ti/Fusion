@@ -732,7 +732,7 @@ export function GitManagerModal({ isOpen, onClose, tasks: _tasks, addToast, proj
   const handleDropStash = useCallback(async (index: number) => {
     const shouldDrop = await confirmContext.confirm({
       title: t("git.dropStashTitle", "Drop Stash"),
-      message: t("git.dropStashMessage", "Drop stash@{{{index}}}? This cannot be undone.", { index }),
+      message: t("git.dropStashMessage", { index }),
       danger: true,
     });
     if (!shouldDrop) return;
@@ -2238,7 +2238,7 @@ function StashesPanel({
             <div key={stash.index} className="gm-stash-item">
               <div className="gm-stash-header">
                 <div className="gm-stash-info">
-                  <span className="gm-stash-ref">stash@{`{${stash.index}}`}</span>
+                  <span className="gm-stash-ref">{t("git.stashRef", "stash@{{index}}", { index: `{${stash.index}}` })}</span>
                   <span className="gm-stash-message">{stash.message}</span>
                   <div className="gm-stash-meta">
                     {stash.branch && (

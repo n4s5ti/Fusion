@@ -1637,7 +1637,7 @@ export function TerminalModal({ isOpen, onClose, initialCommand, initialCommandG
             FNXC:Terminal 2026-06-16-23:38:
             Touch users need literal ANSI arrow sequences for shell history and cursor movement. These shortcuts bypass sticky Ctrl/Alt modifiers so mobile navigation matches physical keyboard arrow keys exactly.
             */}
-            <div className="terminal-shortcut-arrow-row" aria-label="Terminal arrow keys">
+            <div className="terminal-shortcut-arrow-row" aria-label={t("terminal.arrowKeysLabel", "Terminal arrow keys")}>
               {ARROW_SHORTCUT_KEYS.map((arrow) => (
                 <button
                   key={arrow.testId}

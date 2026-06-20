@@ -635,7 +635,7 @@ export function AgentDetailView({ agentId, projectId, onClose, addToast, onChild
   if (isLoading) {
     if (inline) {
       return (
-        <div className="agent-detail-inline-loading" role="region" aria-label="Agent detail loading">
+        <div className="agent-detail-inline-loading" role="region" aria-label={t("agents.detailLoadingLabel", "Agent detail loading")}>
           <div className="agent-detail-loading">
             <Loader2 className="animate-spin" size={24} />
             <span>{t("agents.loading", "Loading agent...")}</span>
@@ -2139,7 +2139,7 @@ function RunsTab({
   const renderCacheWindow = (label: string, window: AgentTokenUsageWindowSummary) => (
     <div className="run-context-item" key={label}>
       <span className="text-muted">{label}:</span>{" "}
-      <span>{(window.hitRatio * 100).toFixed(1)}% ({window.totalCachedTokens.toLocaleString()} / {window.totalCacheWriteTokens.toLocaleString()} / {window.totalInputTokens.toLocaleString()} / {window.nTasks.toLocaleString()})</span>
+      <span>{t("agents.cacheWindowSummary", "{{percent}}% ({{cached}} / {{written}} / {{input}} / {{tasks}})", { percent: (window.hitRatio * 100).toFixed(1), cached: window.totalCachedTokens.toLocaleString(), written: window.totalCacheWriteTokens.toLocaleString(), input: window.totalInputTokens.toLocaleString(), tasks: window.nTasks.toLocaleString() })}</span>
     </div>
   );
 
@@ -3109,7 +3109,7 @@ function InstructionsTab({
 
         <div className="config-fields">
           <div className="config-field">
-            <label htmlFor="instructions-text">Inline Instructions</label>
+            <label htmlFor="instructions-text">{t("agents.inlineInstructions", "Inline Instructions")}</label>
             <div className="agent-content-toolbar">
               <div className="agent-content-mode-toggle">
                 <button

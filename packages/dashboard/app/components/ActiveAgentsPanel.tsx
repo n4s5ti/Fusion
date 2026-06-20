@@ -153,7 +153,7 @@ function LiveAgentCard({ agent, projectId, onSelect, onOpenTaskLogs }: LiveAgent
       </div>
       <div className="live-agent-card-footer">
         <div className="live-agent-card-footer-meta">
-          <span className="text-secondary" title="Time since last heartbeat">
+          <span className="text-secondary" title={t("agents.timeSinceLastHeartbeat", "Time since last heartbeat")}>
             {formatElapsed(elapsed)}
           </span>
           {nextHeartbeatLabel && (

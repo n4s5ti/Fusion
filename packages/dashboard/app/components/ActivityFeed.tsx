@@ -1,4 +1,5 @@
 import { memo, useCallback, useMemo } from "react";
+import { useTranslation } from "react-i18next";
 import "./ActivityFeed.css";
 import {
   GitMerge,
@@ -149,8 +150,11 @@ function ActivityFeedInner({
   isLoading = false,
   error = null,
   projectNames = {},
-  emptyMessage = "No recent activity",
+  emptyMessage,
 }: ActivityFeedProps) {
+  const { t } = useTranslation("app");
+  const resolvedEmptyMessage = emptyMessage ?? t("activityFeed.noRecentActivity", "No recent activity");
+
   const getProjectName = useCallback((projectId: string): string => {
     return projectNames[projectId] || projectId;
   }, [projectNames]);
@@ -206,9 +210,9 @@ function ActivityFeedInner({
       <div className="activity-feed activity-feed-empty">
         <div className="activity-feed-empty-state">
           <CheckCircle size={32} />
-          <p>{emptyMessage}</p>
+          <p>{resolvedEmptyMessage}</p>
           <span className="activity-feed-empty-hint">
-            Activity will appear here when tasks are created, moved, or completed
+            {t("activityFeed.emptyHint", "Activity will appear here when tasks are created, moved, or completed")}
           </span>
         </div>
       </div>
@@ -222,7 +226,7 @@ function ActivityFeedInner({
           <div className="activity-feed-group-header">
             <span className="activity-feed-group-date">{group.date}</span>
             <span className="activity-feed-group-count">
-              {group.entries.length} event{group.entries.length !== 1 ? "s" : ""}
+              {t("activityFeed.eventCount", { count: group.entries.length, defaultValue_one: "{{count}} event", defaultValue_other: "{{count}} events" })}
             </span>
           </div>
           <div className="activity-feed-list">

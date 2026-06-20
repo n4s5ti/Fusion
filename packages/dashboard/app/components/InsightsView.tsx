@@ -652,7 +652,7 @@ export function InsightsView({ projectId, addToast, onClose, onCreateTask, model
         </div>
       ) : (
         <div className="insights-body">
-          <aside className="insights-sidebar" aria-label="Insight categories">
+          <aside className="insights-sidebar" aria-label={t("insights.categoriesLabel", "Insight categories")}>
             <ul className="insights-category-list">
               {filteredSections.map(renderCategoryItem)}
             </ul>

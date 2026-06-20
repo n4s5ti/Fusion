@@ -371,7 +371,7 @@ export function AddNodeModal({ isOpen, onClose, onSubmit, onDiscoverRemoteProjec
               </div>
 
               {discoveryState === "success" && discoveredProjects.length > 0 && (
-                <div className="add-node-modal__discovered-list" aria-label="Discovered remote projects">
+                <div className="add-node-modal__discovered-list" aria-label={t("nodes.discoveredRemoteProjectsLabel", "Discovered remote projects")}>
                   {discoveredProjects.map((project) => (
                     <div key={`${project.id}-${project.path}`} className="card add-node-modal__discovered-card">
                       <div className="add-node-modal__discovered-row">
@@ -402,7 +402,7 @@ export function AddNodeModal({ isOpen, onClose, onSubmit, onDiscoverRemoteProjec
             {errors.maxConcurrent && <span className="form-error add-node-modal__error">{errors.maxConcurrent}</span>}
           </label>
 
-          <section className="add-node-modal__projects" aria-label="Project path mappings">
+          <section className="add-node-modal__projects" aria-label={t("nodes.projectPathMappingsLabel", "Project path mappings")}>
             <h4 className="add-node-modal__projects-title">{t("nodes.attachProjects", "Attach Existing Projects")}</h4>
             <p className="add-node-modal__hint">{t("nodes.attachProjectsHint", "Select existing projects to run on this node and provide the node-specific absolute path for each one.")}</p>
             {projects.length === 0 ? (

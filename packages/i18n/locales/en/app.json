@@ -31,6 +31,12 @@
     "update": "Update",
     "yes": "Yes"
   },
+  "activityFeed": {
+    "emptyHint": "Activity will appear here when tasks are created, moved, or completed",
+    "eventCount_one": "{{count}} event",
+    "eventCount_other": "{{count}} events",
+    "noRecentActivity": "No recent activity"
+  },
   "activityLog": {
     "activeFilters": "Active filters:",
     "allEvents": "All Events",
@@ -64,6 +70,7 @@
     "noActivityRecorded": "No activity recorded yet",
     "noMatchingActivity": "No activity matches the current filters",
     "notMerged": "Not merged",
+    "projectFilterBadge": "Project: {{project}}",
     "refresh": "Refresh",
     "time": {
       "daysAgo_one": "{{count}}d ago",
@@ -74,7 +81,8 @@
       "minutesAgo_one": "{{count}}m ago",
       "minutesAgo_other": "{{count}}m ago"
     },
-    "title": "Activity Log"
+    "title": "Activity Log",
+    "typeFilterBadge": "Type: {{type}}"
   },
   "agentError": {
     "copied": "Copied",
@@ -354,6 +362,7 @@
     "bundleTitle": "Bundle",
     "cacheHitRatio": "Cache Hit Ratio",
     "cacheReadTokens": "Cache Read",
+    "cacheWindowSummary": "{{percent}}% ({{cached}} / {{written}} / {{input}} / {{tasks}})",
     "cacheWriteTokens": "Cache Write",
     "cancel": "Cancel",
     "cancelCustomInterval": "Cancel custom interval",
@@ -361,6 +370,8 @@
     "chainOfCommand": "Chain of Command",
     "change": "Change",
     "changeRole": "Click to change role",
+    "charactersCount_one": "{{count}} characters",
+    "charactersCount_other": "{{count}} characters",
     "chooseFile": "Choose File",
     "clearAgents": "Clear agents",
     "clearSkills": "Clear skills",
@@ -408,6 +419,7 @@
     "deleteTitle": "Delete Agent",
     "deletionNotAvailable": "Deletion is not available while the agent is running.",
     "deletionPermanent": "This will permanently delete the agent and all associated data.",
+    "detailLoadingLabel": "Agent detail loading",
     "details": "Details",
     "dialogAriaLabel": "Create new agent",
     "dialogTitle": "New Agent",
@@ -452,6 +464,7 @@
     "from": "From",
     "generateHint": "Describe your agent's role and let AI generate a specification",
     "generateWithAI": "Generate with AI",
+    "generateWithAiLabel": "Generate agent with AI",
     "generation": {
       "collapse": "Collapse",
       "expand": "Expand",
@@ -536,9 +549,12 @@
     "importingAgentsAndSkills": "Importing {{agentCount}} agent{{agentPlural}} and {{skillCount}} skill{{skillPlural}}...",
     "importingSkills_one": "Importing {{count}} skill{{plural}}...",
     "importingSkills_other": "Importing {{count}} skill{{plural}}...",
+    "importReportsTo": " · reports to {{agent}}",
+    "importSkills": " · skills: {{skills}}",
     "inbox": "Inbox",
     "inheritingProjectDefault": "Inheriting project default",
     "inheritProjectDefault": "Inherit project default",
+    "inlineInstructions": "Inline Instructions",
     "inlineMemoryFieldHint": "This memory is embedded directly in the agent's context.",
     "inlineMemoryHint": "Short-form memory injected on every heartbeat.",
     "inlineMemoryLabel": "Inline Memory",
@@ -564,6 +580,8 @@
     "intentPrompt": "What do you want this agent to do?",
     "interval": "Interval",
     "interviewDraftApplied": "Interview draft applied",
+    "kTokens_one": "{{count}}k tokens",
+    "kTokens_other": "{{count}}k tokens",
     "last24h": "Last 24h",
     "last7d": "Last 7 days",
     "lastHeartbeat": "Last heartbeat",
@@ -733,7 +751,7 @@
       "startInterview": "Start interview",
       "startOnboarding": "Start onboarding",
       "thinking": "Thinking...",
-      "title": "AI Interview",
+      "title": "Agent Onboarding",
       "updatedDraftReady": "Updated draft ready for review",
       "yes": "yes"
     },
@@ -753,6 +771,7 @@
     "output": "Output",
     "outputTokens": "Output",
     "overview": "Overview",
+    "overviewLabel": "Agents overview",
     "parsing": "Parsing…",
     "pause": "Pause",
     "pauseAction": "Pause",
@@ -1037,7 +1056,6 @@
     "templateCompact": "Compact",
     "templateDefault": "Default",
     "thinkingHigh": "High",
-    "thinkingXhigh": "Very High",
     "thinkingLevel": "Thinking level",
     "thinkingLow": "Low",
     "thinkingMedium": "Medium",
@@ -1045,6 +1063,7 @@
     "thinkingOff": "Off",
     "thinkingXhigh": "Very High",
     "throughput": "Throughput",
+    "timeSinceLastHeartbeat": "Time since last heartbeat",
     "title": "Agents",
     "titleLabel": "Title",
     "titlePlaceholder": "e.g. Senior Engineer",
@@ -1091,6 +1110,7 @@
     },
     "testMode": "Test mode — no real AI calls"
   },
+  "appName": "Fusion",
   "approval": {
     "dismissBanner": "Dismiss approval notification banner",
     "needAttention_one": "{{count}} approval {{noun}} need your attention",
@@ -1174,6 +1194,9 @@
     "mergeIntoMain": "Merge group into main",
     "openPr": "Open PR",
     "unavailable": "Branch group unavailable"
+  },
+  "branchGroups": {
+    "prNumber": "PR #{{number}}"
   },
   "capacity": {
     "dismiss": "Dismiss capacity warning",
@@ -1322,9 +1345,13 @@
     "thinking": "Thinking",
     "thinkingLabel": "Thinking",
     "thinkingStatus": "Thinking…",
+    "toolArgsLabel": "args",
+    "toolArgsPreview": "args: {{summary}}",
     "toolCalls": "Tool calls",
     "toolCallsCount_one": "{{count}} tool calls",
     "toolCallsCount_other": "{{count}} tool calls",
+    "toolResultLabel": "result",
+    "toolResultPreview": "result: {{summary}}",
     "typeMessage": "Type a message...",
     "unreadMessages": "Unread messages",
     "untitledSession": "Untitled",
@@ -1353,9 +1380,11 @@
     "versionMismatchSuffix": "Update to stay in sync."
   },
   "cliBinary": {
+    "binaryLabel": "Binary:",
     "checking": "Checking…",
     "copied": "Copied",
     "copy": "Copy",
+    "expectedVersion": "(expected {{version}})",
     "failedExit": "Install failed (exit {{code}})",
     "heading": "CLI Binary",
     "help": "Installing the global CLI lets you run fn and fusion from any terminal. Automations and scripts work without it via npx, but a global install is faster and more convenient.",
@@ -1363,13 +1392,15 @@
     "installWithNpm": "Install with npm",
     "notOnPath": "Neither fn nor fusion was found on PATH.",
     "orCopyLabel": "Or copy and run yourself:",
+    "pathLabel": "Path:",
     "refresh": "Refresh",
     "reinstall": "Reinstall",
     "stateCheckDisabled": "Check disabled",
     "stateInstalled": "Installed",
     "stateMissing": "Not installed",
     "stateVersionMismatch": "Version mismatch",
-    "succeededDuration": "Install succeeded in {{duration}}s"
+    "succeededDuration": "Install succeeded in {{duration}}s",
+    "versionLabel": "Version:"
   },
   "cliChat": {
     "queued_one": "{{count}} message queued — will send when the agent is ready",
@@ -1509,7 +1540,6 @@
         "title": "Heartbeat control"
       },
       "orgChart": {
-        "description": "Read-only view of the running agent hierarchy.",
         "empty": "No agents are reporting in yet.",
         "error": "Unable to load org chart",
         "loading": "Loading org chart…",
@@ -1637,17 +1667,24 @@
       "uniqueModels": "Unique models"
     },
     "productivity": {
+      "averageDuration": "Average",
       "byLanguage": "Files by language",
       "commits": "Commits",
+      "completedTasks": "Completed tasks",
+      "durationTitle": "Task duration",
+      "durationUnavailable": "Task duration is unavailable until completed tasks have active execution time recorded",
       "hoursSaved": "Human hours saved",
       "hoursSavedEstimate": "estimate from lines changed",
       "hoursSavedUnavailable": "Estimated human hours saved is unavailable until commit diff stats exist",
       "languagePie": "Language share",
       "loc": "Lines changed",
       "locUnavailable": "LOC is unavailable until commit diff stats are recorded",
+      "medianDuration": "Median",
       "modifiedFiles": "Files modified",
       "outcomesTitle": "Outcomes",
+      "p90Duration": "P90",
       "pullRequests": "Pull requests",
+      "totalDuration": "Total active",
       "volumeHint": "volume, not outcome",
       "volumeTitle": "Volume (proxy)"
     },
@@ -1694,6 +1731,7 @@
       "ecosystem": "Ecosystem",
       "github": "GitHub",
       "missionControl": "Mission Control",
+      "nodes": "Nodes",
       "overview": "Overview",
       "productivity": "Productivity",
       "reliability": "Reliability",
@@ -1910,6 +1948,8 @@
     "clear": "Clear",
     "command": "Command",
     "configuration": "Configuration",
+    "configurationLabel": "Dev server configuration",
+    "controlsHeaderLabel": "Dev server controls header",
     "embedded": "Embedded",
     "embeddedPreviewDisabled": "Embedded preview is disabled. Open your app in a separate browser tab.",
     "enterFullscreen": "Enter fullscreen logs",
@@ -1928,6 +1968,7 @@
     "loadingOlderLogs": "Loading older logs…",
     "loadOlderLogs": "Load older logs",
     "logs": "Logs",
+    "logsLabel": "Dev server logs",
     "lostConnection": "Lost log stream connection.",
     "manual": "Manual",
     "matchCount_one": "{{count}} match",
@@ -1946,6 +1987,7 @@
     "preview": "Preview",
     "previewBlocked": "Preview blocked",
     "previewFailed": "Preview failed",
+    "previewLabel": "Dev server preview",
     "previewUrlOverride": "Preview URL Override",
     "refreshPreview": "Refresh preview",
     "restart": "Restart",
@@ -2124,14 +2166,17 @@
     "noTaskDocuments": "No task documents yet.",
     "openTask": "Open task",
     "plain": "Plain",
+    "projectFilePreviewLabel": "Project file content preview",
     "projectFiles": "project files",
     "projectFilesTab": "Project Files",
+    "projectMarkdownFilesLabel": "Project markdown files",
     "resultCount_one": "{{count}} result{{plural}}",
     "resultCount_other": "{{count}} result{{plural}}",
     "retry": "Retry",
     "retryLoading": "Retry loading documents",
     "searchProjectFiles": "Search project markdown files…",
     "searchTaskDocuments": "Search task documents…",
+    "sectionsLabel": "Documents sections",
     "selectFile": "Select a Markdown file to view its content.",
     "showHidden": "Show hidden project files",
     "showHiddenFiles": "Show hidden files",
@@ -2185,6 +2230,12 @@
     "failedToLoadFile": "Failed to load file",
     "failedToSaveFile": "Failed to save file"
   },
+  "errorBoundary": {
+    "genericError": "Something went wrong",
+    "reloadPage": "Reload page",
+    "retry": "Retry",
+    "sectionError": "This section encountered an error"
+  },
   "evals": {
     "allRuns": "All runs",
     "disabledTitle": "Scheduled evals are disabled",
@@ -2223,6 +2274,8 @@
     "overlapBottleneck_one": "{{status}} overlap bottleneck {{blockerId}}: {{count}} todo blocked via blockedBy (threshold {{threshold}})",
     "overlapBottleneck_other": "{{status}} overlap bottleneck {{blockerId}}: {{count}} todo blocked via blockedBy (threshold {{threshold}})",
     "overlapQueue": "Overlap queue",
+    "overlapSummary_one": "{{blockerId}} · {{count}} todo",
+    "overlapSummary_other": "{{blockerId}} · {{count}} todo",
     "queued": "Queued",
     "running": "Running",
     "secondsAgo_one": "{{count}}s ago",
@@ -2233,7 +2286,8 @@
     "stateRunning": "Running",
     "status": "Executor status",
     "stuck": "Stuck",
-    "temporary": "Temporary"
+    "temporary": "Temporary",
+    "todoStatus": "todo"
   },
   "fileBrowser": {
     "back": "Back to file list",
@@ -2640,6 +2694,7 @@
     "stashDropped": "Stash dropped",
     "stashMessagePlaceholder": "Stash message (optional)",
     "stashPopped": "Stash popped",
+    "stashRef": "stash@{{index}}",
     "statusLabelBranch": "Branch",
     "statusLabelCommit": "Commit",
     "statusLabelIntegrationBranch": "Integration branch",
@@ -2693,6 +2748,13 @@
     "worktreesTotal_one": "{{count}} total",
     "worktreesTotal_other": "{{count}} total"
   },
+  "githubStarPrompt": {
+    "body": "If Fusion has saved you time, a GitHub star goes a long way. It helps other developers discover the project and keeps the team motivated to ship improvements.",
+    "dismissLabel": "Dismiss GitHub star prompt",
+    "regionLabel": "GitHub star prompt",
+    "starOnGitHub": "Star on GitHub",
+    "title": "Enjoying Fusion?"
+  },
   "goals": {
     "activeCount_one": "{{count}} active goals",
     "activeCount_other": "{{count}} active goals",
@@ -2728,6 +2790,9 @@
     "unlinkMission": "Unlink mission",
     "unlinkMissionError": "Unable to unlink mission right now. Please try again.",
     "updateError": "Unable to update goal status right now. Please try again."
+  },
+  "groups": {
+    "prLinkLabel": "PR #{{number}} ({{state}})"
   },
   "groupTask": {
     "abandonGroup": "Abandon group",
@@ -2767,6 +2832,7 @@
     "documentsView": "Documents view",
     "engineOptions": "Engine options",
     "evalsView": "Evals",
+    "fusionLogo": "Fusion logo",
     "gitManager": "Git Manager",
     "goalsView": "Goals",
     "importFromGitHub": "Import from GitHub",
@@ -2786,7 +2852,6 @@
     "moreHeaderActions": "More header actions",
     "moreViews": "More views",
     "noBaseBranch": "No base branch",
-    "nodes": "Nodes",
     "noScriptsAddOne": "No scripts — add one…",
     "noScriptsConfigured": "No scripts configured",
     "noWorkingBranch": "No working branch",
@@ -2927,6 +2992,7 @@
     "archiveTitle": "Archive this insight",
     "archiving": "Archiving \"{{title}}\"...",
     "backlogHealth": "Backlog Health",
+    "categoriesLabel": "Insight categories",
     "configureModel": "Configure insight generation model",
     "configureModelTitle": "Configure model",
     "createTaskLabel": "Create task from this insight",
@@ -3016,6 +3082,9 @@
     "useMissionContext": "Use Mission Context",
     "verificationCriteria": "Verification Criteria",
     "yes": "Yes"
+  },
+  "issues": {
+    "noIssuesFound": "No issues found"
   },
   "lane": {
     "collapse": "Collapse {{name}} lane",
@@ -3129,8 +3198,7 @@
     "unpauseUnavailable": "Unpause action is unavailable",
     "useProjectDefault": "Use project default",
     "viewOptions": "View options",
-    "workflowLabel": "Workflow",
-    "workflowSelectLabel": "Select workflow"
+    "workflowLabel": "Workflow"
   },
   "mailbox": {
     "agent": "Agent",
@@ -3199,6 +3267,7 @@
     "replyingTo": "Replying to",
     "replyingToMessage": "Replying to message",
     "replyLoadFailed": "Failed to load replied message. Click to retry.",
+    "resizeMessageListPane": "Resize message list pane",
     "selectMessageToRead": "Select a message to read",
     "system": "System",
     "timeDaysAgo_one": "{{count}}d ago",
@@ -3212,6 +3281,7 @@
     "to": "To",
     "toLabel": "To:",
     "toPrefix": "To: {{recipient}}",
+    "toRecipient": "To: {{recipient}}",
     "typeAgentToAgent": "Agent ↔ Agent",
     "typeAgentToUser": "Agent → You",
     "typeSystem": "System",
@@ -3387,11 +3457,13 @@
   "missions": {
     "acceptance": "Acceptance:",
     "acceptanceCriteriaOptional": "Acceptance criteria (optional)",
+    "acceptanceCriteriaPrefix": "AC:",
     "actionGenerating": "Generating…",
     "actionResume": "Resume",
     "actionRetry": "Retry",
     "actionReview": "Review",
     "activateSlice": "Activate slice",
+    "activityCount": "{{visible}} of {{total}}",
     "activityTime": "Activity {{time}}",
     "actual": "Actual: {{value}}",
     "addAssertion": "Add assertion",
@@ -3518,6 +3590,7 @@
     "filterSlices": "Slice & milestone events",
     "filterStateChanges": "State changes",
     "filterTasks": "Task events",
+    "fixLineageButton": "🔗 Fix",
     "generatedFixFeatures": "Generated fix features:",
     "generatedFixFeaturesTitle": "Generated Fix Features",
     "generatedFromFeature": "Generated from feature: {{id}}",
@@ -3545,6 +3618,8 @@
     "linkButton": "Link",
     "linkedCount_one": "{{count}} linked",
     "linkedCount_other": "{{count}} linked",
+    "linkedCountShort_one": "({{count}} linked)",
+    "linkedCountShort_other": "({{count}} linked)",
     "linkedFeaturesCount_one": "{{count}} linked feature",
     "linkedFeaturesCount_other": "{{count}} linked features",
     "linkedFeaturesLabel": "Linked Features",
@@ -3605,6 +3680,7 @@
     "planStateNeedsUpdate": "Needs update",
     "planStateNotPlanned": "Not planned",
     "planStatePlanned": "Planned",
+    "planTargetTitle": "Plan {{targetLabel}}: {{targetTitle}}",
     "planTitle": "Plan Mission with AI",
     "prepareQuestion": "Preparing next question...",
     "progressText_one": "Question {{count}} of ~6",
@@ -3711,6 +3787,7 @@
     "updateButton": "Update",
     "updated": "Mission updated",
     "validateFeature": "Validate feature",
+    "validationRoundAttempts": "impl #{{implementation}} · reviewer #{{reviewer}}",
     "validationRoundsCount_one": "{{count}} round",
     "validationRoundsCount_other": "{{count}} rounds",
     "validationRoundsLabel_one": "Validation rounds ({{count}})",
@@ -3775,7 +3852,6 @@
     "options": {
       "default": "Default",
       "high": "High",
-      "xhigh": "Very High",
       "low": "Low",
       "medium": "Medium",
       "minimal": "Minimal",
@@ -3827,10 +3903,12 @@
     "board": "Board",
     "chat": "Chat",
     "chatUnreadAriaLabel": "Unread chat response",
+    "collapseSidebar": "Collapse sidebar",
     "commandCenter": "Command Center",
     "devServer": "Dev Server",
     "documents": "Documents",
     "evals": "Evals",
+    "expandSidebar": "Expand sidebar",
     "files": "Files",
     "gitManager": "Git Manager",
     "goals": "Goals",
@@ -3845,16 +3923,17 @@
     "missions": "Missions",
     "more": "More",
     "moreSheetTitle": "Navigate",
-    "nodes": "Nodes",
     "noScriptsAddOne": "No scripts — add one…",
     "planning": "Planning",
     "primaryNavAriaLabel": "Primary navigation",
     "projects": "Projects",
     "research": "Research",
+    "resizeSidebar": "Resize sidebar",
     "scriptsSubmenuAriaLabel": "Scripts submenu",
     "secrets": "Secrets",
     "settings": "Settings",
     "showScriptsAriaLabel": "Show scripts",
+    "sidebarAriaLabel": "Sidebar navigation",
     "skills": "Skills",
     "stashRecovery": "Stash Recovery",
     "tasks": "Tasks",
@@ -3960,12 +4039,14 @@
     "discoverBeforeAdding": "Discover remote projects before adding this node.",
     "discoveredCount_one": "Discovered {{count}} remote project{{plural}}",
     "discoveredCount_other": "Discovered {{count}} remote project{{plural}}",
+    "discoveredRemoteProjectsLabel": "Discovered remote projects",
     "discovering": "Discovering...",
     "discoverRemoteProjects": "Discover Remote Projects",
     "discoveryFailed": "Failed to discover remote projects",
     "dismissError": "Dismiss error",
     "docker": "Docker",
     "dockerBadge": "Managed Docker node",
+    "dockerConfigMeta": "Config v{{version}} • Updated {{updated}}",
     "dockerConfigSaveFailed": "Failed to save Docker config",
     "dockerConfigSaveSuccess": "Docker config saved",
     "dockerConfiguration": "Docker Configuration",
@@ -4083,6 +4164,7 @@
       "name": "Build Server",
       "optional": "Optional"
     },
+    "projectPathMappingsLabel": "Project path mappings",
     "provideManually": "Provide key manually",
     "pulling": "Pulling...",
     "pullSettings": "Pull Settings",
@@ -4280,6 +4362,9 @@
     "tabCliAutoDerve": "Local CLI (auto-derive)",
     "testFailed": "Test failed — see status above.",
     "unreachable": "{{reason}}"
+  },
+  "piExtensions": {
+    "filterHint": "{{extensions}} ext, {{skills}} skill, {{prompts}} prompt, {{themes}} theme"
   },
   "piManager": {
     "addButton": "Add",
@@ -4884,6 +4969,7 @@
     "createTask": "Create Task",
     "createTaskButton": "Create Task",
     "createTaskTitle": "Create task from finding",
+    "currentDefaults": "Current defaults: provider {{provider}}, max sources {{maxSources}}",
     "defaultFindingHeading": "Research finding",
     "descriptionLabel": "Description",
     "disabled": "Research is disabled for this project.",
@@ -4906,6 +4992,7 @@
     "noRunsYet": "No research runs yet",
     "noSourcesAvailable": "No enabled research sources are available for this project.",
     "noSummaryYet": "No summary yet.",
+    "notSet": "(not set)",
     "openAuthSettings": "Open Authentication Settings",
     "openResearchSettings": "Open Research Settings",
     "priorityHigh": "High",
@@ -4966,6 +5053,7 @@
     "intro": "View the effective execution node and control per-task node override.",
     "localNoConfiguration": "Local (no routing configured)",
     "lockedWhileActive": "Routing is locked while this task is active. Node override cannot be changed until the task is no longer active.",
+    "nodeOptionLabel": "{{name}} ({{type}}) — {{status}}",
     "nodeUnavailable": "node unavailable or unknown",
     "overrideCleared": "Node override cleared",
     "overrideSection": "Node Override",
@@ -4982,6 +5070,9 @@
     "unavailablePolicy": "Unavailable-node policy",
     "unhealthy": "Unhealthy",
     "useProjectDefault": "Use project default"
+  },
+  "runtimes": {
+    "nousResearchLogoAlt": "Nous Research"
   },
   "schedule": {
     "actionAiPrompt": "AI Prompt",
@@ -5048,6 +5139,7 @@
     "cronPresetMonthly": "Every month (1st)",
     "cronPresetWeekly": "Every week (Monday)",
     "cronRequired": "Cron expression is required for custom schedules",
+    "crontabGuru": "crontab.guru",
     "delete": "Delete",
     "deleteError": "Failed to delete routine",
     "deleteMessage": "Delete schedule {{name}}? This cannot be undone.",
@@ -5102,6 +5194,7 @@
     "globalScope": "Global",
     "globalScoped": "This schedule will be created at global scope.",
     "globalScopeTitle": "Global scope",
+    "lastLabel": "Last:",
     "loadRoutinesError": "Failed to load routines",
     "manualTriggerInfo": "This routine will be triggered manually via the dashboard or API.",
     "modeAriaLabel": "Execution mode",
@@ -5124,6 +5217,7 @@
     "newAutomation": "New Automation",
     "newRoutineHeading": "New Routine",
     "newTitle": "New Schedule",
+    "nextLabel": "Next:",
     "noActiveProject": "No active project. Schedules will be created at global scope.",
     "noAutomations": "No automations yet",
     "noStepsEmpty": "No steps added yet. Add a command or AI prompt step to get started.",
@@ -5154,6 +5248,7 @@
     "runNameNow": "Run {{name}} now",
     "running": "Running…",
     "runNow": "Run now",
+    "runsLabel": "Runs:",
     "saveChanges": "Save Changes",
     "saveStep": "Save Step",
     "saving": "Saving…",
@@ -5232,6 +5327,9 @@
     "webhookSecretHint": "HMAC secret for signature verification. Leave empty for unauthenticated webhooks.",
     "webhookSecretLabel": "Webhook Secret (optional)",
     "webhookSecretPlaceholder": "Optional — leave empty for unauthenticated webhooks"
+  },
+  "scripts": {
+    "title": "Scripts"
   },
   "scriptsModal": {
     "addScript": "Add Script",
@@ -5660,6 +5758,7 @@
       "enabling": "Enabling…",
       "notConnected": "✗ Not connected",
       "probing": "Probing local CLI…",
+      "providerName": "Cursor — via Cursor CLI",
       "test": "Test",
       "testing": "Testing…"
     },
@@ -5695,6 +5794,7 @@
     "githubConnectionFailed": "Connection failed or timed out.",
     "githubOauthConnected": "GitHub OAuth is connected. You can import issues and track pull requests.",
     "githubOauthNotConnected": "GitHub OAuth isn't connected yet. You can set it up in Settings → Authentication, or continue now and connect later.",
+    "githubProvider": "GitHub",
     "githubSkipped": "GitHub was skipped. You can connect anytime from Settings → Authentication.",
     "goBackToStep": "Go back to {{label}}",
     "goToDashboard": "Go to Dashboard",
@@ -5953,6 +6053,9 @@
     "revisionTitle": "Ask AI to Revise",
     "saving": "Saving…",
     "view": "View"
+  },
+  "stash": {
+    "copyReference": "Copy stash reference"
   },
   "stashRecovery": {
     "applied": "Applied",
@@ -6710,7 +6813,6 @@
     "subtaskButton": "Subtask",
     "thinkingDefault": "Default ({{level}})",
     "thinkingHigh": "High",
-    "thinkingXhigh": "Very High",
     "thinkingLabel": "Thinking",
     "thinkingLow": "Low",
     "thinkingMedium": "Medium",
@@ -6971,6 +7073,7 @@
     "workflowCheck": "Workflow check"
   },
   "terminal": {
+    "arrowKeysLabel": "Terminal arrow keys",
     "clear": "Clear",
     "clearTerminal": "Clear terminal",
     "closeTab": "Close tab",
@@ -7289,6 +7392,7 @@
     "foreachSequential": "Sequential",
     "foreachShared": "Shared worktree",
     "foreachWorktree": "Per-step worktree",
+    "gateBadge": "gate",
     "gateBlocks": "Gate (blocks)",
     "gateMode": "Gate mode",
     "insertTemplate": "Insert template {{name}}",
@@ -7345,6 +7449,7 @@
     "startEntryColumn": "Entry column",
     "startEntryColumnAuto": "— Auto (first column)",
     "startNote": "The start node marks where a task enters the workflow.",
+    "stepBadge": "step",
     "stepExecuteLabel": "Step execute",
     "templateFilterLabel": "Filter templates",
     "templateFilterPlaceholder": "Filter templates",
@@ -7353,6 +7458,7 @@
     "templatesFragments": "Fragments",
     "templatesPluginSteps": "Plugin steps",
     "templatesSection": "Templates",
+    "timeoutMs": "{{timeout}}ms",
     "trivialGraphHint": "This workflow only runs start → end. Add steps from the palette above to build it out."
   },
   "workflows": {
@@ -7418,14 +7524,6 @@
     "templateSectionBuiltin": "Built-in workflows",
     "templateSectionYours": "Your workflows"
   },
-  "workflowSwitcher": {
-    "countsAria": "{{todoLabel}}: {{todo}}, {{inProgressLabel}}: {{inProgress}}, {{doneLabel}}: {{done}}",
-    "done": "Done",
-    "inProgress": "In Progress",
-    "label": "Workflow",
-    "todo": "Todo",
-    "triggerAria": "Select workflow. Current workflow: {{name}}"
-  },
   "workflowSelector": {
     "switchActiveMessage": "This task has an active session. Switching workflows aborts it and re-homes the card into the new workflow's entry column. Continue?",
     "switchActiveTitle": "Switch workflow?",
@@ -7485,6 +7583,14 @@
     "widget": "Widget",
     "widgetDefault": "Default"
   },
+  "workflowSwitcher": {
+    "countsAria": "{{todoLabel}}: {{todo}}, {{inProgressLabel}}: {{inProgress}}, {{doneLabel}}: {{done}}",
+    "done": "Done",
+    "inProgress": "In Progress",
+    "label": "Workflow",
+    "todo": "Todo",
+    "triggerAria": "Select workflow. Current workflow: {{name}}"
+  },
   "workspace": {
     "projectRoot": "Project Root",
     "selectWorkspace": "Select workspace",
@@ -7500,133 +7606,5 @@
     "installRequestTitle": "Worktrunk install request",
     "sha256": "SHA-256",
     "version": "Version"
-  },
-  "workflowEditor": {
-    "cliAgent": {
-      "executorOption": "CLI agent",
-      "adapterLabel": "CLI adapter",
-      "adapterPlaceholder": "— select adapter —",
-      "adapterNote": "Drives a CLI coding agent in an engine-owned terminal for this step.",
-      "tier": {
-        "native": "native",
-        "hybrid": "hybrid",
-        "generic": "generic"
-      },
-      "autonomyLabel": "Elevated autonomy (bypass approvals)",
-      "autonomyNote": "Elevated autonomy requires a per-project approval before the agent can launch. Until approved, launches with elevated posture fail.",
-      "notifyLabel": "Waiting-on-input notification",
-      "notify": {
-        "banner": "In-app banner",
-        "bannerNotify": "Banner + push notification"
-      },
-      "notifyNote": "How you are alerted when the agent pauses waiting for input on this step."
-    }
-  },
-  "cliTerminal": {
-    "replayIdle": "Session idle",
-    "replayEnded": "Session ended",
-    "readOnly": "Read-only",
-    "postureResolved": "Resolved posture",
-    "postureBaseline": "Baseline",
-    "adapterSettings": "Adapter settings",
-    "advancePrompt": "This session looks idle — advance to review?",
-    "advance": "Advance",
-    "notYet": "Not yet",
-    "mobileInputPlaceholder": "Type to send to the session…",
-    "mobileSend": "Send",
-    "mobileKeyEsc": "Send Escape",
-    "mobileKeyTab": "Send Tab",
-    "mobileKeyCtrlC": "Send Ctrl-C",
-    "mobileKeyCtrl": "Sticky Ctrl modifier",
-    "mobileKeyArrowUp": "Cursor up",
-    "mobileKeyArrowDown": "Cursor down",
-    "mobileKeyArrowLeft": "Cursor left",
-    "mobileKeyArrowRight": "Cursor right"
-  },
-  "commandCenter": {
-    "heading": "Command Center",
-    "loading": "Loading command center...",
-    "empty": "No usage data yet. Run some agents to populate the Command Center.",
-    "areaPending": "This area renders once metrics data is available.",
-    "tablistLabel": "Command Center sections",
-    "tabs": {
-      "overview": "Overview",
-      "tokens": "Tokens",
-      "tools": "Tools",
-      "activity": "Activity",
-      "productivity": "Productivity",
-      "nodes": "Nodes",
-      "reliability": "Reliability",
-      "ecosystem": "Ecosystem",
-      "missionControl": "Mission Control"
-    },
-    "overview": {
-      "tokensCost": "Tokens & cost",
-      "autonomy": "Autonomy ratio",
-      "activeNodes": "Active nodes",
-      "tasksDone": "Tasks done",
-      "uniqueModels": "Unique models",
-      "openSignals": "Open signals",
-      "liveStrip": "Live activity",
-      "liveStripPending": "Live Mission Control loads with active sessions."
-    },
-    "range": {
-      "last24h": "Last 24h",
-      "last7d": "Last 7 days",
-      "last30d": "Last 30 days",
-      "allTime": "All time",
-      "custom": "Custom range",
-      "dialogLabel": "Select date range",
-      "from": "From",
-      "to": "To",
-      "invalidRange": "Start date must be on or before end date"
-    },
-    "controls": {
-      "title": "Operator controls",
-      "orgChart": {
-        "title": "Agent org chart",
-        "description": "Read-only view of the running agent hierarchy.",
-        "loading": "Loading org chart…",
-        "empty": "No agents are reporting in yet.",
-        "error": "Unable to load org chart"
-      },
-      "heartbeat": {
-        "title": "Heartbeat control",
-        "description": "Pause or resume the scheduling heartbeat.",
-        "pause": "Pause heartbeat",
-        "resume": "Resume heartbeat",
-        "disabledByStop": "Start the AI engine before resuming the heartbeat."
-      },
-      "engine": {
-        "title": "AI engine",
-        "description": "Stopping the engine halts all AI work."
-      },
-      "concurrency": {
-        "title": "Concurrency",
-        "description": "Tune live scheduler capacity.",
-        "maxConcurrent": "Max concurrent tasks",
-        "maxTriageConcurrent": "Max triage concurrent",
-        "maxWorktrees": "Max worktrees",
-        "error": "Unable to load concurrency settings"
-      },
-      "theme": {
-        "title": "Theme",
-        "description": "Switch the dashboard theme with live color previews."
-      },
-      "status": {
-        "running": "Running",
-        "paused": "Paused",
-        "stopped": "Stopped",
-        "loading": "Loading…",
-        "saving": "Saving…",
-        "saved": "Saved",
-        "saveError": "Save failed",
-        "ready": "Ready",
-        "error": "Unable to load live scheduler status",
-        "lastActivity": "Last activity",
-        "maxConcurrent": "Max concurrent",
-        "noActivity": "No recent activity"
-      }
-    }
   }
 }

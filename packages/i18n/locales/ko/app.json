@@ -31,6 +31,12 @@
     "update": "업데이트",
     "yes": "예"
   },
+  "activityFeed": {
+    "emptyHint": "",
+    "eventCount_one": "",
+    "eventCount_other": "",
+    "noRecentActivity": ""
+  },
   "activityLog": {
     "activeFilters": "활성 필터:",
     "allEvents": "모든 이벤트",
@@ -64,6 +70,7 @@
     "noActivityRecorded": "아직 기록된 활동이 없습니다",
     "noMatchingActivity": "현재 필터에 일치하는 활동이 없습니다",
     "notMerged": "병합되지 않음",
+    "projectFilterBadge": "",
     "refresh": "새로고침",
     "time": {
       "daysAgo_one": "",
@@ -74,7 +81,8 @@
       "minutesAgo_one": "",
       "minutesAgo_other": ""
     },
-    "title": "활동 로그"
+    "title": "활동 로그",
+    "typeFilterBadge": ""
   },
   "agentError": {
     "copied": "복사됨",
@@ -354,6 +362,7 @@
     "bundleTitle": "번들",
     "cacheHitRatio": "캐시 적중률",
     "cacheReadTokens": "캐시 읽기",
+    "cacheWindowSummary": "",
     "cacheWriteTokens": "캐시 쓰기",
     "cancel": "취소",
     "cancelCustomInterval": "사용자 정의 간격 취소",
@@ -361,6 +370,8 @@
     "chainOfCommand": "명령 체계",
     "change": "변경",
     "changeRole": "클릭하여 역할 변경",
+    "charactersCount_one": "",
+    "charactersCount_other": "",
     "chooseFile": "파일 선택",
     "clearAgents": "에이전트 초기화",
     "clearSkills": "스킬 초기화",
@@ -408,6 +419,7 @@
     "deleteTitle": "에이전트 삭제",
     "deletionNotAvailable": "에이전트가 실행 중일 때는 삭제할 수 없습니다.",
     "deletionPermanent": "에이전트와 모든 관련 데이터가 영구적으로 삭제됩니다.",
+    "detailLoadingLabel": "",
     "details": "세부 정보",
     "dialogAriaLabel": "새 에이전트 만들기",
     "dialogTitle": "새 에이전트",
@@ -452,6 +464,7 @@
     "from": "보낸 사람",
     "generateHint": "에이전트의 역할을 설명하면 AI가 사양을 생성합니다",
     "generateWithAI": "AI로 생성",
+    "generateWithAiLabel": "",
     "generation": {
       "collapse": "접기",
       "expand": "펼치기",
@@ -536,9 +549,12 @@
     "importingAgentsAndSkills": "에이전트 {{agentCount}}개{{agentPlural}}와 스킬 {{skillCount}}개{{skillPlural}} 가져오는 중...",
     "importingSkills_one": "",
     "importingSkills_other": "",
+    "importReportsTo": "",
+    "importSkills": "",
     "inbox": "받은 편지함",
     "inheritingProjectDefault": "프로젝트 기본값을 상속 중",
     "inheritProjectDefault": "프로젝트 기본값 상속",
+    "inlineInstructions": "",
     "inlineMemoryFieldHint": "이 메모리는 에이전트 컨텍스트에 직접 포함됩니다.",
     "inlineMemoryHint": "매 하트비트마다 주입되는 단기 메모리입니다.",
     "inlineMemoryLabel": "인라인 메모리",
@@ -564,6 +580,8 @@
     "intentPrompt": "이 에이전트가 무엇을 수행하길 원하시나요?",
     "interval": "간격",
     "interviewDraftApplied": "인터뷰 초안이 적용되었습니다",
+    "kTokens_one": "",
+    "kTokens_other": "",
     "last24h": "최근 24시간",
     "last7d": "최근 7일",
     "lastHeartbeat": "마지막 하트비트",
@@ -753,6 +771,7 @@
     "output": "출력",
     "outputTokens": "출력",
     "overview": "개요",
+    "overviewLabel": "",
     "parsing": "파싱 중…",
     "pause": "일시정지",
     "pauseAction": "일시정지",
@@ -1037,7 +1056,6 @@
     "templateCompact": "간결",
     "templateDefault": "기본",
     "thinkingHigh": "높음",
-    "thinkingXhigh": "매우 높음",
     "thinkingLevel": "사고 수준",
     "thinkingLow": "낮음",
     "thinkingMedium": "보통",
@@ -1045,6 +1063,7 @@
     "thinkingOff": "끄기",
     "thinkingXhigh": "매우 높음",
     "throughput": "처리량",
+    "timeSinceLastHeartbeat": "",
     "title": "에이전트",
     "titleLabel": "직함",
     "titlePlaceholder": "예) 시니어 엔지니어",
@@ -1091,6 +1110,7 @@
     },
     "testMode": "테스트 모드 — 실제 AI 호출 없음"
   },
+  "appName": "",
   "approval": {
     "dismissBanner": "승인 알림 배너 닫기",
     "needAttention_one": "",
@@ -1174,6 +1194,9 @@
     "mergeIntoMain": "그룹을 main에 병합",
     "openPr": "PR 열기",
     "unavailable": "브랜치 그룹을 사용할 수 없습니다"
+  },
+  "branchGroups": {
+    "prNumber": ""
   },
   "capacity": {
     "dismiss": "용량 경고 닫기",
@@ -1322,9 +1345,13 @@
     "thinking": "생각 중",
     "thinkingLabel": "생각 중",
     "thinkingStatus": "생각 중…",
+    "toolArgsLabel": "",
+    "toolArgsPreview": "",
     "toolCalls": "도구 호출",
     "toolCallsCount_one": "",
     "toolCallsCount_other": "",
+    "toolResultLabel": "",
+    "toolResultPreview": "",
     "typeMessage": "메시지를 입력하세요...",
     "unreadMessages": "읽지 않은 메시지",
     "untitledSession": "제목 없음",
@@ -1353,9 +1380,11 @@
     "versionMismatchSuffix": "최신 버전으로 업데이트하여 동기화를 유지하세요."
   },
   "cliBinary": {
+    "binaryLabel": "",
     "checking": "확인 중…",
     "copied": "복사됨",
     "copy": "복사",
+    "expectedVersion": "",
     "failedExit": "설치 실패 (종료 코드: {{code}})",
     "heading": "CLI 바이너리",
     "help": "전역 CLI를 설치하면 어느 터미널에서나 fn 및 fusion을 실행할 수 있습니다. 자동화 및 스크립트는 npx로도 작동하지만, 전역 설치가 더 빠르고 편리합니다.",
@@ -1363,13 +1392,15 @@
     "installWithNpm": "npm으로 설치",
     "notOnPath": "fn 또는 fusion이 PATH에서 발견되지 않았습니다.",
     "orCopyLabel": "또는 직접 복사하여 실행:",
+    "pathLabel": "",
     "refresh": "새로 고침",
     "reinstall": "재설치",
     "stateCheckDisabled": "확인 비활성화됨",
     "stateInstalled": "설치됨",
     "stateMissing": "설치되지 않음",
     "stateVersionMismatch": "버전 불일치",
-    "succeededDuration": "{{duration}}초 만에 설치 완료"
+    "succeededDuration": "{{duration}}초 만에 설치 완료",
+    "versionLabel": ""
   },
   "cliChat": {
     "queued_one": "",
@@ -1509,7 +1540,6 @@
         "title": ""
       },
       "orgChart": {
-        "description": "",
         "empty": "",
         "error": "",
         "loading": "",
@@ -1637,17 +1667,24 @@
       "uniqueModels": ""
     },
     "productivity": {
+      "averageDuration": "",
       "byLanguage": "",
       "commits": "",
+      "completedTasks": "",
+      "durationTitle": "",
+      "durationUnavailable": "",
       "hoursSaved": "",
       "hoursSavedEstimate": "",
       "hoursSavedUnavailable": "",
       "languagePie": "",
       "loc": "",
       "locUnavailable": "",
+      "medianDuration": "",
       "modifiedFiles": "",
       "outcomesTitle": "",
+      "p90Duration": "",
       "pullRequests": "",
+      "totalDuration": "",
       "volumeHint": "",
       "volumeTitle": ""
     },
@@ -1694,6 +1731,7 @@
       "ecosystem": "",
       "github": "",
       "missionControl": "",
+      "nodes": "",
       "overview": "",
       "productivity": "",
       "reliability": "",
@@ -1910,6 +1948,8 @@
     "clear": "지우기",
     "command": "명령",
     "configuration": "설정",
+    "configurationLabel": "",
+    "controlsHeaderLabel": "",
     "embedded": "임베드됨",
     "embeddedPreviewDisabled": "임베드 미리 보기가 비활성화되어 있습니다. 별도의 브라우저 탭에서 앱을 여세요.",
     "enterFullscreen": "전체 화면 로그 보기",
@@ -1928,6 +1968,7 @@
     "loadingOlderLogs": "이전 로그 로드 중…",
     "loadOlderLogs": "이전 로그 불러오기",
     "logs": "로그",
+    "logsLabel": "",
     "lostConnection": "로그 스트림 연결이 끊겼습니다.",
     "manual": "수동",
     "matchCount_one": "",
@@ -1946,6 +1987,7 @@
     "preview": "미리 보기",
     "previewBlocked": "미리 보기 차단됨",
     "previewFailed": "미리 보기 실패",
+    "previewLabel": "",
     "previewUrlOverride": "미리 보기 URL 재정의",
     "refreshPreview": "미리 보기 새로 고침",
     "restart": "재시작",
@@ -2124,14 +2166,17 @@
     "noTaskDocuments": "아직 작업 문서가 없습니다.",
     "openTask": "작업 열기",
     "plain": "일반 텍스트",
+    "projectFilePreviewLabel": "",
     "projectFiles": "프로젝트 파일",
     "projectFilesTab": "프로젝트 파일",
+    "projectMarkdownFilesLabel": "",
     "resultCount_one": "",
     "resultCount_other": "",
     "retry": "다시 시도",
     "retryLoading": "문서 다시 불러오기",
     "searchProjectFiles": "프로젝트 마크다운 파일 검색…",
     "searchTaskDocuments": "작업 문서 검색…",
+    "sectionsLabel": "",
     "selectFile": "마크다운 파일을 선택하여 내용을 확인하세요.",
     "showHidden": "숨겨진 프로젝트 파일 표시",
     "showHiddenFiles": "숨김 파일 표시",
@@ -2185,6 +2230,12 @@
     "failedToLoadFile": "파일 불러오기 실패",
     "failedToSaveFile": "파일 저장 실패"
   },
+  "errorBoundary": {
+    "genericError": "",
+    "reloadPage": "",
+    "retry": "",
+    "sectionError": ""
+  },
   "evals": {
     "allRuns": "전체 실행",
     "disabledTitle": "예약 평가가 비활성화되어 있습니다",
@@ -2223,6 +2274,8 @@
     "overlapBottleneck_one": "",
     "overlapBottleneck_other": "",
     "overlapQueue": "중복 대기열",
+    "overlapSummary_one": "",
+    "overlapSummary_other": "",
     "queued": "대기 중",
     "running": "실행 중",
     "secondsAgo_one": "",
@@ -2233,7 +2286,8 @@
     "stateRunning": "실행 중",
     "status": "실행기 상태",
     "stuck": "중단됨",
-    "temporary": "임시"
+    "temporary": "임시",
+    "todoStatus": ""
   },
   "fileBrowser": {
     "back": "파일 목록으로 돌아가기",
@@ -2640,6 +2694,7 @@
     "stashDropped": "스태시 삭제됨",
     "stashMessagePlaceholder": "스태시 메시지 (선택 사항)",
     "stashPopped": "스태시 팝됨",
+    "stashRef": "",
     "statusLabelBranch": "브랜치",
     "statusLabelCommit": "커밋",
     "statusLabelIntegrationBranch": "통합 브랜치",
@@ -2693,6 +2748,13 @@
     "worktreesTotal_one": "",
     "worktreesTotal_other": ""
   },
+  "githubStarPrompt": {
+    "body": "",
+    "dismissLabel": "",
+    "regionLabel": "",
+    "starOnGitHub": "",
+    "title": ""
+  },
   "goals": {
     "activeCount_one": "",
     "activeCount_other": "",
@@ -2728,6 +2790,9 @@
     "unlinkMission": "",
     "unlinkMissionError": "",
     "updateError": "현재 목표 상태를 업데이트할 수 없습니다. 다시 시도해 주세요."
+  },
+  "groups": {
+    "prLinkLabel": ""
   },
   "groupTask": {
     "abandonGroup": "",
@@ -2767,6 +2832,7 @@
     "documentsView": "문서 보기",
     "engineOptions": "엔진 옵션",
     "evalsView": "평가",
+    "fusionLogo": "",
     "gitManager": "Git 관리자",
     "goalsView": "목표",
     "importFromGitHub": "GitHub에서 가져오기",
@@ -2786,7 +2852,6 @@
     "moreHeaderActions": "추가 헤더 작업",
     "moreViews": "더 많은 보기",
     "noBaseBranch": "베이스 브랜치 없음",
-    "nodes": "노드",
     "noScriptsAddOne": "스크립트 없음 — 추가하세요…",
     "noScriptsConfigured": "구성된 스크립트 없음",
     "noWorkingBranch": "작업 브랜치 없음",
@@ -2927,6 +2992,7 @@
     "archiveTitle": "이 인사이트 보관",
     "archiving": "\"{{title}}\" 보관 중...",
     "backlogHealth": "백로그 상태",
+    "categoriesLabel": "",
     "configureModel": "인사이트 생성 모델 구성",
     "configureModelTitle": "모델 구성",
     "createTaskLabel": "이 인사이트에서 작업 생성",
@@ -3016,6 +3082,9 @@
     "useMissionContext": "미션 컨텍스트 사용",
     "verificationCriteria": "검증 기준",
     "yes": "예"
+  },
+  "issues": {
+    "noIssuesFound": ""
   },
   "lane": {
     "collapse": "",
@@ -3129,8 +3198,7 @@
     "unpauseUnavailable": "재개 작업을 사용할 수 없습니다",
     "useProjectDefault": "프로젝트 기본값 사용",
     "viewOptions": "보기 옵션",
-    "workflowLabel": "",
-    "workflowSelectLabel": ""
+    "workflowLabel": ""
   },
   "mailbox": {
     "agent": "에이전트",
@@ -3199,6 +3267,7 @@
     "replyingTo": "답장 대상",
     "replyingToMessage": "메시지에 답장 중",
     "replyLoadFailed": "답장한 메시지를 불러오는 데 실패했습니다. 다시 시도하려면 클릭하세요.",
+    "resizeMessageListPane": "",
     "selectMessageToRead": "읽을 메시지를 선택하세요",
     "system": "시스템",
     "timeDaysAgo_one": "",
@@ -3212,6 +3281,7 @@
     "to": "받는 사람",
     "toLabel": "받는 사람:",
     "toPrefix": "받는 사람: {{recipient}}",
+    "toRecipient": "",
     "typeAgentToAgent": "에이전트 ↔ 에이전트",
     "typeAgentToUser": "에이전트 → 나",
     "typeSystem": "시스템",
@@ -3387,11 +3457,13 @@
   "missions": {
     "acceptance": "수락 기준:",
     "acceptanceCriteriaOptional": "수락 기준 (선택 사항)",
+    "acceptanceCriteriaPrefix": "",
     "actionGenerating": "생성 중…",
     "actionResume": "재개",
     "actionRetry": "재시도",
     "actionReview": "검토",
     "activateSlice": "슬라이스 활성화",
+    "activityCount": "",
     "activityTime": "활동 {{time}}",
     "actual": "실제: {{value}}",
     "addAssertion": "어설션 추가",
@@ -3518,6 +3590,7 @@
     "filterSlices": "슬라이스 및 마일스톤 이벤트",
     "filterStateChanges": "상태 변경",
     "filterTasks": "작업 이벤트",
+    "fixLineageButton": "",
     "generatedFixFeatures": "생성된 수정 기능:",
     "generatedFixFeaturesTitle": "생성된 수정 기능",
     "generatedFromFeature": "기능에서 생성됨: {{id}}",
@@ -3545,6 +3618,8 @@
     "linkButton": "연결",
     "linkedCount_one": "",
     "linkedCount_other": "",
+    "linkedCountShort_one": "",
+    "linkedCountShort_other": "",
     "linkedFeaturesCount_one": "",
     "linkedFeaturesCount_other": "",
     "linkedFeaturesLabel": "연결된 기능",
@@ -3605,6 +3680,7 @@
     "planStateNeedsUpdate": "업데이트 필요",
     "planStateNotPlanned": "계획되지 않음",
     "planStatePlanned": "계획됨",
+    "planTargetTitle": "",
     "planTitle": "AI로 미션 계획",
     "prepareQuestion": "다음 질문 준비 중...",
     "progressText_one": "",
@@ -3711,6 +3787,7 @@
     "updateButton": "업데이트",
     "updated": "미션이 업데이트되었습니다",
     "validateFeature": "기능 검증",
+    "validationRoundAttempts": "",
     "validationRoundsCount_one": "",
     "validationRoundsCount_other": "",
     "validationRoundsLabel_one": "",
@@ -3775,7 +3852,6 @@
     "options": {
       "default": "기본값",
       "high": "높음",
-      "xhigh": "매우 높음",
       "low": "낮음",
       "medium": "중간",
       "minimal": "최소",
@@ -3827,10 +3903,12 @@
     "board": "보드",
     "chat": "채팅",
     "chatUnreadAriaLabel": "읽지 않은 채팅 응답",
+    "collapseSidebar": "",
     "commandCenter": "",
     "devServer": "개발 서버",
     "documents": "문서",
     "evals": "평가",
+    "expandSidebar": "",
     "files": "파일",
     "gitManager": "Git 관리자",
     "goals": "목표",
@@ -3845,16 +3923,17 @@
     "missions": "미션",
     "more": "더 보기",
     "moreSheetTitle": "탐색",
-    "nodes": "노드",
     "noScriptsAddOne": "스크립트 없음 — 추가하세요…",
     "planning": "계획",
     "primaryNavAriaLabel": "기본 탐색",
     "projects": "프로젝트",
     "research": "연구",
+    "resizeSidebar": "",
     "scriptsSubmenuAriaLabel": "스크립트 하위 메뉴",
     "secrets": "시크릿",
     "settings": "설정",
     "showScriptsAriaLabel": "스크립트 표시",
+    "sidebarAriaLabel": "",
     "skills": "스킬",
     "stashRecovery": "스태시 복구",
     "tasks": "작업",
@@ -3960,12 +4039,14 @@
     "discoverBeforeAdding": "이 노드를 추가하기 전에 원격 프로젝트를 검색하세요.",
     "discoveredCount_one": "",
     "discoveredCount_other": "",
+    "discoveredRemoteProjectsLabel": "",
     "discovering": "검색 중...",
     "discoverRemoteProjects": "원격 프로젝트 검색",
     "discoveryFailed": "원격 프로젝트 검색에 실패했습니다",
     "dismissError": "오류 닫기",
     "docker": "Docker",
     "dockerBadge": "관리형 Docker 노드",
+    "dockerConfigMeta": "",
     "dockerConfigSaveFailed": "Docker 구성 저장에 실패했습니다",
     "dockerConfigSaveSuccess": "Docker 구성이 저장되었습니다",
     "dockerConfiguration": "Docker 구성",
@@ -4083,6 +4164,7 @@
       "name": "빌드 서버",
       "optional": "선택 사항"
     },
+    "projectPathMappingsLabel": "",
     "provideManually": "키를 직접 입력",
     "pulling": "가져오는 중...",
     "pullSettings": "설정 가져오기",
@@ -4280,6 +4362,9 @@
     "tabCliAutoDerve": "로컬 CLI (자동 감지)",
     "testFailed": "테스트에 실패했습니다 — 위의 상태를 확인하세요.",
     "unreachable": "{{reason}}"
+  },
+  "piExtensions": {
+    "filterHint": ""
   },
   "piManager": {
     "addButton": "추가",
@@ -4884,6 +4969,7 @@
     "createTask": "작업 생성",
     "createTaskButton": "작업 생성",
     "createTaskTitle": "발견 항목에서 작업 생성",
+    "currentDefaults": "",
     "defaultFindingHeading": "리서치 발견 항목",
     "descriptionLabel": "설명",
     "disabled": "이 프로젝트에서는 리서치가 비활성화되어 있습니다.",
@@ -4906,6 +4992,7 @@
     "noRunsYet": "아직 리서치 실행이 없습니다",
     "noSourcesAvailable": "이 프로젝트에 사용 가능한 활성화된 리서치 소스가 없습니다.",
     "noSummaryYet": "아직 요약이 없습니다.",
+    "notSet": "",
     "openAuthSettings": "인증 설정 열기",
     "openResearchSettings": "리서치 설정 열기",
     "priorityHigh": "높음",
@@ -4966,6 +5053,7 @@
     "intro": "유효 실행 노드를 확인하고 작업별 노드 재정의를 제어합니다.",
     "localNoConfiguration": "로컬 (라우팅 미구성)",
     "lockedWhileActive": "이 작업이 활성화된 동안에는 라우팅이 잠겨 있습니다. 작업이 더 이상 활성 상태가 아닐 때까지 노드 재정의를 변경할 수 없습니다.",
+    "nodeOptionLabel": "",
     "nodeUnavailable": "노드를 사용할 수 없거나 알 수 없음",
     "overrideCleared": "노드 재정의가 초기화되었습니다",
     "overrideSection": "노드 재정의",
@@ -4982,6 +5070,9 @@
     "unavailablePolicy": "사용 불가 노드 정책",
     "unhealthy": "비정상",
     "useProjectDefault": "프로젝트 기본값 사용"
+  },
+  "runtimes": {
+    "nousResearchLogoAlt": ""
   },
   "schedule": {
     "actionAiPrompt": "AI 프롬프트",
@@ -5048,6 +5139,7 @@
     "cronPresetMonthly": "매월 (1일)",
     "cronPresetWeekly": "매주 (월요일)",
     "cronRequired": "사용자 지정 스케줄에는 cron 표현식이 필요합니다",
+    "crontabGuru": "",
     "delete": "삭제",
     "deleteError": "루틴 삭제에 실패했습니다",
     "deleteMessage": "스케줄 {{name}}을(를) 삭제하시겠습니까? 이 작업은 취소할 수 없습니다.",
@@ -5102,6 +5194,7 @@
     "globalScope": "전체",
     "globalScoped": "이 스케줄은 전체 범위에서 생성됩니다.",
     "globalScopeTitle": "전체 범위",
+    "lastLabel": "",
     "loadRoutinesError": "루틴 불러오기 실패",
     "manualTriggerInfo": "이 루틴은 대시보드 또는 API를 통해 수동으로 트리거됩니다.",
     "modeAriaLabel": "실행 모드",
@@ -5124,6 +5217,7 @@
     "newAutomation": "새 자동화",
     "newRoutineHeading": "새 루틴",
     "newTitle": "새 스케줄",
+    "nextLabel": "",
     "noActiveProject": "활성 프로젝트 없음. 스케줄은 전체 범위에서 생성됩니다.",
     "noAutomations": "아직 자동화가 없습니다",
     "noStepsEmpty": "추가된 단계가 없습니다. 명령어 또는 AI 프롬프트 단계를 추가하여 시작하세요.",
@@ -5154,6 +5248,7 @@
     "runNameNow": "{{name}} 지금 실행",
     "running": "실행 중…",
     "runNow": "지금 실행",
+    "runsLabel": "",
     "saveChanges": "변경사항 저장",
     "saveStep": "단계 저장",
     "saving": "저장 중…",
@@ -5232,6 +5327,9 @@
     "webhookSecretHint": "서명 검증용 HMAC 시크릿. 미인증 웹훅은 비워두세요.",
     "webhookSecretLabel": "Webhook 시크릿 (선택 사항)",
     "webhookSecretPlaceholder": "선택 사항 — 미인증 웹훅은 비워두세요"
+  },
+  "scripts": {
+    "title": ""
   },
   "scriptsModal": {
     "addScript": "스크립트 추가",
@@ -5660,6 +5758,7 @@
       "enabling": "활성화 중…",
       "notConnected": "✗ 연결되지 않음",
       "probing": "로컬 CLI를 확인하는 중…",
+      "providerName": "",
       "test": "테스트",
       "testing": "테스트 중…"
     },
@@ -5695,6 +5794,7 @@
     "githubConnectionFailed": "연결에 실패하거나 시간이 초과되었습니다.",
     "githubOauthConnected": "GitHub OAuth가 연결되었습니다. 이슈를 가져오고 풀 리퀘스트를 추적할 수 있습니다.",
     "githubOauthNotConnected": "GitHub OAuth가 아직 연결되지 않았습니다. 설정 → 인증에서 설정하거나, 지금 계속하고 나중에 연결할 수 있습니다.",
+    "githubProvider": "",
     "githubSkipped": "GitHub를 건너뛰었습니다. 설정 → 인증에서 언제든지 연결할 수 있습니다.",
     "goBackToStep": "{{label}}(으)로 돌아가기",
     "goToDashboard": "대시보드로 이동",
@@ -5953,6 +6053,9 @@
     "revisionTitle": "AI에게 수정 요청",
     "saving": "저장 중…",
     "view": "보기"
+  },
+  "stash": {
+    "copyReference": ""
   },
   "stashRecovery": {
     "applied": "적용됨",
@@ -6710,7 +6813,6 @@
     "subtaskButton": "하위 작업",
     "thinkingDefault": "기본값 ({{level}})",
     "thinkingHigh": "높음",
-    "thinkingXhigh": "매우 높음",
     "thinkingLabel": "사고",
     "thinkingLow": "낮음",
     "thinkingMedium": "중간",
@@ -6971,6 +7073,7 @@
     "workflowCheck": "워크플로우 확인"
   },
   "terminal": {
+    "arrowKeysLabel": "",
     "clear": "지우기",
     "clearTerminal": "터미널 지우기",
     "closeTab": "탭 닫기",
@@ -7289,6 +7392,7 @@
     "foreachSequential": "순차",
     "foreachShared": "공유 워크트리",
     "foreachWorktree": "단계별 워크트리",
+    "gateBadge": "",
     "gateBlocks": "게이트(차단)",
     "gateMode": "게이트 모드",
     "insertTemplate": "{{name}} 템플릿 삽입",
@@ -7345,6 +7449,7 @@
     "startEntryColumn": "",
     "startEntryColumnAuto": "",
     "startNote": "",
+    "stepBadge": "",
     "stepExecuteLabel": "단계 실행",
     "templateFilterLabel": "템플릿 필터",
     "templateFilterPlaceholder": "템플릿 필터",
@@ -7353,6 +7458,7 @@
     "templatesFragments": "조각",
     "templatesPluginSteps": "플러그인 단계",
     "templatesSection": "템플릿",
+    "timeoutMs": "",
     "trivialGraphHint": "이 워크플로는 시작 → 끝만 실행합니다. 위 팔레트에서 단계를 추가하여 구성하세요."
   },
   "workflows": {
@@ -7418,14 +7524,6 @@
     "templateSectionBuiltin": "기본 제공 워크플로",
     "templateSectionYours": "내 워크플로"
   },
-  "workflowSwitcher": {
-    "countsAria": "{{todoLabel}}: {{todo}}, {{inProgressLabel}}: {{inProgress}}, {{doneLabel}}: {{done}}",
-    "done": "Done",
-    "inProgress": "In Progress",
-    "label": "Workflow",
-    "todo": "Todo",
-    "triggerAria": "Select workflow. Current workflow: {{name}}"
-  },
   "workflowSelector": {
     "switchActiveMessage": "",
     "switchActiveTitle": "",
@@ -7484,6 +7582,14 @@
     "valuesTab": "",
     "widget": "",
     "widgetDefault": ""
+  },
+  "workflowSwitcher": {
+    "countsAria": "{{todoLabel}}: {{todo}}, {{inProgressLabel}}: {{inProgress}}, {{doneLabel}}: {{done}}",
+    "done": "Done",
+    "inProgress": "In Progress",
+    "label": "Workflow",
+    "todo": "Todo",
+    "triggerAria": "Select workflow. Current workflow: {{name}}"
   },
   "workspace": {
     "projectRoot": "프로젝트 루트",

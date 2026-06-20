@@ -739,10 +739,10 @@ export function AgentImportModal({ isOpen, onClose, onImported, projectId, initi
                           {agent.title && <span className="agent-import-agent-title">{agent.title} · </span>}
                           <span className="agent-import-agent-role">{agent.role}</span>
                           {agent.reportsTo && (
-                            <span className="agent-import-agent-reports"> · reports to {agent.reportsTo}</span>
+                            <span className="agent-import-agent-reports">{t("agents.importReportsTo", " · reports to {{agent}}", { agent: agent.reportsTo })}</span>
                           )}
                           {agent.skills && agent.skills.length > 0 && (
-                            <span className="agent-import-agent-model"> · skills: {agent.skills.join(", ")}</span>
+                            <span className="agent-import-agent-model">{t("agents.importSkills", " · skills: {{skills}}", { skills: agent.skills.join(", ") })}</span>
                           )}
                         </span>
                         {agent.instructionsText && (

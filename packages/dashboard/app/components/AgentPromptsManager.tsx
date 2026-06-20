@@ -526,7 +526,7 @@ export function AgentPromptsManager({
                         />
                         <div className="prompt-override-footer">
                           <small className="prompt-override-hint">
-                            {templateForm.prompt.length} characters
+                            {t("agents.charactersCount", "{{count}} characters", { count: templateForm.prompt.length })}
                           </small>
                         </div>
                       </div>

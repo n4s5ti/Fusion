@@ -168,7 +168,7 @@ export function AgentGenerationModal({
         className="agent-dialog"
         role="dialog"
         aria-modal="true"
-        aria-label="Generate agent with AI"
+        aria-label={t("agents.generateWithAiLabel", "Generate agent with AI")}
       >
         {/* Header */}
         <div className="agent-dialog-header">

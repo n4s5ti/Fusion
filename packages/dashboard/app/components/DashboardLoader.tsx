@@ -80,12 +80,12 @@ export function DashboardLoader({ stage }: DashboardLoaderProps) {
       className="dashboard-loader"
       role="status"
       aria-live="polite"
-      aria-label={isVersionUpdate ? t("dashboard.updatingMessage", "Updating Fusion dashboard") : t("dashboard.loadingMessage", "Loading Fusion dashboard")}
+      aria-label={isVersionUpdate ? t("dashboard.updatingMessage") : t("dashboard.loadingMessage")}
       data-stage={stage}
       data-version-update={isVersionUpdate ? "true" : undefined}
     >
       <div className="dashboard-loader__content">
-        <h1 className="dashboard-loader__logo">Fusion</h1>
+        <h1 className="dashboard-loader__logo">{t("appName", "Fusion")}</h1>
         {isVersionUpdate ? (
           <p className="dashboard-loader__message dashboard-loader__message--update">
             {t("dashboard.updatingVersion", "Updating to a new frontend version...")}

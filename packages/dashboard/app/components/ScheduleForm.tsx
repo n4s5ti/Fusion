@@ -519,7 +519,7 @@ export function ScheduleForm({ schedule, onSubmit, onCancel, scope: formScope, p
         ) : (
           <small>
             {scheduleType === "custom" ? (
-              <>{t("schedule.cronHelp", "min hour day month weekday — ")} <a href="https://crontab.guru" target="_blank" rel="noopener noreferrer">crontab.guru</a></>
+              <>{t("schedule.cronHelp", "min hour day month weekday — ")} <a href="https://crontab.guru" target="_blank" rel="noopener noreferrer">{t("schedule.crontabGuru", "crontab.guru")}</a></>
             ) : (
               t("schedule.cronAutoFilled", "Auto-filled from preset: {{cron}}", { cron: cronExpression })
             )}

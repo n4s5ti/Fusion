@@ -3075,7 +3075,7 @@ export function MissionManager({ isOpen, isInline = false, onClose, addToast, pr
                                           </span>
                                           <span className="mission-validation-round__feature">{round.featureTitle}</span>
                                           <span className="mission-validation-round__attempts">
-                                            impl #{round.implementationAttempt} · reviewer #{round.validatorAttempt}
+                                            {t("missions.validationRoundAttempts", "impl #{{implementation}} · reviewer #{{reviewer}}", { implementation: round.implementationAttempt, reviewer: round.validatorAttempt })}
                                           </span>
                                         </div>
 
@@ -3394,7 +3394,7 @@ export function MissionManager({ isOpen, isInline = false, onClose, addToast, pr
                                               onClick={() => focusFeature(feature.generatedFromFeatureId!)}
                                               title={t("missions.generatedFromFeature", "Generated from feature: {{id}}", { id: feature.generatedFromFeatureId })}
                                             >
-                                              🔗 Fix
+                                              {t("missions.fixLineageButton", "🔗 Fix")}
                                             </button>
                                           )}
                                           {/* Retry/iteration display for validating and needs-fix states */}
@@ -3856,7 +3856,7 @@ export function MissionManager({ isOpen, isInline = false, onClose, addToast, pr
                                           const count = linked?.length ?? 0;
                                           return count > 0 ? (
                                             <span className="mission-assertion__linked-count" title={t("missions.linkedFeaturesCount", { count, defaultValue_one: "{{count}} linked feature", defaultValue_other: "{{count}} linked features" })}>
-                                              ({count} linked)
+                                              {t("missions.linkedCountShort", "({{count}} linked)", { count })}
                                             </span>
                                           ) : null;
                                         })()}
@@ -4091,7 +4091,7 @@ export function MissionManager({ isOpen, isInline = false, onClose, addToast, pr
                       </select>
                     </label>
                     <span className="mission-detail__activity-count">
-                      {missionEvents.length} of {eventsTotal}
+                      {t("missions.activityCount", "{{visible}} of {{total}}", { visible: missionEvents.length, total: eventsTotal })}
                     </span>
                   </div>
 

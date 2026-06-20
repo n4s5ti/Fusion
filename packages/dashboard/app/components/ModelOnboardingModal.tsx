@@ -2541,7 +2541,7 @@ export function ModelOnboardingModal({
                     <div className="onboarding-provider-info">
                       <strong>
                         <GitPullRequest size={16} className="onboarding-provider-title-icon" />
-                        GitHub
+                        {t("setup.githubProvider", "GitHub")}
                       </strong>
                       <span data-testid="onboarding-auth-status-github">
                         <GitHubStatusBadge status={githubStatus} />

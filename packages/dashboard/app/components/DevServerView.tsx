@@ -365,7 +365,7 @@ export function DevServerView({ addToast, projectId }: DevServerViewProps) {
 
   return (
     <div className="dev-server-view" data-testid="dev-server-view">
-      <section className="dev-server-header" aria-label="Dev server controls header">
+      <section className="dev-server-header" aria-label={t("devserver.controlsHeaderLabel", "Dev server controls header")}>
         <div className="dev-server-header-title">
           <Monitor size={16} />
           <h2>{t("devserver.title", "Dev Server")}</h2>
@@ -410,7 +410,7 @@ export function DevServerView({ addToast, projectId }: DevServerViewProps) {
         </div>
       </section>
 
-      <section className="dev-server-panel dev-server-config" aria-label="Dev server configuration">
+      <section className="dev-server-panel dev-server-config" aria-label={t("devserver.configurationLabel", "Dev server configuration")}>
         <div className="dev-server-section-header">
           <h3>{t("devserver.configuration", "Configuration")}</h3>
           {isLoading && <span className="dev-server-muted">{t("devserver.loading", "Loading...")}</span>}
@@ -532,7 +532,7 @@ export function DevServerView({ addToast, projectId }: DevServerViewProps) {
       </section>
 
       <div className="dev-server-content">
-        <section className="dev-server-panel dev-server-logs-panel" data-testid="dev-server-logs-panel" aria-label="Dev server logs">
+        <section className="dev-server-panel dev-server-logs-panel" data-testid="dev-server-logs-panel" aria-label={t("devserver.logsLabel", "Dev server logs")}>
           <div className="dev-server-section-header">
             <h3>{t("devserver.logs", "Logs")}</h3>
             <span className="dev-server-muted">{t("devserver.lines", "{{count}} lines", { count: logsTotal ?? logEntries.length })}</span>
@@ -551,7 +551,7 @@ export function DevServerView({ addToast, projectId }: DevServerViewProps) {
         </section>
       </div>
 
-      <section className="dev-server-panel devserver-preview-panel" data-testid="devserver-preview-panel" aria-label="Dev server preview">
+      <section className="dev-server-panel devserver-preview-panel" data-testid="devserver-preview-panel" aria-label={t("devserver.previewLabel", "Dev server preview")}>
         <div className="devserver-preview-header">
           <div className="devserver-preview-title">
             <Eye size={14} />

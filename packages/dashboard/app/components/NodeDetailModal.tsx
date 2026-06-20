@@ -718,7 +718,7 @@ export function NodeDetailModal({
                   </details>
 
                   <div className="node-detail-modal__docker-meta">
-                    <span>Config v{dockerConfigDraft.configVersion} • Updated {formatRelativeTime(dockerConfigDraft.lastUpdated ?? node.updatedAt)}</span>
+                    <span>{t("nodes.dockerConfigMeta", "Config v{{version}} • Updated {{updated}}", { version: dockerConfigDraft.configVersion, updated: formatRelativeTime(dockerConfigDraft.lastUpdated ?? node.updatedAt) })}</span>
                     {dockerConfigNeedsRecreate && <span className="node-detail-modal__docker-recreate">{t("nodes.dockerNeedsRecreate", "Needs Recreate")}</span>}
                   </div>
 

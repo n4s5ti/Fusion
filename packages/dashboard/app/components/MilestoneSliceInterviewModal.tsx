@@ -475,7 +475,7 @@ export function MilestoneSliceInterviewModal({
           <div className="detail-title-row">
             <Sparkles size={20} className="icon-triage" />
             <h3>
-              Plan {targetLabel}: {targetTitle}
+              {t("missions.planTargetTitle", "Plan {{targetLabel}}: {{targetTitle}}", { targetLabel, targetTitle })}
             </h3>
           </div>
           <div className="modal-header-actions">

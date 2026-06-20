@@ -268,7 +268,7 @@ export function ResearchView({ projectId, addToast, onOpenSettings, readinessVer
           <p>{setupState.reason}</p>
           {setupState.details && <p>{setupState.details}</p>}
           <p>
-            Current defaults: provider {effectiveSettings.searchProvider ?? "(not set)"}, max sources {effectiveSettings.limits.maxSourcesPerRun}
+            {t("research.currentDefaults", "Current defaults: provider {{provider}}, max sources {{maxSources}}", { provider: effectiveSettings.searchProvider ?? t("research.notSet", "(not set)"), maxSources: effectiveSettings.limits.maxSourcesPerRun })}
           </p>
           <div className="research-view__actions">
             <button className="btn" type="button" onClick={() => void refresh()}>

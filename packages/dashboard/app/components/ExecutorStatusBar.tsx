@@ -241,14 +241,15 @@ export function ExecutorStatusBar({ tasks, projectId, taskStuckTimeoutMs, staleH
             <span className="executor-status-bar__label">{t("executor.overlapQueue", "Overlap queue")}</span>
             <span
               className="executor-status-bar__fanout-summary"
-              title={t("executor.overlapBottleneck", "{{status}} overlap bottleneck {{blockerId}}: {{count}} todo blocked via blockedBy (threshold {{threshold}})", {
+              title={t("executor.overlapBottleneck", "{{status}} overlap bottleneck {{blockerId}}: {{count}} {{todoStatus}} blocked via blockedBy (threshold {{threshold}})", {
                 status: highestOverlapBlocker.entry.escalation ? t("executor.escalated", "Escalated") : t("executor.temporary", "Temporary"),
                 blockerId: highestOverlapBlocker.blockerId,
                 count: highestOverlapBlocker.entry.overlapBlockedTodoCount,
+                todoStatus: t("executor.todoStatus", "todo"),
                 threshold: HIGH_FANOUT_BLOCKER_TODO_THRESHOLD,
               })}
             >
-              {highestOverlapBlocker.blockerId} · {highestOverlapBlocker.entry.overlapBlockedTodoCount} todo{highestOverlapBlocker.entry.escalation ? t("executor.escalatedSuffix", " (escalated)") : ""}
+              {t("executor.overlapSummary", "{{blockerId}} · {{count}} todo", { blockerId: highestOverlapBlocker.blockerId, count: highestOverlapBlocker.entry.overlapBlockedTodoCount })}{highestOverlapBlocker.entry.escalation ? t("executor.escalatedSuffix", " (escalated)") : ""}
             </span>
           </div>
         </>

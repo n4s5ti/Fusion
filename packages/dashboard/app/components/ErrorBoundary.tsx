@@ -1,6 +1,7 @@
 import { Component, type ReactNode, type ErrorInfo } from "react";
 import { AlertTriangle } from "lucide-react";
 import { handleChunkLoadError } from "../versionCheck";
+import i18n from "../i18n";
 import "./ErrorBoundary.css";
 
 interface ErrorBoundaryProps {
@@ -47,8 +48,8 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
     const level = this.props.level ?? "page";
     const isModal = level === "modal";
     const title = isModal
-      ? "This section encountered an error"
-      : "Something went wrong";
+      ? i18n.t("app:errorBoundary.sectionError", "This section encountered an error")
+      : i18n.t("app:errorBoundary.genericError", "Something went wrong");
 
     return (
       <div className={`error-boundary error-boundary--${level}`}>
@@ -61,10 +62,10 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
         )}
         <div className="error-boundary__actions">
           <button className="btn btn-primary" onClick={this.resetErrorBoundary}>
-            Retry
+            {i18n.t("app:errorBoundary.retry", "Retry")}
           </button>
           <button className="btn" onClick={() => window.location.reload()}>
-            Reload page
+            {i18n.t("app:errorBoundary.reloadPage", "Reload page")}
           </button>
         </div>
       </div>

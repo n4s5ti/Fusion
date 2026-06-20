@@ -33,6 +33,12 @@ export default interface Resources {
       "update": "Update",
       "yes": "Yes"
     },
+    "activityFeed": {
+      "emptyHint": "Activity will appear here when tasks are created, moved, or completed",
+      "eventCount_one": "{{count}} event",
+      "eventCount_other": "{{count}} events",
+      "noRecentActivity": "No recent activity"
+    },
     "activityLog": {
       "activeFilters": "Active filters:",
       "allEvents": "All Events",
@@ -66,6 +72,7 @@ export default interface Resources {
       "noActivityRecorded": "No activity recorded yet",
       "noMatchingActivity": "No activity matches the current filters",
       "notMerged": "Not merged",
+      "projectFilterBadge": "Project: {{project}}",
       "refresh": "Refresh",
       "time": {
         "daysAgo_one": "{{count}}d ago",
@@ -76,7 +83,8 @@ export default interface Resources {
         "minutesAgo_one": "{{count}}m ago",
         "minutesAgo_other": "{{count}}m ago"
       },
-      "title": "Activity Log"
+      "title": "Activity Log",
+      "typeFilterBadge": "Type: {{type}}"
     },
     "agentError": {
       "copied": "Copied",
@@ -356,6 +364,7 @@ export default interface Resources {
       "bundleTitle": "Bundle",
       "cacheHitRatio": "Cache Hit Ratio",
       "cacheReadTokens": "Cache Read",
+      "cacheWindowSummary": "{{percent}}% ({{cached}} / {{written}} / {{input}} / {{tasks}})",
       "cacheWriteTokens": "Cache Write",
       "cancel": "Cancel",
       "cancelCustomInterval": "Cancel custom interval",
@@ -363,6 +372,8 @@ export default interface Resources {
       "chainOfCommand": "Chain of Command",
       "change": "Change",
       "changeRole": "Click to change role",
+      "charactersCount_one": "{{count}} characters",
+      "charactersCount_other": "{{count}} characters",
       "chooseFile": "Choose File",
       "clearAgents": "Clear agents",
       "clearSkills": "Clear skills",
@@ -410,6 +421,7 @@ export default interface Resources {
       "deleted": "Agent deleted",
       "deletionNotAvailable": "Deletion is not available while the agent is running.",
       "deletionPermanent": "This will permanently delete the agent and all associated data.",
+      "detailLoadingLabel": "Agent detail loading",
       "details": "Details",
       "dialogAriaLabel": "Create new agent",
       "dialogTitle": "New Agent",
@@ -454,6 +466,7 @@ export default interface Resources {
       "from": "From",
       "generateHint": "Describe your agent's role and let AI generate a specification",
       "generateWithAI": "Generate with AI",
+      "generateWithAiLabel": "Generate agent with AI",
       "generation": {
         "collapse": "Collapse",
         "expand": "Expand",
@@ -533,6 +546,8 @@ export default interface Resources {
       "importButton": "Import {{label}}",
       "importComplete": "Import Complete",
       "importDescription": "Import agents from an Agent Companies package. Browse the companies.sh catalog to discover published agents, upload an AGENTS.md file, select a directory, or paste manifest content.",
+      "importReportsTo": " · reports to {{agent}}",
+      "importSkills": " · skills: {{skills}}",
       "importingAgentsAndSkills": "Importing {{agentCount}} agent{{agentPlural}} and {{skillCount}} skill{{skillPlural}}...",
       "importingAgents_one": "Importing {{count}} agent{{plural}}...",
       "importingAgents_other": "Importing {{count}} agent{{plural}}...",
@@ -542,6 +557,7 @@ export default interface Resources {
       "inbox": "Inbox",
       "inheritProjectDefault": "Inherit project default",
       "inheritingProjectDefault": "Inheriting project default",
+      "inlineInstructions": "Inline Instructions",
       "inlineMemoryFieldHint": "This memory is embedded directly in the agent's context.",
       "inlineMemoryHint": "Short-form memory injected on every heartbeat.",
       "inlineMemoryLabel": "Inline Memory",
@@ -566,6 +582,8 @@ export default interface Resources {
       "intentPrompt": "What do you want this agent to do?",
       "interval": "Interval",
       "interviewDraftApplied": "Interview draft applied",
+      "kTokens_one": "{{count}}k tokens",
+      "kTokens_other": "{{count}}k tokens",
       "last24h": "Last 24h",
       "last7d": "Last 7 days",
       "lastHeartbeat": "Last heartbeat",
@@ -736,7 +754,7 @@ export default interface Resources {
         "startInterview": "Start interview",
         "startOnboarding": "Start onboarding",
         "thinking": "Thinking...",
-        "title": "AI Interview",
+        "title": "Agent Onboarding",
         "updatedDraftReady": "Updated draft ready for review",
         "yes": "yes"
       },
@@ -755,6 +773,7 @@ export default interface Resources {
       "output": "Output",
       "outputTokens": "Output",
       "overview": "Overview",
+      "overviewLabel": "Agents overview",
       "parsing": "Parsing…",
       "pause": "Pause",
       "pauseAction": "Pause",
@@ -1046,6 +1065,7 @@ export default interface Resources {
       "thinkingOff": "Off",
       "thinkingXhigh": "Very High",
       "throughput": "Throughput",
+      "timeSinceLastHeartbeat": "Time since last heartbeat",
       "title": "Agents",
       "titleLabel": "Title",
       "titlePlaceholder": "e.g. Senior Engineer",
@@ -1092,6 +1112,7 @@ export default interface Resources {
       },
       "testMode": "Test mode — no real AI calls"
     },
+    "appName": "Fusion",
     "approval": {
       "dismissBanner": "Dismiss approval notification banner",
       "needAttention_one": "{{count}} approval {{noun}} need your attention",
@@ -1175,6 +1196,9 @@ export default interface Resources {
       "mergeIntoMain": "Merge group into main",
       "openPr": "Open PR",
       "unavailable": "Branch group unavailable"
+    },
+    "branchGroups": {
+      "prNumber": "PR #{{number}}"
     },
     "capacity": {
       "dismiss": "Dismiss capacity warning",
@@ -1323,9 +1347,13 @@ export default interface Resources {
       "thinking": "Thinking",
       "thinkingLabel": "Thinking",
       "thinkingStatus": "Thinking…",
+      "toolArgsLabel": "args",
+      "toolArgsPreview": "args: {{summary}}",
       "toolCalls": "Tool calls",
       "toolCallsCount_one": "{{count}} tool calls",
       "toolCallsCount_other": "{{count}} tool calls",
+      "toolResultLabel": "result",
+      "toolResultPreview": "result: {{summary}}",
       "typeMessage": "Type a message...",
       "unreadMessages": "Unread messages",
       "untitledSession": "Untitled",
@@ -1354,9 +1382,11 @@ export default interface Resources {
       "versionMismatchSuffix": "Update to stay in sync."
     },
     "cliBinary": {
+      "binaryLabel": "Binary:",
       "checking": "Checking…",
       "copied": "Copied",
       "copy": "Copy",
+      "expectedVersion": "(expected {{version}})",
       "failedExit": "Install failed (exit {{code}})",
       "heading": "CLI Binary",
       "help": "Installing the global CLI lets you run fn and fusion from any terminal. Automations and scripts work without it via npx, but a global install is faster and more convenient.",
@@ -1364,13 +1394,15 @@ export default interface Resources {
       "installing": "Installing…",
       "notOnPath": "Neither fn nor fusion was found on PATH.",
       "orCopyLabel": "Or copy and run yourself:",
+      "pathLabel": "Path:",
       "refresh": "Refresh",
       "reinstall": "Reinstall",
       "stateCheckDisabled": "Check disabled",
       "stateInstalled": "Installed",
       "stateMissing": "Not installed",
       "stateVersionMismatch": "Version mismatch",
-      "succeededDuration": "Install succeeded in {{duration}}s"
+      "succeededDuration": "Install succeeded in {{duration}}s",
+      "versionLabel": "Version:"
     },
     "cliChat": {
       "queued_one": "{{count}} message queued — will send when the agent is ready",
@@ -1463,6 +1495,31 @@ export default interface Resources {
       "stoppedTasks_other": "Stopped {{count}} task{{plural}}"
     },
     "commandCenter": {
+      "activity": {
+        "activeAgents": "Active agents",
+        "activeNodes": "Active nodes",
+        "agentRunOutcomeShare": "Agent run outcome share",
+        "agentRuns": "Agent runs",
+        "agentRunsActive": "Active",
+        "agentRunsCompleted": "Completed",
+        "agentRunsFailed": "Failed",
+        "agentRunsPerDay": "Agent runs / day",
+        "agentsPerDay": "Active agents / day",
+        "messages": "Messages",
+        "messagesPerDay": "Messages / day",
+        "nodesPerDay": "Active nodes / day",
+        "rechartsLine": "Activity trend",
+        "sessions": "Sessions",
+        "stickiness": "Stickiness",
+        "stickinessHint": "DAU / MAU",
+        "summaryTitle": "Summary",
+        "throughput": "Throughput",
+        "throughputPerDay": "Throughput / day"
+      },
+      "area": {
+        "empty": "No data for the selected range.",
+        "loading": "Loading…"
+      },
       "areaPending": "This area renders once metrics data is available.",
       "controls": {
         "concurrency": {
@@ -1485,7 +1542,6 @@ export default interface Resources {
           "title": "Heartbeat control"
         },
         "orgChart": {
-          "description": "Read-only view of the running agent hierarchy.",
           "empty": "No agents are reporting in yet.",
           "error": "Unable to load org chart",
           "loading": "Loading org chart…",
@@ -1511,40 +1567,238 @@ export default interface Resources {
         },
         "title": "Operator controls"
       },
+      "ecosystem": {
+        "breadthTitle": "Ecosystem breadth",
+        "empty": "No models or plugins active in the selected range.",
+        "modelShareTitle": "Task share by model",
+        "perModelTitle": "Tasks per model",
+        "plugins": "Plugin activations",
+        "pluginsUnavailable": "Plugin-activation metrics are not yet recorded",
+        "taskTrendSeries": "Tasks",
+        "tokenTrendSeries": "Tokens",
+        "trendTitle": "Ecosystem trend",
+        "uniqueModels": "Active models"
+      },
       "empty": "No usage data yet. Run some agents to populate the Command Center.",
+      "funnel": {
+        "ariaLabel": "Tasks per workflow stage",
+        "completionRate": "Completion rate",
+        "completionRateAria": "Completion rate for in-range triage entrants",
+        "completionRateHint": "Done ÷ entered (in range)",
+        "doneInRange": "Reached done",
+        "empty": "No task transitions in the selected range.",
+        "enteredInRange": "Entered triage",
+        "rangeDays_one": "{{count}} day range",
+        "rangeDays_other": "{{count}} day range",
+        "stage": {
+          "done": "Done",
+          "inProgress": "In progress",
+          "inReview": "In review",
+          "other": "Other",
+          "todo": "Todo",
+          "triage": "Triage"
+        },
+        "throughputPerDay": "Tasks done / day",
+        "throughputTitle": "Throughput",
+        "title": "SDLC funnel"
+      },
+      "github": {
+        "backfillBusy": "Backfilling close times…",
+        "backfillButton": "Backfill exact close times",
+        "backfillFailed": "Failed to backfill GitHub source issue close times",
+        "backfillMaxBatches": "Backfill stopped after the safety limit; rerun after checking server logs.",
+        "backfillNothing": "Nothing to backfill. Scanned {{scanned}}, filled {{filled}}, skipped {{skipped}}, errors {{errors}}.",
+        "backfillPending": "Backfill is running in paginated batches.",
+        "backfillResult": "Backfill complete. Scanned {{scanned}}, filled {{filled}}, skipped {{skipped}}, errors {{errors}}.",
+        "byRepo": "By repository",
+        "dailyLine": "Filed vs fixed line",
+        "dailyTrend": "Filed vs fixed trend",
+        "empty": "No GitHub issue activity in the selected range.",
+        "filed": "Filed by Fusion",
+        "filedTrend": "Filed",
+        "fixed": "Fixed by Fusion",
+        "fixedApproximation": "Uses done tasks updated in range",
+        "fixedTrend": "Fixed",
+        "issueFlowShare": "Filed vs fixed share",
+        "net": "Net",
+        "repoValue": "{{filed}} filed / {{fixed}} fixed",
+        "totalsTitle": "GitHub issue flow"
+      },
       "heading": "Command Center",
       "loading": "Loading command center...",
+      "missionControl": {
+        "activeNodes": "Active nodes",
+        "activeRuns": "Active runs",
+        "activeSessions": "Active sessions",
+        "funnelTitle": "SDLC funnel (live)",
+        "idle": "No active sessions. Live updates resume when work starts.",
+        "inactive": "inactive",
+        "loading": "Loading live activity…",
+        "noNodes": "No active nodes.",
+        "noSessions": "No active sessions.",
+        "nodesTitle": "Nodes",
+        "sessionCount_one": "{{count}} session",
+        "sessionCount_other": "{{count}} session",
+        "sessionsTitle": "Sessions"
+      },
       "overview": {
         "activeNodes": "Active nodes",
+        "agentRuns": "Agent runs",
+        "agentsWorking": "agents working",
         "autonomy": "Autonomy ratio",
+        "dailyActivity": "Daily activity trend",
+        "dailyActivityAria": "Daily activity trend",
+        "dailyActivityHint": "Messages plus active agents per day",
+        "dailyActivityLine": "Daily activity line",
+        "dailyActivityLineHint": "Messages, agents, and runs by day",
         "liveStrip": "Live activity",
-        "liveStripPending": "Live Mission Control loads with active sessions.",
+        "liveTokens": "tokens",
         "openSignals": "Open signals",
+        "sessions": "Sessions",
         "tasksDone": "Tasks done",
+        "tasksInProgress": "tasks in progress",
+        "throughputTrend": "throughput trend",
+        "throughputTrendAria": "Recent activity throughput trend",
+        "tokensByModel": "Tokens by model",
+        "tokensByModelHint": "Top model token consumers in this range",
+        "tokensByModelPie": "Token share by model",
+        "tokensByModelPieHint": "Top model token share in this range",
         "tokensCost": "Tokens & cost",
+        "toolCategories": "Tool categories",
+        "toolCategoriesHint": "Autonomous work grouped by tool family",
         "uniqueModels": "Unique models"
       },
+      "productivity": {
+        "averageDuration": "Average",
+        "byLanguage": "Files by language",
+        "commits": "Commits",
+        "completedTasks": "Completed tasks",
+        "durationTitle": "Task duration",
+        "durationUnavailable": "Task duration is unavailable until completed tasks have active execution time recorded",
+        "hoursSaved": "Human hours saved",
+        "hoursSavedEstimate": "estimate from lines changed",
+        "hoursSavedUnavailable": "Estimated human hours saved is unavailable until commit diff stats exist",
+        "languagePie": "Language share",
+        "loc": "Lines changed",
+        "locUnavailable": "LOC is unavailable until commit diff stats are recorded",
+        "medianDuration": "Median",
+        "modifiedFiles": "Files modified",
+        "outcomesTitle": "Outcomes",
+        "p90Duration": "P90",
+        "pullRequests": "Pull requests",
+        "totalDuration": "Total active",
+        "volumeHint": "volume, not outcome",
+        "volumeTitle": "Volume (proxy)"
+      },
       "range": {
-        "allTime": "All time",
         "custom": "Custom range",
         "dialogLabel": "Select date range",
         "from": "From",
         "invalidRange": "Start date must be on or before end date",
-        "last24h": "Last 24h",
-        "last30d": "Last 30 days",
-        "last7d": "Last 7 days",
         "to": "To"
+      },
+      "signals": {
+        "bySeverity": "By severity",
+        "bySource": "By source",
+        "empty": "No external signals yet. Connect a signal source (Sentry, Datadog, PagerDuty, webhook) to see incident metrics here.",
+        "mttr": "MTTR",
+        "mttrUnavailable": "MTTR is unavailable until incident data is recorded",
+        "mttrValue": "{{min}} min",
+        "open": "Open",
+        "resolved": "Resolved",
+        "statusShare": "Signal status share",
+        "summaryTitle": "Summary",
+        "total": "Total signals"
+      },
+      "system": {
+        "cpuGauge": "App CPU usage",
+        "cpuSeries": "CPU",
+        "cpuTrend": "CPU over time",
+        "detailsTitle": "Runtime details",
+        "healthTitle": "Live system health",
+        "heapGauge": "Heap used",
+        "heapSeries": "Heap",
+        "heapTrend": "Heap over time",
+        "memoryGauge": "System memory used",
+        "memorySeries": "Memory",
+        "memoryTrend": "Memory over time",
+        "resourceTrend": "Resource trend",
+        "taskShare": "Task distribution",
+        "trendsTitle": "Live trends",
+        "workloadTitle": "Workload"
       },
       "tablistLabel": "Command Center sections",
       "tabs": {
         "activity": "Activity",
         "ecosystem": "Ecosystem",
+        "github": "GitHub",
         "missionControl": "Mission Control",
+        "nodes": "Nodes",
         "overview": "Overview",
         "productivity": "Productivity",
         "reliability": "Reliability",
+        "signals": "Signals",
+        "system": "System",
+        "team": "Team",
         "tokens": "Tokens",
         "tools": "Tools"
+      },
+      "team": {
+        "agent": "Agent",
+        "completedByAgent": "Tasks done by agent",
+        "cost": "Cost",
+        "done": "Tasks done",
+        "empty": "No agents have reported team analytics yet.",
+        "files": "Files changed",
+        "filesChanged": "Files changed",
+        "inProgress": "In progress",
+        "noChartData": "No non-zero values for this chart yet.",
+        "spread": "Team spread",
+        "state": "Agent state: {{state}}",
+        "tableTitle": "Per-agent breakdown",
+        "tasksCompleted": "Tasks done",
+        "tokenShareByAgent": "Token share by agent",
+        "tokens": "Tokens",
+        "tokensByAgent": "Tokens by agent",
+        "totalCost": "Estimated cost",
+        "totalTokens": "Total tokens",
+        "totalsTitle": "Team totals",
+        "unknownAgent": "(unknown agent)",
+        "unknownRole": "Unknown role",
+        "unknownState": "unknown"
+      },
+      "tokens": {
+        "byModelChart": "Tokens by model",
+        "cached": "Cached",
+        "cost": "Estimated cost",
+        "costCol": "Cost",
+        "costUnavailable": "No pricing for this model",
+        "granularity": "Token chart granularity",
+        "input": "Input",
+        "model": "Model",
+        "output": "Output",
+        "overTimeChart": "Tokens over time",
+        "pieChart": "Token share by model",
+        "rechartsLine": "Tokens trend",
+        "stalePricing": "pricing may be stale",
+        "tableTitle": "Per-model breakdown",
+        "tasks": "Tasks",
+        "total": "Total",
+        "totalTokens": "Total tokens",
+        "totalsTitle": "Totals",
+        "unknownModel": "(unknown)"
+      },
+      "tools": {
+        "autonomyHint": "tool calls per human intervention",
+        "autonomyRatio": "Autonomy ratio",
+        "categoriesTitle": "Tool categories",
+        "interventionBreakdown": "{{approvals}} approvals · {{steers}} steers",
+        "interventions": "Interventions",
+        "pieChart": "Tool category share",
+        "ratioAutonomous": "{{ratio}} calls/session (fully autonomous)",
+        "sessions": "Sessions",
+        "summaryTitle": "Summary",
+        "toolCalls": "Tool calls"
       }
     },
     "comments": {
@@ -1655,6 +1909,7 @@ export default interface Resources {
       "title": "Create room"
     },
     "dashboard": {
+      "brandName": "Fusion",
       "initializingDashboard": "Initializing dashboard...",
       "loadingMessage": "Loading Fusion dashboard",
       "loadingProgress": "Dashboard loading progress",
@@ -1695,6 +1950,8 @@ export default interface Resources {
       "clear": "Clear",
       "command": "Command",
       "configuration": "Configuration",
+      "configurationLabel": "Dev server configuration",
+      "controlsHeaderLabel": "Dev server controls header",
       "embedded": "Embedded",
       "embeddedPreviewDisabled": "Embedded preview is disabled. Open your app in a separate browser tab.",
       "enterFullscreen": "Enter fullscreen logs",
@@ -1713,6 +1970,7 @@ export default interface Resources {
       "loadingLogs": "Loading logs…",
       "loadingOlderLogs": "Loading older logs…",
       "logs": "Logs",
+      "logsLabel": "Dev server logs",
       "lostConnection": "Lost log stream connection.",
       "manual": "Manual",
       "matchCount_one": "{{count}} match",
@@ -1731,6 +1989,7 @@ export default interface Resources {
       "preview": "Preview",
       "previewBlocked": "Preview blocked",
       "previewFailed": "Preview failed",
+      "previewLabel": "Dev server preview",
       "previewUrlOverride": "Preview URL Override",
       "refreshPreview": "Refresh preview",
       "restart": "Restart",
@@ -1909,14 +2168,17 @@ export default interface Resources {
       "noTaskDocuments": "No task documents yet.",
       "openTask": "Open task",
       "plain": "Plain",
+      "projectFilePreviewLabel": "Project file content preview",
       "projectFiles": "project files",
       "projectFilesTab": "Project Files",
+      "projectMarkdownFilesLabel": "Project markdown files",
       "resultCount_one": "{{count}} result{{plural}}",
       "resultCount_other": "{{count}} result{{plural}}",
       "retry": "Retry",
       "retryLoading": "Retry loading documents",
       "searchProjectFiles": "Search project markdown files…",
       "searchTaskDocuments": "Search task documents…",
+      "sectionsLabel": "Documents sections",
       "selectFile": "Select a Markdown file to view its content.",
       "showHidden": "Show hidden project files",
       "showHiddenFiles": "Show hidden files",
@@ -1970,6 +2232,12 @@ export default interface Resources {
       "failedToLoadFile": "Failed to load file",
       "failedToSaveFile": "Failed to save file"
     },
+    "errorBoundary": {
+      "genericError": "Something went wrong",
+      "reloadPage": "Reload page",
+      "retry": "Retry",
+      "sectionError": "This section encountered an error"
+    },
     "evals": {
       "allRuns": "All runs",
       "disabledTitle": "Scheduled evals are disabled",
@@ -2008,6 +2276,8 @@ export default interface Resources {
       "overlapBottleneck_one": "{{status}} overlap bottleneck {{blockerId}}: {{count}} todo blocked via blockedBy (threshold {{threshold}})",
       "overlapBottleneck_other": "{{status}} overlap bottleneck {{blockerId}}: {{count}} todo blocked via blockedBy (threshold {{threshold}})",
       "overlapQueue": "Overlap queue",
+      "overlapSummary_one": "{{blockerId}} · {{count}} todo",
+      "overlapSummary_other": "{{blockerId}} · {{count}} todo",
       "queued": "Queued",
       "running": "Running",
       "secondsAgo_one": "{{count}}s ago",
@@ -2018,7 +2288,8 @@ export default interface Resources {
       "stateRunning": "Running",
       "status": "Executor status",
       "stuck": "Stuck",
-      "temporary": "Temporary"
+      "temporary": "Temporary",
+      "todoStatus": "todo"
     },
     "fileBrowser": {
       "back": "Back to file list",
@@ -2425,6 +2696,7 @@ export default interface Resources {
       "stashDropped": "Stash dropped",
       "stashMessagePlaceholder": "Stash message (optional)",
       "stashPopped": "Stash popped",
+      "stashRef": "stash@{{index}}",
       "statusLabelBranch": "Branch",
       "statusLabelCommit": "Commit",
       "statusLabelIntegrationBranch": "Integration branch",
@@ -2477,6 +2749,13 @@ export default interface Resources {
       "worktreesInUse_other": "{{count}} in use",
       "worktreesTotal_one": "{{count}} total",
       "worktreesTotal_other": "{{count}} total"
+    },
+    "githubStarPrompt": {
+      "body": "If Fusion has saved you time, a GitHub star goes a long way. It helps other developers discover the project and keeps the team motivated to ship improvements.",
+      "dismissLabel": "Dismiss GitHub star prompt",
+      "regionLabel": "GitHub star prompt",
+      "starOnGitHub": "Star on GitHub",
+      "title": "Enjoying Fusion?"
     },
     "goals": {
       "activeCount_one": "{{count}} active goals",
@@ -2532,6 +2811,9 @@ export default interface Resources {
       "title": "Branch Group {{id}}",
       "unavailable": "Branch group unavailable"
     },
+    "groups": {
+      "prLinkLabel": "PR #{{number}} ({{state}})"
+    },
     "header": {
       "activePlanningSessions_one": "{{count}} active planning session",
       "activePlanningSessions_other": "{{count}} active planning sessions",
@@ -2552,6 +2834,7 @@ export default interface Resources {
       "documentsView": "Documents view",
       "engineOptions": "Engine options",
       "evalsView": "Evals",
+      "fusionLogo": "Fusion logo",
       "gitManager": "Git Manager",
       "goalsView": "Goals",
       "importFromGitHub": "Import from GitHub",
@@ -2574,7 +2857,6 @@ export default interface Resources {
       "noScriptsAddOne": "No scripts — add one…",
       "noScriptsConfigured": "No scripts configured",
       "noWorkingBranch": "No working branch",
-      "nodes": "Nodes",
       "openSearch": "Open search",
       "openTerminal": "Open Terminal",
       "pauseTriage": "Pause triage",
@@ -2712,6 +2994,7 @@ export default interface Resources {
       "archivedMsg": "Insight archived: {{title}}",
       "archiving": "Archiving \"{{title}}\"...",
       "backlogHealth": "Backlog Health",
+      "categoriesLabel": "Insight categories",
       "configureModel": "Configure insight generation model",
       "configureModelTitle": "Configure model",
       "createTaskLabel": "Create task from this insight",
@@ -2801,6 +3084,9 @@ export default interface Resources {
       "useMissionContext": "Use Mission Context",
       "verificationCriteria": "Verification Criteria",
       "yes": "Yes"
+    },
+    "issues": {
+      "noIssuesFound": "No issues found"
     },
     "lane": {
       "collapse": "Collapse {{name}} lane",
@@ -2914,8 +3200,7 @@ export default interface Resources {
       "unpauseUnavailable": "Unpause action is unavailable",
       "useProjectDefault": "Use project default",
       "viewOptions": "View options",
-      "workflowLabel": "Workflow",
-      "workflowSelectLabel": "Select workflow"
+      "workflowLabel": "Workflow"
     },
     "mailbox": {
       "agent": "Agent",
@@ -2984,6 +3269,7 @@ export default interface Resources {
       "replyLoadFailed": "Failed to load replied message. Click to retry.",
       "replyingTo": "Replying to",
       "replyingToMessage": "Replying to message",
+      "resizeMessageListPane": "Resize message list pane",
       "selectMessageToRead": "Select a message to read",
       "system": "System",
       "timeDaysAgo_one": "{{count}}d ago",
@@ -2997,6 +3283,7 @@ export default interface Resources {
       "to": "To",
       "toLabel": "To:",
       "toPrefix": "To: {{recipient}}",
+      "toRecipient": "To: {{recipient}}",
       "typeAgentToAgent": "Agent ↔ Agent",
       "typeAgentToUser": "Agent → You",
       "typeSystem": "System",
@@ -3172,11 +3459,13 @@ export default interface Resources {
     "missions": {
       "acceptance": "Acceptance:",
       "acceptanceCriteriaOptional": "Acceptance criteria (optional)",
+      "acceptanceCriteriaPrefix": "AC:",
       "actionGenerating": "Generating…",
       "actionResume": "Resume",
       "actionRetry": "Retry",
       "actionReview": "Review",
       "activateSlice": "Activate slice",
+      "activityCount": "{{visible}} of {{total}}",
       "activityTime": "Activity {{time}}",
       "actual": "Actual: {{value}}",
       "addAssertion": "Add assertion",
@@ -3303,6 +3592,7 @@ export default interface Resources {
       "filterSlices": "Slice & milestone events",
       "filterStateChanges": "State changes",
       "filterTasks": "Task events",
+      "fixLineageButton": "🔗 Fix",
       "generatedFixFeatures": "Generated fix features:",
       "generatedFixFeaturesTitle": "Generated Fix Features",
       "generatedFromFeature": "Generated from feature: {{id}}",
@@ -3332,6 +3622,8 @@ export default interface Resources {
       "linkFeatureToTask": "Link feature to task:",
       "linkGoal": "Link goal",
       "linkToTask": "Link to task",
+      "linkedCountShort_one": "({{count}} linked)",
+      "linkedCountShort_other": "({{count}} linked)",
       "linkedCount_one": "{{count}} linked",
       "linkedCount_other": "{{count}} linked",
       "linkedFeaturesCount_one": "{{count}} linked feature",
@@ -3389,6 +3681,7 @@ export default interface Resources {
       "planStateNeedsUpdate": "Needs update",
       "planStateNotPlanned": "Not planned",
       "planStatePlanned": "Planned",
+      "planTargetTitle": "Plan {{targetLabel}}: {{targetTitle}}",
       "planTitle": "Plan Mission with AI",
       "planningModel": "Planning Model",
       "prepareQuestion": "Preparing next question...",
@@ -3496,6 +3789,7 @@ export default interface Resources {
       "updateButton": "Update",
       "updated": "Mission updated",
       "validateFeature": "Validate feature",
+      "validationRoundAttempts": "impl #{{implementation}} · reviewer #{{reviewer}}",
       "validationRoundsCount_one": "{{count}} round",
       "validationRoundsCount_other": "{{count}} rounds",
       "validationRoundsLabel_one": "Validation rounds ({{count}})",
@@ -3608,17 +3902,21 @@ export default interface Resources {
       "activityLog": "Activity Log",
       "agents": "Agents",
       "automation": "Automation",
+      "board": "Board",
       "chat": "Chat",
       "chatUnreadAriaLabel": "Unread chat response",
+      "collapseSidebar": "Collapse sidebar",
       "commandCenter": "Command Center",
       "devServer": "Dev Server",
       "documents": "Documents",
       "evals": "Evals",
+      "expandSidebar": "Expand sidebar",
       "files": "Files",
       "gitManager": "Git Manager",
       "goals": "Goals",
       "importFromGitHub": "Import from GitHub",
       "insights": "Insights",
+      "list": "List",
       "loadingScripts": "Loading scripts…",
       "mailbox": "Mailbox",
       "mailboxPendingAriaLabel": "Pending approvals",
@@ -3628,15 +3926,16 @@ export default interface Resources {
       "more": "More",
       "moreSheetTitle": "Navigate",
       "noScriptsAddOne": "No scripts — add one…",
-      "nodes": "Nodes",
       "planning": "Planning",
       "primaryNavAriaLabel": "Primary navigation",
       "projects": "Projects",
       "research": "Research",
+      "resizeSidebar": "Resize sidebar",
       "scriptsSubmenuAriaLabel": "Scripts submenu",
       "secrets": "Secrets",
       "settings": "Settings",
       "showScriptsAriaLabel": "Show scripts",
+      "sidebarAriaLabel": "Sidebar navigation",
       "skills": "Skills",
       "stashRecovery": "Stash Recovery",
       "tasks": "Tasks",
@@ -3755,11 +4054,13 @@ export default interface Resources {
       "discoverRemoteProjects": "Discover Remote Projects",
       "discoveredCount_one": "Discovered {{count}} remote project{{plural}}",
       "discoveredCount_other": "Discovered {{count}} remote project{{plural}}",
+      "discoveredRemoteProjectsLabel": "Discovered remote projects",
       "discovering": "Discovering...",
       "discoveryFailed": "Failed to discover remote projects",
       "dismissError": "Dismiss error",
       "docker": "Docker",
       "dockerBadge": "Managed Docker node",
+      "dockerConfigMeta": "Config v{{version}} • Updated {{updated}}",
       "dockerConfigSaveFailed": "Failed to save Docker config",
       "dockerConfigSaveSuccess": "Docker config saved",
       "dockerConfiguration": "Docker Configuration",
@@ -3877,6 +4178,7 @@ export default interface Resources {
         "name": "Build Server",
         "optional": "Optional"
       },
+      "projectPathMappingsLabel": "Project path mappings",
       "provideManually": "Provide key manually",
       "pullSettings": "Pull Settings",
       "pullSettingsFailed": "Pull settings failed",
@@ -4062,6 +4364,9 @@ export default interface Resources {
       "tabCliAutoDerve": "Local CLI (auto-derive)",
       "testFailed": "Test failed — see status above.",
       "unreachable": "{{reason}}"
+    },
+    "piExtensions": {
+      "filterHint": "{{extensions}} ext, {{skills}} skill, {{prompts}} prompt, {{themes}} theme"
     },
     "piManager": {
       "addButton": "Add",
@@ -4666,6 +4971,7 @@ export default interface Resources {
       "createTask": "Create Task",
       "createTaskButton": "Create Task",
       "createTaskTitle": "Create task from finding",
+      "currentDefaults": "Current defaults: provider {{provider}}, max sources {{maxSources}}",
       "defaultFindingHeading": "Research finding",
       "descriptionLabel": "Description",
       "disabled": "Research is disabled for this project.",
@@ -4688,6 +4994,7 @@ export default interface Resources {
       "noRunsYet": "No research runs yet",
       "noSourcesAvailable": "No enabled research sources are available for this project.",
       "noSummaryYet": "No summary yet.",
+      "notSet": "(not set)",
       "openAuthSettings": "Open Authentication Settings",
       "openResearchSettings": "Open Research Settings",
       "priorityHigh": "High",
@@ -4748,6 +5055,7 @@ export default interface Resources {
       "intro": "View the effective execution node and control per-task node override.",
       "localNoConfiguration": "Local (no routing configured)",
       "lockedWhileActive": "Routing is locked while this task is active. Node override cannot be changed until the task is no longer active.",
+      "nodeOptionLabel": "{{name}} ({{type}}) — {{status}}",
       "nodeUnavailable": "node unavailable or unknown",
       "overrideCleared": "Node override cleared",
       "overrideSection": "Node Override",
@@ -4764,6 +5072,9 @@ export default interface Resources {
       "unavailablePolicy": "Unavailable-node policy",
       "unhealthy": "Unhealthy",
       "useProjectDefault": "Use project default"
+    },
+    "runtimes": {
+      "nousResearchLogoAlt": "Nous Research"
     },
     "schedule": {
       "actionAiPrompt": "AI Prompt",
@@ -4830,6 +5141,7 @@ export default interface Resources {
       "cronPresetMonthly": "Every month (1st)",
       "cronPresetWeekly": "Every week (Monday)",
       "cronRequired": "Cron expression is required for custom schedules",
+      "crontabGuru": "crontab.guru",
       "delete": "Delete",
       "deleteError": "Failed to delete routine",
       "deleteMessage": "Delete schedule {{name}}? This cannot be undone.",
@@ -4884,6 +5196,7 @@ export default interface Resources {
       "globalScope": "Global",
       "globalScopeTitle": "Global scope",
       "globalScoped": "This schedule will be created at global scope.",
+      "lastLabel": "Last:",
       "loadRoutinesError": "Failed to load routines",
       "manualTriggerInfo": "This routine will be triggered manually via the dashboard or API.",
       "modeAriaLabel": "Execution mode",
@@ -4906,6 +5219,7 @@ export default interface Resources {
       "newAutomation": "New Automation",
       "newRoutineHeading": "New Routine",
       "newTitle": "New Schedule",
+      "nextLabel": "Next:",
       "noActiveProject": "No active project. Schedules will be created at global scope.",
       "noAutomations": "No automations yet",
       "noStepsEmpty": "No steps added yet. Add a command or AI prompt step to get started.",
@@ -4936,6 +5250,7 @@ export default interface Resources {
       "runNameNow": "Run {{name}} now",
       "runNow": "Run now",
       "running": "Running…",
+      "runsLabel": "Runs:",
       "saveChanges": "Save Changes",
       "saveStep": "Save Step",
       "saving": "Saving…",
@@ -5014,6 +5329,9 @@ export default interface Resources {
       "webhookSecretHint": "HMAC secret for signature verification. Leave empty for unauthenticated webhooks.",
       "webhookSecretLabel": "Webhook Secret (optional)",
       "webhookSecretPlaceholder": "Optional — leave empty for unauthenticated webhooks"
+    },
+    "scripts": {
+      "title": "Scripts"
     },
     "scriptsModal": {
       "addScript": "Add Script",
@@ -5442,6 +5760,7 @@ export default interface Resources {
         "enabling": "Enabling…",
         "notConnected": "✗ Not connected",
         "probing": "Probing local CLI…",
+        "providerName": "Cursor — via Cursor CLI",
         "test": "Test",
         "testing": "Testing…"
       },
@@ -5477,6 +5796,7 @@ export default interface Resources {
       "githubConnectionFailed": "Connection failed or timed out.",
       "githubOauthConnected": "GitHub OAuth is connected. You can import issues and track pull requests.",
       "githubOauthNotConnected": "GitHub OAuth isn't connected yet. You can set it up in Settings → Authentication, or continue now and connect later.",
+      "githubProvider": "GitHub",
       "githubSkipped": "GitHub was skipped. You can connect anytime from Settings → Authentication.",
       "goBackToStep": "Go back to {{label}}",
       "goToDashboard": "Go to Dashboard",
@@ -5735,6 +6055,9 @@ export default interface Resources {
       "revisionTitle": "Ask AI to Revise",
       "saving": "Saving…",
       "view": "View"
+    },
+    "stash": {
+      "copyReference": "Copy stash reference"
     },
     "stashRecovery": {
       "applied": "Applied",
@@ -6752,6 +7075,7 @@ export default interface Resources {
       "workflowCheck": "Workflow check"
     },
     "terminal": {
+      "arrowKeysLabel": "Terminal arrow keys",
       "clear": "Clear",
       "clearTerminal": "Clear terminal",
       "closeTab": "Close tab",
@@ -6999,13 +7323,11 @@ export default interface Resources {
           "bannerNotify": "Banner + push notification"
         },
         "notifyLabel": "Waiting-on-input notification",
-        "notifyNote": "How you are alerted when the agent pauses waiting for input on this step.",
-        "tier": {
-          "generic": "generic",
-          "hybrid": "hybrid",
-          "native": "native"
-        }
-      }
+        "notifyNote": "How you are alerted when the agent pauses waiting for input on this step."
+      },
+      "collapsePrompt": "Collapse prompt editor",
+      "editingPrompt": "Editing Prompt",
+      "expandPrompt": "Expand prompt editor"
     },
     "workflowFields": {
       "add": "Add field",
@@ -7072,6 +7394,7 @@ export default interface Resources {
       "foreachSequential": "Sequential",
       "foreachShared": "Shared worktree",
       "foreachWorktree": "Per-step worktree",
+      "gateBadge": "gate",
       "gateBlocks": "Gate (blocks)",
       "gateMode": "Gate mode",
       "insertTemplate": "Insert template {{name}}",
@@ -7128,6 +7451,7 @@ export default interface Resources {
       "startEntryColumn": "Entry column",
       "startEntryColumnAuto": "— Auto (first column)",
       "startNote": "The start node marks where a task enters the workflow.",
+      "stepBadge": "step",
       "stepExecuteLabel": "Step execute",
       "templateFilterLabel": "Filter templates",
       "templateFilterPlaceholder": "Filter templates",
@@ -7136,6 +7460,7 @@ export default interface Resources {
       "templatesFragments": "Fragments",
       "templatesPluginSteps": "Plugin steps",
       "templatesSection": "Templates",
+      "timeoutMs": "{{timeout}}ms",
       "trivialGraphHint": "This workflow only runs start → end. Add steps from the palette above to build it out."
     },
     "workflowSelector": {
@@ -7196,6 +7521,14 @@ export default interface Resources {
       "valuesTab": "Values",
       "widget": "Widget",
       "widgetDefault": "Default"
+    },
+    "workflowSwitcher": {
+      "countsAria": "{{todoLabel}}: {{todo}}, {{inProgressLabel}}: {{inProgress}}, {{doneLabel}}: {{done}}",
+      "done": "Done",
+      "inProgress": "In Progress",
+      "label": "Workflow",
+      "todo": "Todo",
+      "triggerAria": "Select workflow. Current workflow: {{name}}"
     },
     "workflows": {
       "aiEdit": "Design with AI",

@@ -91,7 +91,7 @@ export function CursorCliProviderCard({ authenticated, compact = false, onToggle
         <div className="auth-provider-header">
           <div className="auth-provider-info">
             <ProviderIcon provider="cursor-cli" size="sm" />
-            <strong>Cursor — via Cursor CLI</strong>
+            <strong>{t("setup.cursorCli.providerName", "Cursor — via Cursor CLI")}</strong>
             <span className={`auth-status-badge ${currentlyEnabled ? "authenticated" : "not-authenticated"}`}>{currentlyEnabled ? t("setup.cursorCli.active", "✓ Active") : t("setup.cursorCli.notConnected", "✗ Not connected")}</span>
           </div>
           <div className="auth-provider-cli-actions">{actions}</div>
@@ -107,7 +107,7 @@ export function CursorCliProviderCard({ authenticated, compact = false, onToggle
         <ProviderIcon provider="cursor-cli" size="md" />
       </div>
       <div className="onboarding-provider-card__body">
-        <strong className="onboarding-provider-card__name">Cursor — via Cursor CLI</strong>
+        <strong className="onboarding-provider-card__name">{t("setup.cursorCli.providerName", "Cursor — via Cursor CLI")}</strong>
         <span className="onboarding-provider-card__description">{t("setup.cursorCli.description", "Route AI calls through your local Cursor agent runtime.")}</span>
         <small className="settings-muted">{statusText}</small>
       </div>
