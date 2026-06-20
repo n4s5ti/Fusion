@@ -1,0 +1,98 @@
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import "./executor-test-helpers.js";
+import { TaskExecutor } from "../executor.js";
+import { createMockStore, resetExecutorMocks } from "./executor-test-helpers.js";
+import type { TaskDetail } from "@fusion/core";
+
+const now = "2026-06-20T00:00:00.000Z";
+
+function makeTask(overrides: Partial<TaskDetail> = {}): TaskDetail {
+  return {
+    id: "FN-6782-T",
+    title: "pause-abort benign todo repro",
+    description: "Reproduces FN-6782 benign requeue-to-todo classification",
+    column: "todo",
+    dependencies: [],
+    steps: [{ name: "Implement", status: "pending" }],
+    currentStep: 0,
+    log: [],
+    branch: null,
+    baseBranch: "main",
+    worktree: "/tmp/fusion-fn-6782-t",
+    status: null,
+    error: null,
+    paused: false,
+    userPaused: false,
+    autoMerge: true,
+    mergeRetries: 0,
+    createdAt: now,
+    updatedAt: now,
+    ...overrides,
+  } as TaskDetail;
+}
+
+function makeHarness(taskOverrides: Partial<TaskDetail> = {}) {
+  const store = createMockStore();
+  const task = makeTask(taskOverrides);
+  store.getTask.mockResolvedValue(task);
+  store.getSettings.mockResolvedValue({
+    maxConcurrent: 2,
+    maxWorktrees: 4,
+    pollIntervalMs: 15000,
+    autoMerge: true,
+    maxAutoMergeRetries: 3,
+  });
+  const executor = new TaskExecutor(store, "/tmp/test", {});
+  (executor as any).markPausedAborted(task.id, "hard-cancel");
+  return { store, task, executor };
+}
+
+async function invokeGraphFailure(executor: TaskExecutor, task: TaskDetail) {
+  await (executor as any).handleGraphFailure(task, {
+    disposition: "failed",
+    outcome: "failure",
+    visitedNodeIds: ["plan", "execute"],
+    context: {},
+  });
+}
+
+function logText(store: ReturnType<typeof createMockStore>): string {
+  return store.logEntry.mock.calls.map((call: unknown[]) => call[1]).join("\n");
+}
+
+describe("pause-abort benign requeue-to-todo (FN-6782)", () => {
+  beforeEach(() => {
+    resetExecutorMocks();
+  });
+
+  it("does NOT park a todo-column pause-abort as failed (no retry storm)", async () => {
+    const { store, task, executor } = makeHarness({ column: "todo" });
+    (executor as any).activeWorktrees.set(task.id, task.worktree);
+
+    await invokeGraphFailure(executor, task);
+
+    // Must NOT write status:"failed" — that was the storm trigger.
+    const parkedFailed = store.updateTask.mock.calls.some(
+      (call: unknown[]) => (call[1] as { status?: string } | undefined)?.status === "failed",
+    );
+    expect(parkedFailed).toBe(false);
+    // Benign log surfaced.
+    expect(logText(store)).toContain("benign, cleared for normal scheduling");
+    // pausedAborted marker cleared so the next dispatch starts clean.
+    expect((executor as any).pausedAborted.has(task.id)).toBe(false);
+    // Leaked worktree slot released.
+    expect((executor as any).activeWorktrees.has(task.id)).toBe(false);
+  });
+
+  it("STILL parks a non-todo (in-review) pause-abort as operator-action failed", async () => {
+    const { store, task, executor } = makeHarness({ column: "in-review" });
+
+    await invokeGraphFailure(executor, task);
+
+    const parkedFailed = store.updateTask.mock.calls.some(
+      (call: unknown[]) => (call[1] as { status?: string } | undefined)?.status === "failed",
+    );
+    expect(parkedFailed).toBe(true);
+    expect(logText(store)).toContain("operator action required");
+  });
+});

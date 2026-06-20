@@ -2111,6 +2111,7 @@ export class SelfHealingManager {
           { name: "recover-misclassified-failures", fn: () => this.recoverMisclassifiedFailures() },
           { name: "recover-missing-worktree-review-failures", fn: () => this.recoverMissingWorktreeReviewFailures() },
           { name: "recover-no-progress-no-task-done", fn: () => this.recoverNoProgressNoTaskDoneFailures() },
+          { name: "recover-paused-abort-failures", fn: () => this.recoverPausedAbortFailures() },
           { name: "recover-partial-progress-no-task-done", fn: () => this.recoverPartialProgressNoTaskDoneFailures() },
           { name: "recover-orphaned-executions", fn: () => this.recoverOrphanedExecutions() },
           { name: "recover-approved-triage", fn: () => this.recoverApprovedTriageTasks() },
@@ -7870,6 +7871,98 @@ export class SelfHealingManager {
       return recovered;
     } catch (err: unknown) { const errorMessage = err instanceof Error ? err.message : String(err);
       log.error(`Misclassified failure recovery failed: ${errorMessage}`);
+      return 0;
+    }
+  }
+
+  /**
+   * FN-6782 / pause-abort auto-recovery: a global pause/resume cycle can leave a
+   * task parked `status: "failed"` with the "operator action required" message
+   * produced by the executor's genuine-pause-abort branch (executor.ts
+   * handleGraphFailure). Historically that required a human to retry/unpause.
+   * This sweep auto-recovers those parks: it clears the failed status/error and
+   * rehomes the task to `todo` with `status: null`. The scheduler treats a
+   * non-paused `todo` task with `status: null` as runnable (scheduler.ts builds
+   * its dispatch set from `column === "todo" && !paused`; `status: "queued"` is
+   * the *blocked* marker, not the runnable one), so clearing to null is what
+   * makes the task schedulable again.
+   *
+   * Guards mirror the other failed-task recoverers: never touch a task that is
+   * paused, currently executing, or whose error is not the pause-abort park.
+   */
+  async recoverPausedAbortFailures(): Promise<number> {
+    try {
+      const executingIds = this.options.getExecutingTaskIds?.() ?? new Set<string>();
+      const tasks = await this.store.listTasks({ slim: true });
+
+      const isPausedAbortPark = (t: Task): boolean =>
+        t.status === "failed" &&
+        typeof t.error === "string" &&
+        t.error.includes("operator action required") &&
+        t.error.includes("Workflow graph failure surfaced after paused");
+
+      const parked = tasks.filter((t) =>
+        isPausedAbortPark(t) &&
+        !t.paused &&
+        !t.userPaused &&
+        !executingIds.has(t.id) &&
+        // Only recover columns that are safe to requeue. done/archived parks are
+        // terminal and in-review parks may carry merge state — leave those for
+        // the existing review recoverers / operator inspection.
+        (t.column === "todo" || t.column === "in-progress"),
+      );
+
+      if (parked.length === 0) return 0;
+
+      log.warn(`Found ${parked.length} pause-abort park(s) requiring auto-recovery`);
+
+      let recovered = 0;
+      for (const task of parked) {
+        try {
+          // Re-read to avoid acting on a stale snapshot after awaits.
+          const fresh = await this.store.getTask(task.id);
+          if (!fresh || !isPausedAbortPark(fresh) || fresh.paused || executingIds.has(fresh.id)) {
+            continue;
+          }
+
+          await this.store.updateTask(task.id, { status: null, error: null });
+          if (fresh.column !== "todo") {
+            await this.store.moveTask(task.id, "todo", {
+              preserveProgress: true,
+              moveSource: "engine",
+              recoveryRehome: true,
+            });
+          }
+          // Release any in-memory worktree ownership the leaked park may still
+          // pin, so the requeued task does not re-block the concurrency gate.
+          this.options.releaseExecutorWorktreeOwnership?.(task.id);
+
+          await this.store.logEntry(
+            task.id,
+            "Auto-recovered: pause-abort park cleared — requeued for normal scheduling",
+          );
+          await this.store.recordRunAuditEvent?.({
+            taskId: task.id,
+            agentId: "self-healing",
+            runId: generateSyntheticRunId("self-healing", task.id),
+            domain: "database",
+            mutationType: "task:auto-recover-paused-abort-park",
+            target: task.id,
+            metadata: { fromColumn: fresh.column },
+          });
+          log.log(`Recovered pause-abort park ${task.id}: ${task.title || task.description?.slice(0, 60) || "(untitled)"}`);
+          recovered++;
+        } catch (err: unknown) { const errorMessage = err instanceof Error ? err.message : String(err);
+          log.error(`Failed to recover pause-abort park ${task.id}: ${errorMessage}`);
+        }
+      }
+
+      if (recovered > 0) {
+        log.log(`Recovered ${recovered} pause-abort park(s) → requeued to todo`);
+      }
+      return recovered;
+    } catch (err: unknown) { const errorMessage = err instanceof Error ? err.message : String(err);
+      log.error(`Pause-abort park recovery failed: ${errorMessage}`);
       return 0;
     }
   }

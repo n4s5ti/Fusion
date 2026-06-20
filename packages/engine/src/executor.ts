@@ -6640,6 +6640,34 @@ export class TaskExecutor {
               ? "engine abort during pause/resume"
               : "task pause";
         if (live.column !== "in-progress") {
+          // FN-6782: a pause/resume abort that has left the task back in `todo`
+          // is benign — the work is simply re-queued for a fresh dispatch, not
+          // stranded. Parking it `status: "failed"` (operator action required)
+          // here is what caused the retry storm: the scheduler re-dispatches the
+          // todo task, this branch re-fires on the still-set pausedAborted
+          // marker, and it re-parks instantly with no backoff. Treat `todo` like
+          // the in-progress benign case: clear the abort marker so the next
+          // dispatch starts clean, log, and return WITHOUT parking failed. The
+          // operator-action failure is preserved only for genuinely stranded
+          // non-todo columns (e.g. in-review), per FN-6478.
+          if (live.column === "todo") {
+            this.clearPausedAborted(task.id);
+            // FN-6782 leak fix: a task parked back to `todo` must not keep
+            // pinning its in-memory worktree slot. The execute() finally does
+            // not delete activeWorktrees on this early-return path, so without
+            // this release the slot leaks — a `todo` task stays a maxWorktrees
+            // holder and concurrency-blocks the whole queue (the FN-6756
+            // "in todo yet still a holder, maxWorktrees=3/3" symptom). Mirror
+            // clearPhantomExecutorBinding's release semantics. Safe here:
+            // handleGraphFailure is terminal for this run (no seam re-entry),
+            // and the next dispatch re-acquires a fresh worktree.
+            this.activeWorktrees.delete(task.id);
+            const todoBenign = `Workflow graph run ended during ${pauseProvenance} with task re-queued to todo — benign, cleared for normal scheduling`;
+            executorLog.log(`${task.id}: ${todoBenign}`);
+            await this.store.logEntry(task.id, todoBenign, undefined, this.getRunContextFor(task.id));
+            await this.persistTokenUsage(task.id);
+            return;
+          }
           const failedNode = result.visitedNodeIds[result.visitedNodeIds.length - 1] ?? "unknown";
           const message = `Workflow graph failure surfaced after paused ${pauseProvenance} in '${live.column}' at node '${failedNode}' — operator action required; retry or explicitly unpause/resume after inspecting the task`;
           executorLog.warn(`${task.id}: ${message}`);

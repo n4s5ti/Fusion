@@ -459,6 +459,10 @@ export type DatabaseMutationType =
   | "task:auto-recover-worktree-metadata-rebound"
   | "task:auto-recover-worktree-metadata-cleared"
   | "task:auto-recover-worktree-metadata-skipped-active"
+  // pause-abort auto-recovery (FN-6782): a global pause/resume park cleared and requeued
+  | "task:auto-recover-paused-abort-park"
+  // leaked concurrency-slot reaper: a worktree/lease/semaphore slot whose holder left in-progress
+  | "task:reap-leaked-concurrency-slot"
   // task:auto-archived-ghost-bug metadata: { findings: Array<{ construct: { kind: string; raw: string; filePath?: string; line?: number }; matched: boolean; probeError?: string; output?: string }>; reason: string }
   // task:auto-archived-duplicate metadata: { siblingTaskIds: string[]; scores: Record<string, number> }
   | "task:auto-archived-ghost-bug"
