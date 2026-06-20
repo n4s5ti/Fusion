@@ -457,11 +457,16 @@ export function TaskChatTab({ task, projectId, active, addToast, sessionLive, on
   const firstEntryKey = entries[0] ? getEntryKey(entries[0], 0) : null;
   const activeSession = isActiveAgentSession(task, { sessionLive });
   const isDoneTask = task.column === "done";
+  const isIdleSession = !isDoneTask && !activeSession;
+  /**
+   * FNXC:TaskDetailChat 2026-06-19-22:54:
+   * The task-detail chat must never silently accept a question when no agent session will consume it. Keep idle chats sendable, but surface that the message is saved as guidance for the next task run instead of implying a live reply.
+   */
   const sessionHint = isDoneTask
     ? "Send a message to start a refinement task for this completed task."
     : activeSession
       ? "Message the active agent session. Guidance is delivered to the running session in real time."
-      : null;
+      : "No agent is working on this task right now. Your message is saved as guidance and will reach an agent the next time this task runs.";
   const composerPlaceholder = isDoneTask
     ? "Start a refinement task for this completed task"
     : "Steer the currently executing agent";
@@ -804,7 +809,11 @@ export function TaskChatTab({ task, projectId, active, addToast, sessionLive, on
 
       <form className="task-chat-composer card" onSubmit={handleSubmit}>
         {sessionHint ? (
-          <div className="task-chat-session-hint" role="status">
+          <div
+            className={`task-chat-session-hint${isIdleSession ? " task-chat-session-hint--idle" : ""}`}
+            role="status"
+            data-testid={isIdleSession ? "task-chat-idle-hint" : undefined}
+          >
             {sessionHint}
           </div>
         ) : null}

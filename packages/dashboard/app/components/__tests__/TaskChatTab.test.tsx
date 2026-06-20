@@ -167,20 +167,25 @@ function expectTranscriptTextOrder(...texts: string[]) {
   }
 }
 
-function expectNoInactiveSessionHint() {
-  expect(screen.queryByText(/picked up by the next session/i)).not.toBeInTheDocument();
-  expect(document.querySelector(".task-chat-session-hint")).not.toBeInTheDocument();
+function expectIdleSessionHint() {
+  const idleHint = screen.getByTestId("task-chat-idle-hint");
+  expect(idleHint).toBeVisible();
+  expect(idleHint).toHaveTextContent(/no agent is working on this task right now/i);
+  expect(idleHint).toHaveTextContent(/saved as guidance/i);
+  expect(idleHint).toHaveTextContent(/next time this task runs/i);
   expect(screen.getByPlaceholderText("Steer the currently executing agent")).toBeInTheDocument();
 }
 
 function expectActiveSessionCopy() {
   expect(screen.getByText(/active agent session/i)).toBeInTheDocument();
   expect(screen.getByText(/delivered to the running session in real time/i)).toBeInTheDocument();
+  expect(screen.queryByTestId("task-chat-idle-hint")).not.toBeInTheDocument();
 }
 
 function expectDoneRefinementCopy() {
   expect(screen.getByText(/start a refinement task for this completed task/i)).toBeInTheDocument();
   expect(screen.getByPlaceholderText("Start a refinement task for this completed task")).toBeInTheDocument();
+  expect(screen.queryByTestId("task-chat-idle-hint")).not.toBeInTheDocument();
 }
 
 function restoreMetricDescriptor(name: "scrollTop" | "scrollHeight" | "clientHeight", descriptor: PropertyDescriptor | undefined) {
@@ -523,6 +528,40 @@ describe("TaskChatTab", () => {
     expect(within(reviewerMeta as HTMLElement).getByText("2 entries")).toBeVisible();
     expect(within(reviewerMeta as HTMLElement).getByTestId("task-chat-group-time")).toHaveTextContent("5m ago");
     expect(within(userHeader as HTMLElement).getByTestId("task-chat-user-time")).toHaveTextContent("3m ago");
+  });
+
+  it.each([
+    ["inline", false],
+    ["expanded", true],
+  ])("renders the idle no-reply hint in the %s task chat surface", (_label, expanded) => {
+    render(
+      <TaskChatTab
+        task={makeTask({ column: "todo", assignedAgentId: undefined, checkedOutBy: undefined, status: undefined })}
+        active
+        expanded={expanded}
+        onToggleExpanded={expanded ? vi.fn() : undefined}
+        addToast={vi.fn()}
+        sessionLive={false}
+      />,
+    );
+
+    expectIdleSessionHint();
+  });
+
+  it.each([
+    ["empty", [], makeTask({ column: "todo", assignedAgentId: undefined, checkedOutBy: undefined, status: undefined })],
+    ["populated", [makeEntry({ agent: "executor", text: "Earlier agent output" })], makeTask({
+      column: "todo",
+      assignedAgentId: undefined,
+      checkedOutBy: undefined,
+      status: undefined,
+      steeringComments: [makeSteeringComment({ id: "idle-populated-user", text: "Earlier saved guidance" })],
+    })],
+  ] as const)("renders the composer-anchored idle hint with an %s transcript", (_label, entries, task) => {
+    mockLogs([...entries]);
+    render(<TaskChatTab task={task} active addToast={vi.fn()} sessionLive={false} />);
+
+    expectIdleSessionHint();
   });
 
   it("renders a single text entry as one text bubble", () => {
@@ -1659,7 +1698,7 @@ describe("TaskChatTab", () => {
     );
 
     expect(screen.queryByText(/No active steerable agent session/)).not.toBeInTheDocument();
-    expectNoInactiveSessionHint();
+    expectIdleSessionHint();
     const input = screen.getByLabelText("Message active agent session");
     expect(input).not.toBeDisabled();
     const sendButton = screen.getByRole("button", { name: "Send" });
@@ -1672,7 +1711,35 @@ describe("TaskChatTab", () => {
     await waitFor(() => {
       expect(mockedAddSteeringComment).toHaveBeenCalledWith("FN-001", "Queue this for later", "project-1");
     });
+    expectIdleSessionHint();
     expect(within(screen.getByTestId("task-chat-transcript")).getByText("Queue this for later")).toBeVisible();
+  });
+
+  it.each([
+    ["todo task with no agent", makeTask({ column: "todo", assignedAgentId: undefined, checkedOutBy: undefined, status: undefined })],
+    ["user-paused in-progress task", makeTask({ column: "in-progress", status: "queued", userPaused: true })],
+  ])("makes the no-reply send path non-silent for a %s", async (_label, task) => {
+    const user = userEvent.setup();
+    const send = deferred<Task>();
+    mockedAddSteeringComment.mockReturnValue(send.promise);
+    const message = `Will anyone answer ${_label}?`;
+    render(<TaskChatTab task={task} projectId="project-1" active addToast={vi.fn()} sessionLive={false} />);
+
+    expectIdleSessionHint();
+    await user.type(screen.getByLabelText("Message active agent session"), message);
+    await user.click(screen.getByRole("button", { name: "Send" }));
+
+    expect(mockedAddSteeringComment).toHaveBeenCalledWith("FN-001", message, "project-1");
+    expectIdleSessionHint();
+    expect(within(screen.getByTestId("task-chat-transcript")).getByText(message)).toBeVisible();
+
+    await act(async () => {
+      send.resolve(makeTask({ ...task, steeringComments: [makeSteeringComment({ id: `persisted-${task.column}`, text: message })] }));
+      await send.promise;
+    });
+
+    expectIdleSessionHint();
+    expect(within(screen.getByTestId("task-chat-transcript")).getByText(message)).toBeVisible();
   });
 
   it.each(["starting", "ready", "busy", "waitingOnInput"] as const)(
@@ -1691,6 +1758,7 @@ describe("TaskChatTab", () => {
       );
 
       expect(screen.queryByText(/No active steerable agent session/)).not.toBeInTheDocument();
+      expectActiveSessionCopy();
       const input = screen.getByLabelText("Message active agent session");
       expect(input).not.toBeDisabled();
       await user.type(input, `Please continue ${agentState}`);
@@ -1715,10 +1783,11 @@ describe("TaskChatTab", () => {
     );
 
     expect(screen.queryByText(/No active steerable agent session/)).not.toBeInTheDocument();
+    expectActiveSessionCopy();
     expect(screen.getByLabelText("Message active agent session")).not.toBeDisabled();
   });
 
-  it.each(["done", "dead", "needsAttention", null] as const)("shows queued copy but stays sendable when the CLI session is not live: %s", (agentState) => {
+  it.each(["done", "dead", "needsAttention", null] as const)("shows idle guidance but stays sendable when the CLI session is not live: %s", (agentState) => {
     const sessionLive = agentState === null ? isCliSessionLive(null) : isCliSessionLive(makeCliSession(agentState));
     render(
       <TaskChatTab
@@ -1729,7 +1798,7 @@ describe("TaskChatTab", () => {
       />,
     );
 
-    expectNoInactiveSessionHint();
+    expectIdleSessionHint();
     expectComposerSendableAfterDraft();
   });
 
@@ -1864,7 +1933,7 @@ describe("TaskChatTab", () => {
     } else if (showsActiveCopy) {
       expectActiveSessionCopy();
     } else {
-      expectNoInactiveSessionHint();
+      expectIdleSessionHint();
     }
     expectComposerSendableAfterDraft();
   });
@@ -1876,10 +1945,10 @@ describe("TaskChatTab", () => {
     ["in-review task without an assigned or checked-out agent", makeTask({ column: "in-review", status: "reviewing", assignedAgentId: undefined, checkedOutBy: undefined })],
     ["paused in-review task", makeTask({ column: "in-review", status: "reviewing", paused: true })],
     ["user-paused in-review task", makeTask({ column: "in-review", status: "reviewing", userPaused: true })],
-  ])("keeps the composer sendable with queued copy for %s", (_label, task) => {
+  ])("keeps the composer sendable with idle guidance for %s", (_label, task) => {
     render(<TaskChatTab task={task} active addToast={vi.fn()} />);
 
-    expectNoInactiveSessionHint();
+    expectIdleSessionHint();
     expectComposerSendableAfterDraft();
   });
 
@@ -1888,19 +1957,19 @@ describe("TaskChatTab", () => {
     ["user-paused in-progress task with a live session", makeTask({ column: "in-progress", status: "queued", userPaused: true })],
     ["paused in-review task with a live session", makeTask({ column: "in-review", status: "reviewing", paused: true })],
     ["user-paused in-review task with a live session", makeTask({ column: "in-review", status: "reviewing", userPaused: true })],
-  ])("keeps the composer sendable with queued copy for %s", (_label, task) => {
+  ])("keeps the composer sendable with idle guidance for %s", (_label, task) => {
     render(<TaskChatTab task={task} active addToast={vi.fn()} sessionLive={true} />);
 
-    expectNoInactiveSessionHint();
+    expectIdleSessionHint();
     expectComposerSendableAfterDraft();
   });
 
   it.each(["paused", "awaiting-user-input", "awaiting-cli-approval", "awaiting-user-review", "failed", "needs-replan"])(
-    "keeps in-progress steering sendable with queued copy for %s status",
+    "keeps in-progress steering sendable with idle guidance for %s status",
     (status) => {
       render(<TaskChatTab task={makeTask({ column: "in-progress", assignedAgentId: "agent-1", status })} active addToast={vi.fn()} />);
 
-      expectNoInactiveSessionHint();
+      expectIdleSessionHint();
       expectComposerSendableAfterDraft();
     },
   );

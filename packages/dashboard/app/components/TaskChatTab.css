@@ -355,6 +355,11 @@ FN-6425 requires the chat expand control to stay inside the chat view as an icon
   font-size: var(--space-md);
 }
 
+/* FNXC:TaskDetailChat 2026-06-19-22:54: Idle task-detail chat needs a warning-token hint so saved guidance is visibly non-live without disabling the composer. */
+.task-chat-session-hint--idle {
+  color: var(--color-warning);
+}
+
 .task-chat-composer-row {
   display: flex;
   align-items: flex-end;
