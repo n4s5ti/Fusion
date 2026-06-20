@@ -154,7 +154,7 @@ export function createTaskStoreTestHarness() {
       vi.useRealTimers();
       store.stopWatching();
       await delay(0);
-      store.close();
+      await store.close();
       await rm(rootDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
       await rm(globalDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
     },

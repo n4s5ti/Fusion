@@ -1522,6 +1522,23 @@ export class TaskStore extends EventEmitter<TaskStoreEvents> {
   private debounceMs = 150;
   /** Per-task promise chain for serializing writes */
   private taskLocks: Map<string, Promise<void>> = new Map();
+  private closing = false;
+  private deferredTaskCreatedWork = new Set<Promise<void>>();
+  /**
+   * FNXC:CoreTests 2026-06-20-05:17:
+   * Core loaded-suite teardown may remove a per-test project root while createTask's deferred title summarization or task-created hook is still writing task.json. Track only the post-summarization write/hook phase so close() can quiesce active filesystem mutations without hanging on intentionally stalled summarizer prompts.
+   */
+  private trackDeferredTaskCreatedWork(work: () => Promise<void>): Promise<void> {
+    if (this.closing) return Promise.resolve();
+    const promise = (async () => {
+      if (this.closing) return;
+      await work();
+    })();
+    this.deferredTaskCreatedWork.add(promise);
+    return promise.finally(() => {
+      this.deferredTaskCreatedWork.delete(promise);
+    });
+  }
   /**
    * Cross-task lock for worktree path allocation. Serializes the
    * read-tasks → pick-name → write-task sequence so two concurrent
@@ -1774,6 +1791,7 @@ export class TaskStore extends EventEmitter<TaskStoreEvents> {
   }
 
   async init(): Promise<void> {
+    this.closing = false;
     await mkdir(this.tasksDir, { recursive: true });
 
     // U4: register the default-workflow trait hook implementations into the
@@ -4399,14 +4417,17 @@ ${TASK_UPSERT_SQL_ASSIGNMENTS}
           const generatedTitle = await onSummarize!(input.description);
           const sanitizedTitle = sanitizeTitle(generatedTitle);
           if (sanitizedTitle) {
-            const currentTask = this.readTaskFromDb(id);
-            if (currentTask && !currentTask.title) {
-              // FN-5077: normalizeTitleForTaskId may return null for dangling fragments; only persist usable titles.
-              const normalizedTitle = normalizeTitleForTaskId(sanitizedTitle, id);
-              if (normalizedTitle.title) {
-                await this.updateTask(id, { title: normalizedTitle.title });
+            await this.trackDeferredTaskCreatedWork(async () => {
+              if (this.closing) return;
+              const currentTask = this.readTaskFromDb(id);
+              if (currentTask && !currentTask.title) {
+                // FN-5077: normalizeTitleForTaskId may return null for dangling fragments; only persist usable titles.
+                const normalizedTitle = normalizeTitleForTaskId(sanitizedTitle, id);
+                if (normalizedTitle.title && !this.closing) {
+                  await this.updateTask(id, { title: normalizedTitle.title });
+                }
               }
-            }
+            });
           }
         } catch (err) {
           const autoEnabled = resolvedSettings?.autoSummarizeTitles === true;
@@ -4422,22 +4443,26 @@ ${TASK_UPSERT_SQL_ASSIGNMENTS}
           );
         }
 
-        let latestTask = task;
-        try {
-          const refreshed = this.readTaskFromDb(id);
-          if (refreshed) latestTask = refreshed;
-        } catch {
-          // Best-effort refresh; fall back to original task snapshot.
-        }
+        await this.trackDeferredTaskCreatedWork(async () => {
+          if (this.closing) return;
+          let latestTask = task;
+          try {
+            const refreshed = this.readTaskFromDb(id);
+            if (refreshed) latestTask = refreshed;
+          } catch {
+            // Best-effort refresh; fall back to original task snapshot.
+          }
 
-        try {
-          await this.invokeTaskCreatedHook(latestTask);
-        } catch (err) {
-          storeLog.warn("Deferred task-created hook failed", {
-            taskId: id,
-            error: err instanceof Error ? err.message : String(err),
-          });
-        }
+          if (this.closing) return;
+          try {
+            await this.invokeTaskCreatedHook(latestTask);
+          } catch (err) {
+            storeLog.warn("Deferred task-created hook failed", {
+              taskId: id,
+              error: err instanceof Error ? err.message : String(err),
+            });
+          }
+        });
       }).catch((err) => {
         const autoEnabled = resolvedSettings?.autoSummarizeTitles === true;
         storeLog.error("Unexpected title summarization promise-chain failure", {
@@ -15671,7 +15696,11 @@ ${stepsSection}`;
    * Close the database connection and clean up resources.
    * Call this when the store is no longer needed (e.g., short-lived per-request stores).
    */
-  close(): void {
+  async close(): Promise<void> {
+    this.closing = true;
+    if (this.deferredTaskCreatedWork.size > 0) {
+      await Promise.allSettled([...this.deferredTaskCreatedWork]);
+    }
     this.stopWatching();
     // Flush any remaining buffered agent log entries before closing.
     // Wrap in try-catch because entries for already-deleted tasks will fail FK check.

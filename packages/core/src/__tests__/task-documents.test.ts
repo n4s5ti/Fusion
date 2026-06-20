@@ -1,5 +1,5 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { mkdtempSync } from "node:fs";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
+import { existsSync, mkdtempSync } from "node:fs";
 import { rm } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
@@ -32,7 +32,7 @@ describe("TaskStore task documents", () => {
 
   afterEach(async () => {
     try {
-      store.close();
+      await store.close();
     } catch {
       // ignore
     }
@@ -60,6 +60,39 @@ describe("TaskStore task documents", () => {
       )
       .get() as { name: string } | undefined;
     expect(index?.name).toBe("idxTaskDocumentsTaskKey");
+  });
+
+  it("does not let deferred title work recreate a removed fixture root after close", async () => {
+    /*
+    FNXC:CoreTests 2026-06-20-05:18:
+    FN-6790 rescued task-documents under the loaded core lane by proving TaskStore.close() closes the race between deferred task-created background work and per-test root removal. The test must keep soft-delete document assertions intact while guarding the shared teardown invariant that late title summarization cannot write task.json after close.
+    */
+    let releaseSummarize!: (title: string) => void;
+    const summarizeStarted = vi.fn();
+    const summarizeTitle = new Promise<string>((resolve) => {
+      releaseSummarize = resolve;
+    });
+
+    const task = await store.createTask(
+      { description: "a".repeat(201) },
+      {
+        onSummarize: vi.fn(async () => {
+          summarizeStarted();
+          return summarizeTitle;
+        }),
+        settings: { autoSummarizeTitles: true },
+      },
+    );
+
+    await vi.waitFor(() => expect(summarizeStarted).toHaveBeenCalled());
+    await store.close();
+    await rm(rootDir, { recursive: true, force: true });
+
+    releaseSummarize("Late title after close");
+    await sleep(10);
+
+    expect(existsSync(rootDir)).toBe(false);
+    expect(task.title).toBeUndefined();
   });
 
   it("creates a document with revision 1, default author, and optional metadata", async () => {

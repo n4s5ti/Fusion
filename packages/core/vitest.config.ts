@@ -39,6 +39,9 @@ const quarantinedCoreTests = [
 
   FNXC:CoreTests 2026-06-19-15:05:
   Merge verification for FN-6741 observed store-concurrent-writes fail again under the broad @fusion/core lane with SQLite BEGIN IMMEDIATE lock exhaustion. Re-quarantine that single suite-load lock flake in lockstep with the ledger; keep the other rescued core files loaded.
+
+  FNXC:CoreTests 2026-06-20-05:19:
+  FN-6790 found no task-documents quarantine half-state on HEAD and rescued the ENOENT-rename class by quiescing deferred task-created write/hook work on TaskStore.close(). Keep task-documents loaded; do not add a ledger/config exclude unless a new loaded run fails after this lifecycle seam is ruled out.
   */
   "src/__tests__/store-concurrent-writes.test.ts",
 ];
