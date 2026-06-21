@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { BUILTIN_CODING_WORKFLOW_IR } from "../builtin-coding-workflow-ir.js";
+import { BUILTIN_STEPWISE_CODING_WORKFLOW_IR } from "../builtin-stepwise-coding-workflow-ir.js";
 import { resolveWorkflowOptionalSteps } from "../workflow-optional-steps.js";
 import type { WorkflowIr, WorkflowIrV2 } from "../workflow-ir-types.js";
 
@@ -39,6 +40,35 @@ describe("resolveWorkflowOptionalSteps", () => {
         defaultOn: false,
       },
     ]);
+  });
+
+  it("resolves the builtin stepwise-coding browser verification optional step", () => {
+    expect(resolveWorkflowOptionalSteps(BUILTIN_STEPWISE_CODING_WORKFLOW_IR)).toEqual([
+      {
+        templateId: "browser-verification",
+        name: "Browser Verification",
+        description: "Verify web application functionality using browser automation",
+        icon: "globe",
+        phase: "pre-merge",
+        defaultOn: false,
+      },
+    ]);
+  });
+
+  it("places a single workflow-step seam node between steps and review in stepwise", () => {
+    const ir = BUILTIN_STEPWISE_CODING_WORKFLOW_IR;
+    if (ir.version !== "v2") throw new Error("expected v2");
+    const seamNodes = ir.nodes.filter(
+      (n) => n.kind === "prompt" && n.config?.seam === "workflow-step",
+    );
+    expect(seamNodes).toHaveLength(1);
+    // success path: steps -> workflow-step -> review
+    expect(ir.edges).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ from: "steps", to: "workflow-step", condition: "success" }),
+        expect.objectContaining({ from: "workflow-step", to: "review", condition: "success" }),
+      ]),
+    );
   });
 
   it("skips unknown template ids", () => {

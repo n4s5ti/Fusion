@@ -156,6 +156,7 @@ async function runStepwiseGraph(
     signal?: AbortSignal;
     onReset?: (active: ForeachActiveContext) => void;
     captureResetResult?: (ok: boolean, reason?: string) => void;
+    workflowStep?: WorkflowLegacySeams["workflowStep"];
   } = {},
 ): Promise<{ trajectory: TrajectoryEntry[]; outcome: string; result: Awaited<ReturnType<WorkflowGraphExecutor["run"]>> }> {
   const task = taskWithSteps(stepCount);
@@ -168,6 +169,7 @@ async function runStepwiseGraph(
     merge: async () => ({ outcome: "success" }),
     schedule: async () => ({ outcome: "success" }),
     execute: async () => ({ outcome: "success" }),
+    ...(opts.workflowStep ? { workflowStep: opts.workflowStep } : {}),
     stepExecute: async (_t, ctx) => {
       const active = ctx[FOREACH_ACTIVE_CONTEXT_KEY] as ForeachActiveContext;
       const result = await runTaskStep(
@@ -574,5 +576,46 @@ describe("stepwise workflow parity (U7 / KTD-9)", () => {
     expect(result.visitedNodeIds.some((id) => id.startsWith("steps#"))).toBe(false);
     // Merge ran (the task merges with no step work).
     expect(result.visitedNodeIds).toContain("merge");
+  });
+
+  // ── Pre-merge workflow-step seam (optional-step execution, R1) ─────────────
+
+  it("runs the pre-merge workflow-step seam exactly once after the foreach (enabled steps execute)", async () => {
+    // This is the dead-toggle guard: without a workflow-step seam node on the
+    // success path, a stepwise task's enabledWorkflowSteps (e.g. browser
+    // verification) would never run. Wire a workflowStep spy and assert the graph
+    // invokes it once, between the foreach and review.
+    let workflowStepCalls = 0;
+    const { outcome, result } = await runStepwiseGraph(
+      3,
+      [["APPROVE"], ["APPROVE"], ["APPROVE"]],
+      {
+        workflowStep: async () => {
+          workflowStepCalls++;
+          return { outcome: "success" };
+        },
+      },
+    );
+
+    expect(outcome).toBe("success");
+    // The seam ran ONCE post-foreach — not per step-instance (3 steps here).
+    expect(workflowStepCalls).toBe(1);
+    expect(result.visitedNodeIds).toContain("workflow-step");
+    // Ordering: all step instances complete before the workflow-step seam, which
+    // precedes review.
+    const seamIdx = result.visitedNodeIds.indexOf("workflow-step");
+    const reviewIdx = result.visitedNodeIds.indexOf("review");
+    const lastStepIdx = result.visitedNodeIds.map((id) => id.startsWith("steps#")).lastIndexOf(true);
+    expect(lastStepIdx).toBeLessThan(seamIdx);
+    expect(seamIdx).toBeLessThan(reviewIdx);
+  });
+
+  it("treats the workflow-step seam as a no-op pass-through when no steps are enabled", async () => {
+    // No workflowStep seam wired → the handler skips to success and routes to
+    // review, leaving the trajectory identical to the pre-seam behavior.
+    const { outcome, result } = await runStepwiseGraph(2, [["APPROVE"], ["APPROVE"]]);
+    expect(outcome).toBe("success");
+    expect(result.visitedNodeIds).toContain("workflow-step");
+    expect(result.visitedNodeIds).toContain("review");
   });
 });

@@ -16,6 +16,7 @@ import { LoadingSpinner } from "./LoadingSpinner";
 import { applyPresetToSelection } from "../utils/modelPresets";
 import { getScopedItem, removeScopedItem, setScopedItem } from "../utils/projectStorage";
 import { WorkflowSelector } from "./WorkflowSelector";
+import { WorkflowOptionalStepsDropdown } from "./WorkflowOptionalStepsDropdown";
 
 const ALLOWED_IMAGE_TYPES = ["image/png", "image/jpeg", "image/gif", "image/webp"];
 const STORAGE_KEY = "kb-inline-create-text";
@@ -1083,27 +1084,16 @@ export function InlineCreateCard({
                 className="inline-create-optional-steps"
                 aria-label={t("inline.optionalWorkflowSteps", "Optional workflow steps")}
               >
-                {optionalSteps.map((step) => {
-                  const enabled = enabledOptionalStepIds.includes(step.templateId);
-                  const testId = step.templateId === "browser-verification"
-                    ? "inline-create-browser-verification-toggle"
-                    : `inline-create-optional-step-${step.templateId}`;
-                  return (
-                    <button
-                      key={step.templateId}
-                      type="button"
-                      className="btn btn-sm inline-create-optional-step"
-                      data-testid={testId}
-                      aria-pressed={enabled}
-                      onClick={() => toggleOptionalStep(step.templateId)}
-                      title={t("inline.toggleOptionalWorkflowStep", "Toggle optional workflow step: {{name}}", { name: step.name })}
-                    >
-                      {enabled
-                        ? t("inline.optionalWorkflowStepChecked", "{{name}} ✓", { name: step.name })
-                        : step.name}
-                    </button>
-                  );
-                })}
+                {/* FNXC:TaskCreation 2026-06-21-00:00:
+                    Inline quick-add uses the shared optional-steps dropdown so it matches
+                    the modal/quick-add keyboard + a11y behavior and toggles the same
+                    enabledWorkflowSteps set submitted on create. */}
+                <WorkflowOptionalStepsDropdown
+                  steps={optionalSteps}
+                  enabledIds={enabledOptionalStepIds}
+                  onToggle={toggleOptionalStep}
+                  triggerTestId="inline-create-optional-steps-trigger"
+                />
               </div>
             )}
 
