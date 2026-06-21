@@ -87,7 +87,12 @@ const MODAL_SIZE_STORAGE_KEY = "kb-usage-modal-size";
 const PROVIDER_ORDER_KEY = "kb-usage-provider-order";
 const DESKTOP_POPOVER_GAP = 8;
 const DESKTOP_POPOVER_TOP_INSET = DESKTOP_POPOVER_GAP * 2;
-const DESKTOP_POPOVER_MAX_TOP_VIEWPORT_RATIO = 0.25;
+/**
+ * FNXC:UsageIndicator 2026-06-20-00:00:
+ * The usage popover must render near the top of the board across all viewport heights and anchor positions.
+ * Use a small absolute cap derived from the header inset instead of a viewport-height ratio so tall screens cannot push the surface far below the board header.
+ */
+const DESKTOP_POPOVER_NEAR_TOP_MAX = DESKTOP_POPOVER_TOP_INSET * 6;
 
 interface ModalSize {
   width: number;
@@ -898,13 +903,7 @@ export function UsageIndicator({ isOpen, onClose, projectId, anchorRect }: Usage
   const desktopTop = showDesktopPopover
     ? Math.max(
         DESKTOP_POPOVER_TOP_INSET,
-        Math.min(
-          (anchorRect?.bottom ?? 0) + DESKTOP_POPOVER_GAP,
-          Math.max(
-            DESKTOP_POPOVER_TOP_INSET,
-            window.innerHeight * DESKTOP_POPOVER_MAX_TOP_VIEWPORT_RATIO
-          )
-        )
+        Math.min((anchorRect?.bottom ?? 0) + DESKTOP_POPOVER_GAP, DESKTOP_POPOVER_NEAR_TOP_MAX)
       )
     : undefined;
   // Anchor popover so its right edge aligns with the anchor button's right edge,
