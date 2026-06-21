@@ -289,9 +289,12 @@ Keep it out of this exclude list so loaded API shards keep exercising cross-tab 
 
 FNXC:DashboardTestQuarantine 2026-06-19-16:50:
 FN-6743 rescued QuickEntryBox's third quarantine cycle by replacing the ref-gated post-submit focus effect with a resolved-submit focus trigger and broadening desktop/mobile submit coverage.
-Keep QuickEntryBox out of this exclude list so the dashboard app lanes exercise Enter, Save, duplicate-confirmed creation, mobile non-focus, and failure-preserves-draft focus invariants.
+Keep QuickEntryBox out of this list so the dashboard app lanes exercise Enter, Save, duplicate-confirmed creation, mobile non-focus, and failure-preserves-draft focus invariants.
+
+FNXC:DashboardTestQuarantine 2026-06-21-06:50:
+FN-6722 workspace verification observed dev-server-process time out only in the broad dashboard API backfill shard while the isolated file passed immediately. Quarantine the process/timer race under the deletion ratchet instead of widening waits or changing unrelated Command Center behavior.
 */
-const quarantinedDashboardTests: string[] = [];
+const quarantinedDashboardTests: string[] = ["src/__tests__/dev-server-process.test.ts"];
 
 const qualityApiTests = [
   // Critical HTTP/server behavior: auth, task/project/settings mutation,

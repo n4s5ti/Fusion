@@ -182,21 +182,52 @@ export function productivityAnalyticsToTable(
   return { header, rows };
 }
 
-/** GitHub issue analytics → CSV. Daily rows plus repo and summary rows. */
+/** GitHub issue analytics → CSV. Daily, repo, resolved detail, and summary rows. */
 export function githubIssueAnalyticsToTable(
   result: GithubIssueAnalytics,
 ): CsvTable {
-  const header = ["section", "key", "filed", "fixed", "net"];
+  const header = [
+    "section",
+    "key",
+    "filed",
+    "fixed",
+    "net",
+    "taskId",
+    "taskTitle",
+    "resolvedAt",
+    "resolvedAtExact",
+    "url",
+  ];
   const rows: CsvCell[][] = result.daily.map((d) => [
     "daily",
     d.date,
     d.filed,
     d.fixed,
     d.filed - d.fixed,
+    "",
+    "",
+    "",
+    "",
+    "",
   ]);
   for (const repo of result.byRepo) {
-    rows.push(["repo", repo.repo, repo.filed, repo.fixed, repo.filed - repo.fixed]);
+    rows.push(["repo", repo.repo, repo.filed, repo.fixed, repo.filed - repo.fixed, "", "", "", "", ""]);
   }
-  rows.push(["summary", "total", result.filed, result.fixed, result.net]);
+  for (const issue of result.resolved) {
+    const key = issue.issueNumber === null ? issue.repo : `${issue.repo}#${issue.issueNumber}`;
+    rows.push([
+      "resolved",
+      key,
+      "",
+      "",
+      "",
+      issue.taskId,
+      issue.taskTitle,
+      issue.resolvedAt,
+      issue.resolvedAtExact,
+      issue.url,
+    ]);
+  }
+  rows.push(["summary", "total", result.filed, result.fixed, result.net, "", "", "", "", ""]);
   return { header, rows };
 }

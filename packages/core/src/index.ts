@@ -600,6 +600,7 @@ export type {
   GithubIssueAnalyticsQuery,
   GithubIssueDailyPoint,
   GithubIssueRepoBreakdown,
+  GithubResolvedIssue,
 } from "./github-issue-analytics.js";
 export { aggregateSignalsAnalytics } from "./signals-analytics.js";
 export type {

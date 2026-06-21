@@ -31,29 +31,32 @@ function insertSourceIssueTask(
   id: string,
   opts: {
     provider: string;
-    repository: string;
+    repository: string | null;
     column: string;
     updatedAt: string;
     closedAt?: string | null;
-    issueNumber?: number;
+    issueNumber?: number | null;
+    url?: string | null;
+    title?: string | null;
   },
 ): void {
   db.prepare(
     `INSERT INTO tasks (
-       id, description, "column", createdAt, updatedAt,
+       id, title, description, "column", createdAt, updatedAt,
        sourceIssueProvider, sourceIssueRepository, sourceIssueExternalIssueId,
        sourceIssueNumber, sourceIssueUrl, sourceIssueClosedAt
-     ) VALUES (?, 'desc', ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+     ) VALUES (?, ?, 'desc', ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   ).run(
     id,
+    opts.title ?? null,
     opts.column,
     opts.updatedAt,
     opts.updatedAt,
     opts.provider,
     opts.repository,
     String(opts.issueNumber ?? 1),
-    opts.issueNumber ?? 1,
-    `https://example.test/${id}`,
+    opts.issueNumber === undefined ? 1 : opts.issueNumber,
+    opts.url === undefined ? `https://example.test/${id}` : opts.url,
     opts.closedAt ?? null,
   );
 }
@@ -149,6 +152,99 @@ describe("github-issue-analytics", () => {
       { repo: "acme/alpha", filed: 2, fixed: 1 },
       { repo: "acme/beta", filed: 1, fixed: 1 },
     ]);
+    expect(result.resolved).toHaveLength(result.fixed);
+  });
+
+  it("returns resolved issue details for in-range done GitHub source tasks", () => {
+    insertSourceIssueTask(db, "resolved-exact-later", {
+      provider: "github",
+      repository: "acme/alpha",
+      column: "done",
+      updatedAt: "2026-04-01T00:00:00.000Z",
+      closedAt: "2026-04-03T10:00:00.000Z",
+      issueNumber: 42,
+      url: "https://github.com/acme/alpha/issues/42",
+      title: "Fix alpha crash",
+    });
+    insertSourceIssueTask(db, "resolved-fallback", {
+      provider: "github",
+      repository: null,
+      column: "done",
+      updatedAt: "2026-04-02T10:00:00.000Z",
+      closedAt: null,
+      issueNumber: null,
+      url: null,
+      title: "Resolve historical import",
+    });
+    insertSourceIssueTask(db, "resolved-exact-tie", {
+      provider: "github",
+      repository: "acme/beta",
+      column: "done",
+      updatedAt: "2026-04-01T00:00:00.000Z",
+      closedAt: "2026-04-03T10:00:00.000Z",
+      issueNumber: 43,
+      url: "https://github.com/acme/beta/issues/43",
+      title: "Fix beta crash",
+    });
+    insertSourceIssueTask(db, "closed-out-of-range", {
+      provider: "github",
+      repository: "acme/old",
+      column: "done",
+      updatedAt: "2026-04-02T10:00:00.000Z",
+      closedAt: "2026-03-31T23:59:59.999Z",
+      issueNumber: 44,
+    });
+    insertSourceIssueTask(db, "not-done-source", {
+      provider: "github",
+      repository: "acme/alpha",
+      column: "todo",
+      updatedAt: "2026-04-03T10:00:00.000Z",
+      issueNumber: 45,
+    });
+    insertSourceIssueTask(db, "not-github-source", {
+      provider: "gitlab",
+      repository: "acme/alpha",
+      column: "done",
+      updatedAt: "2026-04-03T10:00:00.000Z",
+      issueNumber: 46,
+    });
+
+    const result = aggregateGithubIssueAnalytics(db, {
+      from: "2026-04-01T00:00:00.000Z",
+      to: "2026-04-03T23:59:59.999Z",
+    });
+
+    expect(result.fixed).toBe(3);
+    expect(result.resolved).toEqual([
+      {
+        taskId: "resolved-exact-later",
+        taskTitle: "Fix alpha crash",
+        repo: "acme/alpha",
+        issueNumber: 42,
+        url: "https://github.com/acme/alpha/issues/42",
+        resolvedAt: "2026-04-03T10:00:00.000Z",
+        resolvedAtExact: true,
+      },
+      {
+        taskId: "resolved-exact-tie",
+        taskTitle: "Fix beta crash",
+        repo: "acme/beta",
+        issueNumber: 43,
+        url: "https://github.com/acme/beta/issues/43",
+        resolvedAt: "2026-04-03T10:00:00.000Z",
+        resolvedAtExact: true,
+      },
+      {
+        taskId: "resolved-fallback",
+        taskTitle: "Resolve historical import",
+        repo: "(unknown)",
+        issueNumber: null,
+        url: null,
+        resolvedAt: "2026-04-02T10:00:00.000Z",
+        resolvedAtExact: false,
+      },
+    ]);
+    expect(result.resolved).toHaveLength(result.fixed);
   });
 
   it("treats range bounds as inclusive", () => {
@@ -248,6 +344,7 @@ describe("github-issue-analytics", () => {
       net: 0,
       daily: [],
       byRepo: [],
+      resolved: [],
     });
   });
 

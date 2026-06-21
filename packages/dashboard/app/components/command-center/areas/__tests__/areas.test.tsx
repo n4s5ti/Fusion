@@ -127,6 +127,7 @@ function githubFixture() {
       { repo: "acme/alpha", filed: 4, fixed: 1 },
       { repo: "acme/beta", filed: 1, fixed: 2 },
     ],
+    resolved: [],
   };
 }
 
@@ -1262,6 +1263,60 @@ describe("GithubArea", () => {
     const repoChart = screen.getByRole("list", { name: "By repository" });
     expect(within(repoChart).getByText("acme/alpha")).toBeTruthy();
     expect(within(repoChart).getByLabelText("acme/alpha: 4 filed / 1 fixed")).toBeTruthy();
+  });
+
+  it("renders resolved issues with safe outbound links and approximation labels", async () => {
+    apiMock.mockResolvedValue({
+      ...githubFixture(),
+      resolved: [
+        {
+          taskId: "FN-100",
+          taskTitle: "Fix alpha crash",
+          repo: "acme/alpha",
+          issueNumber: 123,
+          url: "https://github.com/acme/alpha/issues/123",
+          resolvedAt: "2026-06-10T12:34:56.000Z",
+          resolvedAtExact: true,
+        },
+        {
+          taskId: "FN-101",
+          taskTitle: "Patch unknown import",
+          repo: "(unknown)",
+          issueNumber: null,
+          url: null,
+          resolvedAt: "2026-06-09T08:00:00.000Z",
+          resolvedAtExact: false,
+        },
+      ],
+    });
+
+    render(<GithubArea range={range7d} />);
+
+    const section = await screen.findByTestId("cc-github-resolved");
+    expect(section.textContent).toContain("Resolved issues");
+    expect(section.textContent).toContain("acme/alpha#123");
+    expect(section.textContent).toContain("Fix alpha crash");
+    expect(section.textContent).toContain("FN-100");
+    expect(section.textContent).toContain("(unknown)");
+    expect(section.textContent).toContain("Patch unknown import");
+    expect(section.textContent).toContain("approx");
+    expect(section.textContent).toContain("2026");
+
+    const linkedIssue = within(section).getByRole("link", { name: "Open GitHub issue acme/alpha#123" });
+    expect(linkedIssue.getAttribute("href")).toBe("https://github.com/acme/alpha/issues/123");
+    expect(linkedIssue.getAttribute("target")).toBe("_blank");
+    expect(linkedIssue.getAttribute("rel")).toBe("noopener noreferrer");
+    expect(within(section).queryByRole("link", { name: /unknown/i })).toBeNull();
+  });
+
+  it("omits the resolved issues section for an empty resolved list", async () => {
+    apiMock.mockResolvedValue({ ...githubFixture(), resolved: [] });
+
+    render(<GithubArea range={range7d} />);
+
+    await screen.findByTestId("cc-area-github");
+    expect(screen.queryByTestId("cc-github-resolved")).toBeNull();
+    expect(screen.getByTestId("cc-area-github").textContent).not.toContain("NaN");
   });
 
   it("renders the empty state without empty chart shells", async () => {

@@ -141,17 +141,19 @@ function seedGithubIssueMetrics(db: Database, opts: { prefix: string; repo: stri
   for (let i = 0; i < opts.fixed; i += 1) {
     db.prepare(
       `INSERT INTO tasks (
-         id, description, "column", createdAt, updatedAt,
+         id, title, description, "column", createdAt, updatedAt,
          sourceIssueProvider, sourceIssueRepository, sourceIssueExternalIssueId,
-         sourceIssueNumber, sourceIssueUrl
-       ) VALUES (?, 'desc', 'done', '2026-03-03T00:00:00.000Z', '2026-03-03T00:00:00.000Z',
-                 'github', ?, ?, ?, ?)`,
+         sourceIssueNumber, sourceIssueUrl, sourceIssueClosedAt
+       ) VALUES (?, ?, 'desc', 'done', '2026-03-03T00:00:00.000Z', '2026-03-03T00:00:00.000Z',
+                 'github', ?, ?, ?, ?, ?)`,
     ).run(
       `${opts.prefix}-fixed-${i}`,
+      `Resolve ${opts.repo}#${i + 100}`,
       opts.repo,
       String(i + 100),
       i + 100,
       `https://github.com/${opts.repo}/issues/${i + 100}`,
+      "2026-03-03T12:00:00.000Z",
     );
   }
 }
@@ -333,6 +335,18 @@ describe("register-command-center-routes", () => {
     expect(github.body).toMatchObject({ filed: 2, fixed: 1, net: 1 });
     expect(github.body).toHaveProperty("daily");
     expect(github.body).toHaveProperty("byRepo");
+    expect(github.body).toHaveProperty("resolved");
+    expect((github.body as { resolved: unknown[] }).resolved).toEqual([
+      {
+        taskId: "FN-A-fixed-0",
+        taskTitle: "Resolve acme/alpha#100",
+        repo: "acme/alpha",
+        issueNumber: 100,
+        url: "https://github.com/acme/alpha/issues/100",
+        resolvedAt: "2026-03-03T12:00:00.000Z",
+        resolvedAtExact: true,
+      },
+    ]);
 
     seedSignalMetrics(dbA, { prefix: "SIG-A", source: "sentry", open: 1, resolved: 1 });
     const signals = await request(app, "GET", `/api/command-center/signals?${range}&projectId=proj-a`);
@@ -463,12 +477,24 @@ describe("register-command-center-routes", () => {
     expect(invalid.body).toHaveProperty("fixed");
     expect(invalid.body).toHaveProperty("daily");
     expect(invalid.body).toHaveProperty("byRepo");
+    expect(invalid.body).toHaveProperty("resolved");
 
     const range = "from=2026-02-01T00:00:00.000Z&to=2026-04-01T00:00:00.000Z";
     const a = await request(app, "GET", `/api/command-center/github?${range}&projectId=proj-a`);
     const b = await request(app, "GET", `/api/command-center/github?${range}&projectId=proj-b`);
     expect(a.body).toMatchObject({ filed: 2, fixed: 1 });
     expect(b.body).toMatchObject({ filed: 5, fixed: 4 });
+    expect((a.body as { resolved: Array<{ repo: string; taskId: string }> }).resolved).toHaveLength(1);
+    expect((a.body as { resolved: Array<{ repo: string; taskId: string }> }).resolved[0]).toMatchObject({
+      repo: "acme/alpha",
+      taskId: "FN-A-fixed-0",
+    });
+    expect((a.body as { resolved: Array<{ repo: string }> }).resolved).not.toContainEqual(expect.objectContaining({ repo: "acme/beta" }));
+    expect((b.body as { resolved: Array<{ repo: string; taskId: string }> }).resolved).toHaveLength(4);
+    expect((b.body as { resolved: Array<{ repo: string; taskId: string }> }).resolved[0]).toMatchObject({
+      repo: "acme/beta",
+      taskId: "FN-B-fixed-0",
+    });
   });
 
   it("?format=csv returns well-formed CSV with attachment header", async () => {
@@ -506,6 +532,33 @@ describe("register-command-center-routes", () => {
     expect(lines[0]).toContain("totalTokens");
     expect(lines[1]).toContain("(total)");
     expect(lines[1]).toContain(",0,");
+  });
+
+  it("?format=csv includes GitHub resolved issue detail rows", async () => {
+    seedGithubIssueMetrics(dbA, { prefix: "FN-A", repo: "acme/alpha", filed: 1, fixed: 1 });
+    seedGithubIssueMetrics(dbB, { prefix: "FN-B", repo: "acme/beta", filed: 1, fixed: 1 });
+    const range = "from=2026-02-01T00:00:00.000Z&to=2026-04-01T00:00:00.000Z";
+
+    const a = await request(
+      app,
+      "GET",
+      `/api/command-center/github?${range}&projectId=proj-a&format=csv`,
+    );
+    const b = await request(
+      app,
+      "GET",
+      `/api/command-center/github?${range}&projectId=proj-b&format=csv`,
+    );
+
+    expect(a.status).toBe(200);
+    expect(a.headers["content-disposition"]).toBe(
+      'attachment; filename="command-center-github.csv"',
+    );
+    expect(a.body as string).toContain("section,key,filed,fixed,net,taskId,taskTitle,resolvedAt,resolvedAtExact,url");
+    expect(a.body as string).toContain("resolved,acme/alpha#100,,,,FN-A-fixed-0,Resolve acme/alpha#100,2026-03-03T12:00:00.000Z,true,https://github.com/acme/alpha/issues/100");
+    expect(a.body as string).not.toContain("acme/beta#100");
+    expect(b.body as string).toContain("resolved,acme/beta#100,,,,FN-B-fixed-0");
+    expect(b.body as string).not.toContain("acme/alpha#100");
   });
 
   it("?format=csv RFC-4180 quotes values with commas/quotes/newlines", async () => {

@@ -3,6 +3,9 @@ import type { Database } from "./db.js";
 /**
  * FNXC:CommandCenterGithub 2026-06-18-00:00:
  * Command Center GitHub issue analytics must derive filed/fixed counts only from the project-scoped local task store. "Filed" means a task has `githubTracking.issue`; "fixed" means an imported GitHub source issue task is currently in the `done` column. Fixed trends use the exact persisted `sourceIssueClosedAt` when available, fall back to the `updatedAt` completion approximation only when it is absent, and never fabricate a close date.
+ *
+ * FNXC:CommandCenterGithub 2026-06-21-00:00:
+ * Resolved issue details expose one local task-store row for every in-range fixed GitHub source issue so the Command Center can show which source issues were completed. `resolvedAtExact` is true only when the persisted `sourceIssueClosedAt` provided the timestamp; false means the row used the same `updatedAt` approximation as the fixed aggregate.
  */
 
 export interface GithubIssueAnalyticsQuery {
@@ -28,6 +31,23 @@ export interface GithubIssueRepoBreakdown {
   fixed: number;
 }
 
+export interface GithubResolvedIssue {
+  /** Fusion task that resolved the imported GitHub source issue. */
+  taskId: string;
+  /** Fusion task title at aggregation time. */
+  taskTitle: string;
+  /** Repository key, usually `owner/repo`; `(unknown)` when historical data lacks it. */
+  repo: string;
+  /** GitHub issue number when the imported source issue stored one. */
+  issueNumber: number | null;
+  /** Source GitHub issue URL when available. */
+  url: string | null;
+  /** ISO timestamp used for range filtering and ordering. */
+  resolvedAt: string;
+  /** True when `sourceIssueClosedAt` supplied `resolvedAt`; false when `updatedAt` was used. */
+  resolvedAtExact: boolean;
+}
+
 export interface GithubIssueAnalytics {
   from: string | null;
   to: string | null;
@@ -41,6 +61,8 @@ export interface GithubIssueAnalytics {
   daily: GithubIssueDailyPoint[];
   /** Filed/fixed counts grouped by repository, descending by total activity. */
   byRepo: GithubIssueRepoBreakdown[];
+  /** Imported GitHub source issues completed in range, most-recently resolved first. */
+  resolved: GithubResolvedIssue[];
 }
 
 interface GithubTrackingRow {
@@ -48,7 +70,11 @@ interface GithubTrackingRow {
 }
 
 interface FixedIssueRow {
+  id: string;
+  title: string | null;
   sourceIssueRepository: string | null;
+  sourceIssueNumber: number | null;
+  sourceIssueUrl: string | null;
   sourceIssueClosedAt: string | null;
   updatedAt: string | null;
 }
@@ -153,12 +179,14 @@ export function aggregateGithubIssueAnalytics(
 
   const fixedRows = db
     .prepare(
-      `SELECT sourceIssueRepository, sourceIssueClosedAt, updatedAt FROM tasks WHERE sourceIssueProvider = 'github' AND "column" = 'done'`,
+      `SELECT id, title, sourceIssueRepository, sourceIssueNumber, sourceIssueUrl, sourceIssueClosedAt, updatedAt FROM tasks WHERE sourceIssueProvider = 'github' AND "column" = 'done'`,
     )
     .all() as FixedIssueRow[];
 
   let fixed = 0;
+  const resolved: GithubResolvedIssue[] = [];
   for (const row of fixedRows) {
+    const hasExactResolvedAt = row.sourceIssueClosedAt !== null;
     const fixedDate = row.sourceIssueClosedAt ?? row.updatedAt;
     if (fixedDate === null || !isInRange(fixedDate, query)) continue;
 
@@ -167,7 +195,21 @@ export function aggregateGithubIssueAnalytics(
     addRepo(byRepo, repo, "fixed");
     const day = dayKey(fixedDate);
     if (day !== null) addDaily(daily, day, "fixed");
+    resolved.push({
+      taskId: row.id,
+      taskTitle: row.title ?? "",
+      repo,
+      issueNumber: typeof row.sourceIssueNumber === "number" ? row.sourceIssueNumber : null,
+      url: row.sourceIssueUrl?.trim() || null,
+      resolvedAt: fixedDate,
+      resolvedAtExact: hasExactResolvedAt,
+    });
   }
+
+  resolved.sort((a, b) => {
+    const byDate = Date.parse(b.resolvedAt) - Date.parse(a.resolvedAt);
+    return byDate !== 0 ? byDate : a.taskId.localeCompare(b.taskId);
+  });
 
   return {
     from: query.from ?? null,
@@ -184,5 +226,6 @@ export function aggregateGithubIssueAnalytics(
         const total = b.filed + b.fixed - (a.filed + a.fixed);
         return total !== 0 ? total : a.repo.localeCompare(b.repo);
       }),
+    resolved,
   };
 }

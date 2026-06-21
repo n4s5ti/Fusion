@@ -189,7 +189,7 @@ function populatedSignalsFixture() {
 }
 
 function emptyGithubFixture() {
-  return { filed: 0, fixed: 0, net: 0, daily: [], byRepo: [] };
+  return { filed: 0, fixed: 0, net: 0, daily: [], byRepo: [], resolved: [] };
 }
 
 function emptyTeamFixture() {
@@ -268,7 +268,7 @@ function mockOverviewApi({ populated = false }: { populated?: boolean } = {}) {
     if (path.startsWith("/command-center/tools")) return Promise.resolve(populated ? populatedToolsFixture() : emptyToolsFixture());
     if (path.startsWith("/command-center/activity")) return Promise.resolve(populated ? populatedActivityFixture() : emptyActivityFixture());
     if (path.startsWith("/command-center/productivity")) return Promise.resolve(populated ? populatedProductivityFixture() : emptyProductivityFixture());
-    if (path.startsWith("/command-center/github")) return Promise.resolve(populated ? { filed: 3, fixed: 1, net: 2, daily: [{ date: "2026-06-18", filed: 3, fixed: 1 }], byRepo: [{ repo: "acme/repo", filed: 3, fixed: 1 }] } : emptyGithubFixture());
+    if (path.startsWith("/command-center/github")) return Promise.resolve(populated ? { filed: 3, fixed: 1, net: 2, daily: [{ date: "2026-06-18", filed: 3, fixed: 1 }], byRepo: [{ repo: "acme/repo", filed: 3, fixed: 1 }], resolved: [{ taskId: "FN-100", taskTitle: "Fix mobile crash", repo: "acme/repo", issueNumber: 1, url: "https://github.com/acme/repo/issues/1", resolvedAt: "2026-06-18T10:00:00.000Z", resolvedAtExact: true }] } : emptyGithubFixture());
     if (path.startsWith("/command-center/team")) return Promise.resolve(populated ? populatedTeamFixture() : emptyTeamFixture());
     if (path.startsWith("/command-center/signals")) return Promise.resolve(populated ? populatedSignalsFixture() : { totalSignals: 0, open: 0, resolved: 0, mttr: { value: null, unavailable: true }, bySource: [], bySeverity: [] });
     if (path === "/system-stats") return Promise.resolve(systemStatsFixture());

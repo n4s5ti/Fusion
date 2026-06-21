@@ -147,6 +147,7 @@ function githubFixture(filed = 0, fixed = 0) {
     net: filed - fixed,
     daily: filed || fixed ? [{ date: "2026-06-08", filed, fixed }] : [],
     byRepo: filed || fixed ? [{ repo: "acme/alpha", filed, fixed }] : [],
+    resolved: [],
   };
 }
 
