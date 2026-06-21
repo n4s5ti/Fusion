@@ -4,14 +4,15 @@ date: "2026-06-21"
 category: integration-issues
 module: "packages/engine project-engine-manager + packages/dashboard server health"
 problem_type: integration_issue
-component: engine_runtime
+component: tooling
 symptoms:
   - "Dashboard shows a persistent 'engine not running' banner even though an engine is running"
   - "Logs repeat 'Refusing to start engine for <projectId>: Another engine is already running...' every 30s reconciliation tick"
   - "Reconciliation tries to start engines for N projects, then errors because each is already running"
-root_cause: incorrect_state_derivation
+root_cause: logic_error
 resolution_type: code_fix
 severity: medium
+last_updated: "2026-06-21"
 related_components:
   - engine
   - dashboard
@@ -24,6 +25,7 @@ tags:
   - regression
 related_prs:
   - "https://github.com/Runfusion/Fusion/pull/1704"
+  - "https://github.com/Runfusion/Fusion/pull/1699"
 ---
 
 ## Problem
@@ -40,10 +42,11 @@ Starting a second fusion process (e.g. `pnpm dev dashboard --no-auth` while an i
 
 - Looking only at the dashboard frontend / banner component — the banner faithfully renders `dashboardHealth.engine.available === false`; the wrong value comes from the server.
 - Treating it as a warm-up race (engines still starting in the background). The banner is *permanent*, not transient: reconciliation retries forever and keeps refusing, because the lock is held by a **different process** that never exits.
+- **Tempting wrong fix: make `reconcile()`/`has()` treat external engines as "owned" so it stops retrying.** This would silence the logs but break failover — the process would never re-attempt and never adopt the socket when the holder dies. `has()` (this-process-owns) and `hasRunningEngine()` (machine-level truth) must stay *separate*: reconciliation keys off `has()` and keeps retrying; the banner keys off `hasRunningEngine()`.
 
 ## Root Cause
 
-The engine uses a **per-machine singleton lock** (`packages/engine/src/engine-singleton-lock.ts`): a lockfile under `<workingDir>/.fusion/engine.lock` plus a loopback socket `fusion-engine-<sha1(projectId)>.sock`. Only one fusion process may own the engine for a given project. When a second process launches, `acquireEngineSingleton` correctly throws `EngineAlreadyRunningError` — **positive proof an engine is live** for that project.
+The engine uses a **per-machine singleton lock** (`packages/engine/src/engine-singleton-lock.ts`): a lockfile under `<workingDir>/.fusion/engine.lock` plus a loopback socket `fusion-engine-<sha1(projectId)[:16]>.sock` (the hash is the first 16 hex chars of the sha1, not the full digest). Only one fusion process may own the engine for a given project. When a second process launches, `acquireEngineSingleton` correctly throws `EngineAlreadyRunningError` — **positive proof an engine is live** for that project.
 
 But that proof was discarded. In `ProjectEngineManager.createAndStart` the catch logged "Refusing to start" and rethrew **without recording that an engine exists**. The dashboard's health check `hasDashboardEngine` (`packages/dashboard/src/server.ts`) then only counted engines *this* process owns:
 
@@ -80,9 +83,13 @@ if (err instanceof EngineAlreadyRunningError) {
 }
 throw err;
 
-// on successful (own) start: this.externalEngines.delete(projectId);
+// after acquiring the lock (BEFORE engine.start()): this.externalEngines.delete(projectId);
+//   — acquiring proves no other process owns it; clearing here (not after a
+//     successful start()) avoids a phantom entry if start() then throws.
 // in stopAll(): this.externalEngines.clear();
 ```
+
+The outer fire-and-forget catches that drive startup — `reconcile()`, `startAll()`, and `onProjectAccessed()` — early-return on `EngineAlreadyRunningError` so they don't re-log `Failed to start engine…` on every 30s tick (`createAndStart` already logged it once). Only genuinely unexpected errors warn.
 
 ```ts
 // dashboard server.ts — consult machine-level truth, fall back for old managers/test doubles
@@ -105,9 +112,10 @@ Reconciliation deliberately keeps retrying (it does NOT treat external engines a
 ## Prevention
 
 - **Treat lock-acquisition failure as evidence, not an error to swallow.** A failed mutual-exclusion acquire (lock/socket/PID) usually proves the guarded resource *is* alive elsewhere — don't let downstream "is it running?" checks read process-local state instead of the lock's machine-level truth.
+- **Keep `has()` and `hasRunningEngine()` semantically distinct.** `has()` = "this process owns/ is starting it" (drives retry/reconcile); `hasRunningEngine()` = "an engine is live on this machine, owned by anyone" (drives the banner). Merging them would silently kill failover *and* still pass the banner test, so a regression would be invisible.
 - Tests added (had zero prior coverage — they assumed the manager always owns what it starts):
-  - `packages/engine/src/__tests__/project-engine-manager.test.ts`: reports a running engine when the lock is held elsewhere; logs the refusal once across repeated attempts; takes over and clears the marker once the lock frees.
-  - `packages/dashboard/src/__tests__/server.test.ts`: `/api/health` reports `available: true` when another process owns the engine.
+  - `packages/engine/src/__tests__/project-engine-manager.test.ts`: reports a running engine when the lock is held elsewhere; logs the refusal once across repeated attempts; stays quiet across reconciliation ticks (no repeated `Failed to start…`); takes over and clears the marker once the lock frees; clears the marker even if the takeover `start()` throws.
+  - `packages/dashboard/src/__tests__/server.test.ts`: `/api/health` reports `available: true` when another process owns the engine; legacy fallback to `getAllEngines()` when `hasRunningEngine` is absent.
 
 ### Operational gotcha
 
@@ -117,3 +125,7 @@ Reconciliation deliberately keeps retrying (it does NOT treat external engines a
 lsof "$TMPDIR"/fusion-engine-*.sock   # PID owning the engine locks
 kill <pid>                            # releases the locks; reconciliation in any waiting process takes over
 ```
+
+## See also
+
+- [`developer-experience/browser-testing-dashboard-from-worktree-safely.md`](../developer-experience/browser-testing-dashboard-from-worktree-safely.md) — running a second dashboard process safely (dual-engine / shared-DB hazard). Its "a dev dashboard is engine-disabled" framing predates `start engines by default` (#1699); post-#1699/#1704 a second dashboard *does* attempt startup and reports machine-level availability, so prefer the machine-vs-process ownership model described here.
