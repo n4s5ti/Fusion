@@ -13,6 +13,7 @@ export interface HydrateWorktreeDbParams {
 export interface HydrateWorktreeDbResult {
   tasksCopied: number;
   documentsCopied: number;
+  artifactsCopied: number;
   degraded: boolean;
   reason?: string;
 }
@@ -24,7 +25,7 @@ function getDbPath(projectDir: string): string {
   return join(projectDir, ".fusion", "fusion.db");
 }
 
-function getColumns(db: DatabaseSync, table: "tasks" | "task_documents"): string[] {
+function getColumns(db: DatabaseSync, table: "tasks" | "task_documents" | "artifacts"): string[] {
   const rows = db.prepare(`PRAGMA table_info('${table}')`).all() as Array<{ name?: string }>;
   return rows.map((row) => row.name).filter((name): name is string => typeof name === "string" && name.length > 0);
 }
@@ -89,7 +90,7 @@ export async function hydrateWorktreeDb({
   logger,
 }: HydrateWorktreeDbParams): Promise<HydrateWorktreeDbResult> {
   if (rootDir === worktreePath) {
-    return { tasksCopied: 0, documentsCopied: 0, degraded: false, reason: "root_worktree" };
+    return { tasksCopied: 0, documentsCopied: 0, artifactsCopied: 0, degraded: false, reason: "root_worktree" };
   }
 
   let srcDb: DatabaseSync | undefined;
@@ -98,14 +99,14 @@ export async function hydrateWorktreeDb({
   try {
     const ids = await resolveDependencyIds(taskId, store);
     if (ids.length === 0) {
-      return { tasksCopied: 0, documentsCopied: 0, degraded: false, reason: "no_ids" };
+      return { tasksCopied: 0, documentsCopied: 0, artifactsCopied: 0, degraded: false, reason: "no_ids" };
     }
 
     const srcDbPath = getDbPath(rootDir);
     const dstDbPath = getDbPath(worktreePath);
 
     if (!existsSync(srcDbPath)) {
-      return { tasksCopied: 0, documentsCopied: 0, degraded: true, reason: "source_db_missing" };
+      return { tasksCopied: 0, documentsCopied: 0, artifactsCopied: 0, degraded: true, reason: "source_db_missing" };
     }
 
     if (!existsSync(dstDbPath)) {
@@ -123,15 +124,27 @@ export async function hydrateWorktreeDb({
     const dstTaskCols = getColumns(dstDb, "tasks");
     const srcDocCols = getColumns(srcDb, "task_documents");
     const dstDocCols = getColumns(dstDb, "task_documents");
+    const srcArtifactCols = getColumns(srcDb, "artifacts");
+    const dstArtifactCols = getColumns(dstDb, "artifacts");
 
     const { shared: taskColumns, dropped: droppedTaskColumns } = intersectColumns(srcTaskCols, dstTaskCols);
     const { shared: docColumns, dropped: droppedDocColumns } = intersectColumns(srcDocCols, dstDocCols);
+    const canHydrateArtifacts = srcArtifactCols.length > 0 && dstArtifactCols.length > 0;
+    const { shared: artifactColumns, dropped: droppedArtifactColumns } = canHydrateArtifacts
+      ? intersectColumns(srcArtifactCols, dstArtifactCols)
+      : { shared: [], dropped: [] };
 
     if (taskColumns.length === 0 || docColumns.length === 0) {
       throw new Error("schema intersection empty");
     }
 
-    const dropped = [...droppedTaskColumns.map((c) => `tasks.${c}`), ...droppedDocColumns.map((c) => `task_documents.${c}`)];
+    // FNXC:ArtifactRegistry 2026-06-19-22:04:
+    // Artifacts are additive in schema 126, so rolling-upgrade worktree DBs that predate the table must keep hydrating tasks/documents and simply report zero copied artifacts.
+    const dropped = [
+      ...droppedTaskColumns.map((c) => `tasks.${c}`),
+      ...droppedDocColumns.map((c) => `task_documents.${c}`),
+      ...droppedArtifactColumns.map((c) => `artifacts.${c}`),
+    ];
     if (dropped.length > 0) {
       logger.warn(`Worktree DB hydration dropped columns for ${taskId}: ${dropped.join(", ")}`);
     }
@@ -139,8 +152,10 @@ export async function hydrateWorktreeDb({
     const placeholders = ids.map(() => "?").join(", ");
     const taskColumnList = taskColumns.join(", ");
     const docColumnList = docColumns.join(", ");
+    const artifactColumnList = artifactColumns.join(", ");
     const taskValuePlaceholders = taskColumns.map(() => "?").join(", ");
     const docValuePlaceholders = docColumns.map(() => "?").join(", ");
+    const artifactValuePlaceholders = artifactColumns.map(() => "?").join(", ");
 
     // FN-5105: hydrateWorktreeDb is a live-reader path, so soft-deleted tasks must be excluded.
     // Only ID allocators/integrity scans are allowed to read deleted rows.
@@ -163,12 +178,24 @@ export async function hydrateWorktreeDb({
             .all(...hydratedTaskIds) as Array<Record<string, unknown>>)
         : [];
 
+    // FNXC:ArtifactRegistry 2026-06-19-22:04:
+    // Worktree DB hydration carries task-scoped artifact metadata alongside task_documents so executor worktrees can query agent evidence. Registry-level artifacts with null taskId are intentionally excluded because dependency hydration is scoped to the active task graph.
+    const artifactRows =
+      canHydrateArtifacts && hydratedTaskIds.length > 0
+        ? (srcDb
+            .prepare(`SELECT ${artifactColumnList} FROM artifacts WHERE taskId IN (${hydratedTaskIds.map(() => "?").join(", ")})`)
+            .all(...hydratedTaskIds) as Array<Record<string, unknown>>)
+        : [];
+
     const insertTask = dstDb.prepare(
       `INSERT OR REPLACE INTO tasks (${taskColumnList}) VALUES (${taskValuePlaceholders})`,
     );
     const insertDocument = dstDb.prepare(
       `INSERT OR REPLACE INTO task_documents (${docColumnList}) VALUES (${docValuePlaceholders})`,
     );
+    const insertArtifact = canHydrateArtifacts
+      ? dstDb.prepare(`INSERT OR REPLACE INTO artifacts (${artifactColumnList}) VALUES (${artifactValuePlaceholders})`)
+      : undefined;
 
     dstDb.exec("BEGIN IMMEDIATE");
     try {
@@ -177,6 +204,9 @@ export async function hydrateWorktreeDb({
       }
       for (const row of documentRows) {
         insertDocument.run(...docColumns.map((column) => row[column]));
+      }
+      for (const row of artifactRows) {
+        insertArtifact?.run(...artifactColumns.map((column) => row[column]));
       }
       dstDb.exec("COMMIT");
     } catch (error) {
@@ -187,6 +217,7 @@ export async function hydrateWorktreeDb({
     return {
       tasksCopied: taskRows.length,
       documentsCopied: documentRows.length,
+      artifactsCopied: artifactRows.length,
       degraded: false,
     };
   } catch (error) {
@@ -195,6 +226,7 @@ export async function hydrateWorktreeDb({
     return {
       tasksCopied: 0,
       documentsCopied: 0,
+      artifactsCopied: 0,
       degraded: true,
       reason,
     };

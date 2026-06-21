@@ -162,7 +162,7 @@ export function isFts5CorruptionError(error: unknown): boolean {
 
 // ── Schema Definition ────────────────────────────────────────────────
 
-const SCHEMA_VERSION = 126;
+const SCHEMA_VERSION = 127;
 
 const TASKS_FTS_AUTOMERGE = 8;
 const TASKS_FTS_CRISISMERGE = 16;
@@ -697,6 +697,31 @@ CREATE TABLE IF NOT EXISTS task_documents (
 );
 CREATE UNIQUE INDEX IF NOT EXISTS idxTaskDocumentsTaskKey ON task_documents(taskId, key);
 CREATE INDEX IF NOT EXISTS idxTaskDocumentsTaskId ON task_documents(taskId);
+
+-- Artifact registry metadata for inline text and on-disk media artifacts.
+-- FNXC:ArtifactRegistry 2026-06-19-22:04:
+-- Agents register multi-type artifacts that are queryable across agents and tasks. SQLite stores metadata plus optional inline text only; binary media lives on disk under an artifacts/ directory and is referenced by a relative uri.
+CREATE TABLE IF NOT EXISTS artifacts (
+  id TEXT PRIMARY KEY,
+  type TEXT NOT NULL,
+  title TEXT NOT NULL,
+  description TEXT,
+  mimeType TEXT,
+  sizeBytes INTEGER,
+  uri TEXT,
+  content TEXT,
+  authorId TEXT NOT NULL,
+  authorType TEXT NOT NULL DEFAULT 'agent',
+  taskId TEXT,
+  metadata TEXT,
+  createdAt TEXT NOT NULL,
+  updatedAt TEXT NOT NULL,
+  FOREIGN KEY (taskId) REFERENCES tasks(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idxArtifactsTaskId ON artifacts(taskId);
+CREATE INDEX IF NOT EXISTS idxArtifactsAuthorId ON artifacts(authorId);
+CREATE INDEX IF NOT EXISTS idxArtifactsType ON artifacts(type);
+CREATE INDEX IF NOT EXISTS idxArtifactsCreatedAt ON artifacts(createdAt);
 
 -- Task document revision history (shadow table for archived snapshots)
 CREATE TABLE IF NOT EXISTS task_document_revisions (
@@ -5195,6 +5220,38 @@ export class Database {
         if (this.hasTable("mission_contract_assertions")) {
           this.addColumnIfMissing("mission_contract_assertions", "type", "TEXT NOT NULL DEFAULT 'static'");
         }
+      });
+    }
+
+    // Migration 127: Artifact registry metadata for inline text and on-disk media.
+    // Mirrors the SCHEMA_SQL definition above so fresh-init and migrated DBs converge.
+    // FNXC:ArtifactRegistry 2026-06-19-22:04:
+    // Agents need queryable cross-task artifact evidence; binary bytes stay out of SQLite and are referenced by relative uri rows.
+    if (version < 127) {
+      this.applyMigration(127, () => {
+        this.db.exec(`
+          CREATE TABLE IF NOT EXISTS artifacts (
+            id TEXT PRIMARY KEY,
+            type TEXT NOT NULL,
+            title TEXT NOT NULL,
+            description TEXT,
+            mimeType TEXT,
+            sizeBytes INTEGER,
+            uri TEXT,
+            content TEXT,
+            authorId TEXT NOT NULL,
+            authorType TEXT NOT NULL DEFAULT 'agent',
+            taskId TEXT,
+            metadata TEXT,
+            createdAt TEXT NOT NULL,
+            updatedAt TEXT NOT NULL,
+            FOREIGN KEY (taskId) REFERENCES tasks(id) ON DELETE CASCADE
+          );
+          CREATE INDEX IF NOT EXISTS idxArtifactsTaskId ON artifacts(taskId);
+          CREATE INDEX IF NOT EXISTS idxArtifactsAuthorId ON artifacts(authorId);
+          CREATE INDEX IF NOT EXISTS idxArtifactsType ON artifacts(type);
+          CREATE INDEX IF NOT EXISTS idxArtifactsCreatedAt ON artifacts(createdAt);
+        `);
       });
     }
 

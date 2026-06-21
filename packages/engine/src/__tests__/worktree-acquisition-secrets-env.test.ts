@@ -16,7 +16,7 @@ vi.mock("../worktree-pool.js", async () => {
 });
 
 vi.mock("../worktree-db-hydrate.js", () => ({
-  hydrateWorktreeDb: vi.fn().mockResolvedValue({ degraded: false, tasksCopied: 0, documentsCopied: 0 }),
+  hydrateWorktreeDb: vi.fn().mockResolvedValue({ degraded: false, tasksCopied: 0, documentsCopied: 0, artifactsCopied: 0 }),
 }));
 
 import { acquireTaskWorktree } from "../worktree-acquisition.js";

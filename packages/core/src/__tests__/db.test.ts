@@ -289,6 +289,7 @@ describe("Database", () => {
       expect(tableNames).toContain("agentRatings");
       expect(tableNames).toContain("task_documents");
       expect(tableNames).toContain("task_document_revisions");
+      expect(tableNames).toContain("artifacts");
       // Roadmap tables are plugin-owned (FN-3159) and initialized via plugin schema hooks.
       // Verification cache (migration 61)
       expect(tableNames).toContain("verification_cache");
@@ -329,6 +330,10 @@ describe("Database", () => {
       expect(indexNames).toContain("idxTaskDocumentsTaskKey");
       expect(indexNames).toContain("idxTaskDocumentsTaskId");
       expect(indexNames).toContain("idxTaskDocumentRevisionsTaskKey");
+      expect(indexNames).toContain("idxArtifactsTaskId");
+      expect(indexNames).toContain("idxArtifactsAuthorId");
+      expect(indexNames).toContain("idxArtifactsType");
+      expect(indexNames).toContain("idxArtifactsCreatedAt");
       expect(indexNames).toContain("idxAgentRunsAgentIdStartedAt");
       expect(indexNames).toContain("idxAgentRunsStatus");
       // agentLogEntries indexes removed in migration 102 — now stored in per-task JSONL files

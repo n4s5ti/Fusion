@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import { mkdir, readdir, readFile, stat, writeFile, rename, unlink } from "node:fs/promises";
 import { join } from "node:path";
 import { existsSync, watch, type Dirent, type FSWatcher } from "node:fs";
-import type { Task, TaskDetail, TaskCreateInput, TaskAttachment, AgentLogEntry, BoardConfig, Column, ColumnId, CheckoutClaimPrecondition, MergeResult, Settings, GlobalSettings, ProjectSettings, ActivityLogEntry, ActivityEventType, TaskDocument, TaskDocumentRevision, TaskDocumentCreateInput, TaskDocumentWithTask, InboxTask, TaskLogEntry, RunMutationContext, RunAuditEvent, RunAuditEventInput, RunAuditEventFilter, ArchivedTaskEntry, ArchiveAgentLogMode, TaskPriority, SourceType, WorkflowStepTemplate, Agent, AutostashOrphanRecord, TaskCommitAssociation, TaskCommitAssociationMatchSource, TaskCommitAssociationConfidence, GithubIssueAction, MergeQueueEntry, MergeQueueEnqueueOptions, MergeQueueAcquireOptions, MergeQueueReleaseOutcome, HandoffToReviewOptions, GoalCitation, GoalCitationFilter, GoalCitationInput, GoalCitationSurface, BranchGroup, BranchGroupCreateInput, BranchGroupUpdate, TaskBranchAssignmentMode, MergeRequestRecord, MergeRequestState, MergeRequestWorkflowProjectionOptions, CompletionHandoffMarker, WorkflowWorkItem, WorkflowWorkItemDueFilter, WorkflowWorkItemKind, WorkflowWorkItemState, WorkflowWorkItemTransitionPatch, WorkflowWorkItemUpsertInput, PrEntity, PrEntityCreateInput, PrEntityUpdate, PrEntityState, PrThreadState, PrThreadOutcome, PrConflictState, PrChecksRollup, PrReviewDecision, PluginActivation, PluginActivationInput } from "./types.js";
+import type { Task, TaskDetail, TaskCreateInput, TaskAttachment, AgentLogEntry, BoardConfig, Column, ColumnId, CheckoutClaimPrecondition, MergeResult, Settings, GlobalSettings, ProjectSettings, ActivityLogEntry, ActivityEventType, TaskDocument, TaskDocumentRevision, TaskDocumentCreateInput, TaskDocumentWithTask, Artifact, ArtifactCreateInput, ArtifactType, ArtifactWithTask, InboxTask, TaskLogEntry, RunMutationContext, RunAuditEvent, RunAuditEventInput, RunAuditEventFilter, ArchivedTaskEntry, ArchiveAgentLogMode, TaskPriority, SourceType, WorkflowStepTemplate, Agent, AutostashOrphanRecord, TaskCommitAssociation, TaskCommitAssociationMatchSource, TaskCommitAssociationConfidence, GithubIssueAction, MergeQueueEntry, MergeQueueEnqueueOptions, MergeQueueAcquireOptions, MergeQueueReleaseOutcome, HandoffToReviewOptions, GoalCitation, GoalCitationFilter, GoalCitationInput, GoalCitationSurface, BranchGroup, BranchGroupCreateInput, BranchGroupUpdate, TaskBranchAssignmentMode, MergeRequestRecord, MergeRequestState, MergeRequestWorkflowProjectionOptions, CompletionHandoffMarker, WorkflowWorkItem, WorkflowWorkItemDueFilter, WorkflowWorkItemKind, WorkflowWorkItemState, WorkflowWorkItemTransitionPatch, WorkflowWorkItemUpsertInput, PrEntity, PrEntityCreateInput, PrEntityUpdate, PrEntityState, PrThreadState, PrThreadOutcome, PrConflictState, PrChecksRollup, PrReviewDecision, PluginActivation, PluginActivationInput } from "./types.js";
 import { createActivityLogSnapshot, createRunAuditSnapshot, createTaskMetadataSnapshot, toTaskMetadataRecord, validateSnapshotEnvelope, type ActivityLogSnapshot, type RunAuditSnapshot, type TaskMetadataSnapshot } from "./shared-mesh-state.js";
 import { VALID_TRANSITIONS, COLUMNS, DEFAULT_SETTINGS, isColumn, isGlobalOnlySettingsKey, WORKFLOW_STEP_TEMPLATES, validateDocumentKey } from "./types.js";
 import { DEFAULT_PROJECT_SETTINGS } from "./settings-schema.js";
@@ -575,6 +575,24 @@ interface TaskDocumentRow {
   content: string;
   revision: number;
   author: string;
+  metadata: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** Database row shape for the artifacts table. */
+interface ArtifactRow {
+  id: string;
+  type: ArtifactType;
+  title: string;
+  description: string | null;
+  mimeType: string | null;
+  sizeBytes: number | null;
+  uri: string | null;
+  content: string | null;
+  authorId: string;
+  authorType: "agent" | "user" | "system";
+  taskId: string | null;
   metadata: string | null;
   createdAt: string;
   updatedAt: string;
@@ -2388,6 +2406,28 @@ export class TaskStore extends EventEmitter<TaskStoreEvents> {
   }
 
   /**
+   * Convert an artifacts row to an Artifact object.
+   */
+  private rowToArtifact(row: ArtifactRow): Artifact {
+    return {
+      id: row.id,
+      type: row.type,
+      title: row.title,
+      ...(row.description !== null ? { description: row.description } : {}),
+      ...(row.mimeType !== null ? { mimeType: row.mimeType } : {}),
+      ...(row.sizeBytes !== null ? { sizeBytes: row.sizeBytes } : {}),
+      ...(row.uri !== null ? { uri: row.uri } : {}),
+      ...(row.content !== null ? { content: row.content } : {}),
+      authorId: row.authorId,
+      authorType: row.authorType,
+      ...(row.taskId !== null ? { taskId: row.taskId } : {}),
+      metadata: fromJson<Record<string, unknown>>(row.metadata),
+      createdAt: row.createdAt,
+      updatedAt: row.updatedAt,
+    };
+  }
+
+  /**
    * Convert a task_document_revisions row to a TaskDocumentRevision object.
    */
   private rowToTaskDocumentRevision(row: TaskDocumentRevisionRow): TaskDocumentRevision {
@@ -4092,6 +4132,15 @@ ${TASK_UPSERT_SQL_ASSIGNMENTS}
 
   private taskDir(id: string): string {
     return join(this.tasksDir, id);
+  }
+
+  private artifactRegistryDir(): string {
+    return join(this.fusionDir, "artifacts");
+  }
+
+  private static artifactStoredName(id: string, title: string): string {
+    const sanitized = (title.trim() || "artifact").replace(/[^a-zA-Z0-9._-]/g, "_").slice(0, 120) || "artifact";
+    return `${Date.now()}-${id}-${sanitized}`;
   }
 
   private getBuiltInWorkflowTemplate(templateId: string): import("./types.js").WorkflowStepTemplate | undefined {
@@ -12457,6 +12506,175 @@ ${TASK_UPSERT_SQL_ASSIGNMENTS}
       | { id: string }
       | undefined;
     return Boolean(row);
+  }
+
+  private async writeArtifactData(input: ArtifactCreateInput, id: string): Promise<{ uri?: string; sizeBytes?: number; absolutePath?: string }> {
+    if (!input.data) {
+      return {};
+    }
+
+    const storedName = TaskStore.artifactStoredName(id, input.title);
+    if (input.taskId) {
+      const artifactDir = join(this.taskDir(input.taskId), "artifacts");
+      await mkdir(artifactDir, { recursive: true });
+      const absolutePath = join(artifactDir, storedName);
+      await writeFile(absolutePath, input.data);
+      return { uri: `artifacts/${storedName}`, sizeBytes: input.data.length, absolutePath };
+    }
+
+    const artifactDir = this.artifactRegistryDir();
+    await mkdir(artifactDir, { recursive: true });
+    const absolutePath = join(artifactDir, storedName);
+    await writeFile(absolutePath, input.data);
+    return { uri: `artifacts/${storedName}`, sizeBytes: input.data.length, absolutePath };
+  }
+
+  private insertArtifactRow(input: ArtifactCreateInput, id: string, now: string, stored: { uri?: string; sizeBytes?: number }): Artifact {
+    this.db.prepare(
+      `INSERT INTO artifacts (
+        id, type, title, description, mimeType, sizeBytes, uri, content, authorId, authorType, taskId, metadata, createdAt, updatedAt
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    ).run(
+      id,
+      input.type,
+      input.title,
+      input.description ?? null,
+      input.mimeType ?? null,
+      stored.sizeBytes ?? input.sizeBytes ?? null,
+      stored.uri ?? input.uri ?? null,
+      input.data ? null : input.content ?? null,
+      input.authorId,
+      input.authorType,
+      input.taskId ?? null,
+      toJsonNullable(input.metadata),
+      now,
+      now,
+    );
+
+    const row = this.db.prepare("SELECT * FROM artifacts WHERE id = ?").get(id) as ArtifactRow | undefined;
+    if (!row) {
+      throw new Error(`Failed to register artifact ${id}`);
+    }
+    return this.rowToArtifact(row);
+  }
+
+  /**
+   * FNXC:ArtifactRegistry 2026-06-19-22:04:
+   * Register multi-type agent/user/system artifacts in SQLite while writing binary payloads to disk. Task-scoped binaries use `.fusion/tasks/{taskId}/artifacts/`; task-less binaries use `.fusion/artifacts/`, and both store only a relative `artifacts/<file>` uri in the row.
+   */
+  async registerArtifact(input: ArtifactCreateInput): Promise<Artifact> {
+    const id = randomUUID();
+    const now = new Date().toISOString();
+
+    if (input.taskId) {
+      const taskExists = this.db.prepare(`SELECT id, "column" FROM tasks WHERE id = ? AND ${TaskStore.ACTIVE_TASKS_WHERE}`).get(input.taskId) as
+        | { id: string; column: Column }
+        | undefined;
+      if (taskExists?.column === "archived") {
+        throw new Error(`Task ${input.taskId} is archived — artifacts are read-only`);
+      }
+      if (!taskExists) {
+        if (this.isTaskArchived(input.taskId)) {
+          throw new Error(`Task ${input.taskId} is archived — artifacts are read-only`);
+        }
+        throw new Error(`Task ${input.taskId} not found`);
+      }
+    }
+
+    const register = async (): Promise<Artifact> => {
+      const stored = await this.writeArtifactData(input, id);
+      try {
+        return this.insertArtifactRow(input, id, now, stored);
+      } catch (error) {
+        if (stored.absolutePath) {
+          await unlink(stored.absolutePath).catch(() => undefined);
+        }
+        throw error;
+      }
+    };
+
+    return input.taskId ? this.withTaskLock(input.taskId, register) : register();
+  }
+
+  /**
+   * FNXC:ArtifactRegistry 2026-06-19-22:04:
+   * Fetch a single artifact metadata row by id for downstream tools and UI without reading binary payload bytes from disk.
+   */
+  async getArtifact(id: string): Promise<Artifact | null> {
+    const row = this.db.prepare("SELECT * FROM artifacts WHERE id = ?").get(id) as ArtifactRow | undefined;
+    return row ? this.rowToArtifact(row) : null;
+  }
+
+  /**
+   * FNXC:ArtifactRegistry 2026-06-19-22:04:
+   * List artifacts for an active task newest-first; soft-deleted tasks intentionally return an empty list to mirror task document visibility.
+   */
+  async getArtifacts(taskId: string): Promise<Artifact[]> {
+    if (!this.hasActiveTask(taskId)) {
+      return [];
+    }
+
+    const rows = this.db
+      .prepare("SELECT * FROM artifacts WHERE taskId = ? ORDER BY createdAt DESC")
+      .all(taskId) as unknown as ArtifactRow[];
+    return rows.map((row) => this.rowToArtifact(row));
+  }
+
+  /**
+   * FNXC:ArtifactRegistry 2026-06-19-22:04:
+   * Cross-agent registry query path for filtering artifacts across tasks, authors, and media types. LEFT JOIN keeps task-less registry artifacts visible while excluding artifacts attached to soft-deleted tasks.
+   */
+  async listArtifacts(options?: {
+    type?: ArtifactType;
+    authorId?: string;
+    taskId?: string;
+    limit?: number;
+    offset?: number;
+    search?: string;
+  }): Promise<ArtifactWithTask[]> {
+    const limit = Math.min(Math.max(1, options?.limit ?? 200), 1000);
+    const offset = Math.max(0, options?.offset ?? 0);
+
+    let sql = `
+      SELECT a.*, t.title as taskTitle, t.description as taskDescription, t.column as taskColumn
+      FROM artifacts a
+      LEFT JOIN tasks t ON a.taskId = t.id
+      WHERE (a.taskId IS NULL OR t.${TaskStore.ACTIVE_TASKS_WHERE})
+    `;
+    const params: (string | number)[] = [];
+
+    if (options?.type) {
+      sql += " AND a.type = ?";
+      params.push(options.type);
+    }
+    if (options?.authorId) {
+      sql += " AND a.authorId = ?";
+      params.push(options.authorId);
+    }
+    if (options?.taskId) {
+      sql += " AND a.taskId = ?";
+      params.push(options.taskId);
+    }
+    if (options?.search && options.search.trim() !== "") {
+      const query = `%${options.search.trim()}%`;
+      sql += " AND (a.title LIKE ? OR a.description LIKE ?)";
+      params.push(query, query);
+    }
+
+    sql += " ORDER BY a.createdAt DESC LIMIT ? OFFSET ?";
+    params.push(limit, offset);
+
+    const rows = this.db.prepare(sql).all(...params) as unknown as Array<ArtifactRow & {
+      taskTitle: string | null;
+      taskDescription: string | null;
+      taskColumn: string | null;
+    }>;
+    return rows.map((row) => ({
+      ...this.rowToArtifact(row),
+      ...(row.taskTitle !== null ? { taskTitle: row.taskTitle } : {}),
+      ...(row.taskDescription !== null ? { taskDescription: row.taskDescription } : {}),
+      ...(row.taskColumn !== null ? { taskColumn: row.taskColumn } : {}),
+    }));
   }
 
   /**

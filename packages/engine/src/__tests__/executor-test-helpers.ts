@@ -245,6 +245,7 @@ vi.mock("../worktree-db-hydrate.js", () => ({
   hydrateWorktreeDb: vi.fn().mockResolvedValue({
     tasksCopied: 0,
     documentsCopied: 0,
+    artifactsCopied: 0,
     degraded: false,
   }),
 }));

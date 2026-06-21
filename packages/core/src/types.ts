@@ -1586,6 +1586,81 @@ export interface TaskDocumentWithTask extends TaskDocument {
   taskColumn?: string;
 }
 
+/** Supported artifact media classes for the persisted artifact registry. */
+export type ArtifactType = "document" | "image" | "video" | "audio" | "other";
+
+/**
+ * FNXC:ArtifactRegistry 2026-06-19-22:04:
+ * Agents need a first-class registry for multi-type artifacts that are visible across agents and tasks. Store binary media on disk and persist only metadata plus relative URIs in SQLite so query paths stay lightweight and never inline binary bytes.
+ */
+export interface Artifact {
+  /** UUID primary key */
+  id: string;
+  /** Artifact media class used for filtering and presentation */
+  type: ArtifactType;
+  /** Human-readable artifact title */
+  title: string;
+  /** Optional longer description or caption */
+  description?: string;
+  /** Optional MIME type for inline text or binary media */
+  mimeType?: string;
+  /** Optional content size in bytes, set from binary data when persisted on disk */
+  sizeBytes?: number;
+  /** Relative stored path; task artifacts are anchored at the task dir, while task-less registry artifacts are anchored at `.fusion/` */
+  uri?: string;
+  /** Optional inline text body for text/document artifacts */
+  content?: string;
+  /** Agent, user, or system identifier that registered the artifact */
+  authorId: string;
+  /** Class of actor that registered the artifact */
+  authorType: "agent" | "user" | "system";
+  /** Optional task this artifact is associated with */
+  taskId?: string;
+  /** Optional extensible metadata (JSON object) */
+  metadata?: Record<string, unknown>;
+  /** ISO-8601 creation timestamp */
+  createdAt: string;
+  /** ISO-8601 last-update timestamp */
+  updatedAt: string;
+}
+
+export interface ArtifactCreateInput {
+  /** Artifact media class used for filtering and presentation */
+  type: ArtifactType;
+  /** Human-readable artifact title */
+  title: string;
+  /** Optional longer description or caption */
+  description?: string;
+  /** Optional MIME type for inline text or binary media */
+  mimeType?: string;
+  /** Optional content size in bytes for inline or externally referenced content */
+  sizeBytes?: number;
+  /** Optional relative URI when content is already stored outside SQLite */
+  uri?: string;
+  /** Optional inline text body for text/document artifacts */
+  content?: string;
+  /** Agent, user, or system identifier registering the artifact */
+  authorId: string;
+  /** Class of actor registering the artifact */
+  authorType: "agent" | "user" | "system";
+  /** Optional task this artifact is associated with */
+  taskId?: string;
+  /** Optional extensible metadata (JSON object) */
+  metadata?: Record<string, unknown>;
+  /** Optional binary payload; the store persists it on disk and records a relative URI */
+  data?: Buffer;
+}
+
+/** Artifact extended with optional parent task metadata for cross-task registry views. */
+export interface ArtifactWithTask extends Artifact {
+  /** Title of the parent task */
+  taskTitle?: string;
+  /** Description of the parent task */
+  taskDescription?: string;
+  /** Column of the parent task (e.g., "triage", "todo", "in-progress", "done", "in-review", "archived") */
+  taskColumn?: string;
+}
+
 /**
  * Goal-citation Slice 2 success-signal surfaces where goal IDs are extracted.
  */

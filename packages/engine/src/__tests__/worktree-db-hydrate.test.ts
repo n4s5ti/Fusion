@@ -49,6 +49,16 @@ function insertDoc(projectDir: string, taskId: string): void {
   db.close();
 }
 
+function insertArtifact(projectDir: string, id: string, taskId: string | null): void {
+  ensureProjectFusionDir(projectDir);
+  const db = new DatabaseSync(join(projectDir, ".fusion", "fusion.db"));
+  const now = new Date().toISOString();
+  db.prepare(
+    "INSERT OR REPLACE INTO artifacts (id, type, title, description, mimeType, sizeBytes, uri, content, authorId, authorType, taskId, metadata, createdAt, updatedAt) VALUES (?, 'document', ?, 'artifact description', 'text/plain', 5, NULL, 'hello', 'agent-1', 'agent', ?, NULL, ?, ?)",
+  ).run(id, id, taskId, now, now);
+  db.close();
+}
+
 function sha(file: string): string {
   if (!existsSync(file)) return "";
   return createHash("sha256").update(readFileSync(file)).digest("hex");
@@ -77,7 +87,9 @@ describe("hydrateWorktreeDb", () => {
     const first = await hydrateWorktreeDb({ rootDir: root, worktreePath: worktree, taskId: "FN-A", store: store as any, logger: { warn: vi.fn() } });
     const second = await hydrateWorktreeDb({ rootDir: root, worktreePath: worktree, taskId: "FN-A", store: store as any, logger: { warn: vi.fn() } });
     expect(first.degraded).toBe(false);
+    expect(first.artifactsCopied).toBe(0);
     expect(second.degraded).toBe(false);
+    expect(second.artifactsCopied).toBe(0);
 
     const db = new DatabaseSync(join(worktree, ".fusion", "fusion.db"));
     const tasks = (db.prepare("SELECT COUNT(*) as c FROM tasks WHERE id IN ('FN-A','FN-B','FN-C')").get() as any).c;
@@ -131,6 +143,7 @@ describe("hydrateWorktreeDb", () => {
     expect(result.degraded).toBe(false);
     expect(result.tasksCopied).toBe(1);
     expect(result.documentsCopied).toBe(1);
+    expect(result.artifactsCopied).toBe(0);
 
     const db = new DatabaseSync(join(worktree, ".fusion", "fusion.db"));
     const softDeletedTask = db.prepare("SELECT id FROM tasks WHERE id='FN-B'").get();
@@ -154,6 +167,51 @@ describe("hydrateWorktreeDb", () => {
     expect(result.degraded).toBe(false);
     expect(result.tasksCopied).toBe(1);
     expect(result.documentsCopied).toBe(1);
+    expect(result.artifactsCopied).toBe(0);
+  });
+
+  it("hydrates task-scoped artifact metadata and excludes registry-level artifacts", async () => {
+    const root = makeProject("h-artifacts-");
+    const worktree = makeProject("h-artifacts-dst-");
+    cleanup.push(root, worktree);
+
+    insertTask(root, "FN-1", null);
+    insertArtifact(root, "artifact-task", "FN-1");
+    insertArtifact(root, "artifact-registry", null);
+    const store = { getTask: vi.fn(async () => ({ id: "FN-1", dependencies: [] })) };
+
+    const result = await hydrateWorktreeDb({ rootDir: root, worktreePath: worktree, taskId: "FN-1", store: store as any, logger: { warn: vi.fn() } });
+
+    expect(result.degraded).toBe(false);
+    expect(result.artifactsCopied).toBe(1);
+
+    const db = new DatabaseSync(join(worktree, ".fusion", "fusion.db"));
+    const taskArtifact = db.prepare("SELECT id, taskId FROM artifacts WHERE id='artifact-task'").get() as { id: string; taskId: string } | undefined;
+    const registryArtifact = db.prepare("SELECT id FROM artifacts WHERE id='artifact-registry'").get();
+    db.close();
+
+    expect(taskArtifact).toEqual({ id: "artifact-task", taskId: "FN-1" });
+    expect(registryArtifact).toBeUndefined();
+  });
+
+  it("skips artifact hydration without degrading when a peer DB predates the artifacts table", async () => {
+    const root = makeProject("h-no-artifacts-table-");
+    const worktree = makeProject("h-no-artifacts-table-dst-");
+    cleanup.push(root, worktree);
+
+    insertTask(root, "FN-1", null);
+    insertDoc(root, "FN-1");
+    const srcDb = new DatabaseSync(join(root, ".fusion", "fusion.db"));
+    srcDb.exec("DROP TABLE IF EXISTS artifacts");
+    srcDb.close();
+    const store = { getTask: vi.fn(async () => ({ id: "FN-1", dependencies: [] })) };
+
+    const result = await hydrateWorktreeDb({ rootDir: root, worktreePath: worktree, taskId: "FN-1", store: store as any, logger: { warn: vi.fn() } });
+
+    expect(result.degraded).toBe(false);
+    expect(result.tasksCopied).toBe(1);
+    expect(result.documentsCopied).toBe(1);
+    expect(result.artifactsCopied).toBe(0);
   });
 
   it("hydrates when source tasks schema has no deletedAt column", async () => {
@@ -175,6 +233,7 @@ describe("hydrateWorktreeDb", () => {
 
     expect(result.degraded).toBe(false);
     expect(result.tasksCopied).toBe(1);
+    expect(result.artifactsCopied).toBe(0);
   });
 
   it("handles schema drift by dropping missing destination columns", async () => {

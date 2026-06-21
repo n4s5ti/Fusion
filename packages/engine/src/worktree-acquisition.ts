@@ -242,7 +242,7 @@ export async function acquireTaskWorktree(opts: AcquireTaskWorktreeOptions): Pro
       if (hydration.degraded) {
         await store.logEntry(task.id, `Worktree DB hydration degraded: ${hydration.reason ?? "unknown"}`, undefined, runContext);
       } else {
-        await store.logEntry(task.id, `Hydrated worktree DB: ${hydration.tasksCopied} tasks, ${hydration.documentsCopied} task_documents`, undefined, runContext);
+        await store.logEntry(task.id, `Hydrated worktree DB: ${hydration.tasksCopied} tasks, ${hydration.documentsCopied} task_documents, ${hydration.artifactsCopied} artifacts`, undefined, runContext);
       }
       return true;
     } catch (error) {

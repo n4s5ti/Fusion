@@ -2459,6 +2459,7 @@ describe("worktree DB hydration", () => {
     mockedHydrateWorktreeDb.mockResolvedValue({
       tasksCopied: 1,
       documentsCopied: 2,
+      artifactsCopied: 0,
       degraded: false,
     });
     mockedCreateFnAgent.mockResolvedValue({
@@ -2502,6 +2503,7 @@ describe("worktree DB hydration", () => {
     mockedHydrateWorktreeDb.mockResolvedValueOnce({
       tasksCopied: 0,
       documentsCopied: 0,
+      artifactsCopied: 0,
       degraded: true,
       reason: "unable to open database file",
     });

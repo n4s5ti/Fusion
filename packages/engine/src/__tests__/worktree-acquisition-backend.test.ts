@@ -13,7 +13,7 @@ vi.mock("../worktree-pool.js", async () => {
 });
 
 vi.mock("../worktree-db-hydrate.js", () => ({
-  hydrateWorktreeDb: vi.fn().mockResolvedValue({ degraded: false, tasksCopied: 1, documentsCopied: 1 }),
+  hydrateWorktreeDb: vi.fn().mockResolvedValue({ degraded: false, tasksCopied: 1, documentsCopied: 1, artifactsCopied: 0 }),
 }));
 
 const { execMock, existsSyncMock, accessMock } = vi.hoisted(() => {

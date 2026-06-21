@@ -63,6 +63,14 @@
 - No public forensic flag is exposed on document read methods or routes. Forensic access remains an internal/operator concern via `readTaskFromDb(id, { includeDeleted: true })` plus direct SQL against the preserved document tables.
 - Write semantics stay intentionally asymmetric: `upsertTaskDocument` still refuses soft-deleted parents, while `deleteTaskDocument` remains allowed so forensic cleanup can scrub preserved document rows when needed.
 
+### Artifact registry (FN-6777)
+
+- `artifacts` is the first-class metadata registry for generated or uploaded task artifacts. Rows store title/description, media type, author identity, optional task linkage, metadata JSON, textual content, a relative URI, and size; binary bytes are not stored in SQLite.
+- `TaskStore.registerArtifact()` writes task-scoped binary payloads under `<rootDir>/.fusion/tasks/{ID}/artifacts/` and task-less registry payloads under `<rootDir>/.fusion/artifacts/`, then records a relative `artifacts/<file>` URI in SQLite. If the DB insert fails after a binary write, the store removes the orphaned file before surfacing the error.
+- `getArtifact(id)` returns metadata by ID, `getArtifacts(taskId)` returns active-task artifacts newest-first, and `listArtifacts(...)` is the cross-agent query path with type/author/task/search filters and pagination. List reads hide artifacts whose parent task is soft-deleted while preserving task-less artifacts.
+- Task-linked artifact registration requires an active, non-archived task. Archived tasks are read-only for artifact writes; soft-deleted or missing tasks are rejected.
+- Worktree DB hydration copies artifact metadata so isolated agents can query the registry shape locally, but binary payload files remain in the source project storage.
+
 ### Task-ID integrity detection
 
 Fusion runs a read-only task-ID integrity detector at startup and on demand to surface allocator regressions before operators lose track of overwritten cards. The detector checks for:
