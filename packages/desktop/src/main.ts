@@ -238,6 +238,21 @@ export async function initializeApp(): Promise<void> {
     onChangeLaunchMode: async () => {
       await resetLaunchModeAndReload(createdWindow);
     },
+    onStartLocalRuntime: async () => {
+      if (!localRuntimeManager) return;
+      currentRemoteLaunch = null;
+      currentDesktopLaunchMode = "local";
+      localRuntimeStartupAttempted = false;
+      await startLocalRuntimeOnce();
+      await saveDesktopLaunchMode("local");
+      createdWindow.webContents.reload();
+    },
+    onStopLocalRuntime: async () => {
+      await localRuntimeManager?.stopLocal();
+    },
+    onConnectRemoteServer: async () => {
+      await resetLaunchModeAndReload(createdWindow);
+    },
     onCheckForUpdates: async () => {
       await triggerUpdateCheck(createdWindow);
     },

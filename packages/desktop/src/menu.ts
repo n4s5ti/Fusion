@@ -9,7 +9,17 @@ export interface AppMenuOptions {
   mainWindow: BrowserWindow;
   appName: string;
   onChangeLaunchMode?: () => Promise<void> | void;
+  onStartLocalRuntime?: () => Promise<void> | void;
+  onStopLocalRuntime?: () => Promise<void> | void;
+  onConnectRemoteServer?: () => Promise<void> | void;
   onCheckForUpdates?: () => Promise<void> | void;
+}
+
+function runMenuAction(label: string, action: (() => Promise<void> | void) | undefined): void {
+  if (!action) return;
+  void Promise.resolve(action()).catch((error: unknown) => {
+    console.error(`[desktop/menu] ${label} failed`, error);
+  });
 }
 
 function buildConnectionSubmenu(options: AppMenuOptions): MenuItemConstructorOptions {
@@ -17,13 +27,23 @@ function buildConnectionSubmenu(options: AppMenuOptions): MenuItemConstructorOpt
     label: "Connection",
     submenu: [
       {
+        label: "Use Local Server",
+        click: () => runMenuAction("onStartLocalRuntime", options.onStartLocalRuntime),
+      },
+      {
+        label: "Shut Down Local Server",
+        click: () => runMenuAction("onStopLocalRuntime", options.onStopLocalRuntime),
+      },
+      {
+        type: "separator",
+      },
+      {
+        label: "Connect to Remote Server…",
+        click: () => runMenuAction("onConnectRemoteServer", options.onConnectRemoteServer ?? options.onChangeLaunchMode),
+      },
+      {
         label: "Change Launch Mode…",
-        click: () => {
-          if (!options.onChangeLaunchMode) return;
-          void Promise.resolve(options.onChangeLaunchMode()).catch((error: unknown) => {
-            console.error("[desktop/menu] onChangeLaunchMode failed", error);
-          });
-        },
+        click: () => runMenuAction("onChangeLaunchMode", options.onChangeLaunchMode),
       },
     ],
   };
@@ -38,12 +58,7 @@ function buildAppSubmenu(options: AppMenuOptions): MenuItemConstructorOptions {
       },
       {
         label: "Check for Updates…",
-        click: () => {
-          if (!options.onCheckForUpdates) return;
-          void Promise.resolve(options.onCheckForUpdates()).catch((error: unknown) => {
-            console.error("[desktop/menu] onCheckForUpdates failed", error);
-          });
-        },
+        click: () => runMenuAction("onCheckForUpdates", options.onCheckForUpdates),
       },
       {
         type: "separator",
@@ -233,12 +248,7 @@ function buildHelpSubmenu(options: AppMenuOptions): MenuItemConstructorOptions {
     submenu: [
       {
         label: "Check for Updates…",
-        click: () => {
-          if (!options.onCheckForUpdates) return;
-          void Promise.resolve(options.onCheckForUpdates()).catch((error: unknown) => {
-            console.error("[desktop/menu] onCheckForUpdates failed", error);
-          });
-        },
+        click: () => runMenuAction("onCheckForUpdates", options.onCheckForUpdates),
       },
       {
         label: "Fusion Documentation",

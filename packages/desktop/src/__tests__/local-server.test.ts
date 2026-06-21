@@ -35,6 +35,19 @@ const mocks = vi.hoisted(() => {
     watch: vi.fn(async () => undefined),
     close: vi.fn(),
   };
+  const centralCore = {
+    init: vi.fn(async () => undefined),
+    close: vi.fn(async () => undefined),
+  };
+  const engine = { id: "engine-1" };
+  const engineMap = new Map([["project-1", engine]]);
+  const engineManager = {
+    startAll: vi.fn(async () => undefined),
+    startReconciliation: vi.fn(),
+    stopAll: vi.fn(async () => undefined),
+    getAllEngines: vi.fn(() => engineMap),
+    onProjectAccessed: vi.fn(),
+  };
 
   class TaskStore {
     constructor(_rootDir: string) {}
@@ -55,11 +68,19 @@ const mocks = vi.hoisted(() => {
 
   const createServer = vi.fn(() => ({ listen }));
 
-  return { TaskStore, createServer, store, listen };
+  const CentralCore = vi.fn(function () {
+    return centralCore;
+  });
+  const ProjectEngineManager = vi.fn(function () {
+    return engineManager;
+  });
+
+  return { TaskStore, CentralCore, ProjectEngineManager, createServer, store, listen, centralCore, engineManager, engine };
 });
 
-vi.mock("@fusion/core", () => ({ TaskStore: mocks.TaskStore }));
+vi.mock("@fusion/core", () => ({ TaskStore: mocks.TaskStore, CentralCore: mocks.CentralCore }));
 vi.mock("@fusion/dashboard", () => ({ createServer: mocks.createServer }));
+vi.mock("@fusion/engine", () => ({ ProjectEngineManager: mocks.ProjectEngineManager }));
 
 describe("DesktopLocalServerManager", () => {
   beforeEach(() => {
@@ -75,6 +96,15 @@ describe("DesktopLocalServerManager", () => {
     expect(runtime.port).toBe(4545);
     expect(manager.getPort()).toBe(4545);
     expect(manager.getState().status).toBe("ready");
+    expect(mocks.engineManager.startAll).toHaveBeenCalledTimes(1);
+    expect(mocks.createServer).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        engine: mocks.engine,
+        engineManager: mocks.engineManager,
+        centralCore: mocks.centralCore,
+      }),
+    );
   });
 
   it("stops local runtime and resets state", async () => {
@@ -84,6 +114,8 @@ describe("DesktopLocalServerManager", () => {
 
     await manager.stop();
 
+    expect(mocks.engineManager.stopAll).toHaveBeenCalled();
+    expect(mocks.centralCore.close).toHaveBeenCalled();
     expect(mocks.store.close).toHaveBeenCalled();
     expect(manager.getState().status).toBe("idle");
     expect(manager.getPort()).toBeUndefined();

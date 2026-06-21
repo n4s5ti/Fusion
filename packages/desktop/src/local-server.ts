@@ -7,10 +7,13 @@ type TaskStoreLike = {
   close(): void;
 };
 
+type RuntimeCleanup = () => Promise<void> | void;
+
 export interface DesktopLocalRuntime {
   store: TaskStoreLike;
   server: Server;
   port: number;
+  cleanup?: RuntimeCleanup;
 }
 
 export interface DesktopLocalServerState {
@@ -41,14 +44,39 @@ export class DesktopLocalServerManager {
 
     this.state = { status: "starting", error: null };
 
+    let store: TaskStoreLike | null = null;
+    let server: Server | null = null;
+    let cleanup: RuntimeCleanup | undefined;
+
     try {
       const { TaskStore } = await import("@fusion/core");
+      const { CentralCore } = await import("@fusion/core");
       const { createServer } = await import("@fusion/dashboard");
-      const store = new TaskStore(this.rootDir) as TaskStoreLike;
+      const { ProjectEngineManager } = await import("@fusion/engine");
+      store = new TaskStore(this.rootDir) as TaskStoreLike;
       await store.init();
       await store.watch();
-      const app = createServer(store as never);
-      const server = app.listen(0);
+      /*
+       * FNXC:DesktopRuntime 2026-06-20-23:39:
+       * This legacy desktop local server path still needs to launch project engines so every embedded desktop server follows the same executable-by-default contract.
+       */
+      const centralCore = new CentralCore();
+      await centralCore.init();
+      const engineManager = new ProjectEngineManager(centralCore);
+      await engineManager.startAll();
+      engineManager.startReconciliation();
+      const primaryEngine = [...engineManager.getAllEngines().values()][0];
+      const app = createServer(store as never, {
+        engine: primaryEngine,
+        engineManager,
+        centralCore,
+        onProjectFirstAccessed: (projectId: string) => engineManager.onProjectAccessed(projectId),
+      });
+      server = app.listen(0);
+      cleanup = async () => {
+        await engineManager.stopAll();
+        await centralCore.close?.();
+      };
 
       await Promise.race([
         once(server, "listening"),
@@ -62,10 +90,15 @@ export class DesktopLocalServerManager {
         throw new Error("Failed to resolve local server port");
       }
 
-      this.runtime = { store, server, port: address.port };
+      this.runtime = { store, server, port: address.port, cleanup };
       this.state = { status: "ready", port: address.port, error: null };
       return this.runtime;
     } catch (error) {
+      if (server) {
+        await new Promise<void>((resolve) => server!.close(() => resolve()));
+      }
+      await cleanup?.();
+      store?.close();
       this.state = {
         status: "error",
         error: error instanceof Error ? error.message : String(error),
@@ -84,6 +117,7 @@ export class DesktopLocalServerManager {
     this.runtime = null;
 
     await new Promise<void>((resolve) => runtime.server.close(() => resolve()));
+    await runtime.cleanup?.();
     runtime.store.close();
     this.state = { status: "idle", error: null };
   }
