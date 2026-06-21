@@ -259,6 +259,34 @@
   font-weight: 600;
 }
 
+.executor-status-bar__segment--engine-controls {
+  position: relative;
+}
+
+.executor-status-bar__state-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-xs);
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  line-height: 1;
+}
+
+.executor-status-bar__state-trigger:hover .executor-status-bar__state {
+  text-decoration: underline;
+  text-underline-offset: calc(var(--space-xs) / 2);
+}
+
+.executor-status-bar__state-trigger:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring-strong);
+  border-radius: var(--radius-sm);
+}
+
 /* Error message */
 .executor-status-bar__error,
 .executor-status-bar__connecting {

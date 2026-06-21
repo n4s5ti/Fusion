@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback, useMemo, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
-import { Settings, Pause, Play, Square, LayoutGrid, List, Terminal, Lightbulb, Search, X, Activity, MoreHorizontal, Clock, Folder, History, GitBranch, Monitor, Workflow, Bot, Target, ChevronRight, FileCode, Loader2, Grid3X3, Mail, MessageSquare, ChevronDown, Check, Zap, Sparkles, FileText, Brain, CheckSquare, Lock, Gauge } from "lucide-react";
+import { Settings, Play, LayoutGrid, List, Terminal, Lightbulb, Search, X, Activity, MoreHorizontal, Clock, Folder, History, GitBranch, Monitor, Workflow, Bot, Target, ChevronRight, FileCode, Loader2, Grid3X3, Mail, MessageSquare, ChevronDown, Check, Zap, Sparkles, FileText, Brain, CheckSquare, Lock, Gauge } from "lucide-react";
 import "./Header.css";
 // ProjectSelector styles used by the imported standalone component.
 import "./ProjectSelector.css";
@@ -87,10 +87,6 @@ export interface HeaderProps {
   onOpenTodos?: () => void;
   todosOpen?: boolean;
   todosEnabled?: boolean;
-  globalPaused?: boolean;
-  enginePaused?: boolean;
-  onToggleGlobalPause?: () => void;
-  onToggleEnginePause?: () => void;
   view?: TaskView;
   onChangeView?: (view: TaskView) => void;
   /** Whether to show the skills tab in the view toggle */
@@ -154,10 +150,6 @@ export function Header({
   onOpenTodos,
   todosOpen,
   todosEnabled,
-  globalPaused,
-  enginePaused,
-  onToggleGlobalPause,
-  onToggleEnginePause,
   view = "board",
   onChangeView,
   showSkillsTab,
@@ -210,7 +202,6 @@ export function Header({
   const [isMobileProjectSwitchOpen, setIsMobileProjectSwitchOpen] = useState(false);
   const [isViewOverflowOpen, setIsViewOverflowOpen] = useState(false);
   const [isDesktopOverflowOpen, setIsDesktopOverflowOpen] = useState(false);
-  const [isEngineMenuOpen, setIsEngineMenuOpen] = useState(false);
   const [isScriptsOpen, setIsScriptsOpen] = useState(false);
   const [scripts, setScripts] = useState<Record<string, string>>({});
   const [scriptsLoading, setScriptsLoading] = useState(false);
@@ -229,7 +220,6 @@ export function Header({
   const mobileProjectSwitchRef = useRef<HTMLDivElement>(null);
   const viewOverflowRef = useRef<HTMLDivElement>(null);
   const viewOverflowTriggerRef = useRef<HTMLButtonElement>(null);
-  const engineMenuRef = useRef<HTMLDivElement>(null);
   const scriptsSplitButtonRef = useRef<HTMLDivElement>(null);
   const scriptsChevronButtonRef = useRef<HTMLButtonElement>(null);
   const scriptsMenuRef = useRef<HTMLDivElement>(null);
@@ -662,32 +652,6 @@ export function Header({
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, [isMobileProjectSwitchOpen]);
-
-  // Close engine controls dropdown on outside click
-  useEffect(() => {
-    if (!isEngineMenuOpen) return;
-
-    const handleClickOutside = (e: MouseEvent) => {
-      if (engineMenuRef.current && !engineMenuRef.current.contains(e.target as Node)) {
-        setIsEngineMenuOpen(false);
-      }
-    };
-
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, [isEngineMenuOpen]);
-
-  // Close engine controls dropdown on Escape
-  useEffect(() => {
-    if (!isEngineMenuOpen) return;
-
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setIsEngineMenuOpen(false);
-    };
-
-    document.addEventListener("keydown", handleKeyDown);
-    return () => document.removeEventListener("keydown", handleKeyDown);
-  }, [isEngineMenuOpen]);
 
   // Close view toggle overflow on outside click
   useEffect(() => {
@@ -1555,48 +1519,7 @@ export function Header({
           </div>
         )}
 
-        {/* Engine control split-button: main=stop/start, chevron dropdown=pause triage */}
-        <div className="engine-control-split-btn" ref={engineMenuRef}>
-          <button
-            className={`btn-icon engine-control-split-btn__main${globalPaused ? " btn-icon--stopped" : ""}`}
-            onClick={onToggleGlobalPause}
-            title={globalPaused ? t("header.startAiEngine", "Start AI engine") : t("header.stopAiEngine", "Stop AI engine")}
-            data-testid="engine-control-main-btn"
-          >
-            {globalPaused ? <Play size={16} /> : <Square size={16} />}
-          </button>
-          <span className="engine-control-split-btn__divider" />
-          <button
-            className={`btn-icon engine-control-split-btn__chevron${isEngineMenuOpen ? " btn-icon--active" : ""}`}
-            onClick={() => setIsEngineMenuOpen((prev) => !prev)}
-            title={t("header.engineOptions", "Engine options")}
-            aria-haspopup="menu"
-            aria-expanded={isEngineMenuOpen}
-            data-testid="engine-control-chevron-btn"
-          >
-            <ChevronDown size={12} />
-          </button>
-          {isEngineMenuOpen && (
-            <div className="engine-control-split-btn__menu" role="menu">
-              <button
-                className={`engine-control-split-btn__menu-item${enginePaused ? " engine-control-split-btn__menu-item--active" : ""}`}
-                onClick={() => {
-                  onToggleEnginePause?.();
-                  setIsEngineMenuOpen(false);
-                }}
-                role="menuitem"
-                title={enginePaused ? t("header.resumeScheduling", "Resume scheduling") : t("header.pauseTriage", "Pause triage")}
-                disabled={!!globalPaused}
-                data-testid="engine-control-pause-triage-btn"
-              >
-                {enginePaused ? <Play size={14} /> : <Pause size={14} />}
-                <span>{enginePaused ? t("header.resumeScheduling", "Resume scheduling") : t("header.pauseTriage", "Pause triage")}</span>
-              </button>
-            </div>
-          )}
-        </div>
-
-        {/* Settings - always inline on desktop, placed after engine controls */}
+        {/* Settings - always inline on desktop; engine controls now live in the footer status bar. */}
         {!isCompact && (
           <button className="btn-icon" onClick={onOpenSettings} title={t("header.settings", "Settings")}>
             <Settings size={16} />

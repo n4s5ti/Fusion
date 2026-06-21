@@ -951,7 +951,6 @@ function AppInner() {
     maxConcurrent,
     autoMerge,
     globalPaused,
-    enginePaused,
     isTestMode,
     taskStuckTimeoutMs,
     staleHighFanoutBlockerAgeThresholdMs,
@@ -968,8 +967,6 @@ function AppInner() {
     todosEnabled,
     goalsEnabled,
     toggleAutoMerge,
-    toggleGlobalPause,
-    toggleEnginePause,
     refresh: refreshAppSettings,
   } = useAppSettings(currentProject?.id);
 
@@ -1949,10 +1946,6 @@ function AppInner() {
         onOpenTodos={openTodosWithNav}
         todosOpen={modalManager.todosOpen}
         todosEnabled={todosEnabled}
-        globalPaused={globalPaused}
-        enginePaused={enginePaused}
-        onToggleGlobalPause={toggleGlobalPause}
-        onToggleEnginePause={toggleEnginePause}
         view={taskView}
         onChangeView={viewMode === "project" && currentProject ? handleTaskViewChange : undefined}
         showSkillsTab={skillsEnabled}

@@ -820,6 +820,10 @@ Settings → Merge includes **Legacy auto-merge stamp cleanup** for operators au
 
 Use this panel when upgrading a project with pre-FN-6245/FN-6277 in-review rows before relying on per-task auto-merge overrides. It only targets stamps tagged as legacy provenance; explicit user overrides remain intact.
 
+### Executor footer engine controls
+
+The global AI engine stop/start control and triage pause/resume control live in the executor footer status bar rather than the header. Select the small engine-controls button beside the executor state badge, or select the state text such as **Running**, to open the footer popover. The popover includes **Stop AI engine** / **Start AI engine**, **Pause triage** / **Resume scheduling**, and live scheduler sliders for max concurrent tasks, max triage concurrency, and max worktrees. Slider changes save through the existing `/api/settings` path with the same debounced behavior used by Command Center controls; no separate backend route is required.
+
 ### Identifying high-impact blockers
 
 Use blocker fan-out signals on task cards and in the footer status bar to spot blockers with high downstream impact:
