@@ -328,9 +328,9 @@ export function TaskForm({
     return () => {
       cancelled = true;
     };
-    // onEnabledWorkflowStepsChange intentionally omitted: a new identity each render
-    // must not re-trigger the fetch/re-seed (would clobber user toggles).
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // onEnabledWorkflowStepsChange intentionally omitted from deps: a new identity
+    // each render must not re-trigger the fetch/re-seed (would clobber user toggles).
+    // Callers must pass a stable callback (NewTaskModal passes a useState setter).
   }, [onWorkflowIdChange, effectiveOptionalWorkflowId, projectId]);
 
   const enabledOptionalStepIds = enabledWorkflowSteps ?? [];
