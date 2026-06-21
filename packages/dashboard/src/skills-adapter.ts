@@ -211,6 +211,21 @@ function normalizeStoredSkillPath(path: string): string {
   return path.replaceAll("\\", "/").replace(/^skills\//, "");
 }
 
+/**
+ * Reduce any skill-name form to a single bare token (lowercased) for dedup:
+ *   "ce-work/SKILL.md" / "<src>::skills/ce-work/SKILL.md" / "ce-work" → "ce-work"
+ * Mirrors the editor-side helper (app/components/nodes/node-summary.ts); kept
+ * local because the dashboard client bundle (app/) and server source (src/) are
+ * separate build roots that do not share value imports.
+ */
+export function bareSkillName(name: string): string {
+  if (!name) return "";
+  const withoutSkillMd = name.replace(/\/SKILL\.md$/i, "");
+  const lastPathSegment = withoutSkillMd.split("/").pop() ?? withoutSkillMd;
+  const afterNamespace = lastPathSegment.split(":").pop() ?? lastPathSegment;
+  return afterNamespace.toLowerCase();
+}
+
 function isValidInstallSource(source: string): boolean {
   return /^[^/]+\/[^/]+$/.test(source);
 }
@@ -302,6 +317,14 @@ export function createSkillsAdapter(options: {
   };
   /** Project settings path helper */
   getSettingsPath: (rootDir: string) => string;
+  /**
+   * Optional source of plugin-contributed skills (e.g. compound-engineering
+   * ce-*). These are materialized for executor sessions by the engine but are
+   * NOT seen by the disk-scanning package manager, so without this the editor
+   * skill catalog omits them. Lazy thunk: plugins may load after the adapter is
+   * created, so it is invoked per discovery rather than captured eagerly.
+   */
+  getPluginSkills?: () => Array<{ pluginId: string; skill: { name: string; enabled?: boolean } }>;
   /** Optional superviseSpawn seam for tests */
   superviseSpawn?: typeof superviseSpawn;
 }): SkillsAdapter {
@@ -348,6 +371,37 @@ export function createSkillsAdapter(options: {
             baseDir: resource.metadata.baseDir,
           },
         });
+      }
+
+      // Merge plugin-contributed skills (e.g. compound-engineering ce-*). The
+      // package manager only scans disk (cwd/agentDir/configured packages), so
+      // plugin skills — which the engine materializes for sessions separately —
+      // would otherwise never appear in the editor catalog. Dedup against disk
+      // skills by bare name so a plugin skill that is also installed on disk is
+      // not listed twice.
+      const pluginSkills = options.getPluginSkills?.() ?? [];
+      if (pluginSkills.length > 0) {
+        const seenBareNames = new Set(discoveredSkills.map((s) => bareSkillName(s.name)));
+        for (const { pluginId, skill } of pluginSkills) {
+          const name = skill.name?.trim();
+          if (!name) continue;
+          const bare = bareSkillName(name);
+          if (seenBareNames.has(bare)) continue;
+          seenBareNames.add(bare);
+          const relativePath = `skills/${name}/SKILL.md`;
+          discoveredSkills.push({
+            id: computeSkillId(`plugin:${pluginId}`, relativePath),
+            name,
+            path: relativePath,
+            relativePath,
+            enabled: skill.enabled !== false,
+            metadata: {
+              source: `plugin:${pluginId}`,
+              scope: "user",
+              origin: "package",
+            },
+          });
+        }
       }
 
       return discoveredSkills;
