@@ -1,18 +1,53 @@
 /* === TodoView === */
+/*
+FNXC:TodosStyling 2026-06-21-09:26:
+FN-6829 mounts Todos as a flex child of .project-content like GoalsView; grow, zero min-width, and fill the viewport so the docked view never collapses to modal-era intrinsic sizing. The split-pane layout keeps overflow inside the list and item panes rather than scrolling the whole view.
+*/
 .todo-view {
   display: flex;
+  flex: 1 1 auto;
   flex-direction: column;
+  gap: var(--space-lg);
   height: 100%;
+  min-height: 0;
+  min-width: 0;
+  width: 100%;
   overflow: hidden;
+  padding: var(--space-lg);
+}
+
+.todo-view-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--space-md);
+}
+
+.todo-view-title-group {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+}
+
+.todo-view-title-group h2 {
+  margin: 0;
+  color: var(--text);
+  font-size: calc(var(--space-lg) + var(--space-xs));
+}
+
+.todo-view-title-group p {
+  margin: 0;
+  color: var(--text-muted);
 }
 
 .todo-view-layout {
   display: flex;
   flex-direction: row;
-  flex: 1;
+  flex: 1 1 auto;
+  min-height: 0;
+  min-width: 0;
   overflow: hidden;
   gap: var(--space-lg);
-  padding: var(--space-lg);
 }
 
 .todo-view-sidebar {
@@ -443,21 +478,5 @@
 
   .todo-agent-picker-item {
     min-height: calc(var(--space-2xl) + var(--space-xs));
-  }
-
-  .todo-view--mobile-keyboard-active {
-    padding-bottom: 0;
-  }
-
-  .todo-view--mobile-keyboard-active .todo-view-layout {
-    height: 100%;
-  }
-
-  .todo-view--mobile-keyboard-active .todo-view-sidebar {
-    max-height: calc(var(--space-2xl) * 4);
-  }
-
-  .todo-view--mobile-keyboard-active .todo-view-main {
-    overscroll-behavior: contain;
   }
 }

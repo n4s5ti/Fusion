@@ -222,12 +222,11 @@ describe("MobileNavBar", () => {
     expect(screen.getByTestId("mobile-more-item-plugin-fusion-plugin-spacing-check-wide")).toBeDefined();
   });
 
-  it("keeps Todos in the mobile More sheet when todoView is enabled", () => {
-    const onOpenTodos = vi.fn();
+  it("keeps Todos in the mobile More sheet and routes to the todos view", () => {
+    const props = createDefaultProps();
     render(
       <MobileNavBar
-        {...createDefaultProps()}
-        onOpenTodos={onOpenTodos}
+        {...props}
         experimentalFeatures={{ todoView: true }}
       />,
     );
@@ -235,7 +234,7 @@ describe("MobileNavBar", () => {
     fireEvent.click(screen.getByTestId("mobile-nav-tab-more"));
     fireEvent.click(screen.getByTestId("mobile-more-item-todos"));
 
-    expect(onOpenTodos).toHaveBeenCalled();
+    expect(props.onChangeView).toHaveBeenCalledWith("todos");
   });
 
   it("Mailbox is a primary tab and is not duplicated in the More sheet", () => {
@@ -251,7 +250,6 @@ describe("MobileNavBar", () => {
     render(
       <MobileNavBar
         {...createDefaultProps()}
-        onOpenTodos={vi.fn()}
         experimentalFeatures={{ todoView: true }}
       />,
     );
@@ -260,6 +258,18 @@ describe("MobileNavBar", () => {
 
     fireEvent.click(screen.getByTestId("mobile-nav-tab-more"));
     expect(screen.getByTestId("mobile-more-item-todos")).toBeInTheDocument();
+  });
+
+  it("marks the mobile More tab active for the todos view", () => {
+    render(
+      <MobileNavBar
+        {...createDefaultProps()}
+        view="todos"
+        experimentalFeatures={{ todoView: true }}
+      />,
+    );
+
+    expect(screen.getByTestId("mobile-nav-tab-more")).toHaveClass("mobile-nav-tab--active");
   });
 
   it("shows secrets in More and routes to secrets view", () => {

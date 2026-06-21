@@ -51,14 +51,6 @@ vi.mock("../FileBrowserModal", () => ({
   FileBrowserModal: () => null,
 }));
 
-const mockTodoModalProps = vi.fn();
-vi.mock("../TodoModal", () => ({
-  TodoModal: (props: any) => {
-    mockTodoModalProps(props);
-    return null;
-  },
-}));
-
 vi.mock("../UsageIndicator", () => ({
   UsageIndicator: () => null,
 }));
@@ -169,7 +161,6 @@ describe("AppModals", () => {
     terminalInitialCommandGeneration: 0,
     scriptsOpen: false,
     filesOpen: false,
-    todosOpen: false,
     fileBrowserWorkspace: "project",
     fileBrowserInitialFile: null,
     usageOpen: false,
@@ -206,8 +197,6 @@ describe("AppModals", () => {
     runScript: vi.fn(),
     openFiles: vi.fn(),
     closeFiles: vi.fn(),
-    openTodos: vi.fn(),
-    closeTodos: vi.fn(),
     setFileWorkspace: vi.fn(),
     openUsage: vi.fn(),
     closeUsage: vi.fn(),
@@ -246,7 +235,6 @@ describe("AppModals", () => {
     mockModelOnboardingModalProps.mockClear();
     mockActivityLogModalProps.mockClear();
     mockSettingsModalProps.mockClear();
-    mockTodoModalProps.mockClear();
   });
 
   it("renders without crashing", () => {
@@ -268,50 +256,6 @@ describe("AppModals", () => {
       />
     );
     expect(document.body).toBeDefined();
-  });
-
-  it("renders TodoModal when todosOpen is true", () => {
-    render(
-      <AppModals
-        projectId="proj-1"
-        tasks={[]}
-        projects={[]}
-        currentProject={null}
-        addToast={vi.fn()}
-        toasts={mockToasts}
-        removeToast={vi.fn()}
-        modalManager={{ ...mockModalManager, todosOpen: true }}
-        projectActions={{ handleAddProject: vi.fn(), handleSetupComplete: vi.fn(), handleModelOnboardingComplete: vi.fn() }}
-        taskHandlers={{ handleModalCreate: vi.fn(), handlePlanningTaskCreated: vi.fn(), handlePlanningTasksCreated: vi.fn(), handleSubtaskTasksCreated: vi.fn(), handleGitHubImport: vi.fn() }}
-        taskOperations={{ moveTask: vi.fn(), deleteTask: vi.fn(), mergeTask: vi.fn(), retryTask: vi.fn(), duplicateTask: vi.fn() }}
-        deepLink={{ handleDetailClose: vi.fn() }}
-        settings={mockSettings}
-      />
-    );
-
-    expect(mockTodoModalProps).toHaveBeenCalledTimes(1);
-  });
-
-  it("does not render TodoModal when todosOpen is false", () => {
-    render(
-      <AppModals
-        projectId="proj-1"
-        tasks={[]}
-        projects={[]}
-        currentProject={null}
-        addToast={vi.fn()}
-        toasts={mockToasts}
-        removeToast={vi.fn()}
-        modalManager={{ ...mockModalManager, todosOpen: false }}
-        projectActions={{ handleAddProject: vi.fn(), handleSetupComplete: vi.fn(), handleModelOnboardingComplete: vi.fn() }}
-        taskHandlers={{ handleModalCreate: vi.fn(), handlePlanningTaskCreated: vi.fn(), handlePlanningTasksCreated: vi.fn(), handleSubtaskTasksCreated: vi.fn(), handleGitHubImport: vi.fn() }}
-        taskOperations={{ moveTask: vi.fn(), deleteTask: vi.fn(), mergeTask: vi.fn(), retryTask: vi.fn(), duplicateTask: vi.fn() }}
-        deepLink={{ handleDetailClose: vi.fn() }}
-        settings={mockSettings}
-      />
-    );
-
-    expect(mockTodoModalProps).not.toHaveBeenCalled();
   });
 
   it("passes the live board task snapshot into the open detail modal while preserving prompt data", async () => {

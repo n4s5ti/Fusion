@@ -77,15 +77,16 @@ describe("TodoView", () => {
     mockUseTodoLists.mockReturnValue(createMockTodoLists());
   });
 
+  it("renders the docked view header", () => {
+    render(<TodoView addToast={addToast} />);
+    expect(screen.getByRole("heading", { level: 2, name: "Todos" })).toBeInTheDocument();
+    expect(screen.getByText("Manage reusable todo lists for your project.")).toBeInTheDocument();
+  });
+
   it("renders sidebar with list names", () => {
     render(<TodoView addToast={addToast} />);
     expect(screen.getByTestId("todo-list-list-1")).toHaveTextContent("My List");
     expect(screen.getByTestId("todo-list-list-2")).toHaveTextContent("Work Tasks");
-  });
-
-  it("applies keyboard-active root class when mobileKeyboardActive is true", () => {
-    render(<TodoView addToast={addToast} mobileKeyboardActive />);
-    expect(screen.getByTestId("todo-view-root")).toHaveClass("todo-view--mobile-keyboard-active");
   });
 
   it("renders only items for the selected list", () => {

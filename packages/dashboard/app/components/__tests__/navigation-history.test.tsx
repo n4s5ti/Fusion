@@ -25,7 +25,7 @@ const defaultSettings: Settings = {
   worktreeInitCommand: "",
   testCommand: "",
   buildCommand: "",
-  experimentalFeatures: { insights: true, roadmap: true, skillsView: true, agentsView: true, evalsView: true },
+  experimentalFeatures: { insights: true, roadmap: true, skillsView: true, agentsView: true, evalsView: true, todoView: true },
 };
 
 const mockSubscribeSse = vi.fn((..._args: any[]) => vi.fn());
@@ -85,6 +85,7 @@ const mockUseTasks = vi.fn(() => ({
   archiveTask: vi.fn(),
   unarchiveTask: vi.fn(),
   archiveAllDone: vi.fn(),
+  refreshTasks: vi.fn(),
 }));
 
 vi.mock("../../hooks/useTasks", () => ({
@@ -358,6 +359,7 @@ describe("Navigation history integration", () => {
       archiveTask: vi.fn(),
       unarchiveTask: vi.fn(),
       archiveAllDone: vi.fn(),
+      refreshTasks: vi.fn(),
     }));
     mockProjectsState.projects = [];
     mockProjectsState.loading = false;
@@ -489,6 +491,29 @@ describe("Navigation history integration", () => {
     expect((window.history.pushState as any).mock.calls.length).toBeGreaterThan(pushCallsBefore);
   });
 
+  it("pushes history entry and reverts when switching to todos from overflow", async () => {
+    localStorage.setItem("kb-dashboard-view-mode", "project");
+    const taskViewStorageKey = scopedKey("kb-dashboard-task-view", DEFAULT_PROJECT_ID);
+    localStorage.setItem(taskViewStorageKey, "board");
+
+    await renderAppAndWait();
+
+    const pushCallsBefore = (window.history.pushState as any).mock.calls.length;
+    fireEvent.click(screen.getByTestId("view-toggle-overflow-trigger"));
+    fireEvent.click(screen.getByTestId("view-overflow-todos"));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("todo-view")).toBeTruthy();
+    });
+    expect((window.history.pushState as any).mock.calls.length).toBeGreaterThan(pushCallsBefore);
+
+    dispatchPopState({ navIndex: 0 });
+    await waitFor(() => {
+      expect(screen.queryByTestId("todo-view")).toBeNull();
+      expect(screen.getByTestId("board-view")).toBeTruthy();
+    });
+  });
+
   // 4. Desktop: popstate reverts view changes
   it("reverts view change on popstate in desktop mode", async () => {
     localStorage.setItem("kb-dashboard-view-mode", "project");
@@ -529,6 +554,7 @@ describe("Navigation history integration", () => {
       archiveTask: vi.fn(),
       unarchiveTask: vi.fn(),
       archiveAllDone: vi.fn(),
+      refreshTasks: vi.fn(),
     }));
 
     await renderMobileAppAndWait();
@@ -561,6 +587,7 @@ describe("Navigation history integration", () => {
       archiveTask: vi.fn(),
       unarchiveTask: vi.fn(),
       archiveAllDone: vi.fn(),
+      refreshTasks: vi.fn(),
     }));
 
     await renderMobileAppAndWait();

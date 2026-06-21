@@ -118,7 +118,7 @@ const MemoryView = lazy(() => import("./components/MemoryView").then((m) => ({ d
 const SecretsView = lazy(() => import("./components/SecretsView").then((m) => ({ default: m.SecretsView })));
 const CommandCenter = lazy(() => import("./components/command-center/CommandCenter").then((m) => ({ default: m.CommandCenter })));
 const DevServerView = lazy(() => import("./components/DevServerView").then((m) => ({ default: m.DevServerView })));
-const _TodoView = lazy(() => import("./components/TodoView").then((m) => ({ default: m.TodoView })));
+const TodoView = lazy(() => import("./components/TodoView").then((m) => ({ default: m.TodoView })));
 const GoalsView = lazy(() => import("./components/GoalsView").then((m) => ({ default: m.GoalsView })));
 const StashRecoveryView = lazy(() => import("./components/StashRecoveryView").then((m) => ({ default: m.StashRecoveryView })));
 const PullRequestView = lazy(() => import("./components/PullRequestView").then((m) => ({ default: m.PullRequestView })));
@@ -1086,7 +1086,10 @@ function AppInner() {
     if (taskView === "goalsView" && !goalsEnabled) {
       handleChangeTaskView("board");
     }
-  }, [taskView, settingsLoaded, skillsEnabled, insightsEnabled, handleChangeTaskView, agentsEnabled, memoryEnabled, devServerEnabled, researchEnabled, evalsEnabled, goalsEnabled, graphPluginTaskView]);
+    if (taskView === "todos" && !todosEnabled) {
+      handleChangeTaskView("board");
+    }
+  }, [taskView, settingsLoaded, skillsEnabled, insightsEnabled, handleChangeTaskView, agentsEnabled, memoryEnabled, devServerEnabled, researchEnabled, evalsEnabled, goalsEnabled, todosEnabled, graphPluginTaskView]);
 
   const {
     availableModels,
@@ -1287,11 +1290,6 @@ function AppInner() {
   const openFileInBrowser = useCallback((path: string, opts?: { workspace?: string; line?: number; col?: number }) => {
     modalManager.openFiles(opts?.workspace, path);
     pushNav({ type: "modal", close: modalManager.closeFiles });
-  }, [modalManager, pushNav]);
-
-  const openTodosWithNav = useCallback(() => {
-    modalManager.openTodos();
-    pushNav({ type: "modal", close: modalManager.closeTodos });
   }, [modalManager, pushNav]);
 
   const openActivityLogWithNav = useCallback(() => {
@@ -1773,7 +1771,17 @@ function AppInner() {
         </PageErrorBoundary>
       );
     }
-
+    if (taskView === "todos") {
+      // FNXC:Todos 2026-06-21-09:21: Todos render as a docked right-content view, not a modal overlay, per FN-6829 so all dashboard navigation surfaces share the same taskView routing model.
+      if (!settingsLoaded || !todosEnabled) return null;
+      return (
+        <PageErrorBoundary>
+          <Suspense fallback={null}>
+            <TodoView projectId={currentProject?.id} addToast={addToast} onPlanningMode={openPlanningWithInitialPlanWithNav} onTaskCreated={(task) => ingestCreatedTasks([task])} />
+          </Suspense>
+        </PageErrorBoundary>
+      );
+    }
     if (taskView === "command-center") {
       return (
         <PageErrorBoundary>
@@ -1943,8 +1951,6 @@ function AppInner() {
         onToggleTerminal={toggleTerminalWithNav}
         onOpenFiles={openFilesWithNav}
         filesOpen={modalManager.filesOpen}
-        onOpenTodos={openTodosWithNav}
-        todosOpen={modalManager.todosOpen}
         todosEnabled={todosEnabled}
         view={taskView}
         onChangeView={viewMode === "project" && currentProject ? handleTaskViewChange : undefined}
@@ -2113,8 +2119,6 @@ function AppInner() {
             view={taskView}
             onChangeView={handleTaskViewChange}
             onOpenSettings={openSettingsWithNav}
-            onOpenTodos={openTodosWithNav}
-            todosOpen={modalManager.todosOpen}
             todosEnabled={todosEnabled}
             mailboxUnreadCount={mailboxUnreadCount}
             mailboxPendingApprovalCount={mailboxPendingApprovalCount}
@@ -2181,8 +2185,6 @@ function AppInner() {
         onOpenScripts={openScriptsWithNav}
         onToggleTerminal={toggleTerminalWithNav}
         onOpenFiles={openFilesWithNav}
-        onOpenTodos={openTodosWithNav}
-        todosOpen={modalManager.todosOpen}
         onOpenGitHubImport={openGitHubImportWithNav}
         onOpenPlanning={openPlanningWithNav}
         onResumePlanning={resumePlanningWithNav}

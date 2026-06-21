@@ -5,7 +5,7 @@ import { getScopedItem, setScopedItem } from "../utils/projectStorage";
 import { getPluginViewId, isPluginViewId, isPluginViewRegistered } from "../plugins/pluginViewRegistry";
 
 export type ViewMode = "overview" | "project";
-export type BuiltInTaskView = "board" | "list" | "graph" | "agents" | "missions" | "chat" | "documents" | "research" | "evals" | "goalsView" | "skills" | "mailbox" | "insights" | "memory" | "command-center" | "secrets" | "devserver" | "dev-server" | "stash-recovery" | "pull-requests";
+export type BuiltInTaskView = "board" | "list" | "graph" | "agents" | "missions" | "chat" | "documents" | "research" | "evals" | "goalsView" | "todos" | "skills" | "mailbox" | "insights" | "memory" | "command-center" | "secrets" | "devserver" | "dev-server" | "stash-recovery" | "pull-requests";
 export type PluginTaskView = `plugin:${string}:${string}`;
 export type TaskView = BuiltInTaskView | PluginTaskView;
 
@@ -20,6 +20,11 @@ const BUILT_IN_TASK_VIEWS: readonly BuiltInTaskView[] = [
   "research",
   "evals",
   "goalsView",
+  /*
+  FNXC:ViewState 2026-06-21-09:14:
+  FN-6829 promotes project Todos from modal-only state into the persisted built-in task-view registry so dashboard navigation can dock it in the right content area.
+  */
+  "todos",
 
   "skills",
   "mailbox",

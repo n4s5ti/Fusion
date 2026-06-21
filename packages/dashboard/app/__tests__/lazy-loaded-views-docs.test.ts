@@ -89,15 +89,7 @@ function extractConstLazyViews(source: string): string[] {
 
 function extractAppLazyViews(appSource: string): Set<string> {
   const normalized = extractConstLazyViews(appSource)
-    .map((name) => {
-      if (name === "_TodoView") {
-        return "TodoView";
-      }
-      if (name.startsWith("_")) {
-        return null;
-      }
-      return name;
-    })
+    .map((name) => (name.startsWith("_") ? null : name))
     .filter((name): name is string => Boolean(name));
   return new Set(normalized);
 }

@@ -251,7 +251,7 @@ describe("Header", () => {
     });
 
     it("shows the Todos entry in view overflow when todos are enabled", () => {
-      renderHeader({ onChangeView: noop, onOpenTodos: vi.fn(), todosEnabled: true });
+      renderHeader({ onChangeView: noop, todosEnabled: true });
       fireEvent.click(screen.getByTestId("view-toggle-overflow-trigger"));
       expect(screen.getByTestId("view-overflow-todos")).toBeInTheDocument();
     });
@@ -559,7 +559,7 @@ describe("Header", () => {
   describe("todos navigation", () => {
     for (const tier of ["desktop", "tablet"] as const) {
       it(`shows Todos only in More views and Mailbox only top-level on ${tier}`, () => {
-        renderHeader({ onChangeView: noop, onOpenTodos: vi.fn(), todosEnabled: true }, tier);
+        renderHeader({ onChangeView: noop, todosEnabled: true }, tier);
 
         expect(screen.queryByTestId("todos-toggle-btn")).toBeNull();
         expect(screen.getByTitle("Mailbox view")).toBeInTheDocument();
@@ -572,17 +572,25 @@ describe("Header", () => {
     }
 
     it("does not show Todos entry in More views when disabled", () => {
-      renderHeader({ onChangeView: noop, onOpenTodos: vi.fn(), todosEnabled: false }, "desktop");
+      renderHeader({ onChangeView: noop, todosEnabled: false }, "desktop");
       fireEvent.click(screen.getByTestId("view-toggle-overflow-trigger"));
       expect(screen.queryByTestId("view-overflow-todos")).toBeNull();
     });
 
-    it("calls onOpenTodos from More views", () => {
-      const onOpenTodos = vi.fn();
-      renderHeader({ onChangeView: noop, onOpenTodos, todosEnabled: true }, "desktop");
-      fireEvent.click(screen.getByTestId("view-toggle-overflow-trigger"));
-      fireEvent.click(screen.getByTestId("view-overflow-todos"));
-      expect(onOpenTodos).toHaveBeenCalled();
+    it("routes to todos from More views and marks active state", () => {
+      const onChangeView = vi.fn();
+      renderHeader({ onChangeView, view: "todos", todosEnabled: true }, "desktop");
+
+      const trigger = screen.getByTestId("view-toggle-overflow-trigger");
+      expect(trigger.className).toContain("active");
+      fireEvent.click(trigger);
+
+      const todosItem = screen.getByTestId("view-overflow-todos");
+      expect(todosItem.className).toContain("active");
+      fireEvent.click(todosItem);
+
+      expect(onChangeView).toHaveBeenCalledWith("todos");
+      expect(screen.queryByTestId("view-overflow-todos")).toBeNull();
     });
   });
 

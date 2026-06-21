@@ -84,8 +84,6 @@ export interface HeaderProps {
   /** Opens the top-level workspace-aware file browser modal. */
   onOpenFiles?: () => void;
   filesOpen?: boolean;
-  onOpenTodos?: () => void;
-  todosOpen?: boolean;
   todosEnabled?: boolean;
   view?: TaskView;
   onChangeView?: (view: TaskView) => void;
@@ -147,8 +145,6 @@ export function Header({
   onToggleTerminal,
   onOpenFiles,
   filesOpen,
-  onOpenTodos,
-  todosOpen,
   todosEnabled,
   view = "board",
   onChangeView,
@@ -1086,7 +1082,7 @@ export function Header({
               <>
                 <button
                   ref={viewOverflowTriggerRef}
-                  className={`view-toggle-btn${["research", "skills", "insights", "memory", "secrets", "dev-server", "devserver", "graph", "stash-recovery"].includes(view) || (isTablet && view === "documents") || (experimentalFeatures?.evalsView && view === "evals") || (experimentalFeatures?.goalsView && view === "goalsView") || (todosEnabled && todosOpen) || isPluginViewId(view) ? " active" : ""}`}
+                  className={`view-toggle-btn${["research", "skills", "insights", "memory", "secrets", "dev-server", "devserver", "graph", "stash-recovery", "todos"].includes(view) || (isTablet && view === "documents") || (experimentalFeatures?.evalsView && view === "evals") || (experimentalFeatures?.goalsView && view === "goalsView") || isPluginViewId(view) ? " active" : ""}`}
                   onClick={() => setIsViewOverflowOpen((prev) => !prev)}
                   title={t("header.moreViews", "More views")}
                   aria-label={t("header.moreViews", "More views")}
@@ -1243,11 +1239,11 @@ export function Header({
                         <span className="visually-hidden" data-testid="view-toggle-dev-server" />
                       </button>
                     )}
-                    {todosEnabled && onOpenTodos && (
+                    {todosEnabled && onChangeView && (
                       <button
-                        className={`view-toggle-overflow-item${todosOpen ? " active" : ""}`}
+                        className={`view-toggle-overflow-item${view === "todos" ? " active" : ""}`}
                         onClick={() => {
-                          onOpenTodos();
+                          onChangeView("todos");
                           setIsViewOverflowOpen(false);
                         }}
                         role="menuitem"

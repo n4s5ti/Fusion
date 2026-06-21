@@ -100,8 +100,6 @@ export interface LeftSidebarNavProps {
   view: TaskView;
   onChangeView: (view: TaskView) => void;
   onOpenSettings?: () => void;
-  onOpenTodos?: () => void;
-  todosOpen?: boolean;
   todosEnabled?: boolean;
   mailboxUnreadCount?: number;
   mailboxPendingApprovalCount?: number;
@@ -150,8 +148,6 @@ export function LeftSidebarNav({
   view,
   onChangeView,
   onOpenSettings,
-  onOpenTodos,
-  todosOpen = false,
   todosEnabled = false,
   mailboxUnreadCount = 0,
   mailboxPendingApprovalCount = 0,
@@ -349,8 +345,8 @@ export function LeftSidebarNav({
     ...(experimentalFeatures?.devServerView
       ? [{ id: "devserver", label: t("header.devServerView", "Dev Server"), view: "devserver" as TaskView, isActive: view === "dev-server" || view === "devserver", icon: Monitor, testId: "sidebar-nav-devserver", onSelect: () => onChangeView("devserver") }]
       : []),
-    ...(todosEnabled && onOpenTodos
-      ? [{ id: "todos", label: t("header.todosView", "Todos"), isActive: todosOpen, icon: CheckSquare, testId: "sidebar-nav-todos", onSelect: onOpenTodos }]
+    ...(todosEnabled
+      ? [{ id: "todos", label: t("header.todosView", "Todos"), view: "todos" as TaskView, isActive: view === "todos", icon: CheckSquare, testId: "sidebar-nav-todos", onSelect: () => onChangeView("todos") }]
       : []),
     ...overflowPluginViews.map((entry): SidebarNavEntry => {
       const PluginIcon = getPluginNavIcon(entry.view.icon);

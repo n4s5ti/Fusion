@@ -13,7 +13,6 @@ import { SubtaskBreakdownModal } from "./SubtaskBreakdownModal";
 import { TerminalModal } from "./TerminalModal";
 import { ScriptsModal } from "./ScriptsModal";
 import { FileBrowserModal } from "./FileBrowserModal";
-import { TodoModal } from "./TodoModal";
 import { UsageIndicator } from "./UsageIndicator";
 import { ScheduledTasksModal } from "./ScheduledTasksModal";
 import { NewTaskModal } from "./NewTaskModal";
@@ -175,11 +174,6 @@ export function AppModals({
     removeNav(modalManager.closeFiles);
     modalManager.closeFiles();
   }, [modalManager.closeFiles, removeNav]);
-
-  const closeTodosWithNav = useCallback(() => {
-    removeNav(modalManager.closeTodos);
-    modalManager.closeTodos();
-  }, [modalManager.closeTodos, removeNav]);
 
   const closeUsageWithNav = useCallback(() => {
     removeNav(modalManager.closeUsage);
@@ -402,16 +396,6 @@ export function AppModals({
           onWorkspaceChange={modalManager.setFileWorkspace}
           projectId={projectId}
           onSendSelectionToTask={modalManager.openNewTaskWithDescription}
-        />
-      )}
-
-      {modalManager.todosOpen && (
-        <TodoModal
-          isOpen={true}
-          onClose={closeTodosWithNav}
-          addToast={addToast}
-          projectId={projectId}
-          onPlanningMode={modalManager.openPlanningWithInitialPlan}
         />
       )}
 

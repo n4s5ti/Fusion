@@ -401,10 +401,9 @@ describe("LeftSidebarNav", () => {
     expect(window.localStorage.getItem("fusion:left-sidebar-width")).toBe("336");
   });
 
-  it("routes clicks to view changes, todos callback, and settings callback", () => {
-    const onOpenTodos = vi.fn();
+  it("routes clicks to view changes, todos view, and settings callback", () => {
     const onOpenSettings = vi.fn();
-    const { onChangeView } = renderSidebar({ todosEnabled: true, onOpenTodos, onOpenSettings });
+    const { onChangeView } = renderSidebar({ todosEnabled: true, onOpenSettings });
 
     fireEvent.click(screen.getByTestId("sidebar-nav-list"));
     expect(onChangeView).toHaveBeenCalledWith("list");
@@ -413,7 +412,7 @@ describe("LeftSidebarNav", () => {
     expect(onChangeView).toHaveBeenCalledWith("plugin:fusion-plugin-overflow:overflow-view");
 
     fireEvent.click(screen.getByTestId("sidebar-nav-todos"));
-    expect(onOpenTodos).toHaveBeenCalledOnce();
+    expect(onChangeView).toHaveBeenCalledWith("todos");
 
     fireEvent.click(screen.getByTestId("sidebar-nav-settings"));
     expect(onOpenSettings).toHaveBeenCalledOnce();

@@ -52,7 +52,6 @@ export interface ModalManager {
   terminalInitialCommand: string | undefined;
   terminalInitialCommandGeneration: number;
   filesOpen: boolean;
-  todosOpen: boolean;
   fileBrowserWorkspace: string;
   fileBrowserInitialFile: string | null;
   activityLogOpen: boolean;
@@ -114,8 +113,6 @@ export interface ModalManager {
 
   openFiles: (workspace?: string, initialFile?: string | null) => void;
   closeFiles: () => void;
-  openTodos: () => void;
-  closeTodos: () => void;
   setFileWorkspace: (workspace: string) => void;
 
   openActivityLog: () => void;
@@ -184,7 +181,6 @@ export function useModalManager(options: UseModalManagerOptions): ModalManager {
   const [terminalInitialCommand, setTerminalInitialCommand] = useState<string | undefined>(undefined);
   const [terminalInitialCommandGeneration, setTerminalInitialCommandGeneration] = useState(0);
   const [filesOpen, setFilesOpen] = useState(false);
-  const [todosOpen, setTodosOpen] = useState(false);
   const [fileBrowserWorkspace, setFileBrowserWorkspace] = useState("project");
   const [fileBrowserInitialFile, setFileBrowserInitialFile] = useState<string | null>(null);
   const [activityLogOpen, setActivityLogOpen] = useState(false);
@@ -207,7 +203,6 @@ export function useModalManager(options: UseModalManagerOptions): ModalManager {
       isSubtaskOpen ||
       terminalOpen ||
       filesOpen ||
-      todosOpen ||
       activityLogOpen ||
       gitManagerOpen ||
       workflowEditorOpen ||
@@ -376,8 +371,6 @@ export function useModalManager(options: UseModalManagerOptions): ModalManager {
     setFilesOpen(false);
     setFileBrowserInitialFile(null);
   }, []);
-  const openTodos = useCallback(() => setTodosOpen(true), []);
-  const closeTodos = useCallback(() => setTodosOpen(false), []);
   const setFileWorkspace = useCallback((workspace: string) => {
     if (typeof workspace === "string" && workspace) {
       setFileBrowserWorkspace(workspace);
@@ -468,7 +461,6 @@ export function useModalManager(options: UseModalManagerOptions): ModalManager {
     terminalInitialCommand,
     terminalInitialCommandGeneration,
     filesOpen,
-    todosOpen,
     fileBrowserWorkspace,
     fileBrowserInitialFile,
     activityLogOpen,
@@ -511,8 +503,6 @@ export function useModalManager(options: UseModalManagerOptions): ModalManager {
     closeTerminal,
     openFiles,
     closeFiles,
-    openTodos,
-    closeTodos,
     setFileWorkspace,
     openActivityLog,
     closeActivityLog,

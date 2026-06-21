@@ -505,12 +505,13 @@ Project-file previews also support selection comments in both raw and rendered m
 
 ## Todo View
 
-Todo View is an experimental dashboard surface for managing per-project todo lists and turning items into planning or task workflows.
+Todo View is an experimental full-height dashboard surface for managing per-project todo lists and turning items into planning or task workflows. It renders in the right content area like other project views rather than as a modal overlay.
 
 > Available when `experimentalFeatures.todoView` is enabled.
 
 Navigation:
-- Desktop: **Header → More views → Todos** (single canonical desktop entry)
+- Desktop/tablet with Left Sidebar Navigation enabled: **Left sidebar → Todos**
+- Desktop/tablet without the left sidebar: **Header → More views → Todos**
 - Mobile: **More** sheet → **Todos**
 
 For full behavior, API contracts, and storage details, use the canonical [Todo View guide](./todo-view.md).

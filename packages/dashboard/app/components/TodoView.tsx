@@ -27,8 +27,6 @@ interface TodoViewProps {
   addToast: (message: string, type?: "success" | "error" | "info") => void;
   onPlanningMode?: (initialPlan: string) => void;
   onTaskCreated?: (task: Task) => void;
-  onClose?: () => void;
-  mobileKeyboardActive?: boolean;
 }
 
 function sortItems(items: TodoItem[]): TodoItem[] {
@@ -40,7 +38,6 @@ export function TodoView({
   addToast,
   onPlanningMode,
   onTaskCreated,
-  mobileKeyboardActive = false,
 }: TodoViewProps) {
   const { t } = useTranslation("app");
   const {
@@ -305,9 +302,22 @@ export function TodoView({
     }
   }, [projectId, addToast, agents, onTaskCreated, t]);
 
+  const header = (
+    <header className="todo-view-header">
+      <div className="todo-view-title-group">
+        <ListChecks aria-hidden="true" />
+        <div>
+          <h2>{t("todo.todos", "Todos")}</h2>
+          <p>{t("todo.manageDescription", "Manage reusable todo lists for your project.")}</p>
+        </div>
+      </div>
+    </header>
+  );
+
   if (loading) {
     return (
-      <div className="todo-view">
+      <div className="todo-view" data-testid="todo-view-root">
+        {header}
         <div className="todo-loading">
           <Loader2 className="todo-loading-icon" aria-hidden="true" />
           <p>{t("todo.loading", "Loading todos...")}</p>
@@ -317,10 +327,8 @@ export function TodoView({
   }
 
   return (
-    <div
-      className={`todo-view${mobileKeyboardActive ? " todo-view--mobile-keyboard-active" : ""}`}
-      data-testid="todo-view-root"
-    >
+    <div className="todo-view" data-testid="todo-view-root">
+      {header}
       <div className="todo-view-layout">
         <aside className="todo-view-sidebar" aria-label={t("todo.listsLabel", "Todo lists sidebar")}>
           <div className="todo-sidebar-header">
