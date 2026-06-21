@@ -6781,6 +6781,16 @@ export class TaskExecutor {
                 }
                 return;
               }
+              // Note: the count is left at MAX (not reset here) deliberately, so
+              // this task stops auto-continuing until a clean graph completion
+              // resets it (~4242). Because the budget is SHARED with the
+              // transient-resume-after-restart path (~6869), a task that already
+              // burned retries there starts here with a smaller auto-continue
+              // budget — and vice versa. That cross-draining is intentional: a
+              // single combined cap across both transient-recovery paths is what
+              // bounds runaway re-runs, even if it means a repeatedly
+              // hard-cancelled task that never completes cleanly exhausts the
+              // shared budget and falls back to plain todo re-queueing.
               executorLog.warn(`${task.id}: engine abort during pause/resume exhausted ${MAX_TRANSIENT_GRAPH_RESUME_RETRIES} internal retries — falling back to benign todo re-queue`);
             }
             const todoBenign = `Workflow graph run ended during ${pauseProvenance} with task re-queued to todo — benign, cleared for normal scheduling`;

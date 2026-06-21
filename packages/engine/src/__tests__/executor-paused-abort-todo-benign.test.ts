@@ -121,6 +121,38 @@ describe("pause-abort benign requeue-to-todo (FN-6782)", () => {
     expect(executeSpy).toHaveBeenCalledTimes(1);
   });
 
+  it.each([
+    { label: "paused", patch: { paused: true } },
+    { label: "user-paused", patch: { userPaused: true } },
+    { label: "moved out of todo", patch: { column: "in-progress" } },
+    { label: "deleted", patch: { deletedAt: "2026-06-21T00:00:00.000Z" } },
+  ])(
+    "fire-time guard: aborts the auto-continue when the task became $label during the backoff window",
+    async ({ patch }) => {
+      // The auto-continue re-fetches the task just before re-executing and must
+      // bail if the operator paused/moved/deleted it during the backoff window —
+      // the direct execute() bypasses the scheduler's pause filter, so without
+      // this guard it would resume work the user just parked. The initial
+      // `live` snapshot is a clean todo (so the auto-continue branch is entered
+      // and a retry scheduled); the task then changes state before the timer
+      // fires, and the fire-time re-fetch must abort the dispatch.
+      const { store, task, executor } = makeHarness({ column: "todo" });
+      (executor as any).activeWorktrees.set(task.id, task.worktree);
+      const executeSpy = vi.spyOn(executor as any, "execute").mockResolvedValue(undefined);
+
+      await invokeGraphFailure(executor, task);
+      // The auto-continue branch was entered and a retry scheduled...
+      expect(logText(store)).toContain("auto-continuing the agent session");
+
+      // ...but the task changed state before the scheduled retry fires; the
+      // fire-time re-fetch returns the mutated snapshot.
+      store.getTask.mockResolvedValue({ ...task, ...patch } as typeof task);
+      await flushScheduledRetry();
+
+      expect(executeSpy).not.toHaveBeenCalled();
+    },
+  );
+
   it("clears a stale failed status when auto-continuing an engine-internal abort (no lingering failure notification)", async () => {
     // A pause-abort parked status:"failed" on an earlier non-todo observation
     // stays dispatchable (scheduler filters column+paused, not status) and
@@ -154,16 +186,17 @@ describe("pause-abort benign requeue-to-todo (FN-6782)", () => {
     expect(executeSpy).toHaveBeenCalledTimes(1);
   });
 
-  it("does NOT auto-resume a genuine user pause or global pause that landed in todo", async () => {
-    // The auto-continue is scoped strictly to the engine-internal abort
-    // provenance. A genuine operator pause (userPaused) or a global engine pause
-    // that ended up in todo must stay parked-benign and wait for explicit
-    // resume — auto-resuming it would override the operator's intent.
-    for (const harness of [
-      makeHarness({ column: "todo", userPaused: true }),
-      makeHarness({ column: "todo" }, "global-pause"),
-    ]) {
-      const { store, task, executor } = harness;
+  it.each([
+    { label: "explicit user pause", overrides: { column: "todo", userPaused: true }, provenance: "hard-cancel" as const },
+    { label: "global pause", overrides: { column: "todo" }, provenance: "global-pause" as const },
+  ])(
+    "does NOT auto-resume a $label that landed in todo",
+    async ({ overrides, provenance }) => {
+      // The auto-continue is scoped strictly to the engine-internal abort
+      // provenance. A genuine operator pause (userPaused) or a global engine
+      // pause that ended up in todo must stay parked-benign and wait for
+      // explicit resume — auto-resuming it would override the operator's intent.
+      const { store, task, executor } = makeHarness(overrides, provenance);
       (executor as any).activeWorktrees.set(task.id, task.worktree);
       const executeSpy = vi.spyOn(executor as any, "execute").mockResolvedValue(undefined);
 
@@ -173,8 +206,8 @@ describe("pause-abort benign requeue-to-todo (FN-6782)", () => {
       expect(logText(store)).not.toContain("auto-continuing the agent session");
       await flushScheduledRetry();
       expect(executeSpy).not.toHaveBeenCalled();
-    }
-  });
+    },
+  );
 
   it("falls back to a benign todo re-queue once internal retries are exhausted", async () => {
     // After MAX_TRANSIENT_GRAPH_RESUME_RETRIES (2) internal retries, a still-
