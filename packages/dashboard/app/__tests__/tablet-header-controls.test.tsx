@@ -13,8 +13,8 @@ vi.mock("../api", () => ({
  * Tablet header controls test suite.
  *
  * Verifies that the tablet viewport tier (769px–1024px) renders the
- * header with engine controls inline while moving lower-priority actions
- * into the overflow menu.
+ * header without the retired engine controls while moving lower-priority
+ * actions into the overflow menu.
  */
 
 type ViewportTier = "mobile" | "tablet" | "desktop";
@@ -48,10 +48,6 @@ function renderTabletHeader(props = {}) {
     <Header
       onOpenSettings={noop}
       onOpenGitHubImport={noop}
-      globalPaused={false}
-      enginePaused={false}
-      onToggleGlobalPause={noop}
-      onToggleEnginePause={noop}
       {...props}
     />
   );
@@ -63,10 +59,6 @@ function renderDesktopHeader(props = {}) {
     <Header
       onOpenSettings={noop}
       onOpenGitHubImport={noop}
-      globalPaused={false}
-      enginePaused={false}
-      onToggleGlobalPause={noop}
-      onToggleEnginePause={noop}
       {...props}
     />
   );
@@ -81,12 +73,13 @@ describe("tablet header controls", () => {
     vi.restoreAllMocks();
   });
 
-  // ── Engine controls stay inline on tablet ──────────────────────
+  // ── Engine controls moved out of the header ──────────────────────
 
-  it("renders engine control split-button inline on tablet", () => {
+  it("does not render engine control split-button inline on tablet", () => {
     renderTabletHeader();
-    expect(screen.getByTestId("engine-control-main-btn")).toBeDefined();
-    expect(screen.getByTestId("engine-control-chevron-btn")).toBeDefined();
+    expect(screen.queryByTestId("engine-control-main-btn")).toBeNull();
+    expect(screen.queryByTestId("engine-control-chevron-btn")).toBeNull();
+    expect(screen.queryByTestId("engine-control-pause-triage-btn")).toBeNull();
   });
 
   it("renders view toggle inline on tablet", () => {

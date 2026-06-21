@@ -144,10 +144,6 @@ describe("MultiProjectFlow", () => {
         <Header
           onOpenSettings={noop}
           onOpenGitHubImport={noop}
-          globalPaused={false}
-          enginePaused={false}
-          onToggleGlobalPause={noop}
-          onToggleEnginePause={noop}
           projects={[singleProject, otherProject]}
           currentProject={singleProject}
           onViewAllProjects={handleViewAllProjects}
@@ -171,10 +167,6 @@ describe("MultiProjectFlow", () => {
         <Header
           onOpenSettings={noop}
           onOpenGitHubImport={noop}
-          globalPaused={false}
-          enginePaused={false}
-          onToggleGlobalPause={noop}
-          onToggleEnginePause={noop}
           projects={[singleProject]}
           currentProject={singleProject}
           onViewAllProjects={noop}

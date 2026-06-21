@@ -2267,6 +2267,7 @@
     "daysAgo_other": "{{count}}d ago",
     "escalated": "Escalated",
     "escalatedSuffix": " (escalated)",
+    "engineControls": "Engine controls",
     "hideProjectDir": "Hide project directory",
     "hoursAgo_one": "{{count}}h ago",
     "hoursAgo_other": "{{count}}h ago",
@@ -2278,6 +2279,7 @@
     "noActivity": "no activity",
     "overlapBottleneck_one": "{{status}} overlap bottleneck {{blockerId}}: {{count}} todo blocked via blockedBy (threshold {{threshold}})",
     "overlapBottleneck_other": "{{status}} overlap bottleneck {{blockerId}}: {{count}} todo blocked via blockedBy (threshold {{threshold}})",
+    "openEngineControlsForState": "Open engine controls for {{state}} state",
     "overlapQueue": "Overlap queue",
     "overlapSummary_one": "{{blockerId}} · {{count}} todo",
     "overlapSummary_other": "{{blockerId}} · {{count}} todo",
@@ -2292,7 +2294,8 @@
     "status": "Executor status",
     "stuck": "Stuck",
     "temporary": "Temporary",
-    "todoStatus": "todo"
+    "todoStatus": "todo",
+    "triageDisabledWhileStopped": "Start the AI engine before changing triage scheduling"
   },
   "fileBrowser": {
     "back": "Back to file list",

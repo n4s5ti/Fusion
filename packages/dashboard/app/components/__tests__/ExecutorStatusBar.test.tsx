@@ -8,6 +8,26 @@ vi.mock("../../hooks/useExecutorStats", () => ({
   useExecutorStats: vi.fn(),
 }));
 
+vi.mock("../EngineControlMenu", async () => {
+  const React = await import("react");
+  return {
+    EngineControlMenu: React.forwardRef(function MockEngineControlMenu(_props: unknown, ref) {
+      const [open, setOpen] = React.useState(false);
+      React.useImperativeHandle(ref, () => ({
+        open: () => setOpen(true),
+        close: () => setOpen(false),
+        toggle: () => setOpen((current) => !current),
+      }));
+      return (
+        <div>
+          <button type="button" data-testid="engine-control-menu-trigger" onClick={() => setOpen((current) => !current)}>Engine controls</button>
+          {open ? <div role="menu" data-testid="engine-control-menu">Engine menu</div> : null}
+        </div>
+      );
+    }),
+  };
+});
+
 import { useExecutorStats } from "../../hooks/useExecutorStats";
 import type { ExecutorStats } from "../../api";
 
@@ -176,6 +196,26 @@ describe("ExecutorStatusBar", () => {
       const statusBar = screen.getByRole("status");
       const stateElement = statusBar.querySelector(".executor-status-bar__state");
       expect(stateElement).toHaveTextContent("Running");
+    });
+
+    it("renders footer engine controls next to Running state and opens from the small trigger", async () => {
+      const user = userEvent.setup();
+      render(<ExecutorStatusBar tasks={emptyTasks} />);
+
+      const statusBar = screen.getByRole("status");
+      expect(statusBar.querySelector(".executor-status-bar__segment--engine-controls")).toHaveTextContent("Running");
+      await user.click(screen.getByTestId("engine-control-menu-trigger"));
+
+      expect(screen.getByTestId("engine-control-menu")).toBeInTheDocument();
+    });
+
+    it("opens footer engine controls from the executor state text", async () => {
+      const user = userEvent.setup();
+      render(<ExecutorStatusBar tasks={emptyTasks} />);
+
+      await user.click(screen.getByTestId("executor-state-engine-control-trigger"));
+
+      expect(screen.getByTestId("engine-control-menu")).toBeInTheDocument();
     });
 
     it("shows Paused state with paused executorState", () => {

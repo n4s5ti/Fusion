@@ -1,5 +1,5 @@
 import "./ExecutorStatusBar.css";
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import type { TFunction } from "i18next";
 import { useTranslation } from "react-i18next";
 import {
@@ -14,6 +14,7 @@ import { isLikelyTabSuspensionError } from "../hooks/visibilitySuspension";
 import { LoadingSpinner } from "./LoadingSpinner";
 import type { ExecutorState, AiSessionSummary } from "../api";
 import { BackgroundTasksIndicator } from "./BackgroundTasksIndicator";
+import { EngineControlMenu, type EngineControlMenuHandle } from "./EngineControlMenu";
 
 interface ExecutorStatusBarProps {
   /** Task list (shared with the board to keep counts in sync) */
@@ -95,6 +96,7 @@ export function ExecutorStatusBar({ tasks, projectId, taskStuckTimeoutMs, staleH
   const { t } = useTranslation("app");
   const { stats, loading, error } = useExecutorStats(tasks, projectId, taskStuckTimeoutMs, lastFetchTimeMs);
   const [isProjectPathVisible, setIsProjectPathVisible] = useState(false);
+  const engineControlMenuRef = useRef<EngineControlMenuHandle>(null);
 
   const stateDisplay = useMemo(() => getStateDisplay(stats.executorState, t), [stats.executorState, t]);
 
@@ -296,12 +298,21 @@ export function ExecutorStatusBar({ tasks, projectId, taskStuckTimeoutMs, staleH
       {/* Separator */}
       <span className="executor-status-bar__divider" aria-hidden="true" />
 
-      {/* Executor state badge */}
-      <div className="executor-status-bar__segment">
-        <StateIcon size={12} style={{ color: stateDisplay.color }} aria-hidden="true" />
-        <span className="executor-status-bar__state" style={{ color: stateDisplay.color }}>
-          {stateDisplay.label}
-        </span>
+      {/* Executor state badge and engine controls */}
+      <div className="executor-status-bar__segment executor-status-bar__segment--engine-controls">
+        <button
+          type="button"
+          className="executor-status-bar__state-trigger"
+          onClick={() => engineControlMenuRef.current?.open()}
+          aria-label={t("executor.openEngineControlsForState", "Open engine controls for {{state}} state", { state: stateDisplay.label })}
+          data-testid="executor-state-engine-control-trigger"
+        >
+          <StateIcon size={12} style={{ color: stateDisplay.color }} aria-hidden="true" />
+          <span className="executor-status-bar__state" style={{ color: stateDisplay.color }}>
+            {stateDisplay.label}
+          </span>
+        </button>
+        <EngineControlMenu ref={engineControlMenuRef} projectId={projectId} />
       </div>
     </div>
   );

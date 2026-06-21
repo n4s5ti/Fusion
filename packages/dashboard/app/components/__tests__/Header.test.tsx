@@ -43,10 +43,6 @@ function renderHeader(props = {}, tier: ViewportTier = "desktop") {
     <Header
       onOpenSettings={noop}
       onOpenGitHubImport={noop}
-      globalPaused={false}
-      enginePaused={false}
-      onToggleGlobalPause={noop}
-      onToggleEnginePause={noop}
       {...props}
     />
   );
@@ -591,42 +587,11 @@ describe("Header", () => {
   });
 
   describe("pause controls", () => {
-    it("renders engine control split-button", () => {
+    it("does not render the retired header engine control affordance", () => {
       renderHeader();
-      expect(screen.getByTestId("engine-control-main-btn")).toBeDefined();
-      expect(screen.getByTestId("engine-control-chevron-btn")).toBeDefined();
-    });
-
-    it("renders pause triage option in dropdown", () => {
-      renderHeader();
-      fireEvent.click(screen.getByTestId("engine-control-chevron-btn"));
-      expect(screen.getByTestId("engine-control-pause-triage-btn")).toBeDefined();
-    });
-
-    it("calls onToggleEnginePause when pause triage item is clicked", () => {
-      const onToggleEnginePause = vi.fn();
-      renderHeader({ onToggleEnginePause });
-      fireEvent.click(screen.getByTestId("engine-control-chevron-btn"));
-      fireEvent.click(screen.getByTestId("engine-control-pause-triage-btn"));
-      expect(onToggleEnginePause).toHaveBeenCalled();
-    });
-
-    it("calls onToggleGlobalPause when main button is clicked", () => {
-      const onToggleGlobalPause = vi.fn();
-      renderHeader({ onToggleGlobalPause });
-      fireEvent.click(screen.getByTestId("engine-control-main-btn"));
-      expect(onToggleGlobalPause).toHaveBeenCalled();
-    });
-
-    it("shows resume text in dropdown when engine is paused", () => {
-      renderHeader({ enginePaused: true });
-      fireEvent.click(screen.getByTestId("engine-control-chevron-btn"));
-      expect(screen.getByTitle("Resume scheduling")).toBeDefined();
-    });
-
-    it("shows start AI engine title on main button when global is paused", () => {
-      renderHeader({ globalPaused: true });
-      expect(screen.getByTitle("Start AI engine")).toBeDefined();
+      expect(screen.queryByTestId("engine-control-main-btn")).toBeNull();
+      expect(screen.queryByTestId("engine-control-chevron-btn")).toBeNull();
+      expect(screen.queryByTestId("engine-control-pause-triage-btn")).toBeNull();
     });
   });
 
@@ -1670,7 +1635,7 @@ describe("Header", () => {
   });
 
   describe("action ordering", () => {
-    it("Settings is the last inline action on desktop (after stop button)", () => {
+    it("Settings is the last inline action on desktop after engine controls moved to the footer", () => {
       const { container } = renderHeader({
         onOpenUsage: noop,
         onOpenActivityLog: noop,
@@ -1681,24 +1646,18 @@ describe("Header", () => {
         onRunScript: noop,
       }, "desktop");
 
-      // Get direct children of header-actions: top-level btn-icon buttons AND the split-button container
+      // Get direct top-level header action buttons; engine controls now live in the footer status bar.
       const headerActions = container.querySelector(".header-actions")!;
+      expect(headerActions.querySelector(".engine-control-split-btn")).toBeNull();
       const inlineItems = Array.from(
-        headerActions.querySelectorAll<HTMLElement>(
-          ":scope > button.btn-icon, :scope > .engine-control-split-btn"
-        )
+        headerActions.querySelectorAll<HTMLElement>(":scope > button.btn-icon")
       );
 
       const settingsIdx = inlineItems.findIndex(
         (el) => el instanceof HTMLButtonElement && el.title === "Settings"
       );
-      const splitBtnIdx = inlineItems.findIndex((el) =>
-        el.classList.contains("engine-control-split-btn")
-      );
 
       expect(settingsIdx).toBeGreaterThanOrEqual(0);
-      expect(splitBtnIdx).toBeGreaterThanOrEqual(0);
-      expect(settingsIdx).toBeGreaterThan(splitBtnIdx);
 
       const itemsAfterSettings = inlineItems.slice(settingsIdx + 1);
       expect(itemsAfterSettings).toHaveLength(0);

@@ -77,10 +77,6 @@ describe("Research navigation", () => {
       <Header
         onOpenSettings={vi.fn()}
         onOpenGitHubImport={vi.fn()}
-        globalPaused={false}
-        enginePaused={false}
-        onToggleGlobalPause={vi.fn()}
-        onToggleEnginePause={vi.fn()}
         view="board"
         onChangeView={onChangeView}
         experimentalFeatures={{ researchView: true }}
