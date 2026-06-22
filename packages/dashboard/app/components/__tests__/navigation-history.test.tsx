@@ -166,6 +166,12 @@ vi.mock("../../components/TaskDetailModal", () => ({
       </div>
     </div>
   ),
+  // FNXC:Navigation 2026-06-22-00:00: Board card clicks now open task detail in the full main panel via TaskDetailContent (not the modal). The mock exposes a stable testid so the embedded-panel popstate tests can assert on the new surface.
+  TaskDetailContent: ({ task }: { task: { id: string; title?: string } }) => (
+    <div data-testid="task-detail-main-panel-content">
+      <h2>{task.title ?? task.id}</h2>
+    </div>
+  ),
 }));
 
 vi.mock("../../components/SettingsModal", () => ({
@@ -572,16 +578,18 @@ describe("Navigation history integration", () => {
 
     await renderMobileAppAndWait();
 
+    // FNXC:Navigation 2026-06-22-00:00: Board card click opens the full main-panel task detail (TaskDetailContent), and mobile popstate (swipe back) reverts the pushed `task-detail` view entry back to the board.
     fireEvent.click(screen.getByTestId("open-task-FN-1"));
 
     await waitFor(() => {
-      expect(screen.getByTestId("task-detail-modal")).toBeTruthy();
+      expect(screen.getByTestId("task-detail-main-panel-content")).toBeTruthy();
     });
 
     dispatchPopState({ navIndex: 0 });
 
     await waitFor(() => {
-      expect(screen.queryByTestId("task-detail-modal")).toBeNull();
+      expect(screen.queryByTestId("task-detail-main-panel-content")).toBeNull();
+      expect(screen.getByTestId("board-view")).toBeTruthy();
     });
   });
 
@@ -605,31 +613,34 @@ describe("Navigation history integration", () => {
 
     await renderMobileAppAndWait();
 
+    // FNXC:Navigation 2026-06-22-00:00: Board card click opens the full main-panel detail; the "Back to board" button reverts to the board, and a subsequent reopen + mobile popstate must also dismiss it (the regression this test guards).
     fireEvent.click(screen.getByTestId("open-task-FN-1"));
 
     await waitFor(() => {
-      expect(screen.getByTestId("task-detail-modal")).toBeTruthy();
+      expect(screen.getByTestId("task-detail-main-panel-content")).toBeTruthy();
     });
 
-    fireEvent.click(screen.getByRole("button", { name: "Close" }));
+    fireEvent.click(screen.getByRole("button", { name: "Back to board" }));
     // removeNav drives history.back(); consume the self-triggered popstate
     // before reopening so the next popstate represents the user's swipe-back.
     dispatchPopState({ navIndex: 0 });
 
     await waitFor(() => {
-      expect(screen.queryByTestId("task-detail-modal")).toBeNull();
+      expect(screen.queryByTestId("task-detail-main-panel-content")).toBeNull();
+      expect(screen.getByTestId("board-view")).toBeTruthy();
     });
 
     fireEvent.click(screen.getByTestId("open-task-FN-1"));
 
     await waitFor(() => {
-      expect(screen.getByTestId("task-detail-modal")).toBeTruthy();
+      expect(screen.getByTestId("task-detail-main-panel-content")).toBeTruthy();
     });
 
     dispatchPopState({ navIndex: 0 });
 
     await waitFor(() => {
-      expect(screen.queryByTestId("task-detail-modal")).toBeNull();
+      expect(screen.queryByTestId("task-detail-main-panel-content")).toBeNull();
+      expect(screen.getByTestId("board-view")).toBeTruthy();
     });
   });
 

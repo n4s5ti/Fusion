@@ -13,6 +13,8 @@ import { Header, useViewportMode } from "./components/Header";
 import { Board } from "./components/Board";
 import { TaskCard } from "./components/TaskCard";
 import { ListView } from "./components/ListView";
+import { TaskDetailContent } from "./components/TaskDetailModal";
+import { ArrowLeft } from "lucide-react";
 import { ProjectOverview } from "./components/ProjectOverview";
 import { MissionManager } from "./components/MissionManager";
 import { MailboxView } from "./components/MailboxView";
@@ -545,6 +547,12 @@ function AppInner() {
       sseEnabled: taskSseEnabled,
     }
   );
+
+  /*
+  FNXC:Navigation 2026-06-22-00:00:
+  Snapshot of the task whose detail is shown in the main panel (Board card click → full-panel detail). Kept as a snapshot so the view survives a tasks revalidation; renderMainContent prefers the live row from `tasks` by id and falls back to this snapshot.
+  */
+  const [mainPanelDetailTask, setMainPanelDetailTask] = useState<Task | TaskDetail | null>(null);
 
   const previousTaskViewRef = useRef<TaskView>(taskView);
 
@@ -1258,6 +1266,21 @@ function AppInner() {
   }, [modalManager, pushNav]);
 
   /*
+  FNXC:Navigation 2026-06-22-00:00:
+  Board card clicks open task detail as a full main-content view that replaces the board (design: "Full main panel (replaces board)"), instead of the TaskDetailModal overlay. We store a snapshot of the clicked task and navigate to the registered `task-detail` view; renderMainContent renders TaskDetailContent embedded with a Back-to-board button. Only the Board uses this handler — list-view split-detail, right-dock cards, and other openDetail callers keep the modal behavior.
+  */
+  const openTaskDetailInMainPanel = useCallback((task: Task | TaskDetail) => {
+    setMainPanelDetailTask(task);
+    handleTaskViewChange("task-detail");
+  }, [handleTaskViewChange]);
+
+  // FNXC:Navigation 2026-06-22-00:00: Leaving task-detail clears the snapshot so a stale task never lingers if the view is reopened empty.
+  const closeTaskDetailMainPanel = useCallback(() => {
+    setMainPanelDetailTask(null);
+    handleTaskViewChange("board");
+  }, [handleTaskViewChange]);
+
+  /*
   FNXC:Settings 2026-06-22-00:00:
   Settings is now a main-content destination. The header/sidebar entry points navigate to the embedded `settings` view (carrying the requested deep-link section via setSettingsSection) instead of opening the modal overlay. handleTaskViewChange owns the back-navigation history entry, so no modal nav entry is pushed here.
   */
@@ -1962,6 +1985,103 @@ function AppInner() {
       );
     }
 
+    /*
+    FNXC:Navigation 2026-06-22-00:00:
+    Board-opened task detail renders as a full main-content view that replaces the board. A Back-to-board button sits above an embedded TaskDetailContent (same props ListView passes to its split-detail pane). The live task is preferred from `tasks` by id so the detail updates on revalidation; the stored snapshot is the fallback. If neither resolves (snapshot cleared), fall back to the board so the panel is never blank.
+    */
+    if (taskView === "task-detail") {
+      const liveDetailTask = mainPanelDetailTask
+        ? (tasks.find((candidate) => candidate.id === mainPanelDetailTask.id) ?? mainPanelDetailTask)
+        : null;
+      if (!liveDetailTask) {
+        return (
+          <PageErrorBoundary>
+            <Board
+              tasks={filteredBoardTasks}
+              projectId={currentProject?.id}
+              maxConcurrent={maxConcurrent}
+              onMoveTask={moveTask}
+              onPauseTask={pauseTask}
+              onOpenDetail={openTaskDetailInMainPanel}
+              onOpenGroupModal={openGroupModalWithNav}
+              addToast={addToast}
+              onQuickCreate={handleBoardQuickCreate}
+              onNewTask={openNewTaskWithNav}
+              onPlanningMode={openPlanningWithInitialPlanWithNav}
+              onSubtaskBreakdown={subtaskBreakdownEnabled ? openSubtaskBreakdownWithNav : undefined}
+              autoMerge={autoMerge}
+              onToggleAutoMerge={toggleAutoMerge}
+              globalPaused={globalPaused}
+              onUpdateTask={updateTask}
+              onRetryTask={retryTask}
+              onArchiveTask={archiveTask}
+              onUnarchiveTask={unarchiveTask}
+              onDeleteTask={deleteTask}
+              onArchiveAllDone={archiveAllDone}
+              onLoadArchivedTasks={loadArchivedTasks}
+              searchQuery={searchQuery}
+              availableModels={availableModels}
+              onOpenDetailWithTab={handleOpenDetailWithTab}
+              favoriteProviders={favoriteProviders}
+              favoriteModels={favoriteModels}
+              onToggleFavorite={handleToggleFavorite}
+              onToggleModelFavorite={handleToggleModelFavorite}
+              taskStuckTimeoutMs={taskStuckTimeoutMs}
+              staleHighFanoutBlockerAgeThresholdMs={staleHighFanoutBlockerAgeThresholdMs}
+              onOpenMission={handleOpenMission}
+              lastFetchTimeMs={lastFetchTimeMs}
+              prAuthAvailable={prAuthAvailable}
+              onOpenWorkflowEditor={openWorkflowEditorWithNav}
+              onCreateWorkflow={openCreateWorkflowWithNav}
+              workflowColumnsEnabled={experimentalFeatures.workflowColumns === true}
+              settingsLoaded={settingsLoaded}
+              workflowControlsInHeader={sidebarActive}
+            />
+          </PageErrorBoundary>
+        );
+      }
+      return (
+        <PageErrorBoundary>
+          <div className="task-detail-main-panel">
+            <div className="task-detail-main-panel-back-row">
+              <button
+                type="button"
+                className="task-detail-main-panel-back-btn"
+                onClick={closeTaskDetailMainPanel}
+              >
+                <ArrowLeft size={16} aria-hidden="true" />
+                <span>{t("app.taskDetail.backToBoard", "Back to board")}</span>
+              </button>
+            </div>
+            <div className="task-detail-main-panel-body">
+              <TaskDetailContent
+                task={liveDetailTask}
+                projectId={currentProject?.id}
+                tasks={tasks}
+                embedded
+                onOpenDetail={(value) => setMainPanelDetailTask(value)}
+                onMoveTask={moveTask}
+                onDeleteTask={deleteTask}
+                onMergeTask={mergeTask}
+                onRetryTask={retryTask}
+                onResetTask={resetTask}
+                onDuplicateTask={duplicateTask}
+                onTaskUpdated={(updatedTask) => {
+                  setMainPanelDetailTask((previous) => {
+                    if (!previous || previous.id !== updatedTask.id) return previous;
+                    return { ...previous, ...updatedTask };
+                  });
+                }}
+                addToast={addToast}
+                prAuthAvailable={prAuthAvailable}
+                autoMergeEnabled={autoMerge}
+              />
+            </div>
+          </div>
+        </PageErrorBoundary>
+      );
+    }
+
     if (taskView === "board") {
       return (
         <PageErrorBoundary>
@@ -1974,7 +2094,7 @@ function AppInner() {
             maxConcurrent={maxConcurrent}
             onMoveTask={moveTask}
             onPauseTask={pauseTask}
-            onOpenDetail={openDetailTask}
+            onOpenDetail={openTaskDetailInMainPanel}
             onOpenGroupModal={openGroupModalWithNav}
             addToast={addToast}
             onQuickCreate={handleBoardQuickCreate}
