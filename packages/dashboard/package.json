@@ -27,6 +27,10 @@
       "types": "./app/components/TaskCard.tsx",
       "import": "./app/components/TaskCard.tsx"
     },
+    "./app/components/ViewHeader": {
+      "types": "./app/components/ViewHeader.tsx",
+      "import": "./app/components/ViewHeader.tsx"
+    },
     "./app/utils/taskStuck": {
       "types": "./app/utils/taskStuck.ts",
       "import": "./app/utils/taskStuck.ts"
