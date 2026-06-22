@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="./demo/assets/fusion-logo.png" alt="Fusion" width="120" />
+<img src="./demo/assets/fusion-logo.png" alt="Fusion" width="72" />
 
 # Fusion
 
@@ -81,6 +81,126 @@ Every task shows its plan, its reviews, its diffs, and its file changes in real 
 | 🔬 **Research** | Bounded research runs with web search, GitHub, local docs, and LLM synthesis (plus runtime builtin WebSearch/WebFetch support in planning + synthesis flows when available). Turn findings into tasks. ([Docs](./docs/research.md)) |
 | 🧪 **Self-improvement** | Agents reflect on their own output and update their prompts as they learn your codebase. |
 | 🔓 **Open source. MIT.** | No vendor lock-in. Run it on your own hardware. Shipping weekly. |
+
+---
+
+## See it in action
+
+<!--
+FNXC:Docs 2026-06-21-19:55:
+README must lead with a smaller wordmark and a visual showcase of the latest surfaces (Command Center, selectable workflows, agent chat, multi-agent chat rooms, agent mail) so the value lands fast.
+Each feature pairs a short looping GIF with value copy; Command Center additionally carries real fleet stats, the token/productivity/team graph trio, and the 70+-theme grid (incl. shadcn light/mono/orange/black) to make the data pop.
+Media lives in demo/assets/ (committed, GitHub-inline GIFs); stat numbers are sourced from a live seeded fleet — refresh them if the captures are re-shot.
+Each feature keeps its original Tokyo Night capture and adds a Shadcn Light + Shadcn Dark Gray pair; the theme showcase is split into a light-themes grid and a dark-themes grid. Workflow GIFs feature the Stepwise coding graph with node-level zoom/pan.
+-->
+
+The newest surfaces in Fusion, at a glance — mission control, visual workflows, agent chat, multi-agent rooms, and inter-agent mail.
+
+### 🛰️ Command Center — mission control for your agent fleet
+
+<div align="center">
+  <img src="./demo/assets/command-center.gif" alt="Fusion Command Center: live concurrency gauges, token charts, and fleet telemetry across tabs" width="900" />
+</div>
+
+One screen for everything your agents are doing. Tune live scheduler capacity, watch token spend by model in real time, and prove the value with hard numbers.
+
+| 1.07B | 335 | 3,957 | 100% |
+|:--:|:--:|:--:|:--:|
+| tokens orchestrated | commits shipped | **human-hours saved** | in-review success (7d) |
+
+<table>
+<tr>
+<td width="33%"><img src="./demo/assets/command-center-tokens.png" alt="Tokens by model, token trend, and tokens-over-time charts" /><br/><sub><b>Tokens</b> — spend by model, cached vs. input vs. output, over time.</sub></td>
+<td width="33%"><img src="./demo/assets/command-center-productivity.png" alt="Productivity: commits, human-hours saved, task duration percentiles, and files by language" /><br/><sub><b>Productivity</b> — outcomes, duration percentiles, language mix.</sub></td>
+<td width="33%"><img src="./demo/assets/command-center-team.png" alt="Agent org chart with token share and tokens-by-agent breakdown" /><br/><sub><b>Team</b> — agent org chart and token share per agent.</sub></td>
+</tr>
+</table>
+
+> Tokens · Tools · Activity · Productivity · Team · Ecosystem · GitHub · Signals · System · Reliability · Mission Control — every tab is a different lens on the same live fleet.
+
+**The same fleet, your way** — Command Center (and the whole dashboard) re-skins live across **70+ color themes**. Here it is in Shadcn Light and Shadcn Dark Gray:
+
+<table>
+<tr>
+<td width="50%"><img src="./demo/assets/command-center-light.gif" alt="Command Center in Shadcn Light theme" /><br/><sub><b>Shadcn Light</b></sub></td>
+<td width="50%"><img src="./demo/assets/command-center-gray.gif" alt="Command Center in Shadcn Dark Gray theme" /><br/><sub><b>Shadcn Dark Gray</b></sub></td>
+</tr>
+</table>
+
+<details>
+<summary><b>A dozen light themes &amp; a dozen dark themes</b> (click to expand)</summary>
+
+<br/>
+
+<div align="center">
+  <img src="./demo/assets/command-center-themes-light.png" alt="Command Center across 12 light color themes" width="900" />
+  <br/><br/>
+  <img src="./demo/assets/command-center-themes-dark.png" alt="Command Center across 12 dark color themes" width="900" />
+</div>
+
+</details>
+
+### 🔁 Selectable workflows, authored visually
+
+<div align="center">
+  <img src="./demo/assets/workflows.gif" alt="Fusion Workflow Editor: switching between built-in workflow graphs" width="820" />
+</div>
+
+A task's journey from idea to merge is a **workflow** — and it's yours to choose and shape. Pick a built-in (Coding, Quick fix, Review-heavy, Stepwise, PR lifecycle, Compound engineering, and more), inspect its graph, then duplicate and customize columns, gates, model lanes, and review policy in the visual [Workflow Editor](./docs/workflow-editor.md). No engine fork required.
+
+Here's the **Stepwise coding** graph — plan, execute, and review every step before the next — explored node-by-node in Shadcn Light and Dark Gray:
+
+<table>
+<tr>
+<td width="50%"><img src="./demo/assets/workflows-light.gif" alt="Stepwise coding workflow graph in Shadcn Light, panning across nodes" /><br/><sub><b>Shadcn Light</b></sub></td>
+<td width="50%"><img src="./demo/assets/workflows-gray.gif" alt="Stepwise coding workflow graph in Shadcn Dark Gray, panning across nodes" /><br/><sub><b>Shadcn Dark Gray</b></sub></td>
+</tr>
+</table>
+
+### 🗨️ Agent chat — talk to your agents, mid-flight
+
+<div align="center">
+  <img src="./demo/assets/agent-chat.gif" alt="Fusion agent chat: a threaded conversation with an agent diagnosing a failed task" width="900" />
+</div>
+
+Direct chat and per-task chat with any agent, on any model. Ask why a task failed, steer an approach, drop attachments, answer in-chat question cards, and resume streams where you left off — full markdown and code rendering throughout.
+
+<table>
+<tr>
+<td width="50%"><img src="./demo/assets/agent-chat-light.png" alt="Agent chat thread in Shadcn Light" /><br/><sub><b>Shadcn Light</b></sub></td>
+<td width="50%"><img src="./demo/assets/agent-chat-gray.png" alt="Agent chat thread in Shadcn Dark Gray" /><br/><sub><b>Shadcn Dark Gray</b></sub></td>
+</tr>
+</table>
+
+### 👥 Multi-agent chat rooms
+
+<div align="center">
+  <img src="./demo/assets/chat-rooms.gif" alt="Fusion chat room: CEO, Product Manager, and CTO agents coordinating in #leads" width="900" />
+</div>
+
+Put multiple agents in a room and let them coordinate. Mention a member and it responds directly; ambient members can join the conversation up to a cap. Here the **CEO**, **Product Manager**, and **CTO** agents align on task ownership in `#leads` — no human in the loop. ([Chat docs](./docs/dashboard-guide.md#chat-view))
+
+<table>
+<tr>
+<td width="50%"><img src="./demo/assets/chat-rooms-light.gif" alt="Multi-agent chat room in Shadcn Light" /><br/><sub><b>Shadcn Light</b></sub></td>
+<td width="50%"><img src="./demo/assets/chat-rooms-gray.gif" alt="Multi-agent chat room in Shadcn Dark Gray" /><br/><sub><b>Shadcn Dark Gray</b></sub></td>
+</tr>
+</table>
+
+### 📬 Agent mail — an inbox between your agents
+
+<div align="center">
+  <img src="./demo/assets/agent-mail.gif" alt="Fusion mailbox: inter-agent messages with triage summaries and approvals" width="900" />
+</div>
+
+A built-in mailbox for delegation, clarification, and hand-offs. Agents file triage summaries, request approvals, and coordinate work across the fleet — with Inbox, Outbox, Agents, and Approvals views, so you can audit every exchange.
+
+<table>
+<tr>
+<td width="50%"><img src="./demo/assets/agent-mail-light.gif" alt="Agent mailbox in Shadcn Light" /><br/><sub><b>Shadcn Light</b></sub></td>
+<td width="50%"><img src="./demo/assets/agent-mail-gray.gif" alt="Agent mailbox in Shadcn Dark Gray" /><br/><sub><b>Shadcn Dark Gray</b></sub></td>
+</tr>
+</table>
 
 ---
 
