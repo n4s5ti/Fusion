@@ -1,7 +1,7 @@
 import "./TaskDetailModal.css";
 import React, { Suspense, lazy, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Pencil, Bot, X, ChevronDown, ChevronRight, GitBranch, ArrowLeft, Zap, Loader2, AlertTriangle, Sparkles } from "lucide-react";
+import { Pencil, Bot, X, ChevronDown, ChevronRight, GitBranch, ArrowLeft, Zap, Loader2, AlertTriangle, Sparkles, Maximize2 } from "lucide-react";
 import { useModalResizePersist } from "../hooks/useModalResizePersist";
 import { useMobileScrollLock } from "../hooks/useMobileScrollLock";
 import { useOverlayDismiss } from "../hooks/useOverlayDismiss";
@@ -414,6 +414,11 @@ export type TaskDetailContentProps = Omit<TaskDetailModalProps, "onClose"> & {
   onBackToBoard powers the board-card full-panel "Back to board" affordance rendered in the gray header (far right). It is only honored when embedded is also true, so ListView split-pane and modal usages never show it.
   */
   onBackToBoard?: () => void;
+  /*
+  FNXC:FloatingWindow 2026-06-22-20:45:
+  onPopOut, when supplied, renders a Maximize2 "Pop out" button in the gray header. List/Board wire it to push this task into App's floating task-detail window array, opening the same embedded TaskDetailContent inside a movable, resizable, non-blocking FloatingWindow. It is independent of embedded/onBackToBoard so List split-pane and the board full-panel can both expose it.
+  */
+  onPopOut?: (task: Task) => void;
 };
 
 function truncate(s: string, max: number): string {
@@ -589,6 +594,7 @@ export function TaskDetailContent({
   embedded = false,
   onRequestClose,
   onBackToBoard,
+  onPopOut,
   workflowFieldDefs: workflowFieldDefsProp,
 }: TaskDetailContentProps) {
   const { t } = useTranslation("app");
@@ -2752,6 +2758,22 @@ export function TaskDetailContent({
               >
                 <ArrowLeft size={14} aria-hidden="true" />
                 <span>{t("app.taskDetail.backToBoard", "Back to board")}</span>
+              </button>
+            )}
+            {/*
+            FNXC:FloatingWindow 2026-06-22-20:45:
+            "Pop out" affordance opens this task detail in a movable, resizable, non-blocking FloatingWindow. Rendered whenever onPopOut is wired (List split-pane + board full-panel); App dedupes by task id so re-popping focuses the existing window instead of duplicating.
+            */}
+            {onPopOut && (
+              <button
+                type="button"
+                className="modal-edit-btn"
+                onClick={() => onPopOut(task)}
+                title={t("taskDetail.header.popOut", "Pop out")}
+                aria-label="Pop out"
+                data-testid="task-detail-pop-out"
+              >
+                <Maximize2 size={14} />
               </button>
             )}
             {!isEditing && canEdit && (
