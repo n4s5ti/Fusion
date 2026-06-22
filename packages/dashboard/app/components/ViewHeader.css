@@ -5,11 +5,17 @@ Shared main-content view header, modeled after Command Center (.cc-header / .cc-
 FNXC:ViewHeader 2026-06-23-03:45:
 ViewHeader is now THE canonical top header for every left-sidebar/main-content view. Its defaults match the reference already implemented by Missions (.mission-manager__header--inline) and Agents (.agents-view .view-header): container padding var(--space-lg) var(--space-xl), background var(--surface), a single border-bottom divider, flex-shrink:0, and a --todo-colored leading icon at size 20. The title is 1.125rem/600/var(--text) with a var(--space-sm) icon-title gap. The actions cluster is pushed right with margin-left:auto so refresh/new/filter buttons right-align consistently across views; those buttons should use the shared `btn btn-sm` sizing. Per-view headers must adopt ViewHeader with NO divergent overrides so navigating between any two views shows a pixel-consistent header (same height, icon color/size, title metrics, padding, divider, and button sizing). The Agents scoped override (.agents-view .view-header) is now redundant and removed; these defaults supply that chrome directly.
 */
+/*
+FNXC:ViewHeader 2026-06-23-04:15:
+Pin a shared min-height (--view-header-min-height ≈ 61px border-box) so headers WITH btn-sm actions and title-only headers render the SAME height. box-sizing:border-box keeps padding+border inside the pinned height; align-items:center vertically centers the title/actions row within it.
+*/
 .view-header {
+  box-sizing: border-box;
   display: flex;
   flex-shrink: 0;
   align-items: center;
   gap: var(--space-sm);
+  min-height: var(--view-header-min-height);
   padding: var(--space-lg) var(--space-xl);
   background: var(--surface);
   border-bottom: 1px solid var(--border);

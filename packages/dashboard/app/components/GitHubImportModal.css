@@ -1423,7 +1423,13 @@ The embedded root is a plain flow box that fills the host; the inner shell sheds
   min-height: 0;
 }
 
+/*
+FNXC:ViewHeader 2026-06-23-04:15:
+Embedded root drops its uniform --space-lg padding so the header can span edge-to-edge like the canonical ViewHeader; the body re-applies a horizontal inset below. This keeps the resizable list/preview/comments work intact (only the outer padding moves to the body).
+*/
 .github-import-modal.github-import-modal--embedded {
+  display: flex;
+  flex-direction: column;
   width: 100%;
   height: 100%;
   max-width: none;
@@ -1434,28 +1440,46 @@ The embedded root is a plain flow box that fills the host; the inner shell sheds
   box-shadow: none;
   border-radius: 0;
   resize: none;
-  padding: var(--space-lg);
+  padding: 0;
 }
 
 /*
-FNXC:RightDockEmbedding 2026-06-22-00:40:
-Import Tasks embedded header reads like Command Center (cc-header/cc-title): a plain title row with the GitHub logo and the shared 1.125rem embedded-title font, no modal-header bar/background/border.
+FNXC:ViewHeader 2026-06-23-04:15:
+Import Tasks embedded header now adopts the canonical ViewHeader chrome — edge-to-edge --surface bg, one border-bottom divider, --space-lg/--space-xl padding, and the shared --view-header-min-height (≈61px border-box) — so it matches Agents/Mailbox/Missions/Automations height + padding exactly. (Previously a plain padding-bottom title row with no surface/divider/min-height.)
 */
 .github-import-modal__embedded-header {
+  box-sizing: border-box;
   display: flex;
   flex-shrink: 0;
   align-items: center;
   justify-content: space-between;
   gap: var(--space-md);
-  padding-bottom: var(--space-md);
+  min-height: var(--view-header-min-height);
+  padding: var(--space-lg) var(--space-xl);
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
 }
 
 .github-import-modal__embedded-title {
   display: flex;
   align-items: center;
   gap: var(--space-sm);
+  min-width: 0;
   margin: 0;
   font-size: 1.125rem;
+  font-weight: 600;
+  color: var(--text);
+}
+
+/* FNXC:ViewHeader 2026-06-23-04:15: Canonical --todo leading-icon tint at size 20, matching every other view header. */
+.github-import-modal__embedded-title svg {
+  flex-shrink: 0;
+  color: var(--todo);
+}
+
+/* Body re-applies the horizontal + bottom inset the now-edge-to-edge header no longer provides. */
+.github-import-modal--embedded .github-import-modal__body {
+  padding: var(--space-lg) var(--space-xl) var(--space-lg);
 }
 
 /*

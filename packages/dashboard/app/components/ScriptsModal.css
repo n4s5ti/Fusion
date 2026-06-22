@@ -1224,10 +1224,35 @@ when supported, falling back to a min-width media breakpoint, that collapses to 
   gap: var(--space-lg);
   min-height: 0;
   inline-size: 100%;
-  padding: var(--space-lg);
   /* Enable container-query-driven two-pane breakpoint scoped to the view's own width, not the viewport. */
   container-type: inline-size;
   overflow-y: auto;
+}
+
+/*
+FNXC:ViewHeader 2026-06-23-04:15:
+Bring the embedded Automations header to the canonical ViewHeader treatment: edge-to-edge --surface bg with one border-bottom divider, --space-lg/--space-xl padding, and the shared --view-header-min-height (≈61px border-box) so it matches Agents/Mailbox/Missions exactly. The body rows below carry the horizontal --space-xl inset + a bottom inset (the view itself drops its uniform padding so the header can span edge-to-edge).
+*/
+.automations-embedded-header.cc-header {
+  box-sizing: border-box;
+  min-height: var(--view-header-min-height);
+  padding: var(--space-lg) var(--space-xl);
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+}
+
+/* Canonical --todo leading-icon tint (override Command Center's icon-triage brown) at size 20. */
+.automations-embedded-header .cc-title svg {
+  color: var(--todo);
+}
+
+/* Body rows keep the --space-xl horizontal inset + bottom inset that the now-edge-to-edge header no longer supplies. */
+.automations-embedded-view > :not(.automations-embedded-header) {
+  margin-inline: var(--space-xl);
+}
+
+.automations-embedded-view > :last-child:not(.automations-embedded-header) {
+  margin-bottom: var(--space-lg);
 }
 
 /* Two-pane body: single column by default (narrow); two columns when the container is wide enough. */
