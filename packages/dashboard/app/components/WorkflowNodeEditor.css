@@ -1794,14 +1794,22 @@ Column trait toggles are left-sidebar workflow controls; keep their enabled and 
     padding-right: 0;
   }
 
-  .modal-overlay:has(.wf-editor-modal),
+  /* FNXC:WorkflowEditor 2026-06-22-16:00: scope the viewport-takeover to the
+     dialog presentation only via :not(.wf-editor-modal--embedded). The embedded
+     workflow editor renders inside the main-content pane (between the mobile
+     Header and MobileNavBar); without the guard its base .wf-editor-modal class
+     matched these 100vw/100dvh rules and covered the whole screen. The embedded
+     panel keeps its 100%-of-pane sizing from the embedded block above and fills
+     only the content area. .wf-create-modal has no embedded variant, so it stays
+     full-screen as a dialog. */
+  .modal-overlay:has(.wf-editor-modal:not(.wf-editor-modal--embedded)),
   .modal-overlay:has(.wf-create-modal) {
     padding-top: 0;
     align-items: stretch;
     justify-content: stretch;
   }
 
-  .wf-editor-modal,
+  .wf-editor-modal:not(.wf-editor-modal--embedded),
   .wf-create-modal {
     width: 100vw;
     min-width: 0;

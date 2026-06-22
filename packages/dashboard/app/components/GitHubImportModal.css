@@ -743,7 +743,12 @@
 
 /* Responsive breakpoints */
 @media (max-width: 860px) {
-  .github-import-modal {
+  /* FNXC:GitHubImport 2026-06-22-16:00: viewport-derived width is for the
+     dialog presentation only. :not(.github-import-modal--embedded) prevents
+     the embedded main-content view from being sized off the viewport — it
+     fills its own (potentially much narrower) content pane via the
+     container-query layout below. */
+  .github-import-modal:not(.github-import-modal--embedded) {
     width: calc(100vw - (var(--space-lg) * 2));
   }
 
@@ -772,14 +777,21 @@
 
 @media (max-width: 640px) {
   /* Full-screen sheet on mobile — drop overlay padding so the modal
-     actually fills the viewport instead of being pushed below it. */
-  .modal-overlay:has(.github-import-modal) {
+     actually fills the viewport instead of being pushed below it.
+     FNXC:GitHubImport 2026-06-22-16:00: scope the viewport-takeover to the
+     NON-embedded (dialog) presentation via :not(.github-import-modal--embedded).
+     The embedded view lives inside the main-content pane (between the mobile
+     Header and MobileNavBar); without the guard its base .github-import-modal
+     class matched these 100vw/100dvh rules and covered the whole screen. The
+     embedded panel keeps its own 100%-of-pane sizing from the embedded block
+     below. */
+  .modal-overlay:has(.github-import-modal:not(.github-import-modal--embedded)) {
     padding-top: 0;
     align-items: stretch;
     justify-content: stretch;
   }
 
-  .modal.github-import-modal {
+  .modal.github-import-modal:not(.github-import-modal--embedded) {
     width: 100vw;
     min-width: 0;
     max-width: 100vw;

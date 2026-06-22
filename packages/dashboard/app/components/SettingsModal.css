@@ -159,17 +159,24 @@ The embedded title reads like other embedded-view titles (Planning modal-header-
    modal wider than narrow viewports, pushing it off-screen; the desktop
    `height: 80vh` left awkward strips of overlay above and below. Drop the
    overlay's default top padding so the modal actually fills the viewport,
-   and disable resize (touchscreen users can't drag the grip anyway). */
+   and disable resize (touchscreen users can't drag the grip anyway).
+   FNXC:Settings 2026-06-22-16:00: scope the viewport-takeover rules to the
+   NON-embedded (dialog) presentation only via :not(.settings-modal--embedded).
+   The embedded panel lives inside the main-content pane (between the mobile
+   Header and MobileNavBar); without the guard its base .settings-modal class
+   matched these 100vw/100dvh rules and covered the whole screen, hiding the
+   app header/footer. The embedded view's own fill-the-pane sizing is handled
+   below. */
 @media (max-width: 768px) {
   .modal-overlay.settings-modal-overlay,
-  .modal-overlay:has(.settings-modal) {
+  .modal-overlay:has(.settings-modal:not(.settings-modal--embedded)) {
     padding: 0;
     inset: 0;
     align-items: stretch;
     justify-content: stretch;
   }
 
-  .modal.settings-modal {
+  .modal.settings-modal:not(.settings-modal--embedded) {
     width: 100vw;
     min-width: 0;
     max-width: 100vw;
@@ -183,12 +190,25 @@ The embedded title reads like other embedded-view titles (Planning modal-header-
     flex: 1 1 auto;
   }
 
-  .modal.settings-modal[style*="--keyboard-overlap"] {
+  .modal.settings-modal:not(.settings-modal--embedded)[style*="--keyboard-overlap"] {
     height: var(--vv-height, 100dvh);
     min-height: var(--vv-height, 100dvh);
     max-height: var(--vv-height, 100dvh);
     transform: translateY(var(--vv-offset-top, 0px));
     will-change: transform;
+  }
+
+  /* FNXC:Settings 2026-06-22-16:00: on mobile the embedded settings view fills
+     only its own content pane (not the viewport) and scrolls internally so the
+     app Header + MobileNavBar stay visible. Trim the outer host padding so the
+     panel and its section navigation sit edge-to-edge in the narrow pane. */
+  .settings-embedded.right-dock-embedded-view {
+    padding: var(--space-sm);
+  }
+
+  .settings-embedded .settings-modal--embedded {
+    width: 100%;
+    height: 100%;
   }
 }
 

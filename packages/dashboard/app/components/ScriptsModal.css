@@ -3947,15 +3947,21 @@ The embedded Git Manager adapts to its container width, not the viewport, so the
 
 @media (max-width: 768px) {
   /* Full-screen sheet on mobile — drop overlay padding so the modal
-     actually fills the viewport instead of being pushed below it. */
+     actually fills the viewport instead of being pushed below it.
+     FNXC:GitManager 2026-06-22-16:00: scope the viewport-takeover to the
+     NON-embedded (dialog) presentation via :not(.gm-modal--embedded). The
+     embedded Git Manager renders inside the main-content pane; without the
+     guard its base .gm-modal class matched these 100vw/100dvh rules and hid
+     the app Header + MobileNavBar. The embedded panel keeps its 100%-of-pane
+     sizing from the embedded block above. */
   .modal-overlay.git-manager-modal-overlay,
-  .modal-overlay:has(.gm-modal) {
+  .modal-overlay:has(.gm-modal:not(.gm-modal--embedded)) {
     padding-top: 0;
     align-items: stretch;
     justify-content: stretch;
   }
 
-  .modal.gm-modal {
+  .modal.gm-modal:not(.gm-modal--embedded) {
     width: 100vw;
     min-width: 0;
     max-width: 100vw;
@@ -3969,7 +3975,7 @@ The embedded Git Manager adapts to its container width, not the viewport, so the
     flex: 1 1 auto;
   }
 
-  .modal.gm-modal[style*="--keyboard-overlap"] {
+  .modal.gm-modal:not(.gm-modal--embedded)[style*="--keyboard-overlap"] {
     height: var(--vv-height, 100dvh);
     min-height: var(--vv-height, 100dvh);
     max-height: var(--vv-height, 100dvh);
@@ -3978,14 +3984,21 @@ The embedded Git Manager adapts to its container width, not the viewport, so the
   }
 
   /* Same treatment for the Automations modal — same min-width: 480px would
-     otherwise force it wider than narrow viewports. */
-  .modal-overlay:has(.automation-modal) {
+     otherwise force it wider than narrow viewports.
+     FNXC:Automations 2026-06-22-16:00: scope the viewport-takeover to the
+     dialog presentation only. The embedded Automations view uses the distinct
+     .automations-embedded / .automations-embedded-view classes (it does NOT
+     carry .automation-modal), so it is unaffected here — but the guard keeps
+     this rule from ever leaking onto an embedded variant should the markup
+     share the base class later. The embedded view fills its pane and scrolls
+     via .automations-embedded-view (inline-size:100% + overflow-y:auto). */
+  .modal-overlay:has(.automation-modal:not(.automation-modal--embedded)) {
     padding-top: 0;
     align-items: stretch;
     justify-content: stretch;
   }
 
-  .modal.automation-modal {
+  .modal.automation-modal:not(.automation-modal--embedded) {
     width: 100vw;
     min-width: 0;
     max-width: 100vw;
