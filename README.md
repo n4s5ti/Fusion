@@ -172,10 +172,6 @@ The newest surfaces in Fusion, at a glance — mission control, visual workflows
 
 One screen for everything your agents are doing. Tune live scheduler capacity, watch token spend by model in real time, and prove the value with hard numbers.
 
-| 1.07B | 335 | 3,957 | 100% |
-|:--:|:--:|:--:|:--:|
-| tokens orchestrated | commits shipped | **human-hours saved** | in-review success (7d) |
-
 <table>
 <tr>
 <td width="33%"><img src="./demo/assets/command-center-tokens.png" alt="Tokens by model, token trend, and tokens-over-time charts" /><br/><sub><b>Tokens</b> — spend by model, cached vs. input vs. output, over time.</sub></td>
