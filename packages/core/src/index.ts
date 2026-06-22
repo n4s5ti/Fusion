@@ -92,7 +92,6 @@ export type {
   WorkflowFieldOption,
   WorkflowFieldRender,
   // Workflow-settings (U1): typed setting declaration IR types.
-  WorkflowOptionalStep,
   WorkflowSettingDefinition,
   WorkflowSettingType,
   WorkflowSettingOption,

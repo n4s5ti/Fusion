@@ -14,7 +14,6 @@ import type {
   WorkflowFieldType,
   WorkflowSettingDefinition,
   WorkflowSettingType,
-  WorkflowOptionalStep,
 } from "./workflow-ir-types.js";
 import { getWorkflowExtensionRegistry } from "./workflow-extension-registry.js";
 import type { WorkflowExtensionConfigField } from "./workflow-extension-types.js";
@@ -1174,29 +1173,6 @@ function validateSettings(settings: WorkflowSettingDefinition[] | undefined): vo
   }
 }
 
-function validateOptionalSteps(optionalSteps: WorkflowOptionalStep[] | undefined): void {
-  if (optionalSteps === undefined) return;
-  if (!Array.isArray(optionalSteps)) {
-    throw new WorkflowIrError("Workflow IR optionalSteps must be an array");
-  }
-  for (const optionalStep of optionalSteps) {
-    if (!optionalStep || typeof optionalStep !== "object" || Array.isArray(optionalStep)) {
-      throw new WorkflowIrError("Workflow optional step must be an object");
-    }
-    if (typeof optionalStep.templateId !== "string" || optionalStep.templateId === "") {
-      throw new WorkflowIrError("Workflow optional step must have a non-empty templateId");
-    }
-    if (
-      optionalStep.defaultOn !== undefined &&
-      typeof optionalStep.defaultOn !== "boolean"
-    ) {
-      throw new WorkflowIrError(
-        `Workflow optional step '${optionalStep.templateId}' defaultOn must be a boolean`,
-      );
-    }
-  }
-}
-
 function validateColumns(ir: WorkflowIrV2): void {
   if (!Array.isArray(ir.columns)) {
     throw new WorkflowIrError("Workflow IR v2 columns must be an array");
@@ -1376,7 +1352,11 @@ function validateV2(ir: WorkflowIrV2): void {
   validateNotifyNodes(ir.nodes);
   validateFields(ir.fields);
   validateSettings(ir.settings);
-  validateOptionalSteps(ir.optionalSteps);
+  // FNXC:WorkflowOptionalGroup 2026-06-21-18:00:
+  // The legacy `optionalSteps` declaration field is retired (optional steps are
+  // now graph-native `optional-group` nodes). A legacy persisted `optionalSteps`
+  // key on an old v2 row is TOLERATED — no longer validated/required — so old
+  // rows still parse as v2.
 
   // Rework edges are legal intra-template (foreach, KTD-5) and — since U6
   // generalized the bounded-rework mechanism to the top-level walk — for a
@@ -1485,12 +1465,17 @@ export function downgradeIrToV1IfPure(ir: WorkflowIr): WorkflowIr {
   }
 
   // Step-inversion declarations (artifacts/fields), workflow settings (U1), and
-  // optional workflow-step declarations are v2-only features.
+  // any legacy persisted optional-step declarations are v2-only features.
+  // FNXC:WorkflowOptionalGroup 2026-06-21-18:00:
+  // `optionalSteps` is no longer a typed IR field (retired declaration model), but
+  // a legacy v2 row may still carry the key. Read it via an untyped cast so such a
+  // row is still treated as v2 (kept on v2, never silently downgraded).
+  const legacyOptionalSteps = (ir as { optionalSteps?: unknown[] }).optionalSteps;
   if (
     (ir.artifacts && ir.artifacts.length > 0) ||
     (ir.fields && ir.fields.length > 0) ||
     (ir.settings && ir.settings.length > 0) ||
-    (ir.optionalSteps && ir.optionalSteps.length > 0)
+    (Array.isArray(legacyOptionalSteps) && legacyOptionalSteps.length > 0)
   ) {
     return ir;
   }
