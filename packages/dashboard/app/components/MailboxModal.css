@@ -371,6 +371,35 @@
   padding: var(--space-xs) var(--space-sm);
 }
 
+/*
+FNXC:Markdown 2026-06-23-03:15:
+Wrappers for embedded raw HTML + mermaid diagrams. `<details>` from GitHub bodies
+needs a clickable summary affordance; mermaid SVGs should scroll horizontally rather
+than overflow the message column. Theme tokens only — no hard-coded colors.
+*/
+.mailbox-markdown details {
+  border: var(--btn-border-width) solid color-mix(in srgb, var(--border) 80%, transparent);
+  border-radius: var(--radius-md);
+  padding: var(--space-xs) var(--space-sm);
+  background: color-mix(in srgb, var(--surface) 85%, transparent);
+}
+
+.mailbox-markdown summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.mailbox-mermaid {
+  display: block;
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+.mailbox-mermaid svg {
+  max-width: 100%;
+  height: auto;
+}
+
 .mailbox-reply-context-wrapper {
   margin-bottom: var(--space-xs);
 }
