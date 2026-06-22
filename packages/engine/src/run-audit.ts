@@ -516,6 +516,15 @@ export type DatabaseMutationType =
   | "task:resume-limbo-escalated"
   /** Metadata: { taskId, executionAgeMs, graceMs, staleBindingAgeFloorMs, checkedOutBy, agentPresent, lastActivityMs, hasRecentRunAudit, worktree, branch, worktreeExists, signalReason } */
   | "task:reclaim-phantom-executor-binding"
+  /* FNXC:Workspace 2026-06-22-09:30 (Phase D U1) — workspace-mode self-healing run-audit events. */
+  /** Metadata: { taskId, landedRepos: string[], unlandedRepos: string[], failedRepos: string[], action: "re-enqueue" | "park-failed", reason } */
+  | "task:reconcile-workspace-partial-land"
+  /** Metadata: { taskId, reason: "auto-merge-off" | "user-paused" | "live-worktree", livePaths: string[] } */
+  | "task:reconcile-workspace-partial-land-no-action"
+  /** Metadata: { taskId, path, kind: "workspace-repo-land", registeredAt, ageMs, staleBindingAgeFloorMs, ownerColumn } */
+  | "task:reclaim-phantom-workspace-land-lease"
+  /** Metadata: { taskId, repo, worktreePath, success, reason } */
+  | "task:reconcile-orphaned-workspace-worktree"
   /** Metadata: { taskId, branch, worktree, checkedOutBy, executionStartedAt, executionAgeMs, graceMs, liveWorktreeBoundBranch, reason } */
   | "task:reclaim-self-owned-branch-conflict-no-action"
   | "task:orphan-detected-no-action"

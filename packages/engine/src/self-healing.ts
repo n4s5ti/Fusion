@@ -30,7 +30,7 @@ import { setImmediate as setImmediateCb } from "node:timers";
 import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { isAbsolute, join, relative, resolve } from "node:path";
-import { IN_REVIEW_STALL_DEADLOCK_LOG_PREFIX, IN_REVIEW_STALL_LOG_PREFIX, IN_REVIEW_STALL_TERMINAL_LOG_PREFIX, allowsAutoMergeProcessing, countRecentIdenticalStallEntries, detectDependencyCycle, detectSelfDefeatingDependency, evaluateNoCommitsNoOpFinalize, getInReviewStalledSignal, getInReviewStallReason, getPrimaryPrInfo, getStalePausedReviewSignal, getStalePausedTodoSignal, getTaskHardMergeBlocker, getTaskMergeBlocker, isEphemeralAgent, isMergeRequestContractShadowEnabled, isWorkflowColumnsEnabled, isSharedBranchGroupMemberIntegration, parseExplicitDuplicateMarker, resolveMaxAutoMergeRetries, type AgentStore, type ChatStore, type MessageStore, type TaskStore, type Settings, type Task, type MergeDetails, type TaskPriority, type MergeResult } from "@fusion/core";
+import { IN_REVIEW_STALL_DEADLOCK_LOG_PREFIX, IN_REVIEW_STALL_LOG_PREFIX, IN_REVIEW_STALL_TERMINAL_LOG_PREFIX, allowsAutoMergeProcessing, countRecentIdenticalStallEntries, detectDependencyCycle, detectSelfDefeatingDependency, evaluateNoCommitsNoOpFinalize, getInReviewStalledSignal, getInReviewStallReason, getPrimaryPrInfo, getStalePausedReviewSignal, getStalePausedTodoSignal, getTaskHardMergeBlocker, getTaskMergeBlocker, isEphemeralAgent, isMergeRequestContractShadowEnabled, isWorkflowColumnsEnabled, isWorkspaceTask, isSharedBranchGroupMemberIntegration, parseExplicitDuplicateMarker, resolveMaxAutoMergeRetries, type AgentStore, type ChatStore, type MessageStore, type TaskStore, type Settings, type Task, type MergeDetails, type TaskPriority, type MergeResult } from "@fusion/core";
 import type { MeshLeaseManager } from "./mesh-lease-manager.js";
 import { createLogger, schedulerLog } from "./logger.js";
 import { mergeEffectiveSettings } from "./effective-settings.js";
@@ -46,7 +46,15 @@ import { classifyError, extractMissingModulePath, isNonContinuableSessionError, 
 import { classifyForeignOnlyContamination, deriveTaskIdFromFusionBranch, inspectBranchConflict, listUniqueBranchCommits } from "./branch-conflicts.js";
 import { createRunAuditor, generateSyntheticRunId, type DatabaseMutationType, type RunAuditor } from "./run-audit.js";
 import { AutoRecoveryDispatcher } from "./auto-recovery.js";
-import { activeSessionRegistry, executingTaskLock } from "./active-session-registry.js";
+import { activeSessionRegistry, executingTaskLock, type ActiveSessionKind } from "./active-session-registry.js";
+/*
+FNXC:Workspace 2026-06-22-09:30 (Phase D U1):
+`isRepoLanded` is the CANONICAL per-repo landed predicate (Phase C, exported A6). Self-healing
+reuses it rather than reimplementing the ancestor/trailer check. merger-ai also imports a const
+from self-healing (MIN_TEMP_WORKTREE_REAP_AGE_MS), so this is a static cycle — safe because
+`isRepoLanded` is only referenced at call time, never at module-eval time.
+*/
+import { isRepoLanded } from "./merger-ai.js";
 import { findAlreadyMergedTaskCommit } from "./already-merged-detector.js";
 import { isAiMergeContainerDir, resolveAiMergeRootPath, resolveLegacyAiMergeRootPath, resolveWorktreesDir } from "./worktree-paths.js";
 import { canonicalFusionBranchName, resolveTaskWorkingBranch } from "./worktree-names.js";
@@ -815,6 +823,24 @@ export class SelfHealingManager {
       const ts = Date.parse(event.timestamp ?? "");
       return Number.isFinite(ts) && ts >= cutoff;
     });
+  }
+
+  /*
+  FNXC:Workspace 2026-06-22-09:30 (Phase D U1, KTD2 — workspace-aware liveness predicate):
+  `evaluateBackwardMoveTripleProof` is NOT workspace-aware: it keys liveness off the SINGULAR
+  `task.worktree` / `canonicalFusionBranchName(task.id)`, but a workspace task's liveness lives
+  across N sub-repo worktrees (task.worktree is null). A workspace task is LIVE iff ANY of its
+  sub-repo paths is still registered as active in the in-memory session registry
+  (`pathsForTask` ∩ `isPathActive`) OR a process-wide executing/active signal is held. Used by
+  the partial-land reconciler as the "safe to move backward / re-enqueue" gate so a live merging
+  task is never moved backward.
+  */
+  private isWorkspaceTaskLive(task: Task): { live: boolean; livePaths: string[] } {
+    const livePaths = activeSessionRegistry.pathsForTask(task.id).filter((path) => activeSessionRegistry.isPathActive(path));
+    const live = livePaths.length > 0
+      || executingTaskLock.has(task.id)
+      || this.options.isTaskActive?.(task.id) === true;
+    return { live, livePaths };
   }
 
   private async evaluateBackwardMoveTripleProof(
@@ -2142,6 +2168,10 @@ export class SelfHealingManager {
           { name: "reconcile-done-task-integrity", fn: () => this.reconcileDoneTaskIntegrity() },
           { name: "reconcile-stale-merger-status", fn: () => this.reconcileStaleMergerStatus() },
           { name: "recover-mergeable-review", fn: () => this.recoverMergeableReviewTasks() },
+          // FNXC:Workspace 2026-06-22-09:30 (Phase D U1) — workspace-mode reconcilers.
+          { name: "reconcile-workspace-partial-lands", fn: () => this.reconcileWorkspacePartialLands() },
+          { name: "reclaim-phantom-workspace-land-leases", fn: () => this.reclaimPhantomWorkspaceLandLeases() },
+          { name: "reconcile-orphaned-workspace-worktrees", fn: () => this.reconcileOrphanedWorkspaceWorktrees() },
           { name: "recover-merged-review", fn: () => this.recoverMergedReviewTasks() },
           { name: "recover-already-merged-review", fn: () => this.recoverAlreadyMergedReviewTasks() },
           { name: "recover-post-done-noncontinuable-wedge", fn: () => this.recoverPostDoneNonContinuableWedge() },
@@ -2470,6 +2500,15 @@ export class SelfHealingManager {
       for (const task of stale) {
         const previousStatus = task.status;
         try {
+          /*
+          FNXC:Workspace 2026-06-22-09:30 (Phase D U1, KTD1 — workspace-safe by construction):
+          This reconciler makes NO single-commit assumption: it only clears the transient
+          `merging`/`merging-pr` status (status:null) + clearMergeActive and never calls
+          findLandedTaskCommit or moves the task. That is exactly the correct workspace action
+          (clear the stale status so a re-land can be re-enqueued; the partial-land reconciler /
+          recover-interrupted-merging owns the actual re-enqueue). So a workspace task is handled
+          identically and safely here — no workspace-specific branch is needed.
+          */
           log.warn(`Clearing stale merge status for ${task.id}: ${previousStatus}`);
           await this.store.updateTask(task.id, { status: null });
           this.options.clearMergeActive?.(task.id);
@@ -5775,7 +5814,12 @@ export class SelfHealingManager {
         // stale ones are handled by recoverStaleMergingStatus().
         t.status !== "merging" &&
         t.status !== "merging-pr" &&
-        Boolean(t.worktree) &&
+        // FNXC:Workspace 2026-06-22-09:30 (Phase D U1, KTD1 — admit workspace tasks):
+        // A workspace task has task.worktree===null (its worktrees live per-repo in
+        // workspaceWorktrees), so the old `Boolean(t.worktree)` gate skipped a zero-landed
+        // mergeable workspace task FOREVER. Admit `isWorkspaceTask(t)` so a workspace task whose
+        // merge enqueue was dropped is re-enqueued via enqueueMerge → idempotent landWorkspaceTask.
+        (Boolean(t.worktree) || isWorkspaceTask(t)) &&
         t.mergeDetails?.mergeConfirmed !== true &&
         t.mergeDetails?.noOpMerge !== true &&
         !hasTerminalInvalidDoneTransition(t) &&
@@ -6690,6 +6734,38 @@ export class SelfHealingManager {
       let recovered = 0;
       for (const task of candidates) {
         try {
+          /*
+          FNXC:Workspace 2026-06-22-09:30 (Phase D U1, KTD1 — P0 workspace gate):
+          A workspace task lands PER-REPO and `landWorkspaceTask` sets status:"merging". The
+          singular `findLandedTaskCommit` runs git over `this.options.rootDir` (the NON-git
+          workspace root) → wrong/empty, and a one-repo hit would finalize the WHOLE task done
+          + emit task:merged on a single repo's commit — a P0 data bug that marks a PARTIAL-landed
+          workspace task fully merged. So for a workspace task we MUST NOT call findLandedTaskCommit
+          / the single-commit finalize. Instead clear the transient "merging" status and re-enqueue
+          via `enqueueMerge`, which routes to the idempotent `landWorkspaceTask`: it skips repos
+          whose `landedSha` is already an ancestor (isRepoLanded) and finalizes to done EXACTLY ONCE
+          only when EVERY acquired repo is landed; a partial/none state simply re-lands the missing
+          repos. The partial-land reconciler (KTD2) is the standing recovery for a re-enqueue drop.
+          */
+          if (isWorkspaceTask(task)) {
+            await this.store.updateTask(task.id, { status: null, error: null });
+            this.options.clearMergeActive?.(task.id);
+            await this.store.logEntry(
+              task.id,
+              "Auto-recovered (workspace): cleared stale 'merging' status; per-repo land will be re-enqueued (no single-commit finalize)",
+            );
+            try {
+              this.options.enqueueMerge?.(task.id);
+            } catch (enqueueErr: unknown) {
+              log.warn(
+                `Failed to re-enqueue workspace ${task.id} after stale-merge recovery (will rely on partial-land reconciler/polling sweep): ${enqueueErr instanceof Error ? enqueueErr.message : String(enqueueErr)}`,
+              );
+            }
+            log.log(`Recovered interrupted workspace merge ${task.id}: cleared stale status, re-enqueued per-repo land`);
+            recovered++;
+            continue;
+          }
+
           const mergeTarget = await this.resolveSelfHealingMergeTarget(task, settings, "recover-interrupted-merging");
           const landedCommit = await this.findLandedTaskCommit(task);
 
@@ -6775,6 +6851,335 @@ export class SelfHealingManager {
       return recovered;
     } catch (err: unknown) { const errorMessage = err instanceof Error ? err.message : String(err);
       log.error(`Interrupted merge recovery failed: ${errorMessage}`);
+      return 0;
+    }
+  }
+
+  /*
+  FNXC:Workspace 2026-06-22-09:30 (Phase D U1, KTD2 — partial-land reconciler):
+  Recovers non-done workspace tasks whose per-repo land is incomplete (some/none landed) and
+  whose binding is stale — re-enqueuing the merge via `enqueueMerge` (which routes to the
+  idempotent `landWorkspaceTask`; already-landed repos are skipped via `isRepoLanded`). We do NOT
+  call `landWorkspaceTask` directly. GUARDS (reuse, never reinvent): `allowsAutoMergeProcessing`
+  (FN-5147 autoMerge:false), user-pause, and the WORKSPACE-AWARE liveness predicate
+  (`isWorkspaceTaskLive`) — triple-proof is NOT workspace-aware so it is deliberately NOT used
+  here. A live / paused / autoMerge-off task emits `task:reconcile-workspace-partial-land-no-action`
+  and is NEVER moved backward.
+
+  FORK-A (unrecoverable): a sub-repo is unrecoverable iff its `fusion/<id>` branch is GONE AND its
+  `landedSha` is UNSET (nothing landed, nothing to land) → park the task `status:"failed"`. Branch
+  gone but `landedSha` set → already landed (isRepoLanded ancestor/trailer) → that repo is skipped.
+  Otherwise the task is retryable (re-enqueue).
+  */
+  async reconcileWorkspacePartialLands(): Promise<number> {
+    try {
+      const settings = await this.store.getSettings();
+      if (settings.globalPause || settings.enginePaused) return 0;
+
+      const activeMergeTaskId = this.options.getActiveMergeTaskId?.() ?? null;
+      // Workspace tasks live in in-review (post-capture/review, pre/partial land). A task already
+      // done is finished; todo/in-progress are owned by execution-stage reconcilers.
+      const tasks = await this.store.listTasks({ column: "in-review", slim: true });
+      const candidates = tasks.filter((task) =>
+        task.column === "in-review" &&
+        isWorkspaceTask(task) &&
+        task.mergeDetails?.mergeConfirmed !== true &&
+        // Active transient merge statuses are owned by the live merger; recover-interrupted /
+        // recover-stale-merging clear STALE ones. A non-transient status (or null) is our domain.
+        !(task.status && ACTIVE_MERGE_STATUSES.has(task.status)),
+      );
+      if (candidates.length === 0) return 0;
+
+      let recovered = 0;
+      for (const task of candidates) {
+        try {
+          // GUARD 1 — FN-5147 autoMerge:false: in-review is human-gated; never move it backward.
+          if (!allowsAutoMergeProcessing(task, settings)) {
+            await this.emitWorkspacePartialLandNoAction(task, "auto-merge-off", []);
+            continue;
+          }
+          // GUARD 2 — user-pause: a hard operator stop.
+          if (task.userPaused || task.paused) {
+            await this.emitWorkspacePartialLandNoAction(task, "user-paused", []);
+            continue;
+          }
+          // GUARD 3 — workspace-aware liveness: ANY active sub-repo path / process signal.
+          const liveness = this.isWorkspaceTaskLive(task);
+          if (liveness.live) {
+            await this.emitWorkspacePartialLandNoAction(task, "live-worktree", liveness.livePaths);
+            continue;
+          }
+          // GUARD 4 — a live merge lane owns this exact task right now.
+          if (activeMergeTaskId && activeMergeTaskId === task.id) {
+            await this.emitWorkspacePartialLandNoAction(task, "live-worktree", liveness.livePaths);
+            continue;
+          }
+
+          // Classify each acquired sub-repo: landed / retryable / unrecoverable (FORK-A).
+          const workspaceWorktrees = task.workspaceWorktrees ?? {};
+          const repoKeys = Object.keys(workspaceWorktrees);
+          const landedRepos: string[] = [];
+          const unlandedRepos: string[] = [];
+          const unrecoverableRepos: string[] = [];
+          for (const repoRel of repoKeys) {
+            const entry = workspaceWorktrees[repoRel];
+            const repoRootDir = join(this.options.rootDir, repoRel);
+            let integrationBranch: string;
+            try {
+              integrationBranch = await resolveIntegrationBranch(
+                repoRootDir,
+                { ...settings, integrationBranch: undefined, baseBranch: undefined },
+              );
+            } catch {
+              // Cannot resolve the sub-repo's integration branch → treat as retryable (re-enqueue
+              // re-runs the same resolution and surfaces the real error there).
+              unlandedRepos.push(repoRel);
+              continue;
+            }
+            if (await isRepoLanded(repoRootDir, integrationBranch, entry.landedSha, task.id, entry.branch)) {
+              landedRepos.push(repoRel);
+              continue;
+            }
+            // Not landed. FORK-A unrecoverable iff the task branch is GONE and nothing landed.
+            const branchPresent = entry.branch
+              ? await this.repoBranchExists(repoRootDir, entry.branch)
+              : false;
+            if (!branchPresent && !entry.landedSha) {
+              unrecoverableRepos.push(repoRel);
+            } else {
+              unlandedRepos.push(repoRel);
+            }
+          }
+
+          const auditor = createRunAuditor(this.store, {
+            runId: generateSyntheticRunId("self-healing-workspace-partial-land", task.id),
+            agentId: "self-healing",
+            taskId: task.id,
+            taskLineageId: task.lineageId,
+            phase: "reconcile-workspace-partial-land",
+          });
+
+          if (unrecoverableRepos.length > 0) {
+            // FORK-A: at least one repo can never land (branch gone, nothing landed) → park failed.
+            const error = `Workspace partial-land unrecoverable: sub-repo(s) ${unrecoverableRepos.join(", ")} have no fusion/${task.id.toLowerCase()} branch and no landedSha — manual intervention required.`;
+            await this.store.updateTask(task.id, { status: "failed", error });
+            await this.store.logEntry(task.id, error);
+            await auditor.database({
+              type: "task:reconcile-workspace-partial-land",
+              target: task.id,
+              metadata: { taskId: task.id, landedRepos, unlandedRepos, failedRepos: unrecoverableRepos, action: "park-failed", reason: "branch-gone-and-unlanded" },
+            }).catch(() => undefined);
+            log.warn(`reconcileWorkspacePartialLands: parked ${task.id} failed (unrecoverable repos: ${unrecoverableRepos.join(", ")})`);
+            recovered++;
+            continue;
+          }
+
+          if (unlandedRepos.length === 0) {
+            // Every acquired repo is already landed but the task was never finalized (the finalize
+            // enqueue was dropped). Re-enqueue: landWorkspaceTask skips all repos and finalizes once.
+            this.options.enqueueMerge?.(task.id);
+            await this.store.logEntry(task.id, "Auto-recovered (workspace): all sub-repos landed but task not finalized — re-enqueued finalize-once");
+            await auditor.database({
+              type: "task:reconcile-workspace-partial-land",
+              target: task.id,
+              metadata: { taskId: task.id, landedRepos, unlandedRepos: [], failedRepos: [], action: "re-enqueue", reason: "all-landed-not-finalized" },
+            }).catch(() => undefined);
+            recovered++;
+            continue;
+          }
+
+          // Partial / none landed, all unlanded repos retryable → re-enqueue the per-repo land.
+          this.options.enqueueMerge?.(task.id);
+          await this.store.logEntry(task.id, `Auto-recovered (workspace): re-enqueued partial land (${landedRepos.length} landed, ${unlandedRepos.length} pending)`);
+          await auditor.database({
+            type: "task:reconcile-workspace-partial-land",
+            target: task.id,
+            metadata: { taskId: task.id, landedRepos, unlandedRepos, failedRepos: [], action: "re-enqueue", reason: landedRepos.length > 0 ? "partial-land" : "zero-land" },
+          }).catch(() => undefined);
+          recovered++;
+        } catch (err: unknown) {
+          log.error(`reconcileWorkspacePartialLands: failed for ${task.id}: ${err instanceof Error ? err.message : String(err)}`);
+        }
+      }
+      if (recovered > 0) log.log(`reconcileWorkspacePartialLands: recovered ${recovered} workspace task(s)`);
+      return recovered;
+    } catch (err: unknown) {
+      log.error(`reconcileWorkspacePartialLands sweep failed: ${err instanceof Error ? err.message : String(err)}`);
+      return 0;
+    }
+  }
+
+  private async emitWorkspacePartialLandNoAction(
+    task: Task,
+    reason: "auto-merge-off" | "user-paused" | "live-worktree",
+    livePaths: string[],
+  ): Promise<void> {
+    try {
+      await createRunAuditor(this.store, {
+        runId: generateSyntheticRunId("self-healing-workspace-partial-land-no-action", task.id),
+        agentId: "self-healing",
+        taskId: task.id,
+        taskLineageId: task.lineageId,
+        phase: "reconcile-workspace-partial-land",
+      }).database({
+        type: "task:reconcile-workspace-partial-land-no-action",
+        target: task.id,
+        metadata: { taskId: task.id, reason, livePaths },
+      });
+    } catch (err: unknown) {
+      log.warn(`reconcileWorkspacePartialLands: audit emit failed for ${task.id}: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+
+  /** True iff `branch` exists as a local ref in the sub-repo at `repoRootDir`. */
+  private async repoBranchExists(repoRootDir: string, branch: string): Promise<boolean> {
+    try {
+      await execAsync(`git rev-parse --verify ${shellQuote(`refs/heads/${branch}`)}`, {
+        cwd: repoRootDir,
+        timeout: 30_000,
+      });
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  /*
+  FNXC:Workspace 2026-06-22-09:30 (Phase D U1, KTD3 — phantom workspace-repo-land lease reclaim):
+  A `workspace-repo-land` lease is registered on a sub-repo's ABSOLUTE path while a workspace task
+  lands it, and released in a finally. If the holder dies between register and release, the lease
+  leaks; because the owner is terminal/dead it is gone from the in-progress lists, so FN-6736's
+  iterate-tasks reclaim cannot surface it. We enumerate `workspace-repo-land` entries via the new
+  registry seam and, for each whose owning task is terminal/dead AND whose `registeredAt` is older
+  than the FN-6736 staleness floor (graceMs * PHANTOM_EXECUTOR_BINDING_AGE_MULTIPLIER), clear the
+  lease (unregister the path) + emit `task:reclaim-phantom-workspace-land-lease`. A lease owned by a
+  LIVE merging task (still in-review with a transient merge status, or the active merge task) is
+  UNTOUCHED — only a demonstrably dead owner is reclaimed.
+  */
+  async reclaimPhantomWorkspaceLandLeases(): Promise<number> {
+    try {
+      const settings = await this.store.getSettings();
+      if (settings.globalPause || settings.enginePaused) return 0;
+
+      const entries = activeSessionRegistry.entriesByKind("workspace-repo-land" as ActiveSessionKind);
+      if (entries.length === 0) return 0;
+
+      const graceMs = settings.taskStuckTimeoutMs ?? STALE_ACTIVE_BRANCH_EXECUTION_GRACE_MS;
+      const staleFloorMs = graceMs * PHANTOM_EXECUTOR_BINDING_AGE_MULTIPLIER;
+      const activeMergeTaskId = this.options.getActiveMergeTaskId?.() ?? null;
+      const now = Date.now();
+
+      let reclaimed = 0;
+      for (const entry of entries) {
+        try {
+          const ageMs = now - entry.registeredAt;
+          if (ageMs < staleFloorMs) continue; // too recent — a live land is still warming.
+
+          // A live merge lane / executing owner keeps the lease.
+          if (activeMergeTaskId && activeMergeTaskId === entry.taskId) continue;
+          if (executingTaskLock.has(entry.taskId) || this.options.isTaskActive?.(entry.taskId) === true) continue;
+
+          const owner = await this.store.getTask(entry.taskId).catch(() => null);
+          // Owner is dead/terminal iff: not found, archived/done/failed, OR in-review with NO active
+          // transient merge status (a merging owner is live; a clean in-review is finished landing).
+          const ownerColumn = owner?.column ?? "deleted";
+          const ownerHasActiveMergeStatus = Boolean(owner?.status && ACTIVE_MERGE_STATUSES.has(owner.status));
+          const ownerLive = Boolean(owner)
+            && owner!.column !== "done"
+            && owner!.status !== "failed"
+            && ownerHasActiveMergeStatus;
+          if (ownerLive) continue; // live merging owner → leave its lease alone.
+
+          activeSessionRegistry.unregisterPath(entry.path);
+          await createRunAuditor(this.store, {
+            runId: generateSyntheticRunId("self-healing-phantom-workspace-land-lease", entry.taskId),
+            agentId: "self-healing",
+            taskId: entry.taskId,
+            phase: "reclaim-phantom-workspace-land-lease",
+          }).database({
+            type: "task:reclaim-phantom-workspace-land-lease",
+            target: entry.taskId,
+            metadata: { taskId: entry.taskId, path: entry.path, kind: entry.kind, registeredAt: entry.registeredAt, ageMs, staleBindingAgeFloorMs: staleFloorMs, ownerColumn },
+          }).catch(() => undefined);
+          log.warn(`reclaimPhantomWorkspaceLandLeases: reclaimed leaked land lease on ${entry.path} (owner ${entry.taskId}, age ${ageMs}ms)`);
+          reclaimed++;
+        } catch (err: unknown) {
+          log.error(`reclaimPhantomWorkspaceLandLeases: failed for ${entry.path}: ${err instanceof Error ? err.message : String(err)}`);
+        }
+      }
+      if (reclaimed > 0) log.log(`reclaimPhantomWorkspaceLandLeases: reclaimed ${reclaimed} leaked lease(s)`);
+      return reclaimed;
+    } catch (err: unknown) {
+      log.error(`reclaimPhantomWorkspaceLandLeases sweep failed: ${err instanceof Error ? err.message : String(err)}`);
+      return 0;
+    }
+  }
+
+  /*
+  FNXC:Workspace 2026-06-22-09:30 (Phase D U1, KTD4 — per-repo worktree cleanup from STORED paths):
+  For done/dead workspace tasks, remove each recorded per-repo worktree. The paths are ADDRESSABLE
+  from the task row (`workspaceWorktrees[repo].worktreePath`, persisted) so we NEVER walk the temp
+  root / readdir the temp tree (AGENTS.md forbids unbounded temp walks) — the sweep is bounded by
+  construction. Each removal is GUARDED by `activeSessionRegistry.isPathActive(path)` (skip if
+  active, mirroring the temp-dir sweep at the AI-merge worktree guard) so a still-live path is never
+  yanked. Emit `task:reconcile-orphaned-workspace-worktree` per removed path.
+  */
+  async reconcileOrphanedWorkspaceWorktrees(): Promise<number> {
+    try {
+      const settings = await this.store.getSettings();
+      if (settings.globalPause || settings.enginePaused) return 0;
+
+      // Done workspace tasks are the canonical "safe to clean" set (their lands are finalized).
+      const doneTasks = await this.store.listTasks({ column: "done", slim: true });
+      const candidates = doneTasks.filter((task) => isWorkspaceTask(task));
+      if (candidates.length === 0) return 0;
+
+      let cleaned = 0;
+      for (const task of candidates) {
+        const workspaceWorktrees = task.workspaceWorktrees ?? {};
+        for (const repoRel of Object.keys(workspaceWorktrees)) {
+          const worktreePath = workspaceWorktrees[repoRel]?.worktreePath;
+          if (!worktreePath) continue;
+          // GUARD: skip an active path (mirror self-healing temp-dir sweep isPathActive guard).
+          if (activeSessionRegistry.isPathActive(worktreePath)) continue;
+          // Nothing on disk → nothing to remove (already cleaned). Skip silently.
+          if (!existsSync(worktreePath)) continue;
+
+          const repoRootDir = join(this.options.rootDir, repoRel);
+          let success = false;
+          let reason = "removed";
+          try {
+            await execAsync(`git worktree remove --force ${shellQuote(worktreePath)}`, {
+              cwd: repoRootDir,
+              timeout: 120_000,
+            });
+            success = true;
+          } catch (err: unknown) {
+            reason = `git-remove-failed: ${err instanceof Error ? err.message : String(err)}`;
+          }
+          try {
+            await createRunAuditor(this.store, {
+              runId: generateSyntheticRunId("self-healing-orphaned-workspace-worktree", task.id),
+              agentId: "self-healing",
+              taskId: task.id,
+              taskLineageId: task.lineageId,
+              phase: "reconcile-orphaned-workspace-worktree",
+            }).database({
+              type: "task:reconcile-orphaned-workspace-worktree",
+              target: task.id,
+              metadata: { taskId: task.id, repo: repoRel, worktreePath, success, reason },
+            });
+          } catch { /* audit best-effort */ }
+          if (success) {
+            log.log(`reconcileOrphanedWorkspaceWorktrees: removed ${worktreePath} (task ${task.id}, repo ${repoRel})`);
+            cleaned++;
+          }
+        }
+      }
+      if (cleaned > 0) log.log(`reconcileOrphanedWorkspaceWorktrees: removed ${cleaned} orphaned per-repo worktree(s)`);
+      return cleaned;
+    } catch (err: unknown) {
+      log.error(`reconcileOrphanedWorkspaceWorktrees sweep failed: ${err instanceof Error ? err.message : String(err)}`);
       return 0;
     }
   }
