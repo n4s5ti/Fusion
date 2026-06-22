@@ -856,11 +856,18 @@ export async function acquireWorkspaceRepoWorktree(
     if (!(err instanceof WorkspaceRepoAcquireBusyError)) {
       const message = err instanceof Error ? err.message : String(err);
       logger?.error?.(`${task.id}: workspace sub-repo acquisition failed for ${repoRelPath}: ${message}`);
-      await store.logEntry(task.id, `Workspace sub-repo acquisition failed for ${repoRelPath}: ${message}`, undefined, runContext);
-      await audit?.git({
-        type: "worktree:workspace-repo-acquire-failed",
-        target: repoAbsPath,
-        metadata: { repoRelPath, taskId: task.id, error: message },
+      // FNXC:Workspace 2026-06-22-09:30: the fatal-path observability writes must use safeObserve
+      // for the same reason as the non-fatal catches — an unsuppressed throw from logEntry/audit
+      // would replace `err` as the propagated rejection, so a store/audit hiccup could surface a
+      // non-WorkspaceRepoAcquireBusyError to callers whose `instanceof` type checks then misfire.
+      // The original acquisition `err` (line below) is the contract; observability is best-effort.
+      await safeObserve(async () => {
+        await store.logEntry(task.id, `Workspace sub-repo acquisition failed for ${repoRelPath}: ${message}`, undefined, runContext);
+        await audit?.git({
+          type: "worktree:workspace-repo-acquire-failed",
+          target: repoAbsPath,
+          metadata: { repoRelPath, taskId: task.id, error: message },
+        });
       });
     }
     throw err;
