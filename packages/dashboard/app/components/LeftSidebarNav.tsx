@@ -299,6 +299,28 @@ export function LeftSidebarNav({
       onSelect: () => onChangeView("list"),
     },
     ...(graphPluginEntry ? [mapPluginEntry(graphPluginEntry)] : []),
+    /*
+    FNXC:Navigation 2026-06-23-01:30:
+    Planning and Missions sit directly below Graph and above Agents (moved up from after Memory) per user request, so the planning/mission destinations sit next to the structural Board/List/Graph group.
+    */
+    {
+      id: "planning",
+      label: t("nav.planning", "Planning"),
+      view: "planning",
+      isActive: view === "planning",
+      icon: Lightbulb,
+      testId: "sidebar-nav-planning",
+      onSelect: () => onChangeView("planning"),
+    },
+    {
+      id: "missions",
+      label: t("nav.missions", "Missions"),
+      view: "missions",
+      isActive: view === "missions",
+      icon: Target,
+      testId: "sidebar-nav-missions",
+      onSelect: () => onChangeView("missions"),
+    },
     ...(showAgentsTab
       ? [
           {
@@ -343,28 +365,6 @@ export function LeftSidebarNav({
     ...(experimentalFeatures?.memoryView
       ? [{ id: "memory", label: t("header.memoryView", "Memory"), view: "memory" as TaskView, isActive: view === "memory", icon: Brain, testId: "sidebar-nav-memory", onSelect: () => onChangeView("memory") }]
       : []),
-    {
-      id: "planning",
-      /*
-      FNXC:Navigation 2026-06-21-00:00:
-      FN-6886 makes Planning Mode a first-class sidebar destination.
-      */
-      label: t("nav.planning", "Planning"),
-      view: "planning",
-      isActive: view === "planning",
-      icon: Lightbulb,
-      testId: "sidebar-nav-planning",
-      onSelect: () => onChangeView("planning"),
-    },
-    {
-      id: "missions",
-      label: t("nav.missions", "Missions"),
-      view: "missions",
-      isActive: view === "missions",
-      icon: Target,
-      testId: "sidebar-nav-missions",
-      onSelect: () => onChangeView("missions"),
-    },
     {
       id: "documents",
       /*

@@ -270,13 +270,13 @@ describe("LeftSidebarNav", () => {
       "sidebar-nav-command-center",
       "sidebar-nav-board",
       "sidebar-nav-list",
+      "sidebar-nav-planning",
+      "sidebar-nav-missions",
       "sidebar-nav-agents",
       "sidebar-nav-chat",
       "sidebar-nav-mailbox",
       "sidebar-nav-skills",
       "sidebar-nav-memory",
-      "sidebar-nav-planning",
-      "sidebar-nav-missions",
       "sidebar-nav-documents",
       "sidebar-nav-goals",
       "sidebar-nav-automations",
@@ -290,11 +290,14 @@ describe("LeftSidebarNav", () => {
     expect(orderedIndices).toEqual([...orderedIndices].sort((a, b) => a - b));
     expect(orderedIndices.every((index) => index >= 0)).toBe(true);
     expect(primaryButtons.indexOf(screen.getByTestId("sidebar-nav-command-center"))).toBeLessThan(primaryButtons.indexOf(screen.getByTestId("sidebar-nav-agents")));
-    expect(primaryButtons.indexOf(screen.getByTestId("sidebar-nav-documents"))).toBe(primaryButtons.indexOf(screen.getByTestId("sidebar-nav-missions")) + 1);
-    // Skills and Memory sit immediately after Mailbox and before Planning.
+    // FNXC:Navigation 2026-06-23-01:30: Planning + Missions now sit directly after List and before Agents; Documents (Artifacts) follows Memory.
+    expect(primaryButtons.indexOf(screen.getByTestId("sidebar-nav-planning"))).toBe(primaryButtons.indexOf(screen.getByTestId("sidebar-nav-list")) + 1);
+    expect(primaryButtons.indexOf(screen.getByTestId("sidebar-nav-missions"))).toBe(primaryButtons.indexOf(screen.getByTestId("sidebar-nav-planning")) + 1);
+    expect(primaryButtons.indexOf(screen.getByTestId("sidebar-nav-agents"))).toBe(primaryButtons.indexOf(screen.getByTestId("sidebar-nav-missions")) + 1);
+    expect(primaryButtons.indexOf(screen.getByTestId("sidebar-nav-documents"))).toBe(primaryButtons.indexOf(screen.getByTestId("sidebar-nav-memory")) + 1);
+    // Skills and Memory sit immediately after Mailbox.
     expect(primaryButtons.indexOf(screen.getByTestId("sidebar-nav-skills"))).toBe(primaryButtons.indexOf(screen.getByTestId("sidebar-nav-mailbox")) + 1);
     expect(primaryButtons.indexOf(screen.getByTestId("sidebar-nav-memory"))).toBe(primaryButtons.indexOf(screen.getByTestId("sidebar-nav-skills")) + 1);
-    expect(primaryButtons.indexOf(screen.getByTestId("sidebar-nav-planning"))).toBe(primaryButtons.indexOf(screen.getByTestId("sidebar-nav-memory")) + 1);
 
     const sidebar = screen.getByTestId("left-sidebar-nav");
     const footer = screen.getByTestId("sidebar-nav-settings").closest(".left-sidebar-nav__footer");
