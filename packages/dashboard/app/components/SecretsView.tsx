@@ -1,7 +1,8 @@
 import "./SecretsView.css";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Check, ChevronDown, ChevronRight, Copy, Eye, EyeOff, Pencil, Plus, RefreshCw, Trash2 } from "lucide-react";
+import { Check, ChevronDown, ChevronRight, Copy, Eye, EyeOff, Lock, Pencil, Plus, RefreshCw, Trash2 } from "lucide-react";
+import { ViewHeader } from "./ViewHeader";
 
 type ToastKind = "info" | "success" | "error";
 type SecretScope = "project" | "global";
@@ -285,13 +286,20 @@ export const SecretsView = ({ addToast }: SecretsViewProps) => {
 
   return (
     <section className="secrets-view">
-      <div className="secrets-header">
-        <h2>{t("secrets.title", "Secrets")}</h2>
-        <div className="secrets-header-actions">
-          <button className="btn btn-sm" onClick={() => void loadSecrets()}><RefreshCw {...actionIconProps} /> {t("secrets.refresh", "Refresh")}</button>
-          <button className="btn btn-primary btn-sm" onClick={openCreate}><Plus {...actionIconProps} /> {t("secrets.addSecret", "Add Secret")}</button>
-        </div>
-      </div>
+      {/*
+        FNXC:ViewHeader 2026-06-23-03:45:
+        Secrets now renders the shared canonical ViewHeader (Lock icon matches the right-dock nav). The Refresh/Add actions ride in the header actions cluster as btn btn-sm so they match every other view's header buttons. The right-dock/pop-out hosts still hide this title row via the `.secrets-view > .view-header` selector since those chromes label the view themselves.
+      */}
+      <ViewHeader
+        icon={Lock}
+        title={t("secrets.title", "Secrets")}
+        actions={
+          <>
+            <button className="btn btn-sm" onClick={() => void loadSecrets()}><RefreshCw {...actionIconProps} /> {t("secrets.refresh", "Refresh")}</button>
+            <button className="btn btn-primary btn-sm" onClick={openCreate}><Plus {...actionIconProps} /> {t("secrets.addSecret", "Add Secret")}</button>
+          </>
+        }
+      />
 
       {error ? <div className="form-error">{error}</div> : null}
       {loading ? <div className="secrets-loading"><RefreshCw {...spinningActionIconProps} /> {t("secrets.loading", "Loading…")}</div> : null}

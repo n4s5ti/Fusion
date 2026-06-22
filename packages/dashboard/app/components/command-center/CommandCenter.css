@@ -32,12 +32,23 @@ The Command Center must remain scrollable on mobile inside the overflow-hidden .
   gap: var(--space-md);
 }
 
+/*
+FNXC:ViewHeader 2026-06-23-03:45:
+cc-title is the original model for the shared ViewHeader; its visible text metrics are kept in lockstep with the canonical ViewHeader title (1.125rem / 600 / var(--text)) and a --todo-colored leading icon so the Command Center heading reads identically to every other view. The Command Center shell keeps its own pinned-header + tablist-divider + scrollable-tabpanel layout (the .command-center shell supplies the --space-lg padding and the .cc-tablist below owns the single divider), so the container does not adopt ViewHeader's edge-to-edge surface/border-bottom chrome — doing so would double the divider against the tablist.
+*/
 .cc-title {
   display: flex;
   align-items: center;
   gap: var(--space-sm);
   margin: 0;
   font-size: 1.125rem;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.cc-title svg {
+  flex-shrink: 0;
+  color: var(--todo);
 }
 
 /* ---- Tabs ---- */

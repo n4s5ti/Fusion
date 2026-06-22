@@ -11,10 +11,12 @@
 
 /*
 FNXC:Navigation 2026-06-22-01:10:
-The header row now comes from the shared .view-header (which supplies the --space-lg top/side padding). The container only contributes the bottom border + surface; the controls row gets its own side/bottom padding so the tab bar/search stay aligned without doubling the ViewHeader inset.
+The header row now comes from the shared .view-header (which supplies the --space-lg top/side padding).
+
+FNXC:ViewHeader 2026-06-23-03:45:
+The shared ViewHeader now owns the single border-bottom divider + surface background, so this wrapper drops its own border-bottom/background to avoid a doubled divider under the title row (the divider sits directly under the canonical title row, and the controls row reads as body content below it). The controls row keeps its own side/bottom padding so the tab bar/search stay aligned.
 */
 .documents-view-header {
-  border-bottom: 1px solid var(--border);
   background: var(--surface);
 }
 
