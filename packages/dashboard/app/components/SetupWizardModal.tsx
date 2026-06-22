@@ -267,10 +267,16 @@ export function SetupWizardModal({
     ? getPresetById(state.selectedPresetId)
     : undefined;
   const isAgentActionDisabled = state.isCreatingAgent;
+  /*
+   FNXC:Onboarding 2026-06-22-05:37:
+   The optional project-agent step needs more horizontal room than project details so templates and preview can be compared side by side.
+   Keep the wider modal scoped to the agent step so the initial project form stays compact.
+   */
+  const modalClassName = `modal setup-wizard-modal${state.step === "agent" ? " setup-wizard-modal--agent" : ""}`;
 
   return (
     <div className="modal-overlay open setup-wizard-overlay" role="dialog" aria-modal="true" aria-labelledby="wizard-title">
-      <div className="modal setup-wizard-modal">
+      <div className={modalClassName}>
         {/* Header */}
         <div className="setup-wizard-header">
           <div className="setup-wizard-heading">

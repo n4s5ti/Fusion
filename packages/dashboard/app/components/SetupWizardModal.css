@@ -31,7 +31,7 @@
   overscroll-behavior: contain;
 }
 
-.setup-wizard-modal {
+.modal.setup-wizard-modal {
   display: flex;
   flex-direction: column;
   max-width: 880px;
@@ -43,6 +43,11 @@
   overflow: hidden;
   /* Prevent flex parents from squeezing this below its content's needs. */
   flex-shrink: 0;
+}
+
+.modal.setup-wizard-modal--agent {
+  max-width: 1120px;
+  width: min(96vw, 1120px);
 }
 
 @keyframes slideUp {
@@ -329,7 +334,7 @@
 
 .setup-wizard-agent-layout {
   display: grid;
-  grid-template-columns: minmax(0, 1.05fr) minmax(280px, 0.95fr);
+  grid-template-columns: minmax(360px, 1.08fr) minmax(320px, 0.92fr);
   gap: var(--space-lg);
   align-items: start;
 }
