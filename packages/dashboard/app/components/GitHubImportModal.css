@@ -136,6 +136,8 @@
   display: flex;
   flex-direction: column;
   min-height: 0;
+  /* FNXC:GitHubImport 2026-06-23-02:00: min-width:0 so neither pane's content can override its flex-basis and force horizontal overflow once GitHub data loads. */
+  min-width: 0;
 }
 
 .github-import-list-pane {
@@ -143,6 +145,25 @@
   flex: 0 0 auto;
   /* Keep separator ownership on the resize handle to avoid a doubled divider. */
   padding-right: var(--space-md);
+}
+
+/*
+FNXC:GitHubImport 2026-06-23-02:00:
+List items must NOT dictate the list pane width. Paired with the pane's min-width:0, every item subtree gets min-width:0 and the title ellipsizes, so a long issue/PR title truncates inside the (resizable) pane instead of forcing it wide.
+*/
+.github-import-list-pane .issue-main,
+.github-import-list-pane .issue-heading-row {
+  min-width: 0;
+}
+.github-import-list-pane .issue-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.github-import-list-pane .issue-labels {
+  flex-wrap: wrap;
+  overflow: hidden;
 }
 
 .github-import-workspace__resize-handle {
@@ -1279,8 +1300,13 @@ body. Let the content take its full intrinsic height and hand vertical scrolling
   the inline flex win. The preview pane is `flex: 1 1 auto; min-width: 0` (below) so the freed width flows to the preview.
   */
   .github-import-modal--embedded .github-import-list-pane {
-    /* `!important` here only neutralizes the stacked rule's own `!important`; the width comes from the inline CSS var. */
+    /*
+    FNXC:GitHubImport 2026-06-23-02:00:
+    min-width:0 is ESSENTIAL. Without it the flex item keeps min-width:auto, so once the GitHub data loads the wide issue/PR titles (large min-content width) override the 256px flex-basis and blow the pane out to ~978px, pushing the workspace into horizontal overflow — the user's "data loads → view too wide → can't make it smaller". With min-width:0 the inline flex-basis is honored and the list content truncates within the pane instead of dictating its width.
+    `!important` only neutralizes the stacked rule's own `!important`; the width comes from the inline CSS var.
+    */
     flex: 0 0 var(--gh-import-list-width, clamp(160px, 30cqi, 480px)) !important;
+    min-width: 0 !important;
     width: auto;
     max-height: none;
     padding-right: var(--space-md);
