@@ -500,6 +500,12 @@ export class WorkflowGraphExecutor {
            */
           const enabled = task.enabledWorkflowSteps?.includes(node.id) ?? false;
           if (!enabled) {
+            // FNXC:WorkflowOptionalGroup 2026-06-21-16:30: record the group's own
+            // outcome on bypass too (mirrors the enabled path + every other node
+            // kind), so a downstream node reading `node:<id>:outcome` from context
+            // sees "success" rather than undefined — disabled is fully inert, not
+            // just edge-routing-inert.
+            context[`node:${node.id}:outcome`] = "success";
             return await traverseChildren(node, {
               outcome: "success",
               value: "optional-group-bypassed",

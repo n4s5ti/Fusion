@@ -78,7 +78,7 @@ import type {
   WorkflowNodeLayout,
 } from "./workflow-definition-types.js";
 import { compileWorkflowToSteps, isInterpreterDeferredWorkflowCompileError } from "./workflow-compiler.js";
-import { resolveDefaultOnOptionalGroupIds } from "./workflow-optional-steps.js";
+import { resolveDefaultOnOptionalGroupIds, resolveAllOptionalGroupIds } from "./workflow-optional-steps.js";
 import {
   BUILTIN_WORKFLOWS,
   getBuiltinWorkflow,
@@ -4274,7 +4274,26 @@ ${TASK_UPSERT_SQL_ASSIGNMENTS}
     });
   }
 
-  private async resolveEnabledWorkflowSteps(stepIds?: string[]): Promise<string[] | undefined> {
+  /*
+  FNXC:WorkflowOptionalGroup 2026-06-21-16:30:
+  `optionalGroupIds` are the optional-group node ids of the task's workflow. They are executor toggle keys (matched by node id in `enabledWorkflowSteps`), NOT legacy `WorkflowStep` template ids. A built-in group id can deliberately collide with a `WORKFLOW_STEP_TEMPLATES` id (e.g. "browser-verification"); without this pass-through the colliding id is materialized into a step row whose id differs from the group node id, so the executor's `enabledWorkflowSteps.includes(node.id)` check fails and an enabled group is silently bypassed (P1 from code review). Editor-authored group ids never collide (they come from `newNodeId()`), so they already passed through; this guards the built-in collision.
+  */
+  /** Optional-group node ids for a workflow (its `enabledWorkflowSteps` toggle
+   *  keys). Falls back to the project default workflow when `workflowId` is
+   *  nullish; empty for missing/fragment workflows. Used to keep group ids out of
+   *  the legacy step-template materialization in {@link resolveEnabledWorkflowSteps}. */
+  private async optionalGroupIdSet(workflowId?: string | null): Promise<Set<string>> {
+    const wfId = workflowId ?? (await this.getDefaultWorkflowId());
+    if (!wfId) return new Set();
+    const def = await this.getWorkflowDefinition(wfId);
+    if (!def || def.kind === "fragment") return new Set();
+    return new Set(resolveAllOptionalGroupIds(def.ir));
+  }
+
+  private async resolveEnabledWorkflowSteps(
+    stepIds?: string[],
+    optionalGroupIds?: Set<string>,
+  ): Promise<string[] | undefined> {
     if (!stepIds?.length) return undefined;
 
     const resolved: string[] = [];
@@ -4292,7 +4311,10 @@ ${TASK_UPSERT_SQL_ASSIGNMENTS}
         continue;
       }
 
-      const template = this.getBuiltInWorkflowTemplate(stepId);
+      // Optional-group toggle ids pass through raw — never materialized as legacy step rows.
+      const template = optionalGroupIds?.has(stepId)
+        ? undefined
+        : this.getBuiltInWorkflowTemplate(stepId);
       const resolvedId = template
         ? (await this.ensureWorkflowStepForTemplate(stepId)).id
         : stepId;
@@ -4432,7 +4454,10 @@ ${TASK_UPSERT_SQL_ASSIGNMENTS}
 
     // Determine enabledWorkflowSteps: explicit input takes precedence, otherwise auto-apply default-on steps
     let resolvedWorkflowSteps: string[] | undefined = input.enabledWorkflowSteps?.length
-      ? await this.resolveEnabledWorkflowSteps(input.enabledWorkflowSteps)
+      ? await this.resolveEnabledWorkflowSteps(
+          input.enabledWorkflowSteps,
+          await this.optionalGroupIdSet(input.workflowId),
+        )
       : undefined;
 
     // When a project default workflow is configured, new tasks inherit it
@@ -4627,7 +4652,10 @@ ${TASK_UPSERT_SQL_ASSIGNMENTS}
 
     const title = input.title?.trim() || undefined;
     let resolvedWorkflowSteps: string[] | undefined = input.enabledWorkflowSteps?.length
-      ? await this.resolveEnabledWorkflowSteps(input.enabledWorkflowSteps)
+      ? await this.resolveEnabledWorkflowSteps(
+          input.enabledWorkflowSteps,
+          await this.optionalGroupIdSet(input.workflowId),
+        )
       : undefined;
 
     let pendingWorkflowSelection: { workflowId: string; stepIds: string[] } | undefined;
@@ -8610,7 +8638,14 @@ ${TASK_UPSERT_SQL_ASSIGNMENTS}
         task.nextRecoveryAt = updates.nextRecoveryAt;
       }
       if (updates.enabledWorkflowSteps !== undefined) {
-        task.enabledWorkflowSteps = await this.resolveEnabledWorkflowSteps(updates.enabledWorkflowSteps);
+        // Pass the task's own workflow optional-group ids through untouched so a
+        // toggled built-in group id (e.g. "browser-verification") is not remapped
+        // to a materialized step row the executor never matches (code-review P1).
+        const taskWorkflowId = this.getTaskWorkflowSelection(task.id)?.workflowId;
+        task.enabledWorkflowSteps = await this.resolveEnabledWorkflowSteps(
+          updates.enabledWorkflowSteps,
+          await this.optionalGroupIdSet(taskWorkflowId),
+        );
       }
       if (updates.noCommitsExpected === null) {
         task.noCommitsExpected = undefined;
