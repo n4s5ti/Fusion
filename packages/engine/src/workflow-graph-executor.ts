@@ -506,10 +506,12 @@ export class WorkflowGraphExecutor {
             // sees "success" rather than undefined — disabled is fully inert, not
             // just edge-routing-inert.
             context[`node:${node.id}:outcome`] = "success";
-            return await traverseChildren(node, {
-              outcome: "success",
-              value: "optional-group-bypassed",
-            });
+            // FNXC:WorkflowOptionalGroup 2026-06-22-09:00: route a disabled group
+            // as a plain success with NO distinguishing value — a non-empty value
+            // could let an `outcome:*` edge preempt the success edge in
+            // traverseChildren, breaking the "disabled == node absent" inertness
+            // invariant. (Code review: CodeRabbit.)
+            return await traverseChildren(node, { outcome: "success" });
           }
           const groupResult = await runOptionalGroup(node, {
             context,

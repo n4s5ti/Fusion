@@ -1460,13 +1460,21 @@ describe("insertFragment", () => {
     const allIds = second.nodes.map((n) => n.id);
     expect(new Set(allIds).size).toBe(allIds.length);
 
-    // Round-trip: the group carries defaultOn + a single-node template.
+    // Round-trip: BOTH inserted groups carry defaultOn + a single-node template,
+    // so a regression that breaks the second insert can't pass on the first.
     const { ir: out } = flowToIr("wf", second.nodes, second.edges);
-    const og = out.nodes.find((n) => n.kind === "optional-group")!;
-    expect(og.config?.defaultOn).toBe(true);
-    const template = (og.config as { template?: { nodes: { config?: Record<string, unknown> }[] } }).template;
-    expect(template?.nodes).toHaveLength(1);
-    expect(template?.nodes[0].config?.name).toBe("Security Audit");
+    // An optional-group is a v2-only kind: its presence forces v2 serialization
+    // even with no columns/fields/settings, or it would serialize as v1 and fail
+    // parse. (Code review: CodeRabbit.)
+    expect(out.version).toBe("v2");
+    const ogs = out.nodes.filter((n) => n.kind === "optional-group");
+    expect(ogs).toHaveLength(2);
+    for (const og of ogs) {
+      expect(og.config?.defaultOn).toBe(true);
+      const template = (og.config as { template?: { nodes: { config?: Record<string, unknown> }[] } }).template;
+      expect(template?.nodes).toHaveLength(1);
+      expect(template?.nodes[0].config?.name).toBe("Security Audit");
+    }
   });
 });
 

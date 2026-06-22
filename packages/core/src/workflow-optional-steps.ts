@@ -35,8 +35,10 @@ function isOptionalGroupNode(
  *
  * Source: v2 `ir.nodes` where `kind === "optional-group"` (NOT the legacy
  * `ir.optionalSteps` declaration). Non-v2 graphs and graphs without any
- * optional-group node resolve to `[]`. Malformed group configs are skipped so a
- * stale/partial node never renders a blank UI row or breaks workflow loading.
+ * optional-group node resolve to `[]`. A group with a missing or partial config
+ * still resolves to a usable entry — `name` falls back to the node id and
+ * `defaultOn` to false — rather than being dropped, so a stale/partial node never
+ * silently disappears from the toggle UI or breaks workflow loading.
  *
  * `pluginTemplates` is accepted for signature compatibility with the prior
  * template-backed resolver; group nodes are self-describing, so it is currently

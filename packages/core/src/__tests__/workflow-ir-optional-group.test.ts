@@ -94,6 +94,13 @@ describe("optional-group validation", () => {
     expect(() => parseWorkflowIr(groupIr({ template }))).toThrow(/may not contain rework edges/);
   });
 
+  it("rejects failure-condition edges inside the template (single-pass bails before routing them)", () => {
+    const template = groupTemplate();
+    // A parallel failure edge that the single-pass walk would silently never take.
+    template.edges.push({ from: "verify", to: "report", condition: "failure" });
+    expect(() => parseWorkflowIr(groupIr({ template }))).toThrow(/may not contain failure-condition edges/);
+  });
+
   it("rejects nested loop/foreach/optional-group regions", () => {
     const template = groupTemplate();
     template.nodes.push({

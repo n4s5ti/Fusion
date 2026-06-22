@@ -539,19 +539,21 @@ surfaces are enumerated:
   `resolveWorkflowOptionalSteps`'s output shape (source re-pointed in U3).
 - Step→node projection (`workflow-steps-to-ir.ts`) reused to project add-ons (U5).
 
-### Deferred to Follow-Up Work
-- **Full legacy-path retirement (U7) — deferred after execution-time scope discovery.** U1–U6 shipped and
-  the new model is the live path (built-ins migrated, resolver + executor on optional-group nodes). The
-  legacy declaration surface is now inert but **not removed**, because U7 turned out far larger than scoped:
-  (a) `workflow-step` is a shared `WorkflowSeam` union member woven through ~9 engine runtime files
+### Delivered cohort (this PR) vs. Deferred
+This PR delivers **U1–U6 plus U7a** (10 commits). U7a retired the legacy declaration *model*: the core
+`WorkflowOptionalStep` type + `WorkflowIrV2.optionalSteps` field + `validateOptionalSteps`, and the editor's
+declaration **authoring** surface (`WorkflowOptionalStepsPanel`, `optionalStepsOf`, the `flowToIr`
+`optionalSteps` threading). A code-review pass also fixed a P1 (the optional-group toggle-id collision in
+enable resolution) — captured in the commit history and in
+`docs/solutions/logic-errors/optional-group-toggle-id-remapped-by-step-materializer.md`. The per-task toggle
+surfaces (`WorkflowOptionalStepsDropdown`, inline card, modal, Workflow tab) stayed — they consume the
+distinct `ResolvedWorkflowOptionalStep`.
+
+- **Deferred: the `workflow-step` seam infrastructure removal.** What remains of "full U7" is excising the
+  `workflow-step` seam itself — a shared `WorkflowSeam` union member woven through ~9 engine runtime files
   (`runtime-primitives`, `step-session-executor`, `workflow-node-handlers`, `active-session-registry`,
-  `workflow-graph-task-runner`, `executor.runWorkflowSteps`, the compiler seam-anchor), not an
-  optional-steps-only node — excising it is its own refactor; and (b) the dashboard still carries the prior
-  declaration **authoring** surface (`WorkflowOptionalStepsPanel`/`WorkflowOptionalStepsDropdown`, the
-  `flowToIr` `optionalSteps` threading, `optionalStepsOf`) across ~10 files. Removing the core
-  `WorkflowOptionalStep` type without that dashboard cleanup breaks the build. Retire both surfaces in a
-  focused follow-up; until then the `WorkflowOptionalStepsPanel` authors declarations the resolver no longer
-  reads (a known dead-authoring UI to remove with it).
+  `workflow-graph-task-runner`, `executor.runWorkflowSteps`, the compiler seam-anchor). It is now orphaned
+  (no built-in graph reaches it) but inert; excising it is its own focused refactor with its own blast radius.
 - **Nested/conditional groups** (an optional-group inside a split/foreach, or gated by a workflow field
   rather than the per-task toggle) — single-level, per-task-toggle only for now.
 - **Plugin-contributed add-ons as optional-group presets** beyond inserting them as flat nodes.

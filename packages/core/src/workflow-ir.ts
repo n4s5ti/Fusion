@@ -668,6 +668,18 @@ function validateOptionalGroup(
     if (isReworkEdge(edge)) {
       throw new WorkflowIrError(`optional-group node '${node.id}' template may not contain rework edges`);
     }
+    // FNXC:WorkflowOptionalGroup 2026-06-22-09:00: the single-pass walk
+    // (runOptionalGroup) surfaces a template-node failure as the GROUP's outcome
+    // and bails before evaluating that node's edges — so a `failure`-condition
+    // edge inside the template would silently never execute. Reject it as a typed
+    // authoring error; failure routing belongs on the group's OUTER edges.
+    // (Code review: Greptile P2.)
+    if (edge.condition === "failure") {
+      throw new WorkflowIrError(
+        `optional-group node '${node.id}' template may not contain failure-condition edges — ` +
+          `a template-node failure surfaces as the group's outcome and routes the group's outer failure edge`,
+      );
+    }
   }
 
   const incoming = new Map<string, number>();
@@ -1466,16 +1478,19 @@ export function downgradeIrToV1IfPure(ir: WorkflowIr): WorkflowIr {
 
   // Step-inversion declarations (artifacts/fields), workflow settings (U1), and
   // any legacy persisted optional-step declarations are v2-only features.
-  // FNXC:WorkflowOptionalGroup 2026-06-21-18:00:
+  // FNXC:WorkflowOptionalGroup 2026-06-21-18:00 (updated 2026-06-22-09:00):
   // `optionalSteps` is no longer a typed IR field (retired declaration model), but
   // a legacy v2 row may still carry the key. Read it via an untyped cast so such a
-  // row is still treated as v2 (kept on v2, never silently downgraded).
-  const legacyOptionalSteps = (ir as { optionalSteps?: unknown[] }).optionalSteps;
+  // row is still treated as v2 (kept on v2, never silently downgraded). The mere
+  // PRESENCE of the key — including an empty `[]` — is the v2 signal: an author
+  // who wrote the key intended v2, and downgrading an `optionalSteps: []` row to
+  // v1 would still mutate its persisted shape. (Code review: CodeRabbit.)
+  const legacyOptionalSteps = (ir as { optionalSteps?: unknown }).optionalSteps;
   if (
     (ir.artifacts && ir.artifacts.length > 0) ||
     (ir.fields && ir.fields.length > 0) ||
     (ir.settings && ir.settings.length > 0) ||
-    (Array.isArray(legacyOptionalSteps) && legacyOptionalSteps.length > 0)
+    legacyOptionalSteps !== undefined
   ) {
     return ir;
   }

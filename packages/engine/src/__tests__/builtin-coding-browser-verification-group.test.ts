@@ -88,6 +88,11 @@ describe("builtin coding browser-verification optional-group (U6)", () => {
 
     expect(result.context[`node:${GROUP_ID}:outcome`]).toBe("failure");
     expect(result.visitedNodeIds).toContain(INNER_STEP_VISITED_ID);
+    // The group's only two outgoing edges are `success → review` and
+    // `failure → end`; the inner-step failure routes the failure edge, so review
+    // is skipped. (`end` is a terminal node the executor does not record in
+    // visitedNodeIds, so the routing is asserted via the group's failure outcome
+    // above + review being unreachable here.)
     expect(result.visitedNodeIds).not.toContain("review");
   });
 });

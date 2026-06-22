@@ -479,8 +479,13 @@ export function flowToIr(
   // node/edge mapping. Fields and settings remain v2-only declarations: a workflow
   // with either but no custom columns still serializes as v2 (with the synthesized
   // default columns). Empty/absent → not a v2 signal (R6 byte-identity for legacy).
+  // FNXC:WorkflowOptionalGroup 2026-06-22-09:00: a container/group node
+  // (foreach/loop/optional-group) is a v2-ONLY kind — its presence must force v2,
+  // or an inserted optional-group on an otherwise-plain workflow would serialize
+  // as v1 and fail parse (validateOptionalGroup runs only on v2). (Code review:
+  // CodeRabbit — corroborated by the pre-merge correctness review's residual risk.)
   const v2 =
-    (Array.isArray(columns) && columns.length > 0) || hasFields || hasSettings;
+    (Array.isArray(columns) && columns.length > 0) || hasFields || hasSettings || groupIds.size > 0;
   const layout: Record<string, { x: number; y: number }> = {};
 
   /** Project one flow node (top-level or template child) into an IR node. */
