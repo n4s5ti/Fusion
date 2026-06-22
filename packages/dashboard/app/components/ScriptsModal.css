@@ -2005,7 +2005,9 @@ The embedded Git Manager adapts to its container width, not the viewport, so the
   }
 
   .gm-modal--embedded .gm-nav-item {
+    /* width:auto resets the base .gm-nav-item width:100% which otherwise made each tab span the whole strip (one wide tab at a time). */
     flex: 0 0 auto;
+    width: auto;
     align-items: center;
     justify-content: center;
     gap: 0;

@@ -38,10 +38,14 @@
   gap: var(--space-sm);
 }
 
+/*
+FNXC:Navigation 2026-06-22-02:00:
+The shared ViewHeader already supplies the top + side --space-lg padding, so the content area must NOT repeat the top padding (that doubled the gap under the header). Side + bottom padding only, aligned with the header.
+*/
 .skills-view-content {
   flex: 1;
   overflow-y: auto;
-  padding: var(--space-lg);
+  padding: 0 var(--space-lg) var(--space-lg);
 }
 
 .skills-view-section {
