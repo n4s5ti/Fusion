@@ -2877,6 +2877,10 @@ export function TaskDetailContent({
           ) : (
             <>
               <>
+                {/*
+                FNXC:TaskDetail 2026-06-22-20:00:
+                Summarize-as-title renders inline with the title inside .detail-heading-row and is positioned (CSS) to the far bottom-right as an in-field affordance, not a separate full-width row. Markup order is preserved; only layout changed.
+                */}
                 <div className="detail-heading-row">
                   <h2
                     ref={titleRef}

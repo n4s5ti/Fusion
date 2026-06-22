@@ -433,7 +433,10 @@ export function TerminalModal({ isOpen, onClose, initialCommand, initialCommandG
   const pendingFitRef = useRef<number | null>(null);
   /*
   FNXC:Terminal 2026-06-22-09:00:
-  Docked-resize, floating-drag, and floating-resize each attach document pointer listeners (and docked schedules a rAF) for the duration of a drag. If the modal closes or the component unmounts mid-drag, those listeners + the pending frame would leak. Track the active drag teardown here and run it from the close/unmount effect.
+  Docked-resize, floating-drag, and floating-resize each attach pointer listeners and schedule a rAF for the duration of a drag. If the modal closes or the component unmounts mid-drag, those listeners + the pending frame would leak. Track the active drag teardown here and run it from the close/unmount effect.
+
+  FNXC:Terminal 2026-06-22-19:50:
+  All three families now capture the pointer and attach listeners to the CAPTURED handle element (not `document`), so the teardown also releasePointerCapture()s; the close/unmount effect still drives it through this single ref.
   */
   const dragTeardownRef = useRef<(() => void) | null>(null);
   /** Tracks the previous projectId to detect project switches and invalidate xterm. */
@@ -489,22 +492,26 @@ export function TerminalModal({ isOpen, onClose, initialCommand, initialCommandG
   FNXC:Terminal 2026-06-21-22:45:
   The pop-out terminal mode uses project-scoped `fusion:terminal-modal-size-${projectId}` and `fusion:terminal-float-pos-${projectId}` keys so floating windows restore independently per project while avoiding the old bottom-right native resize grip conflict.
   */
+  /*
+  FNXC:Terminal 2026-06-22-19:50:
+  Docked top-edge resize, smooth on touch + desktop (same technique as the right-dock pop-out RightDockExpandModal). On pointerdown we setPointerCapture on the handle and attach pointermove/up/cancel to the CAPTURED element (`captureTarget` = event.currentTarget), NOT `document` — capture redirects the full pointer stream for this pointerId to that element so element-scoped listeners receive every move even when the finger drifts off the handle, and they pair cleanly with the handle's `touch-action: none` (CSS) without a non-passive document listener. Moves are filtered by pointerId and coalesced into one rAF, so we set height at most once per frame and never thrash layout on a flood of touch-move events. localStorage is written only on pointerup (existing behavior). Teardown (pointerup/cancel + unmount via dragTeardownRef) cancels the pending rAF, releases pointer capture, and detaches listeners.
+  */
   const handleDockedResizePointerDown = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
     if (!isDockedMode) return;
     event.preventDefault();
-    event.currentTarget.setPointerCapture(event.pointerId);
+    const captureTarget = event.currentTarget;
+    const pointerId = event.pointerId;
+    captureTarget.setPointerCapture?.(pointerId);
     const startY = event.clientY;
     const startHeight = dockedHeight;
     const previousUserSelect = document.body.style.userSelect;
     document.body.style.userSelect = "none";
-    /*
-    FNXC:Terminal 2026-06-22-01:30:
-    Smooth docked resize: batch height state to one update per animation frame during the drag and write localStorage only once on pointer-up, instead of a synchronous clamp + localStorage write on every pointermove (which janked the drag).
-    */
+
     let latestHeight = startHeight;
     let frame = 0;
 
     const handlePointerMove = (moveEvent: PointerEvent) => {
+      if (moveEvent.pointerId !== pointerId) return;
       latestHeight = clampTerminalDockedHeight(startHeight + (startY - moveEvent.clientY));
       if (frame) return;
       frame = requestAnimationFrame(() => {
@@ -512,64 +519,100 @@ export function TerminalModal({ isOpen, onClose, initialCommand, initialCommandG
         setDockedHeight(latestHeight);
       });
     };
-    const handlePointerUp = () => {
+    const detachListeners = () => {
+      captureTarget.releasePointerCapture?.(pointerId);
+      captureTarget.removeEventListener("pointermove", handlePointerMove);
+      captureTarget.removeEventListener("pointerup", handlePointerUp);
+      captureTarget.removeEventListener("pointercancel", handlePointerUp);
+    };
+    function handlePointerUp() {
       if (frame) cancelAnimationFrame(frame);
       setDockedHeight(writeTerminalDockedHeight(latestHeight, projectId));
       document.body.style.userSelect = previousUserSelect;
-      document.removeEventListener("pointermove", handlePointerMove);
-      document.removeEventListener("pointerup", handlePointerUp);
-      document.removeEventListener("pointercancel", handlePointerUp);
+      detachListeners();
       dragTeardownRef.current = null;
-    };
+    }
 
-    // FNXC:Terminal 2026-06-22-09:00: Unmount/close-mid-drag teardown cancels the pending rAF and removes the document listeners without persisting a partial drag.
+    // FNXC:Terminal 2026-06-22-19:50: Unmount/close-mid-drag teardown cancels the pending rAF, releases pointer capture, and detaches the captured-element listeners without persisting a partial drag.
     dragTeardownRef.current = () => {
       if (frame) cancelAnimationFrame(frame);
       document.body.style.userSelect = previousUserSelect;
-      document.removeEventListener("pointermove", handlePointerMove);
-      document.removeEventListener("pointerup", handlePointerUp);
-      document.removeEventListener("pointercancel", handlePointerUp);
+      detachListeners();
       dragTeardownRef.current = null;
     };
 
-    document.addEventListener("pointermove", handlePointerMove);
-    document.addEventListener("pointerup", handlePointerUp);
-    document.addEventListener("pointercancel", handlePointerUp);
+    captureTarget.addEventListener("pointermove", handlePointerMove);
+    captureTarget.addEventListener("pointerup", handlePointerUp);
+    captureTarget.addEventListener("pointercancel", handlePointerUp);
   }, [dockedHeight, isDockedMode, projectId]);
 
+  /*
+  FNXC:Terminal 2026-06-22-19:50:
+  Floating-window move (drag the header grip), smooth on touch + desktop. Pointer capture + captured-element (`captureTarget`) listeners filtered by pointerId, identical to the right-dock pop-out drag. Raw pointer coords are stored in `latest` and applied via one rAF per frame, so a flood of touch-move events coalesces into a single state set and never thrashes layout. State-only updates during the drag; localStorage is persisted once on pointerup (the old per-move persistFloatingPosition wrote localStorage on every move, which janked touch drags). Teardown cancels the rAF, releases capture, and detaches listeners on pointerup/cancel and on unmount.
+  */
   const handleFloatingDragPointerDown = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
     if (!isFloatingMode || (event.target as HTMLElement).closest("button")) return;
     event.preventDefault();
-    event.currentTarget.setPointerCapture(event.pointerId);
+    const captureTarget = event.currentTarget;
+    const pointerId = event.pointerId;
+    captureTarget.setPointerCapture?.(pointerId);
     const startX = event.clientX;
     const startY = event.clientY;
     const startPosition = floatingPosition;
+    const currentSize = floatingSize;
     const previousUserSelect = document.body.style.userSelect;
     document.body.style.userSelect = "none";
 
+    let latest = startPosition;
+    let frame = 0;
+
     const handlePointerMove = (moveEvent: PointerEvent) => {
-      persistFloatingPosition({ x: startPosition.x + moveEvent.clientX - startX, y: startPosition.y + moveEvent.clientY - startY });
+      if (moveEvent.pointerId !== pointerId) return;
+      latest = { x: startPosition.x + moveEvent.clientX - startX, y: startPosition.y + moveEvent.clientY - startY };
+      if (frame) return;
+      frame = requestAnimationFrame(() => {
+        frame = 0;
+        setFloatingPosition(clampTerminalFloatPosition(latest, currentSize));
+      });
     };
-    const handlePointerUp = () => {
+    const detachListeners = () => {
+      captureTarget.releasePointerCapture?.(pointerId);
+      captureTarget.removeEventListener("pointermove", handlePointerMove);
+      captureTarget.removeEventListener("pointerup", handlePointerUp);
+      captureTarget.removeEventListener("pointercancel", handlePointerUp);
+    };
+    function handlePointerUp() {
+      if (frame) cancelAnimationFrame(frame);
+      persistFloatingPosition(latest, currentSize);
       document.body.style.userSelect = previousUserSelect;
-      document.removeEventListener("pointermove", handlePointerMove);
-      document.removeEventListener("pointerup", handlePointerUp);
-      document.removeEventListener("pointercancel", handlePointerUp);
+      detachListeners();
+      dragTeardownRef.current = null;
+    }
+
+    // FNXC:Terminal 2026-06-22-19:50: Unmount/close-mid-drag teardown cancels the rAF, releases capture, and detaches the captured-element listeners without persisting a partial move.
+    dragTeardownRef.current = () => {
+      if (frame) cancelAnimationFrame(frame);
+      document.body.style.userSelect = previousUserSelect;
+      detachListeners();
       dragTeardownRef.current = null;
     };
 
-    // FNXC:Terminal 2026-06-22-09:00: Unmount/close-mid-drag teardown removes the document listeners so a floating-drag never leaks them.
-    dragTeardownRef.current = handlePointerUp;
-    document.addEventListener("pointermove", handlePointerMove);
-    document.addEventListener("pointerup", handlePointerUp);
-    document.addEventListener("pointercancel", handlePointerUp);
-  }, [floatingPosition, isFloatingMode, persistFloatingPosition]);
+    captureTarget.addEventListener("pointermove", handlePointerMove);
+    captureTarget.addEventListener("pointerup", handlePointerUp);
+    captureTarget.addEventListener("pointercancel", handlePointerUp);
+  }, [floatingPosition, floatingSize, isFloatingMode, persistFloatingPosition]);
 
+  /*
+  FNXC:Terminal 2026-06-22-19:50:
+  Floating-window edge/corner resize, smooth on touch + desktop. Pointer capture + captured-element listeners filtered by pointerId, rAF-batched size/position updates (west/north handles also shift the origin so the opposite edge stays pinned), persisted once on pointerup — same discipline as the right-dock pop-out resize. The old per-move persistFloatingSize/persistFloatingPosition wrote localStorage on every move; now we set state per frame and persist only on release. Teardown cancels the rAF, releases capture, and detaches listeners on pointerup/cancel and on unmount.
+  */
   const handleFloatingResizePointerDown = useCallback((event: ReactPointerEvent<HTMLDivElement>, direction: TerminalResizeDirection) => {
     if (!isFloatingMode) return;
     event.preventDefault();
     event.stopPropagation();
-    event.currentTarget.setPointerCapture(event.pointerId);
+    const captureTarget = event.currentTarget;
+    const pointerId = event.pointerId;
+    captureTarget.setPointerCapture?.(pointerId);
     const startX = event.clientX;
     const startY = event.clientY;
     const startSize = floatingSize;
@@ -577,34 +620,57 @@ export function TerminalModal({ isOpen, onClose, initialCommand, initialCommandG
     const previousUserSelect = document.body.style.userSelect;
     document.body.style.userSelect = "none";
 
+    let latestSize = startSize;
+    let latestPosition = startPosition;
+    let frame = 0;
+
     const handlePointerMove = (moveEvent: PointerEvent) => {
+      if (moveEvent.pointerId !== pointerId) return;
       const dx = moveEvent.clientX - startX;
       const dy = moveEvent.clientY - startY;
-      const rawSize = {
+      const nextSize = clampTerminalFloatSize({
         width: startSize.width + (direction.includes("e") ? dx : direction.includes("w") ? -dx : 0),
         height: startSize.height + (direction.includes("s") ? dy : direction.includes("n") ? -dy : 0),
-      };
-      const nextSize = clampTerminalFloatSize(rawSize);
+      });
       const nextPosition = {
         x: startPosition.x + (direction.includes("w") ? startSize.width - nextSize.width : 0),
         y: startPosition.y + (direction.includes("n") ? startSize.height - nextSize.height : 0),
       };
-      persistFloatingSize(nextSize);
-      persistFloatingPosition(nextPosition, nextSize);
+      latestSize = nextSize;
+      latestPosition = nextPosition;
+      if (frame) return;
+      frame = requestAnimationFrame(() => {
+        frame = 0;
+        setFloatingSize(latestSize);
+        setFloatingPosition(clampTerminalFloatPosition(latestPosition, latestSize));
+      });
     };
-    const handlePointerUp = () => {
+    const detachListeners = () => {
+      captureTarget.releasePointerCapture?.(pointerId);
+      captureTarget.removeEventListener("pointermove", handlePointerMove);
+      captureTarget.removeEventListener("pointerup", handlePointerUp);
+      captureTarget.removeEventListener("pointercancel", handlePointerUp);
+    };
+    function handlePointerUp() {
+      if (frame) cancelAnimationFrame(frame);
+      persistFloatingSize(latestSize);
+      persistFloatingPosition(latestPosition, latestSize);
       document.body.style.userSelect = previousUserSelect;
-      document.removeEventListener("pointermove", handlePointerMove);
-      document.removeEventListener("pointerup", handlePointerUp);
-      document.removeEventListener("pointercancel", handlePointerUp);
+      detachListeners();
+      dragTeardownRef.current = null;
+    }
+
+    // FNXC:Terminal 2026-06-22-19:50: Unmount/close-mid-drag teardown cancels the rAF, releases capture, and detaches the captured-element listeners without persisting a partial resize.
+    dragTeardownRef.current = () => {
+      if (frame) cancelAnimationFrame(frame);
+      document.body.style.userSelect = previousUserSelect;
+      detachListeners();
       dragTeardownRef.current = null;
     };
 
-    // FNXC:Terminal 2026-06-22-09:00: Unmount/close-mid-drag teardown removes the document listeners so a floating-resize never leaks them.
-    dragTeardownRef.current = handlePointerUp;
-    document.addEventListener("pointermove", handlePointerMove);
-    document.addEventListener("pointerup", handlePointerUp);
-    document.addEventListener("pointercancel", handlePointerUp);
+    captureTarget.addEventListener("pointermove", handlePointerMove);
+    captureTarget.addEventListener("pointerup", handlePointerUp);
+    captureTarget.addEventListener("pointercancel", handlePointerUp);
   }, [floatingPosition, floatingSize, isFloatingMode, persistFloatingPosition, persistFloatingSize]);
 
   /**

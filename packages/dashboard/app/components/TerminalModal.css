@@ -124,9 +124,14 @@ Larger grab target for the docked terminal top resize handle: it straddles the p
   box-shadow: var(--shadow-xl);
 }
 
+/*
+FNXC:Terminal 2026-06-22-19:50:
+The floating-mode header is the move grip. `touch-action: none` is required so a touch-drag on it is delivered as a continuous pointermove stream (paired with setPointerCapture on the captured element) instead of being hijacked by the browser into page scroll/pan. Without it the floating drag stutters on touch — same fix the right-dock pop-out drag handle uses. cursor: grab/grabbing signals the move affordance on desktop.
+*/
 .terminal-header--draggable {
   cursor: grab;
   user-select: none;
+  touch-action: none;
 }
 
 .terminal-header--draggable:active {
