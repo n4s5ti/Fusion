@@ -297,7 +297,9 @@ FN-6612 tracks feedback-loop velocity as signal-per-second, not as a new blockin
 pnpm test:velocity -- --measure --write-report
 ```
 
-The script runs `pnpm test:gate`, `pnpm smoke:boot`, and `pnpm test` with bounded async process supervision, then appends the measured row to `scripts/test-velocity-history.json` and rewrites the postable artifact at `docs/test-velocity-baseline.md`. It reads the slowest 20 files from the committed `scripts/test-timings.json` snapshot and the flake/quarantine count plus 14-day deletion-clock buckets directly from `scripts/lib/test-quarantine.json`; do not run the full suite just to populate the slowest-file table.
+In `--measure` mode, the script first runs a non-measured build preflight (`pnpm build`) so the built CLI and workspace dist artifacts exist before any lane is timed. The preflight duration is setup cost and is excluded from `pnpm test:gate`, `pnpm smoke:boot`, and `pnpm test` history fields; if the preflight fails, the report records `Build preflight (pnpm build)` in Measurement failures instead of fabricating lane times or letting boot smoke appear unavailable. Use `--skip-build-preflight` only in CI or another environment that has already built the workspace.
+
+After the preflight, the script runs `pnpm test:gate`, `pnpm smoke:boot`, and `pnpm test` with bounded async process supervision, then appends the measured row to `scripts/test-velocity-history.json` and rewrites the postable artifact at `docs/test-velocity-baseline.md`. It reads the slowest 20 files from the committed `scripts/test-timings.json` snapshot and the flake/quarantine count plus 14-day deletion-clock buckets directly from `scripts/lib/test-quarantine.json`; do not run the full suite just to populate the slowest-file table.
 
 Use cheap report-only regeneration when measurements already exist:
 

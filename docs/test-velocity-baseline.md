@@ -85,6 +85,8 @@ FN-6612 weekly test velocity: gate 8.3s (+2.9s), boot smoke unavailable (n/a), p
 pnpm test:velocity -- --measure --write-report
 ```
 
+In measure mode, the script runs a non-measured `pnpm build` preflight before timing `pnpm test:gate`, `pnpm smoke:boot`, or `pnpm test`. The preflight time is setup only and is excluded from lane metrics; if it fails, the Measurement failures section records `Build preflight (pnpm build)` as the reason. Use `--skip-build-preflight` only when the workspace is already built by CI.
+
 Report-only regeneration is cheap and does not run any suite:
 
 ```bash
