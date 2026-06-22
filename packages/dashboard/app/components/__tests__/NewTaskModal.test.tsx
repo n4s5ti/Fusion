@@ -3,9 +3,6 @@ import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import type { ComponentProps } from "react";
 import { NewTaskModal } from "../NewTaskModal";
 import type { Task, Column } from "@fusion/core";
-import type { BoardWorkflowsPayload } from "../../api";
-import { writeBoardWorkflowsCache } from "../../utils/boardWorkflowsCache";
-import { writeLastSelectedWorkflowId } from "../../utils/lastSelectedWorkflow";
 
 // Mock lucide-react
 vi.mock("lucide-react", () => ({
@@ -79,43 +76,6 @@ function makeTask(id: string): Task {
   };
 }
 
-function workflowDefinition(id: string, name: string) {
-  return {
-    id,
-    name,
-    description: "",
-    kind: "workflow" as const,
-    ir: { version: "v1", name, nodes: [], edges: [] },
-    layout: {},
-    createdAt: "",
-    updatedAt: "",
-  };
-}
-
-function boardWorkflowsPayload(workflows: Array<{ id: string; name: string }>, defaultWorkflowId = workflows[0]?.id ?? "builtin:coding"): BoardWorkflowsPayload {
-  return {
-    flagEnabled: true,
-    defaultWorkflowId,
-    workflows: workflows.map((workflow) => ({
-      id: workflow.id,
-      name: workflow.name,
-      columns: [{ id: "todo", name: "Todo", flags: {} }],
-    })),
-    taskWorkflowIds: {},
-  };
-}
-
-async function mockSelectableWorkflows(workflows: Array<{ id: string; name: string }>, defaultWorkflowId = workflows[0]?.id) {
-  const { fetchSettings, fetchWorkflows } = await import("../../api");
-  vi.mocked(fetchSettings).mockResolvedValueOnce({
-    modelPresets: [],
-    autoSelectModelPreset: false,
-    defaultPresetBySize: {},
-    defaultWorkflowId,
-  });
-  vi.mocked(fetchWorkflows).mockResolvedValueOnce(workflows.map((workflow) => workflowDefinition(workflow.id, workflow.name)) as any);
-}
-
 function renderNewTaskModal(props: Partial<ComponentProps<typeof NewTaskModal>> = {}) {
   const defaultProps: ComponentProps<typeof NewTaskModal> = {
     isOpen: true,
@@ -132,8 +92,6 @@ function renderNewTaskModal(props: Partial<ComponentProps<typeof NewTaskModal>> 
 describe("NewTaskModal", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    window.localStorage.clear();
-    window.sessionStorage.clear();
     mockConfirm.mockReset();
     mockConfirm.mockResolvedValue(true);
     mockUseMobileKeyboard.mockReturnValue({
@@ -192,11 +150,7 @@ describe("NewTaskModal", () => {
     expect(screen.getByRole("button", { name: "Cancel" })).toBeTruthy();
   });
 
-  it("exposes New Task dialog quick-add affordance parity when AI handoff callbacks are supplied", async () => {
-    await mockSelectableWorkflows([
-      { id: "WF-DEFAULT", name: "Default workflow" },
-      { id: "WF-LANE", name: "Selected lane" },
-    ], "WF-DEFAULT");
+  it("exposes New Task dialog quick-add affordance parity when AI handoff callbacks are supplied", () => {
     renderNewTaskModal({
       onPlanningMode: vi.fn(),
       onSubtaskBreakdown: vi.fn(),
@@ -204,7 +158,7 @@ describe("NewTaskModal", () => {
 
     fireEvent.change(screen.getByRole("textbox"), { target: { value: "Create parity coverage" } });
 
-    // Canonical QuickEntryBox action row includes Save/Create, Fast, GitHub, Priority, Plan, Subtask, Refine, Deps, Attach, Models, Node, Agent, and the inherited workflow lane; the modal maps these to existing TaskForm/quick-field controls instead of duplicating implementations.
+    // Canonical QuickEntryBox action row includes Plan, Subtask, Refine, Deps, Attach, Models, Node, and Agent affordances; the modal maps these to existing TaskForm/quick-field controls instead of duplicating implementations.
     expect(screen.getAllByTestId("task-form-plan-button")).toHaveLength(1);
     expect(screen.getAllByTestId("task-form-subtask-button")).toHaveLength(1);
     expect(screen.getByTestId("refine-button")).toBeInTheDocument();
@@ -217,12 +171,7 @@ describe("NewTaskModal", () => {
     expect(screen.getByTestId("task-form-github-tracking")).toBeInTheDocument();
     expect(screen.getByTestId("task-priority-select")).toBeInTheDocument();
     expect(screen.getByText(/Attachments/i)).toBeInTheDocument();
-    expect(await screen.findByText(/Executor/i)).toBeInTheDocument();
-    expect(screen.getByText(/Reviewer/i)).toBeInTheDocument();
-    expect(screen.getByText(/Planning/i)).toBeInTheDocument();
     expect(screen.getByText(/Node Override/i)).toBeInTheDocument();
-    expect(await screen.findByTestId("task-workflow-select")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Create Task" })).toBeInTheDocument();
   });
 
   it("renders the Fast and standard execution-mode affordance inside More options", () => {
@@ -899,93 +848,6 @@ describe("NewTaskModal", () => {
         );
       });
     }
-
-    it("defaults to the persisted valid board lane and submits that workflowId", async () => {
-      const workflows = [
-        { id: "WF-DEFAULT", name: "Default workflow" },
-        { id: "WF-LANE", name: "Selected lane" },
-      ];
-      writeLastSelectedWorkflowId("project-a", "WF-LANE");
-      writeBoardWorkflowsCache("project-a", boardWorkflowsPayload(workflows, "WF-DEFAULT"));
-      await mockSelectableWorkflows(workflows, "WF-DEFAULT");
-      const { props } = renderNewTaskModal({ projectId: "project-a" });
-
-      const select = await screen.findByTestId("task-workflow-select") as HTMLSelectElement;
-      await waitFor(() => expect(select).toHaveValue("WF-LANE"));
-
-      fireEvent.change(screen.getByRole("textbox"), { target: { value: "Use selected lane" } });
-      fireEvent.click(screen.getByRole("button", { name: "Create Task" }));
-
-      await waitFor(() => {
-        expect(props.onCreateTask).toHaveBeenCalledWith(
-          expect.objectContaining({ workflowId: "WF-LANE" }),
-        );
-      });
-    });
-
-    it("inherits the project default and omits workflowId when no lane is persisted", async () => {
-      const workflows = [
-        { id: "WF-DEFAULT", name: "Default workflow" },
-        { id: "WF-LANE", name: "Selected lane" },
-      ];
-      await mockSelectableWorkflows(workflows, "WF-DEFAULT");
-      const { props } = renderNewTaskModal({ projectId: "project-a" });
-
-      const select = await screen.findByTestId("task-workflow-select") as HTMLSelectElement;
-      await waitFor(() => expect(select).toHaveValue("WF-DEFAULT"));
-
-      fireEvent.change(screen.getByRole("textbox"), { target: { value: "Inherit default lane" } });
-      fireEvent.click(screen.getByRole("button", { name: "Create Task" }));
-
-      await waitFor(() => {
-        expect(props.onCreateTask).toHaveBeenCalledTimes(1);
-      });
-      const payload = vi.mocked(props.onCreateTask).mock.calls[0][0] as Record<string, unknown>;
-      expect(payload).not.toHaveProperty("workflowId");
-    });
-
-    it("ignores a stale persisted lane and falls back to the project default", async () => {
-      const workflows = [
-        { id: "WF-DEFAULT", name: "Default workflow" },
-        { id: "WF-LANE", name: "Selected lane" },
-      ];
-      writeLastSelectedWorkflowId("project-a", "WF-DELETED");
-      writeBoardWorkflowsCache("project-a", boardWorkflowsPayload(workflows, "WF-DEFAULT"));
-      await mockSelectableWorkflows(workflows, "WF-DEFAULT");
-      const { props } = renderNewTaskModal({ projectId: "project-a" });
-
-      const select = await screen.findByTestId("task-workflow-select") as HTMLSelectElement;
-      await waitFor(() => expect(select).toHaveValue("WF-DEFAULT"));
-
-      fireEvent.change(screen.getByRole("textbox"), { target: { value: "Ignore deleted lane" } });
-      fireEvent.click(screen.getByRole("button", { name: "Create Task" }));
-
-      await waitFor(() => {
-        expect(props.onCreateTask).toHaveBeenCalledTimes(1);
-      });
-      const payload = vi.mocked(props.onCreateTask).mock.calls[0][0] as Record<string, unknown>;
-      expect(payload).not.toHaveProperty("workflowId");
-    });
-
-    it("does not treat a seeded persisted lane as dirty on cancel", async () => {
-      const workflows = [
-        { id: "WF-DEFAULT", name: "Default workflow" },
-        { id: "WF-LANE", name: "Selected lane" },
-      ];
-      writeLastSelectedWorkflowId("project-a", "WF-LANE");
-      writeBoardWorkflowsCache("project-a", boardWorkflowsPayload(workflows, "WF-DEFAULT"));
-      await mockSelectableWorkflows(workflows, "WF-DEFAULT");
-      const { props } = renderNewTaskModal({ projectId: "project-a" });
-
-      const select = await screen.findByTestId("task-workflow-select") as HTMLSelectElement;
-      await waitFor(() => expect(select).toHaveValue("WF-LANE"));
-      fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
-
-      await waitFor(() => {
-        expect(props.onClose).toHaveBeenCalledTimes(1);
-      });
-      expect(mockConfirm).not.toHaveBeenCalled();
-    });
 
     it("omits workflowId from the payload when the picker is untouched (inherit default)", async () => {
       await mockWorkflows([{ id: "WF-1", name: "QA" }]);

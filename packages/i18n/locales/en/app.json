@@ -1627,7 +1627,7 @@
       "repoValue": "{{filed}} filed / {{fixed}} fixed",
       "totalsTitle": "GitHub issue flow"
     },
-    "heading": "Command Center",
+    "heading": "Dashboard",
     "loading": "Loading command center...",
     "missionControl": {
       "activeNodes": "Active nodes",
@@ -2858,7 +2858,7 @@
     "browseFiles": "Browse Files",
     "chatView": "Chat view",
     "closeSearch": "Close search",
-    "commandCenterView": "Command Center",
+    "commandCenterView": "Dashboard",
     "createTaskWithPlanning": "Create a task with AI planning",
     "devServerView": "Dev Server",
     "documentsView": "Artifacts view",
@@ -3936,7 +3936,7 @@
     "chat": "Chat",
     "chatUnreadAriaLabel": "Unread chat response",
     "collapseSidebar": "Collapse sidebar",
-    "commandCenter": "Command Center",
+    "commandCenter": "Dashboard",
     "devServer": "Dev Server",
     "documents": "Artifacts",
     "evals": "Evals",

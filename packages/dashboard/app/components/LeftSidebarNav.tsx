@@ -278,6 +278,19 @@ export function LeftSidebarNav({
   Flag gates preserved verbatim from the prior layout: agents (showAgentsTab), goals (goalsView), insight (insights), research (researchView), skills (showSkillsTab), memory (memoryView), evals (evalsView). graph and compound are skipped when their plugin view is absent.
   */
   const navEntries: SidebarNavEntry[] = [
+    /*
+    FNXC:Navigation 2026-06-22-01:15:
+    Command Center is labeled "Dashboard" and sits at the very top of the sidebar. The board remains the default view on load (useViewState initial taskView is still "board").
+    */
+    {
+      id: "command-center",
+      label: t("nav.commandCenter", "Dashboard"),
+      view: "command-center",
+      isActive: view === "command-center",
+      icon: Gauge,
+      testId: "sidebar-nav-command-center",
+      onSelect: () => onChangeView("command-center"),
+    },
     {
       id: "board",
       label: t("nav.board", "Board"),
@@ -297,15 +310,6 @@ export function LeftSidebarNav({
       onSelect: () => onChangeView("list"),
     },
     ...(graphPluginEntry ? [mapPluginEntry(graphPluginEntry)] : []),
-    {
-      id: "command-center",
-      label: t("nav.commandCenter", "Command Center"),
-      view: "command-center",
-      isActive: view === "command-center",
-      icon: Gauge,
-      testId: "sidebar-nav-command-center",
-      onSelect: () => onChangeView("command-center"),
-    },
     ...(showAgentsTab
       ? [
           {

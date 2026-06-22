@@ -387,7 +387,7 @@ export function WorkflowSwitcher({ workflows, value, onChange, counts, onOpen, l
           {isOpen ? renderCountBadges(selectedCounts, "trigger") : null}
           {isOpen ? renderAccessibleCounts(selectedCounts) : null}
         </span>
-        <ChevronDown className="workflow-switcher-chevron" aria-hidden="true" />
+        <ChevronDown size={14} className="workflow-switcher-chevron" aria-hidden="true" />
       </button>
       {dropdown}
     </div>

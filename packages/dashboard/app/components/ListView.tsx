@@ -25,7 +25,6 @@ import { subscribeSse } from "../sse-bus";
 import { WorkflowSwitcher } from "./WorkflowSwitcher";
 import { computeWorkflowStatusCounts } from "./workflowStatusCounts";
 import { readBoardWorkflowsCache, writeBoardWorkflowsCache } from "../utils/boardWorkflowsCache";
-import { writeLastSelectedWorkflowId } from "../utils/lastSelectedWorkflow";
 
 const COLUMN_COLOR_MAP: Record<Column, string> = {
   triage: "var(--triage)",
@@ -629,15 +628,6 @@ export function ListView({
       setSelectedWorkflowId(selectedWorkflow.id);
     }
   }, [selectedWorkflow, selectedWorkflowId, workflowMode]);
-
-  /**
-   * FNXC:WorkflowDefaults 2026-06-22-00:00:
-   * Persist explicit list-view workflow-lane picks per project so New Task inherits the user's current board context without changing list filtering or default resolution.
-   */
-  const handleSelectedWorkflowChange = useCallback((id: string) => {
-    setSelectedWorkflowId(id);
-    writeLastSelectedWorkflowId(projectId, id);
-  }, [projectId]);
 
   useEffect(() => {
     setSelectedColumn(null);
@@ -1672,7 +1662,7 @@ export function ListView({
         <WorkflowSwitcher
           workflows={workflowOptions}
           value={selectedWorkflow.id}
-          onChange={handleSelectedWorkflowChange}
+          onChange={setSelectedWorkflowId}
           counts={workflowStatusCounts}
           onOpen={refreshBoardWorkflows}
           label={t("listView.workflowLabel", "Workflow")}

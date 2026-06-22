@@ -267,9 +267,9 @@ describe("LeftSidebarNav", () => {
     */
     const primaryButtons = within(primaryNav).getAllByRole("button");
     const orderedTestIds = [
+      "sidebar-nav-command-center",
       "sidebar-nav-board",
       "sidebar-nav-list",
-      "sidebar-nav-command-center",
       "sidebar-nav-agents",
       "sidebar-nav-chat",
       "sidebar-nav-mailbox",
