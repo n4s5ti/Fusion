@@ -595,7 +595,7 @@ Navigation:
 Features:
 - Switch between **List**, **Board**, and **Org chart** layouts
 - Filter by role/state, include/exclude system agents, and inspect health/status
-- First-run setup asks whether to create a first persistent agent after project registration. The default template is **CEO**, users can choose another preset, use the AI interview when `experimentalFeatures.agentOnboarding` is enabled, or skip the step. Task creation and execution do not require creating or assigning a persistent agent: Fusion automatically spawns temporary agents to plan, execute, review, and merge task work.
+- First-run setup asks whether to create an optional project agent after project registration. The default template is **CEO**; users can choose another preset, use the AI interview when `experimentalFeatures.agentOnboarding` is enabled, or skip it. Fusion can still build tasks without an agent by starting temporary agents to plan, code, review, and merge task work.
 - Start, pause, stop, and trigger agent runs from the view and from detail panels
 - In **Agent detail**, use the kebab **Bulk agent actions** button in the header utility cluster (next to **Refresh** and **Close**) to run project-wide lifecycle transitions for non-ephemeral agents in the current project — **Pause All Agents** targets agents in the `active` or `running` state, while **Resume All Agents** targets agents in the `paused` state only
 - Bulk menu items stay disabled when nothing is eligible and show an inline hint (`Loading eligible agents...`, `No active agents eligible`, `No paused agents eligible`, or the current eligible count such as `Pause 2 active/running agents`)

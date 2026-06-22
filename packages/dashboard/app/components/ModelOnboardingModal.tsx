@@ -590,7 +590,7 @@ export function ModelOnboardingModal({
   /*
   FNXC:Onboarding 2026-06-22-04:16:
   First-time provider/GitHub setup must pass through the same optional first-agent flow before first-task creation.
-  Users can create or skip a persistent coordinating agent because Fusion automatically spawns temporary agents to plan, execute, review, and merge tasks.
+  Users can create or skip a coordinating agent because Fusion can still start temporary agents to plan, code, review, and merge tasks.
   */
   const ceoPreset = useMemo(
     () => getPresetById("ceo") ?? AGENT_PRESETS[0]!,
@@ -2797,13 +2797,13 @@ export function ModelOnboardingModal({
           {step === "agent" && (
             <div className="setup-wizard-agent-step model-onboarding-agent-step">
               <p className="setup-wizard-agent-intro">
-                {t("setup.firstAgentIntro", "You do not need to create or assign an agent for Fusion to build tasks. Fusion automatically spawns temporary agents to plan, execute, review, and merge task work. A persistent agent is optional and can coordinate work, help create tasks, and keep direction across sessions.")}
+                {t("setup.firstAgentIntro", "Agents are optional. Fusion can build tasks without one by starting temporary agents for planning, coding, review, and merge. Create an agent only if you want help coordinating tasks and direction.")}
               </p>
 
               {!hasProjectSelected && (
                 <div className="onboarding-project-prerequisite" data-testid="onboarding-agent-project-prerequisite">
                   <p className="onboarding-helper-text">
-                    {t("setup.projectMustBeSelectedForAgent", "Set up a project before creating your first agent. You can also skip this and create tasks without a persistent agent.")}
+                    {t("setup.projectMustBeSelectedForAgent", "Set up a project before creating an agent. You can skip this and create tasks without one.")}
                   </p>
                   <button
                     type="button"
@@ -3001,7 +3001,7 @@ export function ModelOnboardingModal({
                       {/* FNXC:Onboarding 2026-06-22-04:01: The provider/GitHub onboarding flow also reaches task creation, so it must repeat that users can create tasks without creating or assigning a persistent agent; Fusion spawns temporary plan/execute/review/merge agents for task work. */}
                       <OnboardingDisclosure summary={t("setup.whatHappensWhenCreateTask", "What happens when I create a task?")}>
                         <p className="onboarding-helper-text">
-                          {t("setup.whatHappensWhenCreateTaskBody", "A task describes something you want done. You do not need to create or assign a persistent agent first: Fusion automatically spawns temporary agents to plan, execute, review, and merge task work. You can track progress on the board and review the results.")}
+                          {t("setup.whatHappensWhenCreateTaskBody", "Describe the work you want done. You can create tasks without an agent: Fusion starts temporary agents to plan, code, review, and merge. Track everything on the board.")}
                         </p>
                       </OnboardingDisclosure>
 

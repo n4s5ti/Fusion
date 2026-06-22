@@ -491,7 +491,7 @@ export function SetupWizardModal({
           {state.step === "agent" && (
             <div className="setup-wizard-agent-step">
               <p className="setup-wizard-agent-intro">
-                {t("setup.firstAgentIntro", "You do not need to create or assign an agent for Fusion to build tasks. Fusion automatically spawns temporary agents to plan, execute, review, and merge task work. A persistent agent is optional and can coordinate work, help create tasks, and keep direction across sessions.")}
+                {t("setup.firstAgentIntro", "Agents are optional. Fusion can build tasks without one by starting temporary agents for planning, coding, review, and merge. Create an agent only if you want help coordinating tasks and direction.")}
               </p>
 
               <div className="setup-wizard-agent-layout">

@@ -398,7 +398,7 @@ describe("SetupWizardModal", () => {
     await waitFor(() => {
       expect(mockRegisterProject).toHaveBeenCalled();
     });
-    expect(screen.getByText(/You do not need to create or assign an agent/)).toBeDefined();
+    expect(screen.getByText(/Agents are optional/)).toBeDefined();
     expect(screen.getByRole("radio", { name: "CEO selected" })).toHaveAttribute("aria-checked", "true");
     expect(screen.getByText("Create Agent")).toBeDefined();
     expect(screen.getByText("Skip for now")).toBeDefined();
