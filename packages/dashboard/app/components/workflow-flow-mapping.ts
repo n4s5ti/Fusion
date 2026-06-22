@@ -1250,6 +1250,52 @@ export function insertFragment(
   };
 }
 
+/*
+FNXC:WorkflowOptionalGroup 2026-06-21-14:30:
+"Insert as optional group" (U5/R5) wraps a single projected add-on node in an `optional-group`
+container so an author can drop e.g. "Security Audit (optional)" in one action. The wrapper is built
+as a v1-shaped fragment IR (start → optional-group → end) and handed to the EXISTING `insertFragment`
+path, which strips start/end, remaps the group id, and expands the group's `config.template` child as a
+`parentId` flow node — so no new insertion engine is needed and ids never collide across repeated inserts.
+KTD-5: the add-on catalog stays FLAT; projection to a node is done by the caller via `stepTemplateToNode`,
+and only the wrap-in-container step lives here.
+*/
+
+/** Wrap a single projected add-on node in an `optional-group` fragment IR ready
+ *  for `insertFragment`. `defaultOn` seeds the group's per-task enable default
+ *  (from the source template's `defaultOn`). The group's `name` labels it in the
+ *  editor and the per-task toggle surfaces. The inner node uses a template-local
+ *  id; `insertFragment` remaps the group id and namespaces the child, so this id
+ *  need only be unique WITHIN the template. */
+export function optionalGroupFragmentIr(
+  addOnNode: { kind: WorkflowIrNodeKind; config?: Record<string, unknown> },
+  opts: { name?: string; defaultOn?: boolean },
+): WorkflowIr {
+  const innerId = "addon";
+  const optionalGroupId = "optional-group";
+  const config: WorkflowOptionalGroupConfig & Record<string, unknown> = {
+    defaultOn: opts.defaultOn ?? false,
+    template: {
+      nodes: [{ id: innerId, kind: addOnNode.kind, config: addOnNode.config }],
+      edges: [],
+    },
+  };
+  if (opts.name) config.name = opts.name;
+  return {
+    version: "v1",
+    name: opts.name ?? "optional-group",
+    nodes: [
+      { id: "start", kind: "start" },
+      { id: optionalGroupId, kind: "optional-group", config },
+      { id: "end", kind: "end" },
+    ],
+    edges: [
+      { from: "start", to: optionalGroupId, condition: "success" },
+      { from: optionalGroupId, to: "end", condition: "success" },
+    ],
+  };
+}
+
 /** Remap a template group's internal node ids + edges to fresh ids. Returns a
  *  new template object; the original is untouched. Template-local ids are scoped
  *  to the template, so a fresh local id space suffices (and keeps config compact

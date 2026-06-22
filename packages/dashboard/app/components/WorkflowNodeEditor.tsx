@@ -17,7 +17,7 @@ import {
 import { createPortal } from "react-dom";
 import { useTranslation } from "react-i18next";
 import { X, Plus, Trash2, Save, MessageSquare, Terminal, Shield, GitMerge, Loader2, HelpCircle, PauseCircle, Split, Merge, Repeat, ToggleRight, ClipboardCheck, ListChecks, Code2, Bell, LayoutGrid, Workflow, Download, Upload, ChevronDown, ChevronRight, ChevronLeft, Library, Sparkles, Maximize2, Minimize2 } from "lucide-react";
-import type { WorkflowDefinition, WorkflowIrColumn, TraitViolation, WorkflowStepTemplate, WorkflowOptionalStep } from "@fusion/core";
+import type { WorkflowDefinition, WorkflowIrColumn, TraitViolation, WorkflowStepTemplate, WorkflowOptionalStep, WorkflowIrNodeKind } from "@fusion/core";
 import { getErrorMessage } from "@fusion/core";
 import {
   fetchWorkflows,
@@ -61,6 +61,7 @@ import {
   emptyWorkflowLayout,
   copyIrWithFreshIds,
   insertFragment,
+  optionalGroupFragmentIr,
   fragmentSeamConflicts,
   columnsOf,
   fieldsOf,
@@ -1428,6 +1429,34 @@ function InnerEditor({
     [isBuiltin, addNode],
   );
 
+  /*
+  FNXC:WorkflowOptionalGroup 2026-06-21-14:32:
+  "Insert as optional group" (U5/R5): drop an add-on already wrapped in an `optional-group` container in
+  one action, seeding the group's `defaultOn` from the template's `defaultOn`. Reuses `stepTemplateToNode`
+  (KTD-5 — the catalog stays flat) to project the add-on to a prompt/script node, then `optionalGroupFragmentIr`
+  to wrap it and the EXISTING `insertFragment` path to remap ids + expand the group's template child — so two
+  inserts of the same add-on never collide. The group name carries the template name so the per-task toggle
+  surfaces label it.
+  */
+  const handleInsertStepTemplateAsOptionalGroup = useCallback(
+    (tpl: WorkflowStepTemplate) => {
+      if (isBuiltin) return;
+      const { kind, config } = stepTemplateToNode(tpl);
+      const fragmentIr = optionalGroupFragmentIr(
+        { kind: kind as WorkflowIrNodeKind, config },
+        { name: tpl.name, defaultOn: tpl.defaultOn ?? false },
+      );
+      const result = insertFragment(nodes, edges, fragmentIr, {
+        x: 240,
+        y: 200 + (nodes.length % 4) * 40,
+      });
+      setNodes(result.nodes);
+      setEdges(result.edges);
+      setSelectedNodeId(result.insertedNodeIds[0] ?? null);
+    },
+    [isBuiltin, nodes, edges, setNodes, setEdges],
+  );
+
   // U9/R8: insert a fragment definition's body into the active graph. Pre-validates
   // seam duplication via fragmentSeamConflicts; on conflict, surfaces a persistent
   // inline error inside the Templates section and does NOT insert. Otherwise
@@ -2751,19 +2780,37 @@ function InnerEditor({
                                   {templateGroups.stepEntries.length > 0 && (
                                     <div className="wf-mobile-template-group">
                                       <h4>{t("workflowNodes.templatesBuiltinSteps", "Built-in steps")}</h4>
+                                      {/* FNXC:WorkflowOptionalGroup 2026-06-21-14:38: mobile mirrors the desktop two-variant insert (node / optional group). */}
                                       {templateGroups.stepEntries.map((s) => (
-                                        <button
-                                          key={s.id}
-                                          type="button"
-                                          className="wf-mobile-template-option"
-                                          data-testid={`wf-mobile-tpl-step-${s.id}`}
-                                          onClick={() => {
-                                            handleInsertStepTemplate(s);
-                                            setMobilePanel("graph");
-                                          }}
-                                        >
-                                          {s.name}
-                                        </button>
+                                        <div key={s.id} className="wf-mobile-template-option-row">
+                                          <button
+                                            type="button"
+                                            className="wf-mobile-template-option"
+                                            data-testid={`wf-mobile-tpl-step-${s.id}`}
+                                            onClick={() => {
+                                              handleInsertStepTemplate(s);
+                                              setMobilePanel("graph");
+                                            }}
+                                          >
+                                            {s.name}
+                                          </button>
+                                          <button
+                                            type="button"
+                                            className="wf-mobile-template-option-optional"
+                                            data-testid={`wf-mobile-tpl-step-${s.id}-optional-group`}
+                                            aria-label={t(
+                                              "workflowNodes.insertTemplateAsOptionalGroup",
+                                              "Insert {{name}} as optional group",
+                                              { name: s.name },
+                                            )}
+                                            onClick={() => {
+                                              handleInsertStepTemplateAsOptionalGroup(s);
+                                              setMobilePanel("graph");
+                                            }}
+                                          >
+                                            {t("workflowNodes.asOptionalGroup", "as optional group")}
+                                          </button>
+                                        </div>
                                       ))}
                                     </div>
                                   )}
@@ -3155,22 +3202,48 @@ function InnerEditor({
                               {t("workflowNodes.templatesBuiltinSteps", "Built-in steps")}
                             </h4>
                             <div className="wf-templates-entries">
+                              {/*
+                              FNXC:WorkflowOptionalGroup 2026-06-21-14:36:
+                              Each built-in add-on surfaces TWO insert variants: the row inserts as a single node
+                              (today's behavior), and a small secondary "as optional group" affordance wraps it in
+                              an `optional-group` container (U5/R5). Both keep the established `wf-tpl-step-*` testid
+                              convention (the wrap variant suffixes `-optional-group`).
+                              */}
                               {templateGroups.stepEntries.map((s) => (
-                                <button
-                                  key={s.id}
-                                  type="button"
-                                  className="wf-templates-entry"
-                                  data-testid={`wf-tpl-step-${s.id}`}
-                                  disabled={isBuiltin}
-                                  aria-label={t(
-                                    "workflowNodes.insertTemplate",
-                                    "Insert template {{name}}",
-                                    { name: s.name },
-                                  )}
-                                  onClick={() => handleInsertStepTemplate(s)}
-                                >
-                                  {s.name}
-                                </button>
+                                <div key={s.id} className="wf-templates-entry-row">
+                                  <button
+                                    type="button"
+                                    className="wf-templates-entry"
+                                    data-testid={`wf-tpl-step-${s.id}`}
+                                    disabled={isBuiltin}
+                                    aria-label={t(
+                                      "workflowNodes.insertTemplate",
+                                      "Insert template {{name}}",
+                                      { name: s.name },
+                                    )}
+                                    onClick={() => handleInsertStepTemplate(s)}
+                                  >
+                                    {s.name}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    className="wf-templates-entry-optional"
+                                    data-testid={`wf-tpl-step-${s.id}-optional-group`}
+                                    disabled={isBuiltin}
+                                    title={t(
+                                      "workflowNodes.insertAsOptionalGroup",
+                                      "Insert as optional group",
+                                    )}
+                                    aria-label={t(
+                                      "workflowNodes.insertTemplateAsOptionalGroup",
+                                      "Insert {{name}} as optional group",
+                                      { name: s.name },
+                                    )}
+                                    onClick={() => handleInsertStepTemplateAsOptionalGroup(s)}
+                                  >
+                                    {t("workflowNodes.asOptionalGroup", "as optional group")}
+                                  </button>
+                                </div>
                               ))}
                             </div>
                           </div>

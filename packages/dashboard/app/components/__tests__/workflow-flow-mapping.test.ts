@@ -6,6 +6,7 @@ import {
   irToFlow,
   flowToIr,
   insertFragment,
+  optionalGroupFragmentIr,
   fragmentSeamConflicts,
   copyIrWithFreshIds,
   columnsOf,
@@ -1435,6 +1436,38 @@ describe("insertFragment", () => {
       .template;
     expect(template?.nodes).toHaveLength(2);
     expect(template?.edges).toHaveLength(1);
+  });
+
+  // FNXC:WorkflowOptionalGroup 2026-06-21-14:55: optionalGroupFragmentIr wraps a
+  // projected add-on node in an optional-group; insertFragment must expand its
+  // template child and round-trip it via flowToIr, and two inserts must not collide.
+  it("wraps an add-on node in an optional-group fragment that round-trips with defaultOn", () => {
+    const fragmentIr = optionalGroupFragmentIr(
+      { kind: "prompt", config: { name: "Security Audit", prompt: "audit it" } },
+      { name: "Security Audit", defaultOn: true },
+    );
+
+    const existing = irToFlow(u8ChainDef());
+    const first = insertFragment(existing.nodes, existing.edges, fragmentIr, { x: 400, y: 200 });
+    const second = insertFragment(first.nodes, first.edges, fragmentIr, { x: 700, y: 200 });
+
+    // Two optional-group containers, each with its template child expanded.
+    const groups = second.nodes.filter((n) => n.data.kind === "optional-group");
+    expect(groups).toHaveLength(2);
+    for (const g of groups) {
+      expect(second.nodes.some((n) => n.parentId === g.id)).toBe(true);
+    }
+    // All ids disjoint across both inserts.
+    const allIds = second.nodes.map((n) => n.id);
+    expect(new Set(allIds).size).toBe(allIds.length);
+
+    // Round-trip: the group carries defaultOn + a single-node template.
+    const { ir: out } = flowToIr("wf", second.nodes, second.edges);
+    const og = out.nodes.find((n) => n.kind === "optional-group")!;
+    expect(og.config?.defaultOn).toBe(true);
+    const template = (og.config as { template?: { nodes: { config?: Record<string, unknown> }[] } }).template;
+    expect(template?.nodes).toHaveLength(1);
+    expect(template?.nodes[0].config?.name).toBe("Security Audit");
   });
 });
 
