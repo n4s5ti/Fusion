@@ -2662,12 +2662,26 @@ export class WorkspaceTaskMergeError extends Error {
  * @param task the task about to enter a merge path
  */
 export function assertNotWorkspaceTaskMerge(task: Pick<Task, "id" | "workspaceWorktrees">): void {
-  const worktrees = task.workspaceWorktrees;
-  if (worktrees && Object.keys(worktrees).length > 0) {
+  if (isWorkspaceTask(task)) {
     throw new WorkspaceTaskMergeError(
       `Workspace task ${task.id} cannot merge until per-repo merge support (master-plan U6) lands`,
     );
   }
+}
+
+/*
+FNXC:Workspace 2026-06-22-05:10 (Phase C review B5/B7-dep — canonical workspace predicate):
+A workspace-mode task is identified by having at least one `workspaceWorktrees` entry
+(one git worktree per sub-repo). This single predicate replaces the inlined
+`!!task.workspaceWorktrees && Object.keys(task.workspaceWorktrees).length > 0` that was
+copy-pasted across the engine merge dispatch and the merge-confirmed reachability fast-path
+(B2). It lives in @fusion/core so the engine, store, and CLI doors share ONE definition.
+The dashboard keeps its own local `isWorkspaceTask` (WorkspaceWorktreesSummary, UI-only) —
+this core export is for engine/CLI use.
+*/
+export function isWorkspaceTask(task: Pick<Task, "workspaceWorktrees">): boolean {
+  const worktrees = task.workspaceWorktrees;
+  return !!worktrees && Object.keys(worktrees).length > 0;
 }
 
 export type RetrySummary = {

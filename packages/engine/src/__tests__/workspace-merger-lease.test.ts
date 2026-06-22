@@ -269,4 +269,50 @@ describeIfGit("landWorkspaceTask — per-repo land lease (Phase C U3, KTD4)", ()
     expect(retry.repos[0].status).toBe("landed");
     expect(activeSessionRegistry.lookupByPath(repoAbs)).toBeNull();
   });
+
+  /*
+  FNXC:Workspace 2026-06-22-04:10 (Phase C review A2 — taskId-aware lease across kinds):
+  A FOREIGN-task holder of ANY kind on the sub-repo path is contention for the land
+  busy-check — not only a "workspace-repo-land" holder. Here an EXECUTING task's
+  "workspace-repo-acquire" entry sits on the path; a MERGING task's land must FAST-FAIL
+  with WorkspaceRepoLandBusyError and must NOT clobber the foreign entry.
+  */
+  it("a foreign-task acquire-lease holder is land contention (busy error) and is NOT clobbered", async () => {
+    fx = await createWorkspaceFixture(["repo-a"]);
+    addRepoBranchWithEdit(fx, "repo-a", "FN-3001", "a feature\n");
+    const repoAbs = fx.repoPath("repo-a");
+
+    // An EXECUTING task (FN-9001) holds an acquire lease on the shared sub-repo path.
+    activeSessionRegistry.registerPath(repoAbs, {
+      taskId: "FN-9001",
+      kind: "workspace-repo-acquire",
+      ownerKey: "workspace-repo-acquire",
+    });
+    const tipBefore = fx.git("repo-a", "git rev-parse refs/heads/main");
+
+    // The MERGING task (FN-3001) tries to land the SAME sub-repo.
+    const task = makeTask("FN-3001", { "repo-a": { worktreePath: repoAbs, branch: BRANCH } });
+    const store = createStore(task);
+
+    let landError: unknown;
+    try {
+      await landWorkspaceTask(store, store.task, fx.rootDir, {}, {
+        mergeAgent: squashMergeAgent(BRANCH),
+        reviewAgent: approveReviewAgent,
+      });
+    } catch (err) {
+      landError = err;
+    }
+
+    // Fast-failed with the retryable busy error — even though the holder kind differs.
+    expect(landError).toBeInstanceOf(WorkspaceRepoLandBusyError);
+    expect((landError as WorkspaceRepoLandBusyError).holderTaskId).toBe("FN-9001");
+    // The foreign acquire entry was NOT clobbered — still owned by FN-9001, same kind.
+    const stillHeld = activeSessionRegistry.lookupByPath(repoAbs);
+    expect(stillHeld?.taskId).toBe("FN-9001");
+    expect(stillHeld?.kind).toBe("workspace-repo-acquire");
+    // The merging task advanced NOTHING and its status was reset off 'merging' (A3).
+    expect(fx.git("repo-a", "git rev-parse refs/heads/main")).toBe(tipBefore);
+    expect(store.task.status ?? null).toBeNull();
+  });
 });

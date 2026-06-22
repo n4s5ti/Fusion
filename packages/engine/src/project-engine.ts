@@ -13,7 +13,7 @@ import type {
   ResearchSynthesisRequest,
   ResearchSynthesisResult,
 } from "@fusion/core";
-import { allowsAutoMergeProcessing, compareTasksByPriorityThenAgeAndId, getTaskHardMergeBlocker, isSharedBranchGroupMemberIntegration, normalizeMergerMode, resolveMaxAutoMergeRetries, sortTasksByPriorityThenAgeAndId } from "@fusion/core";
+import { allowsAutoMergeProcessing, compareTasksByPriorityThenAgeAndId, getTaskHardMergeBlocker, isSharedBranchGroupMemberIntegration, isWorkspaceTask, normalizeMergerMode, resolveMaxAutoMergeRetries, sortTasksByPriorityThenAgeAndId } from "@fusion/core";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { InProcessRuntime } from "./runtimes/in-process-runtime.js";
@@ -31,7 +31,7 @@ import { createFusionAuthStorage, getFusionOAuthAlertStatePath } from "./auth-st
 import { CronRunner, createAiPromptExecutor } from "./cron-runner.js";
 import type { RoutineRunner } from "./routine-runner.js";
 import { sweepStaleAutostashes, VerificationError } from "./merger.js";
-import { runAiMerge, landWorkspaceTask } from "./merger-ai.js";
+import { runAiMerge, landWorkspaceTask, WorkspacePartialLandError, WorkspaceRepoLandBusyError } from "./merger-ai.js";
 import { promoteBranchGroup, type BranchGroupPromotionResult, type CreateGroupPrFn, type SyncGroupPrFn } from "./group-merge-coordinator.js";
 import { PRIORITY_MERGE } from "./concurrency.js";
 import { runtimeLog } from "./logger.js";
@@ -125,35 +125,27 @@ function isInvalidDoneTransitionError(error: unknown): boolean {
   return message.includes("Invalid transition:") && message.includes("→ 'done'");
 }
 
+/*
+FNXC:Workspace 2026-06-22-05:10 (Phase C review B6 — unify partial-land retry seam):
+The workspace PARTIAL-land retry decision (some sub-repos landed, one failed) is the SAME
+arithmetic as the conflict-retry decision MINUS the `autoResolveConflicts` gate (a partial
+land is retryable regardless of conflict-resolution settings, because the landed repos'
+`landedSha` is persisted and a re-run skips them — U2 idempotency). To keep the
+`resolveMaxAutoMergeRetries(settings)` arithmetic in ONE place we collapse the former
+`shouldRetryWorkspacePartialLand` into this function via `skipAutoResolveCheck`. When set,
+the `autoResolveConflicts` gate is bypassed; otherwise behavior is byte-identical to before.
+`currentRetries + 1 < MAX` keeps the LAST attempt's failure parking in the same tick rather
+than scheduling an Nth timer that a restart could strand.
+*/
 export function shouldRetryAutoMergeConflict(
   currentRetries: number,
   settings: { autoResolveConflicts?: boolean; maxAutoMergeRetries?: unknown } | null | undefined,
+  opts?: { skipAutoResolveCheck?: boolean },
 ): { shouldRetry: boolean; maxAutoMergeRetries: number; nextRetryCount: number } {
   const maxAutoMergeRetries = resolveMaxAutoMergeRetries(settings);
+  const autoResolveOk = opts?.skipAutoResolveCheck === true || settings?.autoResolveConflicts !== false;
   return {
-    shouldRetry: settings?.autoResolveConflicts !== false && currentRetries + 1 < maxAutoMergeRetries,
-    maxAutoMergeRetries,
-    nextRetryCount: currentRetries + 1,
-  };
-}
-
-/*
-FNXC:Workspace 2026-06-22-00:30 (Phase C U2, KTD3):
-Pure retry/park decision for a workspace PARTIAL land (some sub-repos landed, one failed).
-Mirrors `shouldRetryAutoMergeConflict` so the engine dispatch's partial-land catch branch
-has a narrow, unit-testable seam: a partial land is RETRYABLE (the landed repos' `landedSha`
-is persisted, so a re-run skips them and only the failed repo retries), so it CONSUMES a
-mergeRetry and re-enqueues up to `resolveMaxAutoMergeRetries(settings)`, then OPERATOR-PARKS
-(`shouldRetry:false`). `currentRetries + 1 < MAX` keeps the LAST attempt's failure parking
-in the same tick rather than scheduling an Nth timer that a restart could strand.
-*/
-export function shouldRetryWorkspacePartialLand(
-  currentRetries: number,
-  settings: { maxAutoMergeRetries?: unknown } | null | undefined,
-): { shouldRetry: boolean; maxAutoMergeRetries: number; nextRetryCount: number } {
-  const maxAutoMergeRetries = resolveMaxAutoMergeRetries(settings);
-  return {
-    shouldRetry: currentRetries + 1 < maxAutoMergeRetries,
+    shouldRetry: autoResolveOk && currentRetries + 1 < maxAutoMergeRetries,
     maxAutoMergeRetries,
     nextRetryCount: currentRetries + 1,
   };
@@ -369,6 +361,19 @@ export class ProjectEngine {
   private mergeRetryTimer: ReturnType<typeof setTimeout> | null = null;
   private autostashSweepTimer: ReturnType<typeof setTimeout> | null = null;
   private mergeActiveReconcileTimer: ReturnType<typeof setInterval> | null = null;
+
+  /*
+  FNXC:Workspace 2026-06-22-05:10 (Phase C review B4 — separate busy-retry quota):
+  Transient sub-repo land-lease contention (WorkspaceRepoLandBusyError) must NOT burn the
+  persisted `mergeRetries` quota — two tasks contending for the same sub-repo could otherwise
+  exhaust all retries on pure busy-errors before a single real land attempt, then park a
+  never-failed task. We track busy re-enqueues in this in-memory, per-task counter (transient
+  contention need not survive a restart) and CAP it separately from `mergeRetries`. A real
+  partial land (WorkspacePartialLandError) still consumes `mergeRetries` up to MAX, then parks.
+  Cleared on the first non-busy outcome (success path resets it).
+  */
+  private workspaceBusyReenqueues = new Map<string, number>();
+  private static readonly WORKSPACE_BUSY_MAX_REENQUEUES = 10;
 
   /**
    * Pending manual merge resolvers — keyed by taskId.
@@ -1866,6 +1871,19 @@ export class ProjectEngine {
             // in-review by auto-recovery after a successful merge) — just
             // complete the task without re-running the merge process.
             if (task.mergeDetails?.mergeConfirmed) {
+              /*
+              FNXC:Workspace 2026-06-22-05:10 (Phase C review B2 — fast-path must skip workspace tasks):
+              The FN-5627 reachability gate below runs `git cat-file -e <commitSha>` in cwd = the
+              project/workspace ROOT. For a WORKSPACE task, `finalizeWorkspaceTask` records
+              `mergeDetails.commitSha` = the FIRST sorted sub-repo's squash sha, which lives in
+              `join(workspaceRoot, <repo>)`, NOT in the workspace root (which is not even a git repo).
+              So `cat-file -e` against the root cwd ALWAYS reports commit-missing → the gate would
+              clear `mergeConfirmed` and demote/park a FULLY-MERGED workspace task. Workspace tasks
+              are merge-verified by each sub-repo's persisted `landedSha`, not a single root-cwd
+              commitSha, so the root-cwd reachability gate does not apply to them. SKIP the gate for
+              workspace tasks and take the fast-path. (Per-sub-repo cwd reachability verification is a
+              larger change deferred past Phase C; skipping here is the correct minimal fix.)
+              */
               // FN-5627: Reachability defense-in-depth. The merger has a TOCTOU
               // window where `mergeConfirmed: true` can be persisted to the task
               // row before `git update-ref refs/heads/<integration>` actually
@@ -1890,6 +1908,7 @@ export class ProjectEngine {
                   `Auto-merge: ${taskId} merge-confirmed fast-path rerouting shared-group member from ${task.mergeDetails.mergeTargetBranch} to ${routedFastPathTarget}`,
                 );
               }
+              if (!isWorkspaceTask(task)) {
               const reachability = await verifyMergeConfirmedReachability({
                 commitSha: task.mergeDetails.commitSha,
                 integrationBranch: integrationBranchForGate,
@@ -2032,6 +2051,7 @@ export class ProjectEngine {
                 this.internalEnqueueMerge(taskId);
                 continue;
               }
+              } // end !isWorkspaceTask reachability gate (B2): workspace tasks skip the root-cwd commitSha check
               const blockerReason = getTaskHardMergeBlocker({
                 ...(task as Task),
                 // Merge-confirmed tasks have already landed. Treat stale merge
@@ -2320,8 +2340,7 @@ export class ProjectEngine {
               // routing falls through to runAiMerge, whose chokepoint guard re-reads
               // the task and is the authoritative workspace enforcement.
               const mergeTask = await store.getTask(taskId).catch(() => null);
-              const isWorkspaceMerge =
-                !!mergeTask?.workspaceWorktrees && Object.keys(mergeTask.workspaceWorktrees).length > 0;
+              const isWorkspaceMerge = !!mergeTask && isWorkspaceTask(mergeTask);
               if (isWorkspaceMerge) {
                 // FNXC:Workspace 2026-06-22-00:30 (Phase C U2, KTD3):
                 // Land each acquired sub-repo on its own local integration ref;
@@ -2339,14 +2358,18 @@ export class ProjectEngine {
                   { ...mergerOptions, allowDirtyLocalCheckoutSync: settings.merger?.allowDirtyLocalCheckoutSync === true },
                 );
                 if (!workspaceResult.allLanded) {
+                  // FNXC:Workspace 2026-06-22-05:10 (Phase C review B7):
+                  // Throw the real exported WorkspacePartialLandError class (not a bare Error with
+                  // a patched `.name`) so the catch below can match via `instanceof` and read the
+                  // typed payload (landedCount, failedRepos).
                   const failed = workspaceResult.repos.filter((r) => r.status === "failed");
                   const landedCount = workspaceResult.repos.filter((r) => r.status === "landed").length;
                   const detail = failed.map((r) => `${r.repo}: ${r.error ?? "land failed"}`).join("; ");
-                  const partialErr = new Error(
+                  throw new WorkspacePartialLandError(
+                    landedCount,
+                    failed.map((r) => r.repo),
                     `Workspace partial land for ${taskId}: ${landedCount} repo(s) landed, ${failed.length} failed — ${detail}`,
                   );
-                  partialErr.name = "WorkspacePartialLandError";
-                  throw partialErr;
                 }
                 // Finalized to done by landWorkspaceTask; report the merge as merged so
                 // the success path (retry reset + branch-group promotion) runs normally.
@@ -2409,6 +2432,9 @@ export class ProjectEngine {
             if (latestTask?.mergeRetries && latestTask.mergeRetries > 0) {
               await store.updateTask(taskId, { mergeRetries: 0 });
             }
+            // FNXC:Workspace 2026-06-22-05:10 (Phase C review B4): clear the in-memory busy
+            // re-enqueue counter once the merge succeeds so a later unrelated contention starts fresh.
+            this.workspaceBusyReenqueues.delete(taskId);
 
             await attemptBranchGroupPromotion(latestTask);
           }
@@ -2460,40 +2486,98 @@ export class ProjectEngine {
             continue;
           }
 
+          /*
+          FNXC:Workspace 2026-06-22-05:10 (Phase C review B4/B7 — busy contention split from real partial land):
+          A `WorkspaceRepoLandBusyError` (a second task holds the same sub-repo's land lease) is
+          TRANSIENT contention, not a land failure: re-enqueue it with backoff WITHOUT consuming the
+          persisted `mergeRetries` quota, bounded separately by `workspaceBusyReenqueues`
+          (WORKSPACE_BUSY_MAX_REENQUEUES). This stops two contending tasks from exhausting all merge
+          retries on busy-errors before either makes a real land attempt, then parking a never-failed
+          task. Detect via `instanceof` now that both are exported classes (B7).
+          */
+          if (err instanceof WorkspaceRepoLandBusyError && !hasManualResolver) {
+            const busyCount = this.workspaceBusyReenqueues.get(taskId) ?? 0;
+            await store
+              .logEntry(taskId, `Workspace sub-repo land busy (contention): ${errorMsg}`, "WorkspaceRepoLandBusy")
+              .catch(() => undefined);
+            if (busyCount < ProjectEngine.WORKSPACE_BUSY_MAX_REENQUEUES) {
+              this.workspaceBusyReenqueues.set(taskId, busyCount + 1);
+              // Capped exponential backoff (B5): never exceed 60s even at the busy ceiling.
+              const delayMs = Math.min(5000 * Math.pow(2, busyCount), 60_000);
+              await store.updateTask(taskId, { status: null }).catch(() => undefined);
+              runtimeLog.log(
+                `Workspace land busy re-enqueue ${busyCount + 1}/${ProjectEngine.WORKSPACE_BUSY_MAX_REENQUEUES} for ${taskId} in ${delayMs / 1000}s (no mergeRetry consumed — pure lease contention)`,
+              );
+              setTimeout(() => {
+                if (!this.shuttingDown) this.internalEnqueueMerge(taskId);
+              }, delayMs);
+            } else {
+              // Pathological sustained contention — surface but do NOT burn mergeRetries; park as
+              // failed so the cooldown sweep stops re-attempting and an operator can intervene.
+              this.workspaceBusyReenqueues.delete(taskId);
+              await store
+                .updateTask(taskId, { status: "failed", error: errorMsg })
+                .catch(() => undefined);
+              runtimeLog.error(
+                `Auto-merge: ${taskId} workspace land busy ${ProjectEngine.WORKSPACE_BUSY_MAX_REENQUEUES} times — parked as failed (sustained sub-repo lease contention)`,
+              );
+            }
+            continue;
+          }
+
           // FNXC:Workspace 2026-06-22-00:30 (Phase C U2, KTD3):
           // Workspace PARTIAL-LAND auto-retry-then-park (user decision). Unlike the R7
           // WorkspaceTaskMergeError above (a permanent config error that must NOT burn
           // retries), a partial land — repo A landed, repo B failed — is RETRYABLE: the
           // landed repos' `landedSha` is persisted, so a re-run of `landWorkspaceTask`
           // skips them and re-attempts only the failed repo (idempotent). So this CONSUMES
-          // a `mergeRetry` and re-enqueues the merge with exponential backoff up to the
+          // a `mergeRetry` and re-enqueues the merge with capped exponential backoff up to the
           // existing MAX (resolveMaxAutoMergeRetries), then OPERATOR-PARKS (status:"failed")
-          // — mirroring the conflict-retry seam below. Detect by err.name (robust across
-          // the package boundary). Manual merges fall through to rejectMergeResolvers at
-          // the hasManualResolver early-return below (no auto-retry for manual).
-          /*
-          FNXC:Workspace 2026-06-22-02:10 (Phase C U3, KTD4):
-          A `WorkspaceRepoLandBusyError` (a second task holds the same sub-repo's
-          land lease) is ALSO retryable here — it is transient contention, not a
-          terminal failure. Route it through the SAME auto-retry-then-park seam (it
-          consumes a mergeRetry and re-enqueues with backoff; a re-run skips
-          already-landed repos and finds the lease freed). Detect by err.name across
-          the package boundary, same as the partial-land error.
-          */
-          const isWorkspacePartialLand =
-            err instanceof Error &&
-            (err.name === "WorkspacePartialLandError" || err.name === "WorkspaceRepoLandBusyError");
-          if (isWorkspacePartialLand && !hasManualResolver) {
-            const wsSettings = await store.getSettings().catch(() => ({ maxAutoMergeRetries: undefined }));
+          // — reusing the unified shouldRetryAutoMergeConflict seam with skipAutoResolveCheck
+          // (B6). Detect via `instanceof` (B7). Manual merges fall through to
+          // rejectMergeResolvers at the hasManualResolver early-return below.
+          if (err instanceof WorkspacePartialLandError && !hasManualResolver) {
+            const wsSettings = await store.getSettings().catch(() => null);
             const wsTask = await store.getTask(taskId).catch(() => null);
-            const wsRetries = wsTask?.mergeRetries ?? 0;
-            const decision = shouldRetryWorkspacePartialLand(wsRetries, wsSettings as { maxAutoMergeRetries?: unknown });
+            /*
+            FNXC:Workspace 2026-06-22-05:10 (Phase C review B1 — fail closed on getTask null):
+            If getTask returns null (DB outage), we CANNOT read `mergeRetries`. Defaulting to 0
+            would make `shouldRetry` always true while the increment updateTask also fails against
+            the non-responsive DB → an indefinite setTimeout retry storm against a dead DB. FAIL
+            CLOSED: do not schedule a retry. Attempt a best-effort park to `failed`; if that write
+            also fails it throws away cleanly and the cooldown sweep (canMergeTask) will re-evaluate
+            once the DB recovers, rather than hammering it on a tight timer.
+            */
+            if (!wsTask) {
+              runtimeLog.error(
+                `Auto-merge: ${taskId} workspace partial land but getTask failed (DB outage?) — failing closed, NOT scheduling a retry storm: ${errorMsg}`,
+              );
+              await store
+                .logEntry(
+                  taskId,
+                  `Workspace partial land — task state unreadable (DB error); parking as failed instead of scheduling a retry storm: ${errorMsg}`,
+                  "WorkspacePartialLand",
+                )
+                .catch(() => undefined);
+              await store
+                .updateTask(taskId, { status: "failed", error: errorMsg })
+                .catch(() => undefined);
+              continue;
+            }
+            const wsRetries = wsTask.mergeRetries ?? 0;
+            const decision = shouldRetryAutoMergeConflict(
+              wsRetries,
+              wsSettings as { autoResolveConflicts?: boolean; maxAutoMergeRetries?: unknown } | null,
+              { skipAutoResolveCheck: true },
+            );
             await store
               .logEntry(taskId, `Workspace partial land: ${errorMsg}`, "WorkspacePartialLand")
               .catch(() => undefined);
             if (decision.shouldRetry) {
               await store.updateTask(taskId, { mergeRetries: decision.nextRetryCount, status: null }).catch(() => undefined);
-              const delayMs = 5000 * Math.pow(2, wsRetries);
+              // Capped exponential backoff (B5): cap at 60s so a tuned maxAutoMergeRetries doesn't
+              // push the delay toward ~85 minutes at the ceiling.
+              const delayMs = Math.min(5000 * Math.pow(2, wsRetries), 60_000);
               runtimeLog.log(
                 `Workspace partial-land retry ${decision.nextRetryCount}/${decision.maxAutoMergeRetries} for ${taskId} in ${delayMs / 1000}s (re-runs skipping landed repos)`,
               );

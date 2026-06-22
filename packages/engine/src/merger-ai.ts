@@ -99,6 +99,19 @@ async function gitOk(args: string[], cwd: string): Promise<boolean> {
   }
 }
 
+/**
+ * FNXC:Workspace 2026-06-22-04:10 (Phase C review A1):
+ * Capture git stdout, returning undefined (never throwing) on failure — for read-only
+ * probes (merge-base, log --grep) where a non-zero exit is an expected "not found".
+ */
+async function gitCapture(args: string[], cwd: string): Promise<string | undefined> {
+  try {
+    return await git(args, cwd);
+  } catch {
+    return undefined;
+  }
+}
+
 function getErrorMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
@@ -1445,6 +1458,34 @@ export class WorkspaceRepoLandBusyError extends Error {
   }
 }
 
+/*
+FNXC:Workspace 2026-06-22-04:10 (Phase C review A4 — real WorkspacePartialLandError class):
+Previously the partial-land signal was a bare `new Error()` with `.name` patched in
+project-engine.ts (a footgun: no instanceof, no typed payload). It is now a real exported
+class so the dispatch can switch to `instanceof` (separate pass) and tests can assert
+`instanceof`. `retryable = true` because a partial land is recoverable — the landed repos'
+`landedSha` is persisted and a re-run skips them (the U2 idempotency contract).
+
+`landWorkspaceTask` throws this from ONE place: the A1 persist-after-advance failure window
+(the integration ref ALREADY advanced but `persistRepoLandedSha` could not record the
+`landedSha`). The ORDINARY partial land (repo A landed, repo B's land failed) still RETURNS
+`allLanded:false` — that return-based contract is what the engine dispatch and the oracle
+workspace-merger tests already consume; only the persist-failure window escalates to a throw
+so the engine parks/retries and A1's `isRepoLanded` ancestor-fallback skips the actually-landed
+repo on retry (no double-squash).
+*/
+export class WorkspacePartialLandError extends Error {
+  public readonly retryable = true;
+  constructor(
+    public readonly landedCount: number,
+    public readonly failedRepos: string[],
+    message: string,
+  ) {
+    super(message);
+    this.name = "WorkspacePartialLandError";
+  }
+}
+
 export async function landWorkspaceTask(
   store: TaskStore,
   task: Task,
@@ -1482,6 +1523,18 @@ export async function landWorkspaceTask(
   let allLanded = true;
 
   await setStatus("merging");
+  /*
+  FNXC:Workspace 2026-06-22-04:10 (Phase C review A3 — status 'merging' must never leak):
+  The busy-throw (WorkspaceRepoLandBusyError) and the persist-failure throw
+  (WorkspacePartialLandError) exit the loop BEFORE the post-loop `setStatus(null)`. If the
+  engine catch never runs (process crash between throw and catch) the task stays stuck
+  'merging' with no manual door to clear it. Wrap the whole per-repo loop so `setStatus(null)`
+  ALWAYS runs (in finally) before ANY throw escapes. The success path still finalizes to done
+  AFTER this finally (finalizeWorkspaceTask sets its own column/status), so clearing 'merging'
+  first is safe — finalize overwrites it. This finally only clears the transient merge status;
+  it does not move the task.
+  */
+  try {
   for (const repoRel of repoKeys) {
     throwIfAborted(options.signal, taskId);
     const entry = workspaceWorktrees[repoRel];
@@ -1508,7 +1561,7 @@ export async function landWorkspaceTask(
     // ancestor of (or equals) its CURRENT integration tip is already landed — SKIP
     // it so a retry never re-advances the ref. This makes a re-run after a partial
     // land idempotent for the already-landed repos.
-    if (await isRepoLanded(repoRootDir, integrationBranch, entry.landedSha)) {
+    if (await isRepoLanded(repoRootDir, integrationBranch, entry.landedSha, taskId, entry.branch)) {
       await log(`AI merge (workspace): sub-repo ${repoRel} already landed (${short(entry.landedSha!)} ⊑ ${integrationBranch}) — skipping`);
       repos.push({
         repo: repoRel, repoRootDir, integrationBranch, branch: entry.branch,
@@ -1526,15 +1579,19 @@ export async function landWorkspaceTask(
     interleaved await would let a second task pass the gate before we register. If
     another task holds the land lease we FAST-FAIL with a retryable busy error; the
     U2 dispatch auto-retry/park path handles it (no waiting lock reimplemented here).
-    We only treat a HELD entry of OUR OWN land ownerKey as contention, so a stale
-    entry of a different kind on this path (e.g. a leftover acquire entry) is ignored.
+
+    FNXC:Workspace 2026-06-22-04:10 (Phase C review A2 — taskId-aware contention across kinds):
+    Previously we only treated a HELD entry of OUR OWN land ownerKey as contention, so a
+    MERGING task would registerPath-OVERWRITE an EXECUTING task's "workspace-repo-acquire"
+    entry on a shared sub-repo (cross-phase clobber). Now ANY foreign-task holder on this
+    path — regardless of kind (acquire OR land OR anything else) — is contention: we throw
+    WorkspaceRepoLandBusyError so the engine retries when the other task releases its hold.
+    A SAME-task holder is NOT contention (idempotent re-claim of our own path). The
+    registerPath guard (A2b) backstops this: it also rejects a foreign-task overwrite, so a
+    missed check can never silently clobber.
     */
     const landLeaseHolder = activeSessionRegistry.lookupByPath(repoRootDir);
-    if (
-      landLeaseHolder &&
-      landLeaseHolder.ownerKey === WORKSPACE_REPO_LAND_OWNER_KEY &&
-      landLeaseHolder.taskId !== taskId
-    ) {
+    if (landLeaseHolder && landLeaseHolder.taskId !== taskId) {
       throw new WorkspaceRepoLandBusyError(repoRel, landLeaseHolder.taskId, taskId);
     }
     activeSessionRegistry.registerPath(repoRootDir, {
@@ -1551,10 +1608,32 @@ export async function landWorkspaceTask(
         allowDirtyLocalCheckoutSync: options.allowDirtyLocalCheckoutSync === true,
       });
       if (landResult.outcome === "landed") {
-        // Persist this repo's landedSha BEFORE moving on (fresh-read-then-merge so
-        // sibling entries written by a concurrent path are not clobbered). The retry
-        // predicate above reads this back to skip the repo on a re-run.
-        await persistRepoLandedSha(store, taskId, repoRel, landResult.squashSha);
+        /*
+        FNXC:Workspace 2026-06-22-04:10 (Phase C review A1 — persist-after-advance is a HARD failure):
+        The integration ref has ALREADY advanced (squash landed) by the time we persist
+        `landedSha`. If the DB write fails here the ref is advanced but UNRECORDED — we must NOT
+        silently continue (a return-based partial would let a retry double-squash). Escalate to a
+        retryable WorkspacePartialLandError so the engine parks/retries; on retry, `isRepoLanded`'s
+        trailer ancestor-fallback recognises this actually-landed repo and skips it. The repo IS
+        recorded as `landed` in the in-memory result first so the error payload is accurate.
+        */
+        try {
+          await persistRepoLandedSha(store, taskId, repoRel, landResult.squashSha);
+        } catch (persistErr: unknown) {
+          const pmsg = getErrorMessage(persistErr);
+          await log(`AI merge (workspace): sub-repo ${repoRel} landed (${short(landResult.squashSha)}) but persisting landedSha FAILED: ${pmsg} — escalating to partial land so a retry can recover (ref already advanced; retry will skip via trailer ancestor-check)`);
+          repos.push({
+            repo: repoRel, repoRootDir, integrationBranch, branch: entry.branch,
+            status: "landed", landedSha: landResult.squashSha, localSync: landResult.localSync,
+          });
+          allLanded = false;
+          const landedCount = repos.filter((r) => r.status === "landed").length;
+          throw new WorkspacePartialLandError(
+            landedCount,
+            [repoRel],
+            `Workspace land for ${taskId}: sub-repo ${repoRel} advanced its integration ref but the landedSha persist failed (${pmsg}); retry to record/skip it`,
+          );
+        }
         repos.push({
           repo: repoRel, repoRootDir, integrationBranch, branch: entry.branch,
           status: "landed", landedSha: landResult.squashSha, localSync: landResult.localSync,
@@ -1563,6 +1642,9 @@ export async function landWorkspaceTask(
         repos.push({ repo: repoRel, repoRootDir, integrationBranch, branch: entry.branch, status: "empty" });
       }
     } catch (err: unknown) {
+      // A WorkspacePartialLandError from the persist-failure window above must PROPAGATE
+      // (the engine parks/retries). The outer try/finally below resets status first (A3).
+      if (err instanceof WorkspacePartialLandError) throw err;
       const message = getErrorMessage(err);
       await log(`AI merge (workspace): sub-repo ${repoRel} land failed: ${message}`);
       await audit.git({ type: "merge:ai-no-branch", target: entry.branch, metadata: { taskId, kind: "workspace-repo-land-failed", repo: repoRel, error: message } }).catch(() => undefined);
@@ -1586,8 +1668,12 @@ export async function landWorkspaceTask(
       }
     }
   }
-
-  await setStatus(null);
+  } finally {
+    // A3: clear the transient 'merging' status before ANY throw (busy / partial-land /
+    // abort) escapes, AND on the normal fall-through. The success path's finalize below
+    // re-sets the task's column/status to done, so clearing here first is safe.
+    await setStatus(null);
+  }
 
   // U2 finalize-once (KTD3): move the task to `done` EXACTLY ONCE, only after EVERY
   // acquired repo's landed predicate holds (all landed/empty, none failed). Reuse the
@@ -1609,18 +1695,65 @@ export async function landWorkspaceTask(
  * the landed commit is still reachable, so the repo stays "landed". A `landedSha` that
  * is NOT reachable from the tip (e.g. the ref was reset/rebuilt) reads as NOT landed and
  * the repo re-lands.
+ *
+ * FNXC:Workspace 2026-06-22-04:10 (Phase C review A1 — task-trailer ancestor fallback):
+ * The double-land window: a land advances the integration ref via `advanceIntegrationBranchRef`'s
+ * CAS, then `persistRepoLandedSha` records `landedSha`. If that DB write fails AFTER the ref
+ * advanced, the repo is ACTUALLY landed but has NO recorded `landedSha`, so the landedSha check
+ * above reports NOT-landed → a retry re-runs `landOneRepo`, the CAS rebuilds, and a SECOND squash
+ * lands (not idempotent). To close the window we ALSO treat the repo as landed when the live
+ * integration ref carries a commit with THIS task's `Fusion-Task-Id` trailer.
+ *
+ * Why a trailer scan and NOT a branch-tip ancestor check: the land is a `git merge --squash`,
+ * whose squash commit's parent is the integration tip, NOT the task branch — so `merge-base
+ * --is-ancestor <branch> <integration>` is FALSE even right after a successful land. The
+ * `Fusion-Task-Id` trailer (always stamped onto the squash by `taskTrailers` + the
+ * ensureTaskMetadata safety net) is the only reliable "this task's work is already on the ref"
+ * signal that does not depend on the landedSha row, so it is what survives a lost persist. We
+ * bound the scan to commits the integration tip has gained since the branch's merge-base (the
+ * land base) so an unrelated historical reuse of the same trailer cannot false-positive.
+ *
+ * Exported (A6) so Phase D self-healing reuses THIS canonical predicate instead of
+ * reimplementing the ancestor/trailer check.
  */
-async function isRepoLanded(
+export async function isRepoLanded(
   repoRootDir: string,
   integrationBranch: string,
   landedSha: string | undefined,
+  taskId?: string,
+  branch?: string,
 ): Promise<boolean> {
-  if (!landedSha) return false;
-  if (!(await gitOk(["rev-parse", "--verify", `refs/heads/${integrationBranch}`], repoRootDir))) {
+  const intRef = `refs/heads/${integrationBranch}`;
+  if (!(await gitOk(["rev-parse", "--verify", intRef], repoRootDir))) {
     return false;
   }
+  // Primary: recorded landedSha is an ancestor of (or equals) the integration tip.
   // `merge-base --is-ancestor X Y` exits 0 iff X is an ancestor of (or equal to) Y.
-  return await gitOk(["merge-base", "--is-ancestor", landedSha, `refs/heads/${integrationBranch}`], repoRootDir);
+  if (
+    landedSha &&
+    (await gitOk(["merge-base", "--is-ancestor", landedSha, intRef], repoRootDir))
+  ) {
+    return true;
+  }
+  // A1 fallback: even without a recorded landedSha, the repo is already landed if the
+  // integration ref carries a commit with this task's Fusion-Task-Id trailer (the squash
+  // we lost the persist for). Bound the scan to commits gained since the branch's land base
+  // so a stale historical trailer of the same id cannot false-positive.
+  if (taskId) {
+    const branchRef = branch ? `refs/heads/${branch}` : undefined;
+    let range = intRef;
+    if (branchRef && (await gitOk(["rev-parse", "--verify", branchRef], repoRootDir))) {
+      const base = await gitCapture(["merge-base", branchRef, intRef], repoRootDir);
+      if (base) range = `${base.trim()}..${intRef}`;
+    }
+    const trailer = `${FUSION_TASK_ID_TRAILER_KEY}: ${taskId}`;
+    const found = await gitCapture(
+      ["log", "--format=%H", `--grep=${trailer}`, "--fixed-strings", range],
+      repoRootDir,
+    );
+    if (found && found.trim().length > 0) return true;
+  }
+  return false;
 }
 
 /**
@@ -1628,6 +1761,17 @@ async function isRepoLanded(
  * Persist one sub-repo's `landedSha` with a FRESH-read-then-merge so a concurrent
  * sibling-entry write is not clobbered (Phase A/B per-repo `workspaceWorktrees`
  * pattern). Re-read the latest task, merge only this repo's entry, write the whole map.
+ *
+ * FNXC:Workspace 2026-06-22-04:10 (Phase C review A1 — do NOT swallow the DB write):
+ * Previously the `store.updateTask(...)` was `.catch(() => undefined)`. That swallow is the
+ * double-land bug: the integration ref has ALREADY advanced by the time we persist, so a
+ * silently-lost write means `landedSha` is never recorded → on retry the landedSha check sees
+ * NOT-landed and re-runs the squash (a SECOND squash commit). We now PROPAGATE the write
+ * failure. The caller (`landWorkspaceTask`) catches it as a partial-land for this repo and
+ * escalates to `WorkspacePartialLandError` so the engine parks/retries; on retry, `isRepoLanded`'s
+ * trailer ancestor-fallback (A1) recognises the actually-landed repo and skips it (no double
+ * squash). We DELIBERATELY do not swallow the `getTask` read either-way: a failed read leaves
+ * `landedSha` unrecorded for the same reason, so it must also escalate.
  */
 async function persistRepoLandedSha(
   store: TaskStore,
@@ -1635,12 +1779,12 @@ async function persistRepoLandedSha(
   repoRel: string,
   landedSha: string,
 ): Promise<void> {
-  const latest = await store.getTask(taskId).catch(() => undefined);
+  const latest = await store.getTask(taskId);
   const current = latest?.workspaceWorktrees ?? {};
   const entry = current[repoRel];
   if (!entry) return; // entry vanished — nothing to merge into
   const next = { ...current, [repoRel]: { ...entry, landedSha } };
-  await store.updateTask(taskId, { workspaceWorktrees: next }).catch(() => undefined);
+  await store.updateTask(taskId, { workspaceWorktrees: next });
 }
 
 /**
@@ -1663,14 +1807,28 @@ async function finalizeWorkspaceTask(
   const representative = landed.length > 0 ? landed[0].landedSha : undefined;
   const anyLanded = landed.length > 0;
 
-  // Pre-populate task.mergeDetails so finalizeTask's spread carries the workspace map.
+  /*
+  FNXC:Workspace 2026-06-22-04:10 (Phase C review A5 — fresh-read + no-swallow finalize):
+  Two fixes to the FN-5627 TOCTOU class:
+   1. The `task` argument is the SNAPSHOT captured at the START of `landWorkspaceTask`; by
+      finalize time the persisted row has gained each repo's `landedSha` (and possibly other
+      concurrent edits). Spreading the stale snapshot's mergeDetails could drop/clobber those.
+      Re-read the LATEST task and spread ITS mergeDetails (fresh-read-then-merge), falling back
+      to the snapshot only if the read fails.
+   2. The `store.updateTask(...)` was `.catch(() => undefined)` — a swallowed write left the
+      in-memory `mergeConfirmed:true` while the persisted row stayed stale (the finalize would
+      then report done with an unpersisted merge). PROPAGATE the failure so finalization aborts
+      and self-healing recovers, rather than silently finalizing on a stale row.
+  */
+  const fresh = await store.getTask(taskId).catch(() => undefined);
+  const baseMergeDetails = fresh?.mergeDetails ?? task.mergeDetails;
   const mergeDetails: MergeDetails = {
-    ...task.mergeDetails,
+    ...baseMergeDetails,
     ...(representative ? { commitSha: representative } : {}),
     ...(anyLanded ? { workspaceLandedShas } : {}),
     mergeConfirmed: anyLanded,
   };
-  await store.updateTask(taskId, { mergeDetails }).catch(() => undefined);
+  await store.updateTask(taskId, { mergeDetails });
   task.mergeDetails = mergeDetails;
 
   const result: MergeResult = {

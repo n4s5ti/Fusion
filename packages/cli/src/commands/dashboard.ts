@@ -1319,12 +1319,19 @@ export async function runDashboard(port: number, opts: { paused?: boolean; dev?:
         agentStore,
       });
       const latest = await store.getTask(taskId).catch(() => mergeTask!);
-      // U1 does not finalize the workspace task (finalize-once move-to-done is U2);
-      // report merged=false until then.
+      // FNXC:Workspace 2026-06-22-05:10 (Phase C review B3):
+      // landWorkspaceTask now finalizes the workspace task to done on allLanded (Phase C U2),
+      // so the merge door must report merged=true when the workspace fully landed — mirroring
+      // the engine dispatch's MergeResult. The first landed sub-repo's landedSha is the recorded
+      // commitSha (same convention finalizeWorkspaceTask uses). On a partial land, merged stays
+      // false and the partial-land error surfaces on the task log.
+      const landedSha = workspaceResult.repos.find((r) => r.status === "landed")?.landedSha;
       return {
         task: latest ?? mergeTask!,
         branch: getTaskBranchName(taskId),
-        merged: false,
+        merged: workspaceResult.allLanded,
+        mergeConfirmed: workspaceResult.allLanded || undefined,
+        commitSha: workspaceResult.allLanded ? landedSha : undefined,
         worktreeRemoved: false,
         branchDeleted: false,
         error: workspaceResult.allLanded ? undefined : "partial workspace land — see task log",

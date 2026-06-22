@@ -26,8 +26,19 @@ import { execSync } from "node:child_process";
 import { writeFileSync } from "node:fs";
 import path from "node:path";
 import type { Task, TaskStore } from "@fusion/core";
-import { landWorkspaceTask } from "../merger-ai.js";
-import { shouldRetryWorkspacePartialLand } from "../project-engine.js";
+import { landWorkspaceTask, WorkspacePartialLandError } from "../merger-ai.js";
+import { shouldRetryAutoMergeConflict } from "../project-engine.js";
+
+/*
+FNXC:Workspace 2026-06-22-05:10 (Phase C review B6):
+`shouldRetryWorkspacePartialLand` was collapsed into `shouldRetryAutoMergeConflict` via the
+`skipAutoResolveCheck` flag (one place owns the resolveMaxAutoMergeRetries arithmetic). The
+workspace partial-land decision is `shouldRetryAutoMergeConflict(retries, settings, { skipAutoResolveCheck: true })`.
+*/
+const shouldRetryWorkspacePartialLand = (
+  currentRetries: number,
+  settings: { maxAutoMergeRetries?: unknown } | null | undefined,
+) => shouldRetryAutoMergeConflict(currentRetries, settings, { skipAutoResolveCheck: true });
 import { createWorkspaceFixture, hasGit, type WorkspaceFixture } from "./_workspace-fixture.js";
 
 const describeIfGit = hasGit ? describe : describe.skip;
@@ -311,6 +322,107 @@ describeIfGit("landWorkspaceTask — landed predicate + finalize-once + idempote
     expect(md.workspaceLandedShas).toEqual({ "repo-a": landedShaA, "repo-b": landedShaB });
     // commitSha is one of the landed repo shas (representative for the task:merged consumer).
     expect([landedShaA, landedShaB]).toContain(md.commitSha);
+  });
+});
+
+/*
+FNXC:Workspace 2026-06-22-04:10 (Phase C review A1/A4/A5 — DB-failure resilience):
+These drive the REAL `landWorkspaceTask` against the REAL two-repo fixture but inject a
+store whose `updateTask` REJECTS on a chosen patch, exercising the persist-failure windows
+that the review fixes close. No mock-the-world: the git lands are real; only the targeted
+DB write is forced to fail.
+*/
+describeIfGit("landWorkspaceTask — DB-failure resilience (Phase C review A1/A4/A5)", () => {
+  let fx: WorkspaceFixture;
+  afterEach(() => fx?.cleanup());
+
+  it("A1/A4: a persist-failure AFTER the ref advanced escalates to WorkspacePartialLandError (no silent continue); a retry skips the actually-landed repo (no double squash)", async () => {
+    fx = await createWorkspaceFixture(["repo-a"]);
+    addRepoBranchWithEdit(fx, "repo-a", "a feature\n");
+    const task = makeTask({ "repo-a": { worktreePath: fx.repoPath("repo-a"), branch: BRANCH } });
+
+    // A store that FAILS the landedSha persist (the workspaceWorktrees write) exactly once,
+    // then persists normally — simulating a transient DB hiccup in the A1 window.
+    let failLandedShaWrite = true;
+    const store = createStore(task);
+    const realUpdate = store.updateTask as unknown as (id: string, patch: Partial<Task>) => Promise<undefined>;
+    (store as { updateTask: unknown }).updateTask = vi.fn(async (id: string, patch: Partial<Task>) => {
+      if (failLandedShaWrite && patch.workspaceWorktrees) {
+        failLandedShaWrite = false;
+        throw new Error("synthetic DB write failure (landedSha persist)");
+      }
+      return realUpdate(id, patch);
+    });
+
+    const tipBefore = fx.git("repo-a", "git rev-parse refs/heads/main");
+
+    // First run: repo-a squashes + advances the ref, but the landedSha persist throws.
+    await expect(
+      landWorkspaceTask(store, store.task, fx.rootDir, {}, {
+        mergeAgent: squashMergeAgent(BRANCH),
+        reviewAgent: approveReviewAgent,
+      }),
+    ).rejects.toBeInstanceOf(WorkspacePartialLandError);
+
+    // The ref DID advance (the repo is actually landed) — but landedSha was NOT recorded.
+    const tipAfterFirst = fx.git("repo-a", "git rev-parse refs/heads/main");
+    expect(tipAfterFirst).not.toBe(tipBefore);
+    expect(store.task.workspaceWorktrees!["repo-a"].landedSha).toBeUndefined();
+    // Not finalized to done (the throw aborted before finalize).
+    expect(store.moveTaskCalls).toHaveLength(0);
+    // Status was reset off 'merging' before the throw escaped (A3).
+    expect(store.task.status ?? null).toBeNull();
+
+    // Retry: isRepoLanded's trailer ancestor-fallback (A1) recognises the actually-landed
+    // repo via its Fusion-Task-Id trailer and SKIPS it — the ref must NOT advance a 2nd time.
+    const second = await landWorkspaceTask(store, store.task, fx.rootDir, {}, {
+      mergeAgent: squashMergeAgent(BRANCH),
+      reviewAgent: approveReviewAgent,
+    });
+    expect(fx.git("repo-a", "git rev-parse refs/heads/main")).toBe(tipAfterFirst); // no double squash
+    expect(second.repos[0].alreadyLanded).toBe(true);
+    expect(second.allLanded).toBe(true);
+    expect(second.finalized).toBe(true);
+  });
+
+  it("A4: WorkspacePartialLandError is a real class (instanceof + retryable + payload)", () => {
+    const err = new WorkspacePartialLandError(2, ["repo-b"], "partial");
+    expect(err).toBeInstanceOf(WorkspacePartialLandError);
+    expect(err).toBeInstanceOf(Error);
+    expect(err.name).toBe("WorkspacePartialLandError");
+    expect(err.retryable).toBe(true);
+    expect(err.landedCount).toBe(2);
+    expect(err.failedRepos).toEqual(["repo-b"]);
+  });
+
+  it("A5: a rejecting mergeDetails persist aborts finalization (does NOT silently finalize on a stale row)", async () => {
+    fx = await createWorkspaceFixture(["repo-a"]);
+    addRepoBranchWithEdit(fx, "repo-a", "a feature\n");
+    const task = makeTask({ "repo-a": { worktreePath: fx.repoPath("repo-a"), branch: BRANCH } });
+
+    // Fail the mergeDetails write (the finalize TOCTOU window) — the landedSha write succeeds.
+    const store = createStore(task);
+    const realUpdate = store.updateTask as unknown as (id: string, patch: Partial<Task>) => Promise<undefined>;
+    (store as { updateTask: unknown }).updateTask = vi.fn(async (id: string, patch: Partial<Task>) => {
+      if (patch.mergeDetails) {
+        throw new Error("synthetic DB write failure (mergeDetails)");
+      }
+      return realUpdate(id, patch);
+    });
+
+    await expect(
+      landWorkspaceTask(store, store.task, fx.rootDir, {}, {
+        mergeAgent: squashMergeAgent(BRANCH),
+        reviewAgent: approveReviewAgent,
+      }),
+    ).rejects.toThrow(/mergeDetails/);
+
+    // Finalization aborted: the task was NOT moved done and no task:merged was emitted on a
+    // stale/unpersisted row.
+    expect(store.moveTaskCalls).toHaveLength(0);
+    expect(store.emitted.some((e) => e.event === "task:merged")).toBe(false);
+    // Status was still reset off 'merging' (A3 finally runs before finalize).
+    expect(store.task.status ?? null).toBeNull();
   });
 });
 

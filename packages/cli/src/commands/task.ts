@@ -872,8 +872,13 @@ export async function runTaskMerge(id: string, projectName?: string) {
           : `failed: ${repo.error ?? "unknown"}`;
         console.log(`  ${repo.status === "failed" ? "✗" : "✓"} ${repo.repo}: ${label}`);
       }
-      // U1 does not move the workspace task to done (finalize-once is U2).
-      console.log(`\n  ${workspaceResult.allLanded ? "✓ All sub-repos landed" : "✗ Partial land — see failures above"} (task remains in review until U2)\n`);
+      // FNXC:Workspace 2026-06-22-05:10 (Phase C review B3):
+      // landWorkspaceTask now finalizes the workspace task to done on allLanded (Phase C U2),
+      // so report it as merged rather than "remains in review until U2". A partial land leaves
+      // the task in review (landed repos stay landed locally) and exits non-zero.
+      console.log(
+        `\n  ${workspaceResult.allLanded ? "✓ All sub-repos landed — task finalized to done" : "✗ Partial land — see failures above (task remains in review; landed repos stay landed locally)"}\n`,
+      );
       if (!workspaceResult.allLanded) process.exit(1);
       return;
     }
