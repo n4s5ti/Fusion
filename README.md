@@ -264,6 +264,25 @@ A built-in mailbox for delegation, clarification, and hand-offs. Agents file tri
 </tr>
 </table>
 
+### 📱 Fusion is an AI factory in your pocket
+
+The full board, Command Center, missions, agents, and chat travel with you — native **iOS** and **Android** apps (Capacitor) plus an installable PWA. Start a run on your laptop, steer it from your phone.
+
+<table>
+<tr>
+<td width="33%"><img src="./demo/assets/mobile-board.png" alt="Fusion mobile: board" /></td>
+<td width="33%"><img src="./demo/assets/mobile-command-center.png" alt="Fusion mobile: Command Center" /></td>
+<td width="33%"><img src="./demo/assets/mobile-missions.png" alt="Fusion mobile: missions" /></td>
+</tr>
+<tr>
+<td width="33%"><img src="./demo/assets/mobile-agents.png" alt="Fusion mobile: agents" /></td>
+<td width="33%"><img src="./demo/assets/mobile-chat.png" alt="Fusion mobile: agent chat" /></td>
+<td width="33%"><img src="./demo/assets/mobile-chat-list.png" alt="Fusion mobile: chat list" /></td>
+</tr>
+</table>
+
+<sub>See [MOBILE.md](./MOBILE.md) for the Capacitor + PWA workflow.</sub>
+
 ---
 
 ## How it works
