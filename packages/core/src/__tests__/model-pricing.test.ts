@@ -4,8 +4,10 @@ import {
   costFor,
   lookupPricing,
   MODEL_PRICING,
+  parseLiteLLMPricing,
   pricingAsOf,
   PRICING_STALE_AFTER_MS,
+  type ModelPricingOverrides,
 } from "../model-pricing.js";
 
 const ZERO = {
@@ -150,6 +152,23 @@ describe("model-pricing", () => {
   });
 
   describe("lookupPricing", () => {
+    const overrides: ModelPricingOverrides = {
+      "openai:gpt-4o": {
+        inputPer1M: 99,
+        outputPer1M: 199,
+        cacheReadPer1M: 9,
+        cacheWritePer1M: 29,
+        source: "test override",
+      },
+      "acme:unknown-chat": {
+        inputPer1M: 2,
+        outputPer1M: 4,
+        cacheReadPer1M: 1,
+        cacheWritePer1M: 3,
+        source: "test override",
+      },
+    };
+
     it("resolves by provider:model", () => {
       expect(
         lookupPricing({ provider: "openai", model: "gpt-4o" }),
@@ -178,6 +197,88 @@ describe("model-pricing", () => {
       expect(lookupPricing({})).toBeUndefined();
       expect(lookupPricing({ model: "" })).toBeUndefined();
       expect(lookupPricing({ provider: "x", model: "y" })).toBeUndefined();
+    });
+
+    it("prefers overrides over baseline and keeps baseline fallback", () => {
+      expect(lookupPricing({ provider: "openai", model: "gpt-4o" }, overrides)).toBe(overrides["openai:gpt-4o"]);
+      expect(lookupPricing({ provider: "anthropic", model: "claude-opus-4-8" }, overrides)).toBe(
+        MODEL_PRICING["anthropic:claude-opus-4-8"],
+      );
+    });
+
+    it("resolves overrides for otherwise unknown models", () => {
+      expect(lookupPricing({ provider: "acme", model: "unknown-chat" }, overrides)).toBe(overrides["acme:unknown-chat"]);
+      const result = costFor(
+        { ...ZERO, inputTokens: 1_000_000, outputTokens: 500_000 },
+        { provider: "acme", model: "unknown-chat" },
+        undefined,
+        overrides,
+      );
+      expect(result).toMatchObject({ unavailable: false, stale: false });
+      expect(result.usd).toBeCloseTo(4, 2);
+    });
+  });
+
+  describe("parseLiteLLMPricing", () => {
+    it("maps chat rows and cache costs from the LiteLLM schema", () => {
+      const parsed = parseLiteLLMPricing({
+        sample_spec: { mode: "chat" },
+        "gpt-test": {
+          litellm_provider: "openai",
+          mode: "chat",
+          input_cost_per_token: 0.000001,
+          output_cost_per_token: 0.000002,
+          cache_read_input_token_cost: 0.00000025,
+          cache_creation_input_token_cost: 0.00000125,
+        },
+        "claude-test": {
+          litellm_provider: "anthropic",
+          mode: "chat",
+          input_cost_per_token: 0.000003,
+          output_cost_per_token: 0.000015,
+        },
+        "gemini-test": {
+          litellm_provider: "vertex_ai-language-models",
+          mode: "chat",
+          input_cost_per_token: 0.0000005,
+          output_cost_per_token: 0.0000015,
+        },
+        "embedding-test": {
+          litellm_provider: "openai",
+          mode: "embedding",
+          input_cost_per_token: 0.000001,
+          output_cost_per_token: 0.000002,
+        },
+        "missing-output": {
+          litellm_provider: "openai",
+          mode: "chat",
+          input_cost_per_token: 0.000001,
+        },
+      });
+
+      expect(parsed.count).toBe(3);
+      expect(parsed.overrides["openai:gpt-test"]).toEqual({
+        inputPer1M: 1,
+        outputPer1M: 2,
+        cacheReadPer1M: 0.25,
+        cacheWritePer1M: 1.25,
+        source: "litellm/model_prices_and_context_window.json",
+      });
+      expect(parsed.overrides["anthropic:claude-test"]).toMatchObject({
+        inputPer1M: 3,
+        outputPer1M: 15,
+        cacheReadPer1M: 3,
+        cacheWritePer1M: 3,
+      });
+      expect(parsed.overrides["google:gemini-test"]).toMatchObject({ inputPer1M: 0.5, outputPer1M: 1.5 });
+      expect(parsed.overrides).not.toHaveProperty("openai:embedding-test");
+      expect(parsed.overrides).not.toHaveProperty("openai:missing-output");
+    });
+
+    it("returns an empty map for malformed input", () => {
+      expect(parseLiteLLMPricing(null)).toEqual({ overrides: {}, count: 0 });
+      expect(parseLiteLLMPricing([])).toEqual({ overrides: {}, count: 0 });
+      expect(parseLiteLLMPricing({ "gpt-test": "bad" })).toEqual({ overrides: {}, count: 0 });
     });
   });
 

@@ -110,6 +110,27 @@ describe("fast mode workflow/runtime invariants", () => {
     );
   });
 
+  it("falls back to the runner task when prepareWorktree cannot trust the live row", async () => {
+    const store = createMockStore();
+    store.getTask.mockResolvedValue({ ...task({ id: "FN-OTHER", worktree: "/tmp/wrong" }) });
+    const executor = new TaskExecutor(store, "/tmp/test");
+
+    const result = await (executor as any)
+      .createAuthoritativeWorkflowPrimitives({ experimentalFeatures: { workflowGraphExecutor: true } })
+      .prepareWorktree(
+        { run: { taskId: "FN-6226" }, node: { node: { id: "execute" }, context: {} } },
+        task({ id: "FN-6226", worktree: "/tmp/right", branch: "fusion/fn-6226" }),
+      );
+
+    expect(result).toMatchObject({
+      outcome: "success",
+      data: {
+        worktreePath: "/tmp/right",
+        branchName: "fusion/fn-6226",
+      },
+    });
+  });
+
   // U6: the coding built-in's pre-merge browser-verification optional-group is
   // default-OFF (the task sets no enabledWorkflowSteps), so it is bypassed — its
   // group node is visited but its body never runs and runWorkflowSteps is not

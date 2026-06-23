@@ -47,6 +47,7 @@ export type {
   TaskCommitAssociation,
   TaskCommitAssociationConfidence,
   TaskCommitAssociationMatchSource,
+  CommitAssociationDiffBackfillReport,
   PluginActivation,
   PluginActivationInput,
 } from "./types.js";
@@ -123,6 +124,13 @@ export {
   resolveDefaultOnOptionalGroupIds,
 } from "./workflow-optional-steps.js";
 export type { ResolvedWorkflowOptionalStep } from "./workflow-optional-steps.js";
+export {
+  applyPromptOverridesToIr,
+  enumeratePromptBearingWorkflowNodes,
+  isPromptBearingWorkflowNode,
+  normalizeWorkflowPromptOverrides,
+} from "./workflow-prompt-overrides.js";
+export type { WorkflowPromptDefault, WorkflowPromptOverrides } from "./workflow-prompt-overrides.js";
 export { BUILTIN_STEPWISE_CODING_WORKFLOW_IR } from "./builtin-stepwise-coding-workflow-ir.js";
 export { BUILTIN_PR_WORKFLOW_IR } from "./builtin-pr-workflow-ir.js";
 export { BUILTIN_LEAD_GENERATION_WORKFLOW_IR } from "./builtin-lead-generation-workflow-ir.js";
@@ -148,12 +156,16 @@ export {
 export {
   ensureGitRepositoryForProjectPath,
   GitRepositoryInitializationError,
+  detectWorkspaceRepos,
+  loadWorkspaceConfig,
+  saveWorkspaceConfig,
 } from "./git-repository.js";
 export type {
   GitRepositoryCommandResult,
   GitRepositoryCommandRunner,
   GitRepositoryEnsureOutcome,
   EnsureGitRepositoryOptions,
+  WorkspaceConfig,
 } from "./git-repository.js";
 
 // ── Trait model (U2) ─────────────────────────────────────────────────
@@ -541,12 +553,16 @@ export type {
 export {
   costFor,
   lookupPricing,
+  parseLiteLLMPricing,
   MODEL_PRICING,
+  LITELLM_PRICING_SOURCE_LABEL,
+  LITELLM_PRICING_SOURCE_URL,
   pricingAsOf,
   PRICING_STALE_AFTER_MS,
 } from "./model-pricing.js";
 export type {
   ModelPricing,
+  ModelPricingOverrides,
   ModelRef,
   UsageForCost,
   CostResult,

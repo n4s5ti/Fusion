@@ -190,7 +190,7 @@ describe("TaskDetailModal", () => {
       );
 
       // In-progress tasks show exactly 11 tabs:
-      // Chat, Definition, Logs, Changes, Review, Comments, Documents, Model, Workflow, Stats, Routing
+      // Chat, Definition, Logs, Changes, Review, Comments, Artifacts, Model, Workflow, Stats, Routing
       const tabs = container.querySelectorAll(".detail-tab");
       expect(tabs.length).toBe(11);
       expect(tabs[0].textContent).toBe("Chat");
@@ -199,7 +199,7 @@ describe("TaskDetailModal", () => {
       expect(tabs[3].textContent).toBe("Changes");
       expect(tabs[4].textContent).toBe("Review");
       expect(tabs[5].textContent).toBe("Comments");
-      expect(tabs[6].textContent).toBe("Documents");
+      expect(tabs[6].textContent).toBe("Artifacts");
       expect(tabs[7].textContent).toBe("Model");
       expect(tabs[8].textContent).toBe("Workflow");
       expect(tabs[9].textContent).toBe("Stats");
@@ -231,7 +231,7 @@ describe("TaskDetailModal", () => {
       expect(tabs[3].textContent).toBe("Changes");
       expect(tabs[4].textContent).toBe("Review");
       expect(tabs[5].textContent).toBe("Comments");
-      expect(tabs[6].textContent).toBe("Documents");
+      expect(tabs[6].textContent).toBe("Artifacts");
       expect(tabs[7].textContent).toBe("Model");
       expect(tabs[8].textContent).toBe("Workflow");
       expect(tabs[9].textContent).toBe("Stats");
@@ -255,7 +255,7 @@ describe("TaskDetailModal", () => {
         />,
       );
 
-      // Done task with commit SHA: Chat, Definition, Logs, Changes, Review, Comments, Documents, Model, Workflow, Stats, Routing (11 tabs, no Commits)
+      // Done task with commit SHA: Chat, Definition, Logs, Changes, Review, Comments, Artifacts, Model, Workflow, Stats, Routing (11 tabs, no Commits)
       const tabs = container.querySelectorAll(".detail-tab");
       expect(tabs.length).toBe(11);
       expect(tabs[0].textContent).toBe("Chat");
@@ -264,7 +264,7 @@ describe("TaskDetailModal", () => {
       expect(tabs[3].textContent).toBe("Changes");
       expect(tabs[4].textContent).toBe("Review");
       expect(tabs[5].textContent).toBe("Comments");
-      expect(tabs[6].textContent).toBe("Documents");
+      expect(tabs[6].textContent).toBe("Artifacts");
       expect(tabs[7].textContent).toBe("Model");
       expect(tabs[8].textContent).toBe("Workflow");
       expect(tabs[9].textContent).toBe("Stats");
@@ -300,7 +300,7 @@ describe("TaskDetailModal", () => {
       expect(tabs[3].textContent).toBe("Changes");
       expect(tabs[4].textContent).toBe("Review");
       expect(tabs[5].textContent).toBe("Comments");
-      expect(tabs[6].textContent).toBe("Documents");
+      expect(tabs[6].textContent).toBe("Artifacts");
       expect(tabs[7].textContent).toBe("Model");
       expect(tabs[8].textContent).toBe("Workflow");
       expect(tabs[9].textContent).toBe("Stats");
@@ -324,9 +324,9 @@ describe("TaskDetailModal", () => {
       );
 
       const triageTabs = triageContainer.querySelectorAll(".detail-tab");
-      expect(triageTabs.length).toBe(10); // Chat, Definition, Logs, Review, Comments, Documents, Model, Workflow, Stats, Routing
+      expect(triageTabs.length).toBe(10); // Chat, Definition, Logs, Review, Comments, Artifacts, Model, Workflow, Stats, Routing
       expect(Array.from(triageTabs).map(t => t.textContent)).toEqual([
-        "Chat", "Definition", "Logs", "Review", "Comments", "Documents", "Model", "Workflow", "Stats", "Routing",
+        "Chat", "Definition", "Logs", "Review", "Comments", "Artifacts", "Model", "Workflow", "Stats", "Routing",
       ]);
 
       const { container: todoContainer } = render(
@@ -343,9 +343,9 @@ describe("TaskDetailModal", () => {
       );
 
       const todoTabs = todoContainer.querySelectorAll(".detail-tab");
-      expect(todoTabs.length).toBe(10); // Chat, Definition, Logs, Review, Comments, Documents, Model, Workflow, Stats, Routing
+      expect(todoTabs.length).toBe(10); // Chat, Definition, Logs, Review, Comments, Artifacts, Model, Workflow, Stats, Routing
       expect(Array.from(todoTabs).map(t => t.textContent)).toEqual([
-        "Chat", "Definition", "Logs", "Review", "Comments", "Documents", "Model", "Workflow", "Stats", "Routing",
+        "Chat", "Definition", "Logs", "Review", "Comments", "Artifacts", "Model", "Workflow", "Stats", "Routing",
       ]);
     });
 

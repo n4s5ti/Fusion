@@ -58,59 +58,7 @@ describe("droid-cli extension entrypoint", () => {
     vi.restoreAllMocks();
   });
 
-  it("registers provider droid-cli with discovered model mapping and streamSimple", async () => {
-    const registerProvider = vi.fn();
-    const mockPi = {
-      registerProvider,
-      on: vi.fn(),
-      getAllTools: vi.fn(() => []),
-      setActiveTools: vi.fn(),
-    };
-
-    const mod = await import("../../index");
-    mod.default(mockPi as never);
-    await flushAsyncRegistration();
-
-    expect(runtimeMocks.validateCliPresenceAsync).toHaveBeenCalledTimes(1);
-    expect(runtimeMocks.validateCliAuthAsync).toHaveBeenCalledTimes(1);
-    expect(runtimeMocks.discoverDroidModels).toHaveBeenCalledTimes(1);
-
-    expect(registerProvider).toHaveBeenCalledTimes(2);
-    const [initialProviderId, initialConfig] = registerProvider.mock.calls[0] as [string, {
-      models: unknown[];
-    }];
-    expect(initialProviderId).toBe("droid-cli");
-    expect(initialConfig.models).toEqual([]);
-
-    const [providerId, config] = registerProvider.mock.calls.at(-1) as [string, {
-      baseUrl: string;
-      api: string;
-      apiKey: string;
-      models: Array<{ id: string; name: string; contextWindow: number; maxTokens: number }>;
-      streamSimple: Function;
-    }];
-
-    expect(providerId).toBe("droid-cli");
-    expect(config.baseUrl).toBe("droid-cli");
-    expect(config.api).toBe("droid-cli");
-    expect(config.apiKey).toBe("unused");
-    expect(config.models).toEqual([
-      expect.objectContaining({ id: "droid-pro", name: "droid-pro", contextWindow: 200_000, maxTokens: 8_192 }),
-      expect.objectContaining({ id: "droid-max", name: "droid-max", contextWindow: 200_000, maxTokens: 8_192 }),
-    ]);
-    expect(typeof config.streamSimple).toBe("function");
-  });
-
-  it("registers the provider synchronously without awaiting droid probes", async () => {
-    let resolvePresence!: (value: { ok: true }) => void;
-    let resolveDiscovery!: (value: string[]) => void;
-    runtimeMocks.validateCliPresenceAsync.mockImplementation(
-      () => new Promise((resolve) => { resolvePresence = resolve; }),
-    );
-    runtimeMocks.discoverDroidModels.mockImplementation(
-      () => new Promise((resolve) => { resolveDiscovery = resolve; }),
-    );
-
+  it("registers provider droid-cli synchronously without starting droid probes or discovery", async () => {
     const registerProvider = vi.fn();
     const mockPi = {
       registerProvider,
@@ -121,23 +69,63 @@ describe("droid-cli extension entrypoint", () => {
 
     const mod = await import("../../index");
     const result = mod.default(mockPi as never);
-
-    expect(result).toBeUndefined();
-    expect(runtimeMocks.validateCliPresenceAsync).toHaveBeenCalledTimes(1);
-    expect(runtimeMocks.discoverDroidModels).toHaveBeenCalledTimes(1);
-    expect(registerProvider).toHaveBeenCalledTimes(1);
-    expect(registerProvider).toHaveBeenCalledWith("droid-cli", expect.objectContaining({ models: [] }));
-    expect(runtimeMocks.validateCliAuthAsync).not.toHaveBeenCalled();
-
-    resolvePresence({ ok: true });
-    resolveDiscovery(["droid-pro"]);
     await flushAsyncRegistration();
 
+    expect(result).toBeUndefined();
+    expect(runtimeMocks.validateCliPresenceAsync).not.toHaveBeenCalled();
+    expect(runtimeMocks.validateCliAuthAsync).not.toHaveBeenCalled();
+    expect(runtimeMocks.discoverDroidModels).not.toHaveBeenCalled();
+
+    expect(registerProvider).toHaveBeenCalledTimes(1);
+    const [providerId, config] = registerProvider.mock.calls[0] as [string, {
+      baseUrl: string;
+      api: string;
+      apiKey: string;
+      models: unknown[];
+      streamSimple: Function;
+    }];
+
+    expect(providerId).toBe("droid-cli");
+    expect(config.baseUrl).toBe("droid-cli");
+    expect(config.api).toBe("droid-cli");
+    expect(config.apiKey).toBe("unused");
+    expect(config.models).toEqual([]);
+    expect(typeof config.streamSimple).toBe("function");
+  });
+
+  it("runs validation once when a droid stream is actually used", async () => {
+    const registerProvider = vi.fn();
+    const mockPi = {
+      registerProvider,
+      on: vi.fn(),
+      getAllTools: vi.fn(() => []),
+      setActiveTools: vi.fn(),
+    };
+
+    const mod = await import("../../index");
+    mod.default(mockPi as never);
+    const config = registerProvider.mock.calls[0]?.[1] as {
+      streamSimple: (model: unknown, context: unknown, options?: Record<string, unknown>) => unknown;
+    };
+
+    config.streamSimple({ id: "droid-pro" }, { messages: [] }, {});
+    config.streamSimple({ id: "droid-pro" }, { messages: [] }, {});
+    await flushAsyncRegistration();
+
+    expect(runtimeMocks.validateCliPresenceAsync).toHaveBeenCalledTimes(1);
     expect(runtimeMocks.validateCliAuthAsync).toHaveBeenCalledTimes(1);
-    expect(registerProvider).toHaveBeenCalledTimes(2);
-    expect(registerProvider.mock.calls[1]?.[1]).toMatchObject({
-      models: [expect.objectContaining({ id: "droid-pro" })],
-    });
+    expect(runtimeMocks.discoverDroidModels).not.toHaveBeenCalled();
+  });
+
+  it("discovers provider models only when explicitly requested", async () => {
+    const mod = await import("../../index");
+
+    await expect(mod.discoverDroidProviderModels()).resolves.toEqual([
+      expect.objectContaining({ id: "droid-pro", name: "droid-pro", contextWindow: 200_000, maxTokens: 8_192 }),
+      expect.objectContaining({ id: "droid-max", name: "droid-max", contextWindow: 200_000, maxTokens: 8_192 }),
+    ]);
+
+    expect(runtimeMocks.discoverDroidModels).toHaveBeenCalledTimes(1);
   });
 
   it("activates all registered tools on session_start", async () => {
@@ -177,6 +165,10 @@ describe("droid-cli extension entrypoint", () => {
 
     const mod = await import("../../index");
     mod.default(mockPi as never);
+    const config = mockPi.registerProvider.mock.calls[0]?.[1] as {
+      streamSimple: (model: unknown, context: unknown, options?: Record<string, unknown>) => unknown;
+    };
+    config.streamSimple({ id: "droid-pro" }, { messages: [] }, {});
     await flushAsyncRegistration();
 
     expect(warnSpy).toHaveBeenCalledWith("[droid-cli] droid CLI missing");
@@ -188,21 +180,9 @@ describe("droid-cli extension entrypoint", () => {
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
     runtimeMocks.discoverDroidModels.mockRejectedValue(new Error("boom"));
 
-    const registerProvider = vi.fn();
-    const mockPi = {
-      registerProvider,
-      on: vi.fn(),
-      getAllTools: vi.fn(() => []),
-      setActiveTools: vi.fn(),
-    };
-
     const mod = await import("../../index");
-    mod.default(mockPi as never);
-    await flushAsyncRegistration();
+    await expect(mod.discoverDroidProviderModels()).resolves.toEqual([]);
 
-    const config = registerProvider.mock.calls[0]?.[1] as { models: unknown[] };
-    expect(config.models).toEqual([]);
-    expect(registerProvider).toHaveBeenCalledTimes(1);
     expect(warnSpy).toHaveBeenCalledWith(
       "[droid-cli] model auto-discovery failed; registering provider with empty model list",
       expect.any(Error),

@@ -2,19 +2,68 @@
 /* FNXC:RoadmapStyling 2026-06-21-00:00: Roadmap surfaces must use defined dashboard tokens (--card, --surface, --text). Retired elevated-surface, input-surface, and primary-text aliases rendered surfaces transparent and text uncolored (FN-6867). A CSS-token guard prevents reintroduction. */
 .roadmaps-view {
   display: flex;
+  flex-direction: column;
   height: 100%;
   overflow: hidden;
+  background: var(--bg);
 }
 
 .roadmaps-view--loading,
 .roadmaps-view--error {
   display: flex;
+}
+
+.roadmaps-view__top-header {
+  box-sizing: border-box;
+  display: flex;
+  flex: 0 0 auto;
   align-items: center;
-  justify-content: center;
+  min-height: var(--view-header-min-height, 61px);
+  padding: var(--space-lg) var(--space-xl);
+  background: var(--surface);
+  border-bottom: none;
+}
+
+.roadmaps-view__top-title {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  min-width: 0;
+  margin: 0;
+  color: var(--text);
+  font-size: 1.125rem;
+  font-weight: 600;
+}
+
+.roadmaps-view__top-title svg {
+  flex-shrink: 0;
+  color: var(--todo);
+}
+
+.roadmaps-view__top-title span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.roadmaps-view__body {
+  display: flex;
+  flex: 1 1 auto;
+  min-height: 0;
+  min-width: 0;
+  padding: var(--space-lg);
+  gap: var(--space-lg);
+  overflow: hidden;
 }
 
 .roadmaps-view__loading-state,
 .roadmaps-view__error-state {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
   text-align: center;
   color: var(--text-muted);
 }
@@ -76,8 +125,10 @@
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
-  border-right: 1px solid var(--border);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
   background: var(--card);
+  box-shadow: var(--shadow-sm);
 }
 
 .roadmaps-view__sidebar-header {
@@ -220,6 +271,10 @@
   flex-direction: column;
   min-width: 0;
   overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  box-shadow: var(--shadow-sm);
 }
 
 .roadmaps-view__empty-main {

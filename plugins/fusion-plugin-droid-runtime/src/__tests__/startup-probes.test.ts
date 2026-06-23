@@ -37,9 +37,11 @@ describe("Droid startup validation probes", () => {
 
     await expect(validateCliPresenceAsync()).resolves.toMatchObject({ ok: false });
     expect(spawnMock).toHaveBeenCalledWith("droid", ["--version"], expect.objectContaining({ stdio: "ignore" }));
+    const options = spawnMock.mock.calls[0]?.[2] as { stdio: string };
+    expect(options.stdio).not.toBe("inherit");
   });
 
-  it("resolves ok when `droid --version` exits 0", async () => {
+  it("resolves ok when `droid --version` exits 0 without inheriting stdio", async () => {
     spawnMock.mockImplementationOnce(() => {
       const proc = makeProbeProc();
       queueMicrotask(() => proc.emit("exit", 0));
@@ -47,6 +49,7 @@ describe("Droid startup validation probes", () => {
     });
 
     await expect(validateCliPresenceAsync()).resolves.toEqual({ ok: true });
+    expect(spawnMock).toHaveBeenCalledWith("droid", ["--version"], expect.objectContaining({ stdio: "ignore" }));
   });
 
   it("SIGKILLs and resolves unavailable when `droid --version` hangs", async () => {

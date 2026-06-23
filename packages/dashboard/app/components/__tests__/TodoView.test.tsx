@@ -29,8 +29,10 @@ vi.mock("lucide-react", () => ({
   X: () => <span data-testid="icon-x" />,
   ChevronUp: () => <span data-testid="icon-chevron-up" />,
   ChevronDown: () => <span data-testid="icon-chevron-down" />,
+  ChevronLeft: () => <span data-testid="icon-chevron-left" />,
   Loader2: () => <span data-testid="icon-loader" />,
   ListChecks: () => <span data-testid="icon-list-checks" />,
+  CheckSquare: () => <span data-testid="icon-check-square" />,
   Bot: () => <span data-testid="icon-bot" />,
   PlusCircle: () => <span data-testid="icon-plus-circle" />,
   Lightbulb: () => <span data-testid="icon-lightbulb" />,
@@ -77,10 +79,15 @@ describe("TodoView", () => {
     mockUseTodoLists.mockReturnValue(createMockTodoLists());
   });
 
-  it("renders the docked view header", () => {
+  // FNXC:Todos 2026-06-22-09:30: FN-6781 removed the redundant in-view "Todos" title +
+  // subtitle — the right dock / left-sidebar nav already labels the view, so the list/detail
+  // layout owns the full height with no header above it. Assert the view mounts and the
+  // redundant header is gone.
+  it("renders the docked view without a redundant header", () => {
     render(<TodoView addToast={addToast} />);
-    expect(screen.getByRole("heading", { level: 2, name: "Todos" })).toBeInTheDocument();
-    expect(screen.getByText("Manage reusable todo lists for your project.")).toBeInTheDocument();
+    expect(screen.getByTestId("todo-view-root")).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { level: 2, name: "Todos" })).not.toBeInTheDocument();
+    expect(screen.queryByText("Manage reusable todo lists for your project.")).not.toBeInTheDocument();
   });
 
   it("renders sidebar with list names", () => {

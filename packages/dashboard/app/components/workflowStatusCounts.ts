@@ -5,15 +5,19 @@ export interface WorkflowStatusCounts {
   todo: number;
   inProgress: number;
   done: number;
+  merging: number;
 }
 
 const EMPTY_COUNTS = (): WorkflowStatusCounts => ({
   todo: 0,
   inProgress: 0,
   done: 0,
+  merging: 0,
 });
 
 type WorkflowStatusBucket = keyof WorkflowStatusCounts | "excluded";
+
+const MERGING_STATUSES = new Set(["merging", "merging-pr", "merging-fix"]);
 
 /**
  * FNXC:WorkflowSwitcher 2026-06-20-00:09:
@@ -83,6 +87,13 @@ export function computeWorkflowStatusCounts(
 
     const counts = countsByWorkflow.get(workflow.id) ?? EMPTY_COUNTS();
     counts[bucket] += 1;
+    if (MERGING_STATUSES.has(task.status ?? "")) {
+      /*
+      FNXC:WorkflowSwitcher 2026-06-22-20:30:
+      Workflow boards need a visible flashing indicator in the workflow dropdown when any task assigned to that workflow is actively merging, independent of whether the workflow's review/merge column buckets as Todo or In Progress.
+      */
+      counts.merging += 1;
+    }
     countsByWorkflow.set(workflow.id, counts);
   }
 

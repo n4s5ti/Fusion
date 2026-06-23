@@ -24,17 +24,21 @@ type StreamSimpleHandler = NonNullable<Parameters<ExtensionAPI["registerProvider
 function runCliValidationOnce(): Promise<void> {
   if (cliValidationPromise) return cliValidationPromise;
   cliValidationPromise = (async () => {
-    const presence = await validateCliPresenceAsync();
-    if (!presence.ok) {
-      console.warn(`[droid-cli] ${presence.error.message}`);
-      return;
+    try {
+      const presence = await validateCliPresenceAsync();
+      if (!presence.ok) {
+        console.warn(`[droid-cli] ${presence.error.message}`);
+        return;
+      }
+      await validateCliAuthAsync();
+    } catch (error) {
+      console.warn("[droid-cli] CLI validation failed; continuing without blocking the session", error);
     }
-    await validateCliAuthAsync();
   })();
   return cliValidationPromise;
 }
 
-async function getDiscoveredModels() {
+export async function discoverDroidProviderModels() {
   if (!discoveredModelsPromise) {
     discoveredModelsPromise = (async () => {
       try {
@@ -104,6 +108,7 @@ function registerDroidProvider(pi: ExtensionAPI, models: DiscoveredModel[]) {
     api: "droid-cli",
     models,
     streamSimple: ((model, context, options) => {
+      void runCliValidationOnce();
       const configPath = ensureMcpConfig(
         pi,
         (context as { tools?: ReadonlyArray<{ name: string; description: string; parameters: Record<string, unknown> }> }).tools,
@@ -119,10 +124,12 @@ function registerDroidProvider(pi: ExtensionAPI, models: DiscoveredModel[]) {
 
 export default function (pi: ExtensionAPI) {
   /*
+  FNXC:CliRuntime 2026-06-21-18:43:
+  Engine and dashboard startup must not start the local Droid CLI merely because the optional extension loaded. Register the provider synchronously with an empty model list, defer validation until an actual droid stream starts, and leave model discovery to explicit picker/status callers so boot with `useDroidCli` enabled still performs zero `droid` spawns.
+
   FNXC:CliRuntime 2026-06-21-12:00:
-  Engine and dashboard startup must not wait for local Droid CLI probes. Register the provider synchronously with an empty model list, then launch presence/auth/model discovery as fire-and-forget bounded probes so a missing or wedged `droid` binary cannot stall extension loading.
+  Engine and dashboard startup must not wait for local Droid CLI probes. Every surviving validation/discovery helper remains fire-and-forget, bounded, non-interactive, and resolve-only so a missing or wedged `droid` binary cannot stall extension loading or a session start.
   */
-  void runCliValidationOnce();
 
   pi.on("session_start", async () => {
     const allTools = pi.getAllTools();
@@ -136,14 +143,4 @@ export default function (pi: ExtensionAPI) {
   } catch (err) {
     console.error("[droid-cli] Failed to register provider:", err);
   }
-
-  void (async () => {
-    const models = await getDiscoveredModels();
-    if (models.length === 0) return;
-    try {
-      registerDroidProvider(pi, models);
-    } catch (err) {
-      console.error("[droid-cli] Failed to refresh discovered provider models:", err);
-    }
-  })();
 }

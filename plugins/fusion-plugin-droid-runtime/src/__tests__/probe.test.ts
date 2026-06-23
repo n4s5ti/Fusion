@@ -42,6 +42,11 @@ describe("probeDroidBinary", () => {
     const result = await probeDroidBinary({ timeoutMs: 10 });
     expect(result.available).toBe(false);
     expect(result.reason).toContain("Binary not found or not executable");
+    expect(spawnMock).toHaveBeenCalledWith("droid", ["--version"], expect.objectContaining({
+      stdio: ["ignore", "pipe", "pipe"],
+    }));
+    const options = spawnMock.mock.calls[0]?.[2] as { stdio: string[] };
+    expect(options.stdio).not.toContain("inherit");
   });
 
   it("returns unavailable and SIGKILLs when the binary hangs", async () => {
@@ -85,6 +90,9 @@ describe("probeDroidBinary", () => {
     const result = await probeDroidBinary();
     expect(result.available).toBe(true);
     expect(result.version).toBe("droid 1.2.3");
+    expect(spawnMock).toHaveBeenCalledWith("droid", ["--version"], expect.objectContaining({
+      stdio: ["ignore", "pipe", "pipe"],
+    }));
   });
 
   it("uses binary path from plugin settings", async () => {

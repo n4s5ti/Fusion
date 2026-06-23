@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useMemo, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
-import { Maximize2, X } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
+import { Maximize2 } from "lucide-react";
+import { useTranslation } from "react-i18next";
 import {
   findOverflowViewEntry,
   getVisibleOverflowViewEntries,
@@ -12,7 +13,11 @@ import "./RightDock.css";
 
 export const RIGHT_DOCK_DEFAULT_WIDTH = 360;
 export const RIGHT_DOCK_MIN_WIDTH = 280;
-export const RIGHT_DOCK_MAX_WIDTH = 720;
+/*
+FNXC:RightDock 2026-06-23-00:50:
+The right-dock resize cap was raised 720 -> 1280 so the user can drag the dock MUCH wider (e.g. to run the Files view as a true two-pane tree|viewer split). The clamp and the persisted-width read both funnel through clampRightDockWidth/RIGHT_DOCK_MAX_WIDTH, so a single constant governs the drag clamp, the keyboard-step clamp, the stored-width read, and the resize-handle aria-valuemax. The CSS still wraps the rendered width in min(100%, ...), so the dock can never exceed the viewport even at the larger cap.
+*/
+export const RIGHT_DOCK_MAX_WIDTH = 1280;
 export const RIGHT_DOCK_WIDTH_STORAGE_KEY = "fusion:right-dock-width";
 export const RIGHT_DOCK_VIEW_STORAGE_KEY = "fusion:right-dock-view";
 export const RIGHT_DOCK_OPEN_STORAGE_KEY = "fusion:right-dock-open";
@@ -29,8 +34,8 @@ export function readStoredRightDockWidth(): number {
 }
 
 export function readStoredRightDockOpen(): boolean {
-  if (typeof window === "undefined") return false;
-  return window.localStorage.getItem(RIGHT_DOCK_OPEN_STORAGE_KEY) === "true";
+  if (typeof window === "undefined") return true;
+  return window.localStorage.getItem(RIGHT_DOCK_OPEN_STORAGE_KEY) !== "false";
 }
 
 export function persistRightDockOpen(open: boolean): void {
@@ -41,10 +46,15 @@ export function persistRightDockOpen(open: boolean): void {
   }
 }
 
+function isInlineOverflowViewKey(key: string, options: OverflowViewVisibilityOptions): key is OverflowViewKey {
+  const entry = findOverflowViewEntry(key as OverflowViewKey, options);
+  return Boolean(entry?.render);
+}
+
 function readStoredRightDockView(options: OverflowViewVisibilityOptions): OverflowViewKey {
   if (typeof window === "undefined") return "files";
   const stored = window.localStorage.getItem(RIGHT_DOCK_VIEW_STORAGE_KEY);
-  return stored && isOverflowViewKeyVisible(stored, options) ? stored : "files";
+  return stored && isOverflowViewKeyVisible(stored, options) && isInlineOverflowViewKey(stored, options) ? stored : "files";
 }
 
 function persistRightDockWidth(width: number): void {
@@ -65,7 +75,6 @@ function persistRightDockView(key: OverflowViewKey): void {
 
 export interface RightDockProps {
   open: boolean;
-  onOpenChange: (open: boolean) => void;
   renderProps: OverflowViewRenderProps;
   visibilityOptions?: OverflowViewVisibilityOptions;
   onExpand?: (key: OverflowViewKey) => void;
@@ -75,37 +84,55 @@ export interface RightDockProps {
 /*
 FNXC:Navigation 2026-06-21-00:00:
 The right dock is an auxiliary tablet/desktop surface: it remembers the last overflow destination, starts on Files when none is valid, and resizes from its left edge without changing the canonical Header/MobileNavBar active navigation state.
+
+FNXC:Navigation 2026-06-21-20:14:
+FN-6882 splits right-dock entries into launcher actions and inline views. Action tabs invoke their existing Header handlers without replacing the Files body; only inline entries persist selection or expand into the modal.
+
+FNXC:Navigation 2026-06-22-09:00:
+The right dock is visible by default on tablet/desktop project screens. Show/hide is owned solely by the canonical Header right-sidebar toggle (the in-dock collapse toggle was removed); the dock takes only `open` and renders null when closed so the main content reclaims the space.
+
+FNXC:i18n 2026-06-22-00:00:
+Right-dock affordance labels are user-facing accessibility copy, so route them through the app namespace and keep English defaults colocated with the component for tests and fallback rendering.
 */
 export function RightDock({
   open,
-  onOpenChange,
   renderProps,
   visibilityOptions = {},
   onExpand,
   footerVisible = false,
 }: RightDockProps) {
+  const { t } = useTranslation("app");
   const entries = useMemo(() => getVisibleOverflowViewEntries(visibilityOptions), [visibilityOptions]);
   const [selectedKey, setSelectedKey] = useState<OverflowViewKey>(() => readStoredRightDockView(visibilityOptions));
   const [width, setWidth] = useState(readStoredRightDockWidth);
+  /*
+  FNXC:Navigation 2026-06-22-09:00:
+  The dock renders null while closed, so a resize drag that is still mid-flight when the dock closes (or the component unmounts) would leave document pointer listeners and a frozen body.userSelect behind. Store the active drag teardown in a ref and run it from an unmount-cleanup effect to plug that leak.
+  */
+  const resizeTeardownRef = useRef<(() => void) | null>(null);
+  useEffect(() => () => resizeTeardownRef.current?.(), []);
 
   useEffect(() => {
-    if (!isOverflowViewKeyVisible(selectedKey, visibilityOptions)) {
+    if (!isOverflowViewKeyVisible(selectedKey, visibilityOptions) || !isInlineOverflowViewKey(selectedKey, visibilityOptions)) {
       setSelectedKey("files");
       persistRightDockView("files");
     }
   }, [selectedKey, visibilityOptions]);
 
-  const selectedEntry = findOverflowViewEntry(selectedKey, visibilityOptions) ?? entries[0];
+  const selectedEntry = (findOverflowViewEntry(selectedKey, visibilityOptions)?.render
+    ? findOverflowViewEntry(selectedKey, visibilityOptions)
+    : findOverflowViewEntry("files", visibilityOptions)) ?? entries.find((entry) => entry.render);
 
   const selectEntry = useCallback((key: OverflowViewKey) => {
+    const entry = findOverflowViewEntry(key, visibilityOptions);
+    if (entry?.onActivate) {
+      entry.onActivate(renderProps);
+      return;
+    }
+    if (!entry?.render) return;
     setSelectedKey(key);
     persistRightDockView(key);
-  }, []);
-
-  const closeDock = useCallback(() => {
-    persistRightDockOpen(false);
-    onOpenChange(false);
-  }, [onOpenChange]);
+  }, [renderProps, visibilityOptions]);
 
   const handleResizeStart = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
     event.preventDefault();
@@ -119,6 +146,7 @@ export function RightDock({
     const startX = event.clientX;
     const startWidth = width;
     let latestWidth = startWidth;
+    const previousUserSelect = document.body.style.userSelect;
     document.body.style.userSelect = "none";
 
     const onPointerMove = (moveEvent: PointerEvent) => {
@@ -127,18 +155,28 @@ export function RightDock({
       setWidth(nextWidth);
     };
 
-    const onPointerUp = (upEvent: PointerEvent) => {
-      if (typeof resizeHandle.releasePointerCapture === "function") {
+    /*
+    FNXC:Navigation 2026-06-22-09:00:
+    teardown restores body.userSelect, drops the document pointermove/up/cancel listeners, and persists the final width. It runs on pointerup, pointercancel (touch/pen interruption), and on unmount/dock-close via resizeTeardownRef so listeners never leak.
+    */
+    const teardown = (upEvent?: PointerEvent) => {
+      if (upEvent && typeof resizeHandle.releasePointerCapture === "function") {
         resizeHandle.releasePointerCapture(upEvent.pointerId);
       }
-      document.body.style.userSelect = "";
+      document.body.style.userSelect = previousUserSelect;
       document.removeEventListener("pointermove", onPointerMove);
       document.removeEventListener("pointerup", onPointerUp);
+      document.removeEventListener("pointercancel", onPointerUp);
+      resizeTeardownRef.current = null;
       persistRightDockWidth(latestWidth);
     };
 
+    const onPointerUp = (upEvent: PointerEvent) => teardown(upEvent);
+
+    resizeTeardownRef.current = () => teardown();
     document.addEventListener("pointermove", onPointerMove);
     document.addEventListener("pointerup", onPointerUp);
+    document.addEventListener("pointercancel", onPointerUp);
   }, [width]);
 
   const handleResizeKeyDown = useCallback((event: ReactKeyboardEvent<HTMLDivElement>) => {
@@ -151,37 +189,49 @@ export function RightDock({
     persistRightDockWidth(nextWidth);
   }, [width]);
 
-  if (!open || !selectedEntry) {
+  if (!selectedEntry) {
+    return null;
+  }
+
+  /*
+  FNXC:Navigation 2026-06-22-00:00:
+  The right dock is no longer a persistent rail: when closed it renders nothing so the main content reclaims the space (the shell is flex, so a null dock simply reflows). The Header right-sidebar toggle is the canonical show/hide control.
+  */
+  if (!open) {
     return null;
   }
 
   const SelectedIcon = selectedEntry.icon;
+  const dockWidth = `${width}px`;
+  const expandSelectedViewLabel = t("rightDock.expandView", "Expand {{label}}", { label: selectedEntry.label });
 
   return (
     <aside
-      className={`right-dock${footerVisible ? " right-dock--with-footer" : ""}`}
-      style={{ width: `${width}px` }}
-      aria-label="Right dock"
+      className={`right-dock${open ? "" : " right-dock--collapsed"}${footerVisible ? " right-dock--with-footer" : ""}`}
+      style={dockWidth ? { width: dockWidth } : undefined}
+      aria-label={t("rightDock.label", "Right dock")}
       data-testid="right-dock"
     >
-      <div
-        className="right-dock__resize-handle"
-        role="separator"
-        aria-orientation="vertical"
-        aria-valuemin={RIGHT_DOCK_MIN_WIDTH}
-        aria-valuemax={RIGHT_DOCK_MAX_WIDTH}
-        aria-valuenow={width}
-        aria-label="Resize right dock"
-        tabIndex={0}
-        data-testid="right-dock-resize-handle"
-        onPointerDown={handleResizeStart}
-        onKeyDown={handleResizeKeyDown}
-      />
+      {open ? (
+        <div
+          className="right-dock__resize-handle"
+          role="separator"
+          aria-orientation="vertical"
+          aria-valuemin={RIGHT_DOCK_MIN_WIDTH}
+          aria-valuemax={RIGHT_DOCK_MAX_WIDTH}
+          aria-valuenow={width}
+          aria-label={t("rightDock.resize", "Resize right dock")}
+          tabIndex={0}
+          data-testid="right-dock-resize-handle"
+          onPointerDown={handleResizeStart}
+          onKeyDown={handleResizeKeyDown}
+        />
+      ) : null}
       <div className="right-dock__toolbar">
-        <div className="right-dock__tabs" role="tablist" aria-label="Right dock views">
+        <div className="right-dock__tabs" role="tablist" aria-label={t("rightDock.views", "Right dock views")}>
           {entries.map((entry) => {
             const Icon = entry.icon;
-            const selected = entry.key === selectedEntry.key;
+            const selected = Boolean(entry.render && entry.key === selectedEntry.key);
             return (
               <button
                 key={entry.key}
@@ -200,35 +250,35 @@ export function RightDock({
           })}
         </div>
         <div className="right-dock__actions">
-          <button
-            type="button"
-            className="btn-icon right-dock__expand"
-            aria-label={`Expand ${selectedEntry.label}`}
-            title={`Expand ${selectedEntry.label}`}
-            data-testid="right-dock-expand"
-            onClick={() => onExpand?.(selectedEntry.key)}
-          >
-            <Maximize2 size={16} />
-          </button>
-          <button
-            type="button"
-            className="btn-icon right-dock__close"
-            aria-label="Close right dock"
-            title="Close right dock"
-            data-testid="right-dock-close"
-            onClick={closeDock}
-          >
-            <X size={16} />
-          </button>
+          {open && selectedEntry.render ? (
+            <button
+              type="button"
+              className="btn-icon right-dock__expand"
+              aria-label={expandSelectedViewLabel}
+              title={expandSelectedViewLabel}
+              data-testid="right-dock-expand"
+              onClick={() => onExpand?.(selectedEntry.key)}
+            >
+              <Maximize2 size={16} />
+            </button>
+          ) : null}
         </div>
       </div>
-      <div className="right-dock__header">
-        <SelectedIcon size={16} />
-        <div className="right-dock__title" role="heading" aria-level={3}>{selectedEntry.label}</div>
-      </div>
-      <div className="right-dock__body" role="tabpanel" aria-label={selectedEntry.label} data-testid="right-dock-body">
-        {selectedEntry.render(renderProps)}
-      </div>
+      {open ? (
+        <>
+          <div className="right-dock__header">
+            <SelectedIcon size={16} />
+            <div className="right-dock__title" role="heading" aria-level={3}>{selectedEntry.label}</div>
+          </div>
+          <div className="right-dock__body" role="tabpanel" aria-label={selectedEntry.label} data-testid="right-dock-body">
+            {/*
+            FNXC:RightDockFiles 2026-06-23-00:50:
+            Thread the live dock width down to registry render functions as `dockWidth` (alongside surface="dock") so a view can deterministically choose its wide layout from the actual dock size. The Files entry uses this to force two-pane when the dock is wide enough, sidestepping the @container query that never reliably fired in the narrow-vs-wide dock body.
+            */}
+            {selectedEntry.render?.({ ...renderProps, surface: "dock", dockWidth: width })}
+          </div>
+        </>
+      ) : null}
     </aside>
   );
 }
