@@ -5,7 +5,7 @@
 ## Latest baseline
 
 - Cycle: **2026-W26**
-- Captured at: **2026-06-22T04:22:44.873Z**
+- Captured at: **2026-06-22T08:03:10.119Z**
 - Timing snapshot: `scripts/test-timings.json` captured at **2026-06-03T23:45:49.672Z**
 - Quarantine ledger: `scripts/lib/test-quarantine.json`
 
@@ -13,15 +13,15 @@
 
 | Metric | Current | Delta vs previous |
 |---|---:|---:|
-| Merge gate wall-time (`pnpm test:gate`) | 8.3s | +2.9s |
-| Boot smoke wall-time (`pnpm smoke:boot`) | unavailable | n/a |
-| Changed-only test wall-time (`pnpm test`) | 48.8s | +41.5s |
-| Quarantine / flake count | 0 | 0 |
+| Merge gate wall-time (`pnpm test:gate`) | 6.5s | -1.8s |
+| Boot smoke wall-time (`pnpm smoke:boot`) | 18.8s | n/a |
+| Changed-only test wall-time (`pnpm test`) | 9.8s | -39.0s |
+| Quarantine / flake count | 1 | +1 |
 | Deletion-due quarantines | 0 | n/a |
 
 ## Measurement failures
 
-- Boot smoke (`pnpm smoke:boot`): exit 1 after 406ms
+- None recorded.
 
 ## Slowest 20 test files
 
@@ -52,7 +52,7 @@
 
 | Age bucket | Count |
 |---|---:|
-| 0-6 days | 0 |
+| 0-6 days | 1 |
 | 7-13 days | 0 |
 | deletion due (>=14 days) | 0 |
 | unknown/future | 0 |
@@ -67,16 +67,16 @@
 
 | Row | Captured at | Gate | Boot smoke | `pnpm test` | Quarantine count |
 |---|---|---:|---:|---:|---:|
-| Previous | 2026-06-18T16:12:01.248Z | 5.4s | 18.1s | 7.2s | 0 |
-| Latest | 2026-06-22T04:22:44.873Z | 8.3s | unavailable | 48.8s | 0 |
-| Delta | — | +2.9s | n/a | +41.5s | 0 |
+| Previous | 2026-06-22T04:22:44.873Z | 8.3s | unavailable | 48.8s | 0 |
+| Latest | 2026-06-22T08:03:10.119Z | 6.5s | 18.8s | 9.8s | 1 |
+| Delta | — | -1.8s | n/a | -39.0s | +1 |
 
 _Future weekly rows append to `scripts/test-velocity-history.json`; compare the latest row against the previous row before posting to #leads._
 
 ## Post to #leads
 
 ```text
-FN-6612 weekly test velocity: gate 8.3s (+2.9s), boot smoke unavailable (n/a), pnpm test 48.8s (+41.5s), quarantine ledger 0 (0). Slowest file: packages/engine/src/__tests__/reliability-interactions/shared-branch-group-lifecycle.test.ts at 13.9s. Deletion-due quarantines: 0.
+FN-6612 weekly test velocity: gate 6.5s (-1.8s), boot smoke 18.8s (n/a), pnpm test 9.8s (-39.0s), quarantine ledger 1 (+1). Slowest file: packages/engine/src/__tests__/reliability-interactions/shared-branch-group-lifecycle.test.ts at 13.9s. Deletion-due quarantines: 0.
 ```
 
 ## How to refresh
