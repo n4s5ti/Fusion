@@ -397,6 +397,7 @@ Mailbox view shows inbox/outbox communication threads and unread state.
 - Inbox renders one row per message (no sender-based collapsing)
 - clicking a message in the Mail tab opens the task detail pane with full message content and conversation context
 - reply rows in the mailbox modal can expand inline to show the replied-to message context for easier thread reading
+- when an agent or dashboard chat session registers an artifact with `fn_artifact_register`, Fusion sends a best-effort `system` → user inbox message announcing the new artifact (for example, `New image artifact registered: <title>`) with metadata for `artifactId`, `artifactType`, `title`, `authorId`, and optional `taskId`; notification delivery is informational and never blocks or rolls back the artifact registration
 - mailbox now includes an **Approvals** tab with pending and history filters (`approved` / `denied` / `completed`), approval detail context, and inline approve/deny actions for pending requests
 - in the **Agents** tab, the agent selector now includes **All agents**, which shows one combined agent-to-agent stream (with sender + recipient labels); selecting a specific agent still shows Inbox/Outbox subtabs
 - mailbox entry points now show unread/pending indicators: the desktop/tablet Header mailbox toggle shows a pending-approval dot first or an unread dot when unread mail exists without pending approvals, the mobile bottom-nav Mailbox tab carries the mobile badges/dots, and the compact Header actions overflow keeps a Mailbox entry only when the mobile bottom nav is disabled
@@ -552,20 +553,27 @@ For per-run aggregation, `GET /api/agents/:id/runs/:runId/cited-goals` returns `
 
 ## Artifacts View
 
-Artifacts view aggregates task documents, project markdown files, and registered artifacts.
+Artifacts view aggregates project markdown files, task documents, and registered artifacts. The dashboard title is **Artifacts**; the internal tab bar keeps the shipped **Project Files**, **Task Documents**, and **Artifacts** labels.
 
 Features:
 
 - Group task documents by task ID (with revision history metadata)
 - Search documents across tasks
 - Open project markdown files with inline preview
-- Browse the **Artifacts** tab for media registered by agents, users, or the system across tasks
+- Browse the **Artifacts** tab for registry media registered by any agent, dashboard chat/user action, or system tool across tasks
+- Use the tab-count badges to see the current counts for Project Files, Task Documents, and Artifacts; the Artifacts badge reflects the loaded `GET /api/artifacts` result set, including active search filters
 - Use the responsive media gallery to scan thumbnail-first image and video cards with consistent framing, while audio, document, and generic artifacts remain readable cards in the same grid
 - Expand image and video artifact thumbnails into a full-size lightbox; dismiss it with the close button, backdrop click, or Escape while non-previewable artifact cards keep their normal controls and links
-- Preview artifact images inline, play video and audio with native controls, read document previews, and open generic artifacts through their media URL
-- Jump directly from a document group or artifact card to the owning task detail modal when a task is linked; inside task detail, the **Artifacts** tab shows that task's documents and registered media artifacts together
+- Preview artifact images inline, play video and audio with native controls, read document previews from inline content/description, and open generic `other` artifacts through their media URL (`GET /api/artifacts/:id/media`)
+- Read artifact metadata on each card: type badge (`Image`, `Video`, `Audio`, `Document`, or `Other`), title, optional description/content preview, author ID, timestamp, and linked task title/ID when present
+- Use **Open task** on an artifact card to jump back to the originating task when the artifact has a `taskId`; inside task detail, the **Artifacts** tab shows that task's documents and registered media artifacts together
+- Loading state: the Artifacts tab shows `Loading artifacts…` while the first artifact list request is pending and no artifact results are loaded
+- Empty states: with no search query it shows `No artifacts yet.` plus the hint that artifacts are created by agents, users, and system tools; with a search query it shows `No artifacts match "<query>".`
+- Error state: a failed artifact list request uses the shared `Failed to load artifacts: <error>` panel with a **Retry** action that re-runs the artifact fetch
 - Toggle between raw text and rendered markdown using the **Markdown/Plain** button
 - Highlight text in raw or rendered project-file previews, choose **Add comment**, and send the file path, selected snippet, and your comment to the **New Task** dialog
+
+Agent registrations also surface through the [Mailbox View](#mailbox-view): successful `fn_artifact_register` calls send a best-effort system inbox notification so users can discover new media even before opening the gallery.
 
 ![Artifacts view](./screenshots/documents-view.png)
 

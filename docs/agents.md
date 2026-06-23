@@ -33,7 +33,18 @@ fn chat <agent-id> [message…] [--once] [--non-interactive] [--poll-ms <n>]
 - In dashboard model-loop chat (main chat, QuickChat, and room responders), typing `/skill:{name}` requests that skill for the current AI session and strips the slash token from the prompt sent to the model. The requested skill is still subject to the normal enabled/disabled execution-skill filters; CLI-agent-backed PTY chat keeps raw terminal input semantics and does not interpret this command.
 - Dashboard chat and planning sessions with a scoped task store expose `fn_task_document_write` and `fn_task_document_read`; because neither lane has an ambient task, both tools require an explicit `task_id`.
 - Agent workflow-routing tools follow an intent boundary: agents may select or change a task workflow only when the user explicitly requested that workflow or when the agent created the task. Executors must not call `fn_workflow_select` to reroute the task they are executing unless the task instructions or a user steering comment explicitly asks for the workflow change.
-- Executor, heartbeat, and dashboard chat sessions expose artifact registry tools: `fn_artifact_register` publishes document/image/video/audio/other artifacts with inline `content` or a `uri`, `fn_artifact_list` discovers artifacts across agents/tasks with filters, and `fn_artifact_view` reads metadata plus inline content or URI references. Each successful registration sends a best-effort `system` → dashboard user inbox notification with artifact metadata; notification failures are logged but do not fail the registration. Planning sessions intentionally exclude artifact tools until they can thread the existing `MessageStore` dependency.
+- Executor, heartbeat, and dashboard chat sessions expose artifact registry tools so agents can publish and inspect multi-type deliverables without relying on the dashboard gallery. Planning sessions intentionally exclude artifact tools until they can thread the existing `MessageStore` dependency.
+
+### Artifact registry tools
+
+Artifact tools operate on the shared artifact registry, so artifacts are visible across agents and tasks when the caller has the artifact ID or can discover it through filters.
+
+- `fn_artifact_register` registers a `document`, `image`, `video`, `audio`, or `other` artifact with `title`, optional `description`, optional `mimeType`, optional inline text `content`, optional `uri`/path reference, and optional `taskId`. Tool callers should provide either inline `content` or a `uri`/path reference for media stored elsewhere. Executor/heartbeat sessions infer the registering agent as `authorId`; dashboard chat uses the `dashboard-chat` author and requires `task_id` because chat has no ambient task.
+- `fn_artifact_list` lists artifacts across agents and tasks with optional `type`, `authorId`, `taskId`, `search`, `limit`, and `offset` filters. Dashboard chat's scoped variant requires `task_id` and otherwise supports `type`, `authorId`, `search`, `limit`, and `offset` for that task.
+- `fn_artifact_view` fetches one artifact by `id`, returning registry metadata plus inline `content` when present or the stored `uri`/path reference for media artifacts.
+- Successful registration emits a best-effort `system` → `user` inbox notification to `DASHBOARD_USER_ID` with `artifactId`, `artifactType`, `title`, `authorId`, and optional `taskId` metadata. Notification delivery failures are logged and must never fail or roll back the artifact registration.
+
+For the user-facing gallery and notification UX, see [Artifacts View](./dashboard-guide.md#artifacts-view) and [Mailbox View](./dashboard-guide.md#mailbox-view). For storage layout and hydration semantics, see [Artifact registry](./storage.md#artifact-registry-fn-6777).
 
 ### Flags
 
@@ -134,13 +145,13 @@ V1 runtime action categories:
 
 The engine classifies tool calls by behavior (not namespace alone):
 
-- `file_write_delete`: built-in `write` / `edit`, plus persistent write helpers like `fn_task_document_write`, `fn_memory_append`, `fn_task_attach`
+- `file_write_delete`: built-in `write` / `edit`, plus direct filesystem attach helpers like `fn_task_attach`; low-risk coordination/registration writes such as `fn_task_document_write` and `fn_artifact_register` are handled by the coordination-exempt/read-only allow-lists below rather than this category
 - `command_execution`: built-in `bash` when not classified as mutating git
 - `git_write`: mutating git shell commands run via `bash`
 - `network_api`: external/network-facing tools (for example `fn_research_run`, `fn_research_cancel`, `fn_research_retry`, `fn_web_fetch`)
 - `task_agent_mutation`: task/agent mutation tools (for example `fn_update_agent_config`, `fn_task_pause`, `fn_spawn_agent`; action-gate task-import/create tools like `fn_task_create`, `fn_delegate_task`, `fn_task_import_github`, and `fn_task_import_github_issue` use this category in action-gate evaluation)
 - Dashboard permission editors now show per-category example tools sourced from `AGENT_PERMISSION_POLICY_CATEGORY_TOOL_EXAMPLES` in `@fusion/core`, plus a read-only exempt-tools panel for coordination/messaging bypass tools.
-- `none`: positively recognized read-only tools (`read`, `grep`, `find`, `ls`, list/show/get-style `fn_*` tools, plus permanent-agent coordination/task-creation helpers like `fn_task_create`, `fn_delegate_task`, `fn_task_import_github`, and `fn_task_import_github_issue`)
+- `none`: positively recognized read-only tools (`read`, `grep`, `find`, `ls`, list/show/get-style `fn_*` tools, plus permanent-agent coordination/task-creation helpers like `fn_task_create`, `fn_delegate_task`, `fn_task_import_github`, and `fn_task_import_github_issue`). Artifact tools mirror `fn_task_document_write` in the shipped allow-lists: `fn_artifact_register`, `fn_artifact_list`, and `fn_artifact_view` are present in `READONLY_FN_TOOLS` and `COORDINATION_EXEMPT_TOOLS`, so registration is treated as coordination/registry publication instead of a broad mutation approval.
 
 `bash` git-write heuristic in v1:
 
