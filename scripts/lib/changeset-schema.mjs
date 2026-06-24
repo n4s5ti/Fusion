@@ -56,7 +56,7 @@ export function parseChangesetBody(body) {
   if (fields.summary !== undefined || fields.category !== undefined || fields.dev !== undefined) {
     return {
       summary: (fields.summary ?? "").trim(),
-      category: fields.category ?? "internal",
+      category: fields.category ?? "",
       dev: fields.dev?.trim() || undefined,
       legacy: false,
     };
