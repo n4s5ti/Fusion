@@ -99,12 +99,15 @@ import { useChatUnreadBadge } from "./hooks/useChatUnreadBadge";
 import { useMailboxUnread } from "./hooks/useMailboxUnread";
 import { useApprovalBanner } from "./hooks/useApprovalBanner";
 import { useBranchTaskFilters } from "./hooks/useBranchTaskFilters";
+import { useDashboardHealth } from "./hooks/useDashboardHealth";
+import { useAuthTokenRecovery } from "./hooks/useAuthTokenRecovery";
+import { useScopedDismissFlag } from "./hooks/useScopedDismissFlag";
 import { NativeShellOnboardingModal } from "./components/NativeShellOnboardingModal";
 import { NativeShellConnectionManager } from "./components/NativeShellConnectionManager";
 import { ShellConnectionStatus } from "./components/ShellConnectionStatus";
 import { getShellConnectionNativeResult, type ShellConnectionNativeResult } from "./shell-native";
-import type { AiSessionSummary, DashboardHealthResponse, PluginDashboardViewEntry } from "./api";
-import { fetchDashboardHealth, fetchTaskDetail, fetchWorkflowSteps, refreshDashboardHealth } from "./api";
+import type { AiSessionSummary, PluginDashboardViewEntry } from "./api";
+import { fetchTaskDetail, fetchWorkflowSteps } from "./api";
 import { getScopedItem, removeScopedItem, setScopedItem } from "./utils/projectStorage";
 import {
   SETUP_WARNING_DISMISSED_KEY,
@@ -131,7 +134,6 @@ export {
   type CliActionDeps,
 } from "./utils/appLifecycle";
 import { subscribeSse } from "./sse-bus";
-import { AUTH_TOKEN_RECOVERY_REQUIRED_EVENT } from "./auth";
 import { AuthTokenRecoveryDialog } from "./components/AuthTokenRecoveryDialog";
 import { PlanningModeModal } from "./components/PlanningModeModal";
 import { PlanningWorkflowSwitcherSlot } from "./components/PlanningWorkflowSwitcherSlot";
@@ -599,76 +601,23 @@ function AppInner() {
       setSelectedPrId(undefined);
     }
   }, [selectedPrId, taskView]);
-  const [authTokenRecoveryOpen, setAuthTokenRecoveryOpen] = useState(false);
-  const [dashboardHealth, setDashboardHealth] = useState<DashboardHealthResponse | null>(null);
-  const [dbCorruptionRefreshing, setDbCorruptionRefreshing] = useState(false);
-  const [dbCorruptionRefreshError, setDbCorruptionRefreshError] = useState<string | null>(null);
-  const [setupWarningDismissed, setSetupWarningDismissed] = useState(
-    () => getScopedItem(SETUP_WARNING_DISMISSED_KEY, currentProject?.id) === "true",
-  );
+  const { open: authTokenRecoveryOpen } = useAuthTokenRecovery();
+  const {
+    health: dashboardHealth,
+    setHealth: setDashboardHealth,
+    refreshing: dbCorruptionRefreshing,
+    refreshError: dbCorruptionRefreshError,
+    refresh: refreshDbCorruptionHealth,
+  } = useDashboardHealth();
+  const { dismissed: setupWarningDismissed, dismiss: handleDismissSetupWarning } = useScopedDismissFlag(SETUP_WARNING_DISMISSED_KEY, currentProject?.id);
   const [capacityRiskDismissed, setCapacityRiskDismissed] = useState(
     () => getScopedItem(CAPACITY_RISK_DISMISSED_KEY, currentProject?.id) === "true",
   );
 
   useEffect(() => {
-    setSetupWarningDismissed(
-      getScopedItem(SETUP_WARNING_DISMISSED_KEY, currentProject?.id) === "true",
-    );
-  }, [currentProject?.id]);
-
-  useEffect(() => {
     setCapacityRiskDismissed(
       getScopedItem(CAPACITY_RISK_DISMISSED_KEY, currentProject?.id) === "true",
     );
-  }, [currentProject?.id]);
-
-  const refreshDbCorruptionHealth = useCallback(async () => {
-    setDbCorruptionRefreshing(true);
-    setDbCorruptionRefreshError(null);
-    try {
-      const health = await refreshDashboardHealth();
-      setDashboardHealth(health);
-    } catch (error) {
-      setDbCorruptionRefreshError(error instanceof Error ? error.message : "Failed to refresh database health.");
-    } finally {
-      setDbCorruptionRefreshing(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    let cancelled = false;
-
-    fetchDashboardHealth()
-      .then((health) => {
-        if (!cancelled) {
-          setDashboardHealth(health);
-        }
-      })
-      .catch(() => {
-        if (!cancelled) {
-          setDashboardHealth(null);
-        }
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  useEffect(() => {
-    const handleDaemonAuthFailure = () => {
-      setAuthTokenRecoveryOpen(true);
-    };
-
-    window.addEventListener(AUTH_TOKEN_RECOVERY_REQUIRED_EVENT, handleDaemonAuthFailure);
-    return () => {
-      window.removeEventListener(AUTH_TOKEN_RECOVERY_REQUIRED_EVENT, handleDaemonAuthFailure);
-    };
-  }, []);
-
-  const handleDismissSetupWarning = useCallback(() => {
-    setScopedItem(SETUP_WARNING_DISMISSED_KEY, "true", currentProject?.id);
-    setSetupWarningDismissed(true);
   }, [currentProject?.id]);
 
   const handleDismissCapacityRisk = useCallback(() => {
