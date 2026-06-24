@@ -24,6 +24,13 @@ vi.mock("lucide-react", () => ({
   Paperclip: () => null,
   Flag: () => null,
   Zap: () => null,
+  Brain: () => null,
+  Server: () => null,
+  Cpu: () => null,
+}));
+
+vi.mock("../ProviderIcon", () => ({
+  ProviderIcon: ({ provider }: { provider: string }) => <span data-testid={`provider-icon-${provider}`} />,
 }));
 
 // Mock the api module
@@ -157,10 +164,15 @@ describe("NewTaskModal", () => {
     expect(screen.getByTestId("dep-trigger")).toBeInTheDocument();
     expect(screen.getByTestId("new-task-agent-button")).toBeInTheDocument();
 
-    // FNXC:NewTask 2026-06-23-00:10: The common quick-add buttons (Attach, Fast, Priority) are surfaced INLINE next to the actions row and visible immediately.
-    expect(screen.getByTestId("task-form-inline-attach")).toBeInTheDocument();
-    expect(screen.getByTestId("task-form-inline-fast")).toBeInTheDocument();
-    expect(screen.getByTestId("task-form-inline-priority")).toBeInTheDocument();
+    // FNXC:NewTaskDialogAffordances 2026-06-23-21:47: The regular New Task dialog exposes the screenshot quick-add buttons immediately; detailed selects stay in Advanced.
+    expect(screen.getByTestId("task-form-inline-create")).toBeVisible();
+    expect(screen.getByTestId("task-form-inline-attach")).toBeVisible();
+    expect(screen.getByTestId("task-form-inline-fast")).toBeVisible();
+    expect(screen.getByTestId("task-form-inline-github")).toBeVisible();
+    expect(screen.getByTestId("task-form-inline-workflow")).toBeVisible();
+    expect(screen.getByTestId("task-form-inline-models")).toBeVisible();
+    expect(screen.getByTestId("task-form-inline-node")).toBeVisible();
+    expect(screen.getByTestId("task-form-inline-priority")).toBeVisible();
 
     // FNXC:NewTask 2026-06-23-00:10: The DEEP/advanced options now sit behind the collapsed "Advanced" disclosure. Model Configuration / Attachments are NOT shown until the toggle is expanded.
     const advancedToggle = screen.getByTestId("task-form-more-options-toggle");
@@ -182,29 +194,54 @@ describe("NewTaskModal", () => {
       onSubtaskBreakdown: vi.fn(),
     });
 
+    const advancedSection = screen.getByTestId("task-form-more-options");
+    expect(advancedSection).toHaveAttribute("hidden");
+
+    // Empty description state: description-gated actions are disabled/absent, while configuration chips stay immediately usable.
+    expect(screen.getByTestId("task-form-inline-create")).toBeDisabled();
+    expect(screen.getByTestId("task-form-plan-button")).toBeDisabled();
+    expect(screen.queryByTestId("refine-button")).toBeNull();
+    expect(screen.getByTestId("task-form-inline-fast")).toBeVisible();
+    expect(screen.getByTestId("task-form-inline-github")).toBeVisible();
+    expect(screen.getByTestId("task-form-inline-workflow")).toBeVisible();
+    expect(screen.getByTestId("task-form-inline-models")).toBeVisible();
+    expect(screen.getByTestId("task-form-inline-node")).toBeVisible();
+    expect(screen.getByTestId("dep-trigger")).toBeVisible();
+    expect(screen.getByTestId("task-form-inline-attach")).toBeVisible();
+    expect(screen.getByTestId("new-task-agent-button")).toBeVisible();
+
     fireEvent.change(screen.getByPlaceholderText("What needs to be done?"), { target: { value: "Create parity coverage" } });
 
-    // Canonical QuickEntryBox action row includes Plan, Subtask, Refine, Deps, Attach, Models, Node, and Agent affordances; the modal maps these to existing TaskForm/quick-field controls instead of duplicating implementations.
+    // Populated description state: the complete screenshot affordance set is visible without opening Advanced.
+    expect(screen.getByTestId("task-form-inline-create")).toBeEnabled();
     expect(screen.getAllByTestId("task-form-plan-button")).toHaveLength(1);
-    expect(screen.getAllByTestId("task-form-subtask-button")).toHaveLength(1);
-    expect(screen.getByTestId("refine-button")).toBeInTheDocument();
-    expect(screen.getByTestId("dep-trigger")).toBeInTheDocument();
-    expect(screen.getByTestId("new-task-agent-button")).toBeInTheDocument();
+    expect(screen.getByTestId("task-form-plan-button")).toBeEnabled();
+    expect(screen.getByTestId("refine-button")).toBeVisible();
+    expect(screen.getByTestId("dep-trigger")).toBeVisible();
+    expect(screen.getByTestId("new-task-agent-button")).toBeVisible();
+    expect(screen.getByTestId("task-form-inline-attach")).toBeVisible();
+    expect(screen.getByTestId("task-form-inline-fast")).toBeVisible();
+    expect(screen.getByTestId("task-form-inline-github")).toBeVisible();
+    expect(screen.getByTestId("task-form-inline-workflow")).toBeVisible();
+    expect(screen.getByTestId("task-form-inline-models")).toBeVisible();
+    expect(screen.getByTestId("task-form-inline-node")).toBeVisible();
+    expect(screen.getByTestId("task-form-inline-priority")).toBeVisible();
 
-
-    expect(screen.getByTestId("task-form-execution-mode-select")).toBeInTheDocument();
-    expect(screen.getByTestId("task-form-github-tracking")).toBeInTheDocument();
-    expect(screen.getByTestId("task-priority-select")).toBeInTheDocument();
-    expect(screen.getByText(/Attachments/i)).toBeInTheDocument();
-    expect(screen.getByText(/Node Override/i)).toBeInTheDocument();
+    // Detailed editors remain present only inside Advanced, not duplicated as visible siblings.
+    expect(advancedSection).toContainElement(screen.getByTestId("task-form-execution-mode-select"));
+    expect(advancedSection).toContainElement(screen.getByTestId("task-form-github-tracking"));
+    expect(advancedSection).toContainElement(screen.getByTestId("task-priority-select"));
+    expect(advancedSection).toContainElement(screen.getByTestId("task-node-select"));
+    expect(advancedSection).toHaveAttribute("hidden");
   });
 
-  it("renders the Fast and standard execution-mode affordance inside More options", () => {
+  it("keeps the detailed Fast/standard execution-mode select inside Advanced", () => {
     renderNewTaskModal();
 
-
+    const advancedSection = screen.getByTestId("task-form-more-options");
     const select = screen.getByTestId("task-form-execution-mode-select") as HTMLSelectElement;
-    expect(select).toBeInTheDocument();
+    expect(advancedSection).toContainElement(select);
+    expect(advancedSection).toHaveAttribute("hidden");
     expect(select).toHaveValue("standard");
     expect(Array.from(select.options).map((option) => option.value)).toEqual(["standard", "fast"]);
   });
@@ -212,7 +249,7 @@ describe("NewTaskModal", () => {
   it("includes executionMode fast in the create payload when Fast is selected", async () => {
     const { props } = renderNewTaskModal();
 
-    fireEvent.change(screen.getByTestId("task-form-execution-mode-select"), { target: { value: "fast" } });
+    fireEvent.click(screen.getByTestId("task-form-inline-fast"));
     fireEvent.change(screen.getByPlaceholderText("What needs to be done?"), { target: { value: "Fast parity task" } });
     fireEvent.click(screen.getByRole("button", { name: "Create Task" }));
 
@@ -224,6 +261,68 @@ describe("NewTaskModal", () => {
     await waitFor(() => {
       expect(screen.getByTestId("task-form-execution-mode-select")).toHaveValue("standard");
     });
+  });
+
+  it("promoted GitHub, workflow, model, node, deps, agent, attach, and create controls are functional", async () => {
+    const { fetchWorkflows } = await import("../../api");
+    vi.mocked(fetchWorkflows).mockResolvedValueOnce([
+      {
+        id: "WF-quick",
+        name: "Quick Lane",
+        description: "",
+        kind: "workflow",
+        ir: { version: "v1", name: "Quick Lane", nodes: [], edges: [] },
+        layout: {},
+        createdAt: "",
+        updatedAt: "",
+      } as any,
+    ]);
+    const clickSpy = vi.spyOn(HTMLInputElement.prototype, "click").mockImplementation(() => undefined);
+    const { props } = renderNewTaskModal({ tasks: [makeTask("FN-777")] });
+
+    fireEvent.click(screen.getByTestId("task-form-inline-github"));
+    expect(screen.getByTestId("task-form-inline-github")).toHaveAttribute("aria-pressed", "true");
+
+    fireEvent.click(screen.getByTestId("task-form-inline-fast"));
+    expect(screen.getByTestId("task-form-inline-fast")).toHaveAttribute("aria-pressed", "true");
+
+    fireEvent.click(screen.getByTestId("task-form-inline-attach"));
+    expect(clickSpy).toHaveBeenCalled();
+
+    fireEvent.click(screen.getByTestId("dep-trigger"));
+    expect(screen.getByPlaceholderText("Search tasks…")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId("new-task-agent-button"));
+    await waitFor(() => expect(screen.getByText("No agents available")).toBeInTheDocument());
+
+    fireEvent.click(screen.getByTestId("task-form-inline-workflow"));
+    await waitFor(() => expect(screen.getByTestId("task-form-more-options")).not.toHaveAttribute("hidden"));
+    expect(await screen.findByTestId("task-workflow-select")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId("task-form-more-options-toggle"));
+    expect(screen.getByTestId("task-form-more-options")).toHaveAttribute("hidden");
+    fireEvent.click(screen.getByTestId("task-form-inline-models"));
+    await waitFor(() => expect(screen.getByTestId("task-form-more-options")).not.toHaveAttribute("hidden"));
+    expect(screen.getByText(/Model Configuration/i)).toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId("task-form-more-options-toggle"));
+    expect(screen.getByTestId("task-form-more-options")).toHaveAttribute("hidden");
+    fireEvent.click(screen.getByTestId("task-form-inline-node"));
+    await waitFor(() => expect(screen.getByTestId("task-form-more-options")).not.toHaveAttribute("hidden"));
+    expect(screen.getByTestId("task-node-select")).toBeInTheDocument();
+
+    fireEvent.change(screen.getByPlaceholderText("What needs to be done?"), { target: { value: "Promoted controls create task" } });
+    fireEvent.click(screen.getByRole("button", { name: "Create Task" }));
+
+    await waitFor(() => {
+      expect(props.onCreateTask).toHaveBeenCalledWith(
+        expect.objectContaining({
+          executionMode: "fast",
+          githubTracking: { enabled: true },
+        }),
+      );
+    });
+    clickSpy.mockRestore();
   });
 
   it("omits executionMode from the create payload when Standard is selected", async () => {

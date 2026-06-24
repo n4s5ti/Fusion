@@ -450,7 +450,13 @@ describe("core modals mobile css coverage", () => {
     const css = loadAllAppCss();
     const mobileBlock = getMainMobileBlock(css);
 
-    // Verify the quick-fields dep-trigger rule exists with min-height: 36px
+    // Verify the promoted screenshot action row and quick-fields dep/agent buttons keep the mobile touch target.
+    const actionButtonMatch = mobileBlock.match(
+      /\.task-form-description-actions \.btn\s*\{[^}]+\}/,
+    );
+    expect(actionButtonMatch).not.toBeNull();
+    expect(actionButtonMatch![0]).toContain("min-height: 36px");
+
     const quickFieldsTriggerMatch = mobileBlock.match(
       /\.new-task-quick-fields \.dep-trigger\s*\{[^}]+\}/,
     );
