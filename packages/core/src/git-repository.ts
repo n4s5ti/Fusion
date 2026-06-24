@@ -59,6 +59,34 @@ export async function ensureGitRepositoryForProjectPath(
     return "existing";
   }
 
+  /*
+  FNXC:Workspace 2026-06-24-14:30:
+  Fallback workspace detection: when workspace.json is missing (e.g. project added via
+  dashboard or `fn project add`, which don't run the interactive workspace detection flow),
+  probe for git sub-repos. If found, persist workspace.json AND set workspaceMode: true in
+  config.json so the dashboard toggle reflects the actual state. This covers all registration
+  surfaces: the CLI interactive setup writes workspace.json explicitly, but dashboard POST
+  /api/projects and `fn project add` do not — without this fallback they would create a stray
+  .git at the workspace root because loadWorkspaceConfig returned null.
+
+  FNXC:Workspace 2026-06-24-17:00:
+  If the user has explicitly disabled workspace mode (workspaceMode: false in config.json),
+  skip auto-detection and proceed to git init. Without this guard, toggling workspace mode off
+  via the dashboard would have no lasting effect — the fallback would re-detect sub-repos and
+  re-create workspace.json on the next registration call.
+  */
+  if (!(await isWorkspaceModeExplicitlyDisabled(projectPath))) {
+    const detectedRepos = await detectWorkspaceRepos(projectPath, runner, timeout);
+    if (detectedRepos.length > 0) {
+      // Write config.json first so a failure here doesn't leave a stale workspace.json
+      // that would short-circuit loadWorkspaceConfig on the next call without the
+      // workspaceMode setting being persisted.
+      await setWorkspaceModeInConfig(projectPath, true);
+      await saveWorkspaceConfig(projectPath, { repos: detectedRepos });
+      return "existing";
+    }
+  }
+
   try {
     await runner("git", ["-C", projectPath, "init"], { timeout });
     return "initialized";
@@ -116,8 +144,16 @@ function extractCommandErrorMessage(error: unknown): string {
 /**
  * Scans `dir` one level deep for sub-directories that are git repositories.
  * Returns relative paths of found repos, sorted alphabetically.
+ *
+ * Excludes `node_modules`, `.fusion`, and other known non-workspace directories so that
+ * packages installed from git sources (which leave real `.git` dirs) do not produce
+ * false-positive workspace members.
  */
-export async function detectWorkspaceRepos(dir: string): Promise<string[]> {
+export async function detectWorkspaceRepos(
+  dir: string,
+  runner: GitRepositoryCommandRunner = runGitCommand,
+  timeout: number = DEFAULT_GIT_TIMEOUT_MS,
+): Promise<string[]> {
   let entries: string[];
   try {
     const { readdir } = await import("node:fs/promises");
@@ -134,7 +170,17 @@ export async function detectWorkspaceRepos(dir: string): Promise<string[]> {
   proof of a git repository. Each candidate child is validated with a real `git rev-parse`
   work-tree probe before it counts, so stray `.git` entries do not yield false-positive repos.
   */
+  /*
+  FNXC:Workspace 2026-06-24-15:00:
+  Exclude node_modules and .fusion so that npm packages installed from git sources (which
+  leave real .git directories inside node_modules/<package>) and Fusion's own state directory
+  do not produce false-positive workspace members. A workspace root is a plain directory whose
+  immediate children are the intended sub-repos, not transitive dependency artifacts.
+  */
+  const EXCLUDED_ENTRIES = new Set(["node_modules", ".fusion", ".git", ".pi"]);
   for (const entry of entries) {
+    if (EXCLUDED_ENTRIES.has(entry)) continue;
+
     const childDir = join(dir, entry);
     // Cheap pre-filter: skip children with no `.git` marker at all before spawning git.
     try {
@@ -143,7 +189,7 @@ export async function detectWorkspaceRepos(dir: string): Promise<string[]> {
     } catch {
       continue;
     }
-    if (await isInsideGitWorkTree(childDir, runGitCommand, DEFAULT_GIT_TIMEOUT_MS)) {
+    if (await isInsideGitWorkTree(childDir, runner, timeout)) {
       found.push(entry);
     }
   }
@@ -155,6 +201,51 @@ export interface WorkspaceConfig {
 }
 
 const WORKSPACE_CONFIG_FILENAME = "workspace.json";
+
+/**
+ * Reads .fusion/config.json and returns true when `workspaceMode` is explicitly
+ * set to `false`. This guards the auto-detection fallback so a user who has
+ * intentionally disabled workspace mode doesn't get it silently re-enabled.
+ */
+async function isWorkspaceModeExplicitlyDisabled(projectPath: string): Promise<boolean> {
+  try {
+    const { readFile } = await import("node:fs/promises");
+    const { join } = await import("node:path");
+    const raw = await readFile(join(projectPath, ".fusion", "config.json"), "utf-8");
+    const config = JSON.parse(raw) as { settings?: { workspaceMode?: boolean } };
+    return config.settings?.workspaceMode === false;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * FNXC:Workspace 2026-06-24-17:15:
+ * Writes `workspaceMode: true` into .fusion/config.json so the dashboard toggle
+ * reflects that workspace mode is active after auto-detection. Reads-merges-writes
+ * to avoid clobbering existing config settings.
+ */
+async function setWorkspaceModeInConfig(projectPath: string, value: boolean): Promise<void> {
+  const { readFile, writeFile, mkdir } = await import("node:fs/promises");
+  const { join } = await import("node:path");
+  const configPath = join(projectPath, ".fusion", "config.json");
+  let config: Record<string, unknown> = {};
+  try {
+    config = JSON.parse(await readFile(configPath, "utf-8")) as Record<string, unknown>;
+  } catch (err) {
+    // Only treat "file not found" as empty config; re-throw parse/permission errors
+    // so a corrupted config.json doesn't get silently clobbered with a fresh object.
+    if ((err as NodeJS.ErrnoException)?.code !== "ENOENT") throw err;
+  }
+  // Validate settings is a plain object before merging
+  if (typeof config.settings !== "object" || config.settings === null || Array.isArray(config.settings)) {
+    config.settings = {};
+  }
+  const settings = config.settings as Record<string, unknown>;
+  settings.workspaceMode = value;
+  await mkdir(join(projectPath, ".fusion"), { recursive: true });
+  await writeFile(configPath, JSON.stringify(config, null, 2), "utf-8");
+}
 
 /*
 FNXC:Workspace 2026-06-22-00:00:
