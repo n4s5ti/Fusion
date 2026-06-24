@@ -1,8 +1,6 @@
 import { useState, useCallback, useEffect, useMemo, useRef, lazy, Suspense } from "react";
 import { useTranslation } from "react-i18next";
 import {
-  computeCapacityRisk,
-  DEFAULT_CAPACITY_RISK_TODO_THRESHOLD,
   type Task,
   type TaskDetail,
   type WorkflowStep,
@@ -102,16 +100,15 @@ import { useBranchTaskFilters } from "./hooks/useBranchTaskFilters";
 import { useDashboardHealth } from "./hooks/useDashboardHealth";
 import { useAuthTokenRecovery } from "./hooks/useAuthTokenRecovery";
 import { useScopedDismissFlag } from "./hooks/useScopedDismissFlag";
+import { useCapacityRiskBanner } from "./hooks/useCapacityRiskBanner";
 import { NativeShellOnboardingModal } from "./components/NativeShellOnboardingModal";
 import { NativeShellConnectionManager } from "./components/NativeShellConnectionManager";
 import { ShellConnectionStatus } from "./components/ShellConnectionStatus";
 import { getShellConnectionNativeResult, type ShellConnectionNativeResult } from "./shell-native";
 import type { AiSessionSummary, PluginDashboardViewEntry } from "./api";
 import { fetchTaskDetail, fetchWorkflowSteps } from "./api";
-import { getScopedItem, removeScopedItem, setScopedItem } from "./utils/projectStorage";
 import {
   SETUP_WARNING_DISMISSED_KEY,
-  CAPACITY_RISK_DISMISSED_KEY,
   RETRY_WARNING_RATIO,
   buildRemoteDashboardUrl,
   requiresNativeShellOnboarding,
@@ -610,20 +607,6 @@ function AppInner() {
     refresh: refreshDbCorruptionHealth,
   } = useDashboardHealth();
   const { dismissed: setupWarningDismissed, dismiss: handleDismissSetupWarning } = useScopedDismissFlag(SETUP_WARNING_DISMISSED_KEY, currentProject?.id);
-  const [capacityRiskDismissed, setCapacityRiskDismissed] = useState(
-    () => getScopedItem(CAPACITY_RISK_DISMISSED_KEY, currentProject?.id) === "true",
-  );
-
-  useEffect(() => {
-    setCapacityRiskDismissed(
-      getScopedItem(CAPACITY_RISK_DISMISSED_KEY, currentProject?.id) === "true",
-    );
-  }, [currentProject?.id]);
-
-  const handleDismissCapacityRisk = useCallback(() => {
-    setScopedItem(CAPACITY_RISK_DISMISSED_KEY, "true", currentProject?.id);
-    setCapacityRiskDismissed(true);
-  }, [currentProject?.id]);
 
   // Settings state
   const {
@@ -670,50 +653,15 @@ function AppInner() {
     () => boardSourceTasks.filter((task) => task.column === "in-review").length,
     [boardSourceTasks],
   );
-  const capacityRiskSignal = useMemo(
-    () =>
-      computeCapacityRisk({
-        todoCount: agentStats?.todoTaskCount ?? 0,
-        inProgressCount,
-        inReviewCount,
-        idleNonEphemeralAgentCount: agentStats?.idleNonEphemeralCount ?? 0,
-        threshold: capacityRiskTodoThreshold ?? DEFAULT_CAPACITY_RISK_TODO_THRESHOLD,
-      }),
-    [agentStats?.todoTaskCount, agentStats?.idleNonEphemeralCount, inProgressCount, inReviewCount, capacityRiskTodoThreshold],
-  );
-
-  const previousCapacityRiskBannerEnabledRef = useRef(capacityRiskBannerEnabled);
-  const previousCapacityRiskTodoThresholdRef = useRef(capacityRiskTodoThreshold);
-  const previousCapacityRiskProjectIdRef = useRef(currentProject?.id);
-  const capacityRiskSettingsHydratedRef = useRef(false);
-
-  useEffect(() => {
-    if (!settingsLoaded) {
-      return;
-    }
-
-    if (!capacityRiskSettingsHydratedRef.current || previousCapacityRiskProjectIdRef.current !== currentProject?.id) {
-      capacityRiskSettingsHydratedRef.current = true;
-      previousCapacityRiskProjectIdRef.current = currentProject?.id;
-      previousCapacityRiskBannerEnabledRef.current = capacityRiskBannerEnabled;
-      previousCapacityRiskTodoThresholdRef.current = capacityRiskTodoThreshold;
-      return;
-    }
-
-    const wasEnabled = previousCapacityRiskBannerEnabledRef.current;
-    const previousThreshold = previousCapacityRiskTodoThresholdRef.current;
-    const bannerEnabledChangedToTrue = !wasEnabled && capacityRiskBannerEnabled;
-    const thresholdChanged = previousThreshold !== capacityRiskTodoThreshold;
-
-    if (bannerEnabledChangedToTrue || thresholdChanged) {
-      removeScopedItem(CAPACITY_RISK_DISMISSED_KEY, currentProject?.id);
-      setCapacityRiskDismissed(false);
-    }
-
-    previousCapacityRiskProjectIdRef.current = currentProject?.id;
-    previousCapacityRiskBannerEnabledRef.current = capacityRiskBannerEnabled;
-    previousCapacityRiskTodoThresholdRef.current = capacityRiskTodoThreshold;
-  }, [settingsLoaded, capacityRiskBannerEnabled, capacityRiskTodoThreshold, currentProject?.id]);
+  const { signal: capacityRiskSignal, dismissed: capacityRiskDismissed, dismiss: handleDismissCapacityRisk } = useCapacityRiskBanner({
+    agentStats,
+    inProgressCount,
+    inReviewCount,
+    capacityRiskBannerEnabled,
+    capacityRiskTodoThreshold,
+    settingsLoaded,
+    currentProjectId: currentProject?.id,
+  });
 
   /* FNXC:DefaultNavigation 2026-06-23-01:26: Skills graduated from Experimental and should remain visible on upgrades even when stale `experimentalFeatures.skillsView=false` is present. */
   const skillsEnabled = true;
