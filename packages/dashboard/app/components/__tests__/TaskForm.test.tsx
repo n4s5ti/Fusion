@@ -15,6 +15,9 @@ vi.mock("lucide-react", () => ({
   Paperclip: () => null,
   Flag: () => null,
   Zap: () => null,
+  Brain: () => null,
+  Server: () => null,
+  Cpu: () => null,
 }));
 
 // Mock the api module

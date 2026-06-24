@@ -8,8 +8,9 @@ import { applyPresetToSelection, getRecommendedPresetForSize } from "../utils/mo
 import { CustomModelDropdown } from "./CustomModelDropdown";
 import { NodeHealthDot } from "./NodeHealthDot";
 import { LoadingSpinner } from "./LoadingSpinner";
-import { Sparkles, ChevronUp, ChevronDown, Maximize2, Minimize2, Paperclip, Flag, Zap } from "lucide-react";
+import { Sparkles, ChevronUp, ChevronDown, Maximize2, Minimize2, Paperclip, Flag, Zap, Brain, Server } from "lucide-react";
 import { REPO_OVERRIDE_RE, resolveEffectiveGithubRepoDefault } from "./githubTracking";
+import { ProviderIcon } from "./ProviderIcon";
 
 function getNodeStatusLabel(status: NodeInfo["status"], t: (key: string, defaultValue: string) => string): string {
   if (status === "online") return t("taskForm.nodeStatusOnline", "Online");
@@ -138,6 +139,12 @@ export interface TaskFormProps {
   onSubtaskBreakdown?: (description: string, workflowId?: string | null) => void;
   onClose?: () => void;
 
+  // Create-mode primary submission. NewTaskModal owns duplicate checks and payload shaping;
+  // TaskForm only places the visible Create affordance in the quick-action row.
+  onCreateSubmit?: () => void;
+  createSubmitLabel?: string;
+  createSubmitDisabled?: boolean;
+
   /** Optional content to render between the primary section and the "More options" toggle. */
   renderBelowPrimary?: React.ReactNode;
   /** Optional content to render inside "More options" below Model Configuration. */
@@ -204,6 +211,9 @@ export function TaskForm({
   onPlanningMode,
   onSubtaskBreakdown,
   onClose,
+  onCreateSubmit,
+  createSubmitLabel,
+  createSubmitDisabled,
   renderBelowPrimary,
   renderBelowModelConfiguration,
   hideDependencies,
@@ -697,6 +707,22 @@ export function TaskForm({
 
   // U6/R3: the project default workflow id (preselected + "(default)" badged).
   const defaultWorkflowId = settings?.defaultWorkflowId ?? null;
+  const selectedWorkflow = selectedWorkflowId === null
+    ? null
+    : workflows.find((workflow) => workflow.id === (selectedWorkflowId ?? defaultWorkflowId));
+  const workflowInlineLabel = selectedWorkflowId === null
+    ? t("taskForm.workflowNone", "No workflow")
+    : selectedWorkflow?.name ?? t("taskForm.workflowInlineDefault", "Normal");
+  const selectedNode = (nodeOptions ?? []).find((node) => node.id === nodeId);
+  const nodeInlineLabel = selectedNode?.name ?? t("taskForm.nodeInlineDefault", "Node");
+  const modelInlineLabel = selectedPreset?.name ?? (presetMode === "custom" ? t("taskForm.modelsCustom", "Models") : t("taskForm.modelsDefault", "Models"));
+
+  const revealAdvancedControl = useCallback((selector: string) => {
+    if (!forceMoreOptionsOpen) setShowMoreOptions(true);
+    window.setTimeout(() => {
+      document.querySelector<HTMLElement>(selector)?.focus();
+    }, 0);
+  }, [forceMoreOptionsOpen]);
 
   const availableDeps = tasks
     .filter((t) => !dependencies.includes(t.id))
@@ -847,9 +873,23 @@ export function TaskForm({
         - Fast     → toggles executionMode standard⇄fast via onExecutionModeChange (mirrors QuickEntryBox quick-entry-fast-toggle).
         - Priority → cycles through TASK_PRIORITIES via onPriorityChange (Flag affordance).
       Plan/Subtask remain gated on their handoff callbacks. Model selectors, branch/base, node, review level, and GitHub tracking stay in the Advanced disclosure.
+
+      FNXC:NewTaskDialogAffordances 2026-06-23-21:20:
+      The regular New Task dialog must visibly expose the screenshot quick-add button contract in the immediate action cluster while Advanced remains the deep configuration editor. TaskForm hosts the cluster so create payload state has one source of truth; NewTaskModal only supplies the submit handler and its existing dependency/agent quick controls.
       */}
       {mode === "create" && (
         <div className="task-form-description-actions" data-testid="task-form-description-actions">
+          {onCreateSubmit && (
+            <button
+              type="button"
+              className="btn btn-primary btn-sm"
+              onClick={onCreateSubmit}
+              disabled={disabled || createSubmitDisabled}
+              data-testid="task-form-inline-create"
+            >
+              {createSubmitLabel ?? t("taskForm.createTask", "Create")}
+            </button>
+          )}
           {onPlanningMode && (
             <button
               type="button"
@@ -898,7 +938,7 @@ export function TaskForm({
             data-testid="task-form-inline-attach"
             title={t("taskForm.attachScreenshot", "Attach Screenshot")}
           >
-            <Paperclip size={12} style={{ verticalAlign: "middle", marginRight: 4 }} />
+            <Paperclip size={12} className="task-form-action-icon" />
             {pendingImages.length > 0
               ? t("taskForm.attachCount", "Attach ({{count}})", { count: pendingImages.length })
               : t("taskForm.attach", "Attach")}
@@ -915,8 +955,69 @@ export function TaskForm({
               data-testid="task-form-inline-fast"
               title={t("taskForm.toggleFastMode", "Toggle fast execution mode")}
             >
-              <Zap size={12} style={{ verticalAlign: "middle", marginRight: 4 }} />
+              <Zap size={12} className="task-form-action-icon" />
               {t("taskForm.fast", "Fast")}
+            </button>
+          )}
+
+          {/* FNXC:NewTaskDialogAffordances 2026-06-23-21:31: GitHub/workflow/models/node are promoted as visible chips that mutate or focus the same Advanced controls instead of duplicating create-payload state. */}
+          {onGithubTrackingEnabledChange && (
+            <button
+              type="button"
+              className={`btn btn-sm ${githubTrackingEnabled ? "btn-primary" : ""}`}
+              onClick={() => {
+                githubTrackingDefaultAppliedRef.current = true;
+                onGithubTrackingEnabledChange(!githubTrackingEnabled);
+              }}
+              aria-pressed={githubTrackingEnabled === true}
+              disabled={disabled}
+              data-testid="task-form-inline-github"
+              title={t("taskForm.githubTrackingLabel", "GitHub Tracking")}
+            >
+              <ProviderIcon provider="github" size="sm" />
+              {t("taskForm.githubInline", "GitHub")}
+            </button>
+          )}
+
+          {onWorkflowIdChange && (
+            <button
+              type="button"
+              className="btn btn-sm"
+              onClick={() => revealAdvancedControl("#task-workflow-select, [data-testid='task-workflow-cta']")}
+              disabled={disabled}
+              data-testid="task-form-inline-workflow"
+              aria-label={t("taskForm.workflowInlineAria", "Choose workflow: {{workflow}}", { workflow: workflowInlineLabel })}
+              title={t("taskForm.workflowLabel", "Workflow")}
+            >
+              {workflowInlineLabel}
+            </button>
+          )}
+
+          <button
+            type="button"
+            className="btn btn-sm"
+            onClick={() => revealAdvancedControl("#model-preset, #executor-model")}
+            disabled={disabled}
+            data-testid="task-form-inline-models"
+            aria-label={t("taskForm.modelsInlineAria", "Choose models: {{models}}", { models: modelInlineLabel })}
+            title={t("taskForm.modelConfigLabel", "Model Configuration")}
+          >
+            <Brain size={12} className="task-form-action-icon" />
+            {modelInlineLabel}
+          </button>
+
+          {onNodeIdChange && (
+            <button
+              type="button"
+              className="btn btn-sm"
+              onClick={() => revealAdvancedControl("#task-node-select")}
+              disabled={disabled || nodeOverrideDisabled}
+              data-testid="task-form-inline-node"
+              aria-label={t("taskForm.nodeInlineAria", "Choose execution node: {{node}}", { node: nodeInlineLabel })}
+              title={nodeOverrideDisabled ? nodeOverrideDisabledReason : t("taskForm.nodeOverrideLabel", "Execution Node Override")}
+            >
+              {selectedNode ? <NodeHealthDot status={selectedNode.status} compact className="task-form-action-icon" /> : <Server size={12} className="task-form-action-icon" />}
+              {nodeInlineLabel}
             </button>
           )}
 
@@ -935,7 +1036,7 @@ export function TaskForm({
               data-testid="task-form-inline-priority"
               title={t("taskForm.priorityLabel", "Priority")}
             >
-              <Flag size={12} style={{ verticalAlign: "middle", marginRight: 4 }} />
+              <Flag size={12} className="task-form-action-icon" />
               {(() => {
                 const p = priority ?? DEFAULT_TASK_PRIORITY;
                 return `${p[0].toUpperCase()}${p.slice(1)}`;
@@ -1027,6 +1128,7 @@ export function TaskForm({
           <label htmlFor="task-node-select">{t("taskForm.nodeOverrideLabel", "Execution Node Override")}</label>
           <select
             id="task-node-select"
+            data-testid="task-node-select"
             className="select"
             value={nodeId ?? ""}
             onChange={(e) => onNodeIdChange(e.target.value || undefined)}

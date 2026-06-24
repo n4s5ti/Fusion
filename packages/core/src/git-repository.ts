@@ -41,6 +41,20 @@ export async function ensureGitRepositoryForProjectPath(
   const runner = options.runner ?? runGitCommand;
   const timeout = options.timeoutMs ?? DEFAULT_GIT_TIMEOUT_MS;
 
+  /*
+  FNXC:Workspace 2026-06-24-10:00:
+  A workspace-mode project root is intentionally NOT a git repository — it is a parent
+  directory containing multiple git sub-repos (detected at init time and recorded in
+  .fusion/workspace.json). Running `git init` here would create a stray empty repo at the
+  workspace root, poisoning every downstream git command: the executor sets the session cwd
+  to this root (browse-only), and `git rev-parse --abbrev-ref HEAD` fails on the unborn HEAD
+  with "ambiguous argument 'HEAD'". Detect workspace mode via the config file and skip the
+  git-init so the root stays non-git, matching the workspace execution contract (KTD1).
+  */
+  if (await loadWorkspaceConfig(projectPath)) {
+    return "existing";
+  }
+
   if (await isInsideGitWorkTree(projectPath, runner, timeout)) {
     return "existing";
   }
@@ -167,11 +181,15 @@ export async function loadWorkspaceConfig(rootDir: string): Promise<WorkspaceCon
   try {
     const raw = await readFile(configPath, "utf-8");
     const parsed = JSON.parse(raw) as unknown;
+    // FNXC:Workspace 2026-06-22-09:30 (Phase C review nit): validate that `repos` is an array
+    // OF STRINGS, not merely an array. A malformed config (`{ repos: [123, null] }`) would
+    // otherwise pass and feed non-string values into path joins downstream.
     if (
       parsed !== null &&
       typeof parsed === "object" &&
       "repos" in parsed &&
-      Array.isArray((parsed as { repos: unknown }).repos)
+      Array.isArray((parsed as { repos: unknown }).repos) &&
+      (parsed as { repos: unknown[] }).repos.every((r) => typeof r === "string")
     ) {
       const rawRepos = (parsed as { repos: unknown[] }).repos;
       const repos = rawRepos.filter((entry): entry is string => isInRootRelativePath(entry, pathMod));

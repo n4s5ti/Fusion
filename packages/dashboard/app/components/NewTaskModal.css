@@ -187,6 +187,13 @@ Edge + corner resize handles. touch-action:none keeps the drag from being hijack
 
 .task-form-description-actions .btn {
   border-color: var(--border);
+  align-items: center;
+  gap: var(--space-xs);
+  white-space: nowrap;
+}
+
+.task-form-action-icon {
+  vertical-align: middle;
 }
 
 .task-form-more-options-toggle {
@@ -593,6 +600,11 @@ Edge + corner resize handles. touch-action:none keeps the drag from being hijack
     width: 100%;
     flex-wrap: wrap;
     gap: var(--space-xs);
+  }
+
+  .task-form-description-actions .btn {
+    min-height: 36px;
+    flex: 1 1 auto;
   }
 
   .task-form-more-options-toggle {

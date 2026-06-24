@@ -886,6 +886,9 @@ export function NewTaskModal({ isOpen, onClose, projectId, tasks, onCreateTask, 
             onGithubTrackingEnabledChange={setGithubTrackingEnabled}
             githubRepoOverride={githubRepoOverride}
             onGithubRepoOverrideChange={setGithubRepoOverride}
+            onCreateSubmit={handleSubmit}
+            createSubmitLabel={isSubmitting ? t("newTaskModal.creating", "Creating...") : t("newTaskModal.createTask", "Create Task")}
+            createSubmitDisabled={!description.trim() || isSubmitting || githubRepoOverrideInvalid || hasInvalidBranchSelection}
             renderBelowPrimary={quickFields}
             hideDependencies={true}
             autoExpandMoreOptionsOnSelection={false}
@@ -900,13 +903,6 @@ export function NewTaskModal({ isOpen, onClose, projectId, tasks, onCreateTask, 
           <div className="modal-actions">
             <button className="btn btn-sm" onClick={handleClose} disabled={isSubmitting}>
               {t("actions.cancel", "Cancel")}
-            </button>
-            <button
-              className="btn btn-primary btn-sm"
-              onClick={handleSubmit}
-              disabled={!description.trim() || isSubmitting || githubRepoOverrideInvalid || hasInvalidBranchSelection}
-            >
-              {isSubmitting ? t("newTaskModal.creating", "Creating...") : t("newTaskModal.createTask", "Create Task")}
             </button>
           </div>
         </div>
