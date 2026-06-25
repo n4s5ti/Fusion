@@ -279,15 +279,13 @@ export const BUILTIN_WORKFLOWS: WorkflowDefinition[] = [
   // The stepwise coding workflow (KTD-9) — step inversion as authored graph
   // structure (parse-steps → foreach{ step-execute → step-review } → review →
   // merge). Authored directly as a v2 IR (the `linear` helper only builds simple
-  // pipelines); it is read-only like every built-in. Requires the
-  // `workflowGraphExecutor` flag at run time (foreach/step-review/parse-steps are
-  // interpreter-only node kinds, KTD-8); under the flag-off compile path its
-  // step-inversion nodes are skipped, the same posture as the other seam nodes.
+  // pipelines); it is read-only like every built-in and runs on the default
+  // workflow graph runtime.
   {
     id: "builtin:stepwise-coding",
     name: "Stepwise coding (built-in)",
     description:
-      "Per-step plan, execute, and review modeled as graph structure: each planned step runs and is reviewed (approve / revise / rethink) before the next, with bounded rework. Requires the workflow graph executor.",
+      "Per-step plan, execute, and review modeled as graph structure: each planned step runs and is reviewed (approve / revise / rethink) before the next, with bounded rework.",
     kind: "workflow",
     ir: BUILTIN_STEPWISE_CODING_WORKFLOW_IR,
     layout: {
@@ -344,9 +342,8 @@ export const BUILTIN_WORKFLOWS: WorkflowDefinition[] = [
   // (bounded rework loop) → auto-merge gate → pr-merge → end, with the await
   // states modeled as hold columns the U4 reconcile advances via external-event
   // releases. Authored directly as a v2 IR (the `linear` helper only builds
-  // simple pipelines); read-only like every built-in. Requires the
-  // `workflowGraphExecutor` flag at run time (pr-* node kinds, holds, and the
-  // top-level rework loop are interpreter-only).
+  // simple pipelines); read-only like every built-in and runs on the default
+  // workflow graph runtime.
   //
   // ADDITIVE: this is a NEW built-in alongside the unchanged default
   // `builtin:coding`. Full retirement of the legacy comment/monitor PR path is
@@ -356,7 +353,7 @@ export const BUILTIN_WORKFLOWS: WorkflowDefinition[] = [
     id: "builtin:pr-workflow",
     name: "PR lifecycle (built-in)",
     description:
-      "The unified PR lifecycle as graph nodes: create the PR, await review, respond to changes (bounded rework loop), gate on auto-merge, then merge — with GitHub reconciliation advancing the await holds. Requires the workflow graph executor.",
+      "The unified PR lifecycle as graph nodes: create the PR, await review, respond to changes (bounded rework loop), gate on auto-merge, then merge — with GitHub reconciliation advancing the await holds.",
     kind: "fragment",
     ir: BUILTIN_PR_WORKFLOW_IR,
     layout: {
@@ -378,7 +375,7 @@ export const BUILTIN_WORKFLOWS: WorkflowDefinition[] = [
     id: "builtin:lead-generation",
     name: "Lead generation (built-in)",
     description:
-      "A business pipeline for sourcing, qualifying, enriching, and contacting leads with custom lead fields and stage columns. Requires the workflow graph executor for custom board columns.",
+      "A business pipeline for sourcing, qualifying, enriching, and contacting leads with custom lead fields and stage columns.",
     kind: "workflow",
     ir: BUILTIN_LEAD_GENERATION_WORKFLOW_IR,
     layout: {

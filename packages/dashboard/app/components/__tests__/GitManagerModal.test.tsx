@@ -70,6 +70,10 @@ vi.mock("../../api", async () => {
     fetchAheadCommits: vi.fn(),
     fetchRemoteCommits: vi.fn(),
     fetchBranchCommits: vi.fn(),
+    // FNXC:Test 2026-06-25-00:10: GitManagerModal detects workspace sub-repos on mount via
+    // fetchWorkspaceRepos; the mock was never added when that call landed, breaking the whole suite
+    // at import. Default to a non-workspace project ({ repos: [] }) so the root git path is exercised.
+    fetchWorkspaceRepos: vi.fn().mockResolvedValue({ repos: [] }),
   };
 });
 
@@ -112,6 +116,7 @@ import {
   fetchAheadCommits,
   fetchRemoteCommits,
   fetchBranchCommits,
+  fetchWorkspaceRepos,
 } from "../../api";
 import { subscribeSse } from "../../sse-bus";
 
@@ -284,6 +289,64 @@ describe("GitManagerModal", () => {
     (fetchRemoteCommits as any).mockResolvedValue([]);
   });
 
+  // ── Workspace root-race toast suppression ───────────────────
+  // FNXC:Workspace 2026-06-25-00:10: a workspace project's root is non-git, so the first git status
+  // (no repoPath yet) fails "Not a git repository". That benign race must NOT toast; a real
+  // non-workspace project with the same error must.
+
+  it("does NOT toast 'Not a git repository' for a workspace project's initial root-race fetch", async () => {
+    (fetchWorkspaceRepos as any).mockResolvedValue({ repos: ["openvide", "swarmclaw"] });
+    // Root (no repoPath) → not a git repo; a real sub-repo → resolves.
+    (fetchGitStatus as any).mockImplementation((_pid: unknown, _opts: unknown, repoPath?: string) =>
+      repoPath
+        ? Promise.resolve({ branch: "main", commit: "abc1234", isDirty: false, ahead: 0, behind: 0 })
+        : Promise.reject(new Error("Not a git repository")),
+    );
+
+    render(<GitManagerModal isOpen={true} onClose={vi.fn()} tasks={mockTasks} addToast={mockAddToast} />);
+
+    // Wait until the re-fetch against the selected sub-repo has happened.
+    await waitFor(() => {
+      expect((fetchGitStatus as any).mock.calls.some((c: unknown[]) => c[2] === "openvide")).toBe(true);
+    });
+    expect(mockAddToast).not.toHaveBeenCalledWith(expect.stringMatching(/not a git repository/i), "error");
+  });
+
+  it("DOES toast 'Not a git repository' for a real non-workspace project", async () => {
+    (fetchWorkspaceRepos as any).mockResolvedValue({ repos: [] });
+    (fetchGitStatus as any).mockRejectedValue(new Error("Not a git repository"));
+
+    render(<GitManagerModal isOpen={true} onClose={vi.fn()} tasks={mockTasks} addToast={mockAddToast} />);
+
+    await waitFor(() => {
+      expect(mockAddToast).toHaveBeenCalledWith(expect.stringMatching(/not a git repository/i), "error");
+    });
+  });
+
+  it("does not let a stale workspace project's late detection suppress a real error after a rapid project switch", async () => {
+    // FNXC:Workspace 2026-06-25-09:40 (generation guard): switch from workspace project A (whose
+    // fetchWorkspaceRepos resolves LATE) to broken non-workspace project B before A resolves. A's late
+    // "workspace" verdict must be abandoned (generation guard) so it can't suppress B's real error.
+    let resolveA: (v: { repos: string[] }) => void = () => {};
+    const aPromise = new Promise<{ repos: string[] }>((r) => { resolveA = r; });
+    (fetchWorkspaceRepos as any).mockImplementation((pid: string) =>
+      pid === "projA" ? aPromise : Promise.resolve({ repos: [] }));
+    (fetchGitStatus as any).mockRejectedValue(new Error("Not a git repository"));
+
+    const { rerender } = render(
+      <GitManagerModal isOpen={true} onClose={vi.fn()} tasks={mockTasks} addToast={mockAddToast} projectId="projA" />,
+    );
+    // Switch to B before A's detection resolves.
+    rerender(<GitManagerModal isOpen={true} onClose={vi.fn()} tasks={mockTasks} addToast={mockAddToast} projectId="projB" />);
+    // A resolves late as a workspace — must be ignored for the now-current project B.
+    resolveA({ repos: ["openvide"] });
+
+    // B is a genuinely broken non-workspace repo → its error must still surface.
+    await waitFor(() => {
+      expect(mockAddToast).toHaveBeenCalledWith(expect.stringMatching(/not a git repository/i), "error");
+    });
+  });
+
   // ── Basic Rendering ─────────────────────────────────────────
 
   it("renders nothing when not open", () => {
@@ -311,6 +374,18 @@ describe("GitManagerModal", () => {
     });
 
     expect(container.querySelector(".modal-overlay.git-manager-modal-overlay")).toBeTruthy();
+  });
+
+  it("keeps the sidebar-launched Git Manager overlay transparent and click-through like Files", () => {
+    const css = loadAllAppCss();
+    const overlayRule = css.match(/\.modal-overlay\.git-manager-modal-overlay\.git-manager-modal-overlay\s*\{([^}]*)\}/)?.[1] ?? "";
+    const panelRule = css.match(/\.modal\.gm-modal\s*\{([^}]*)\}/)?.[1] ?? "";
+
+    expect(overlayRule).toContain("background: transparent");
+    expect(overlayRule).toContain("backdrop-filter: none");
+    expect(overlayRule).toContain("-webkit-backdrop-filter: none");
+    expect(overlayRule).toContain("pointer-events: none");
+    expect(panelRule).toContain("pointer-events: auto");
   });
 
   it("applies mobile keyboard CSS variables to gm-modal when keyboard is open", async () => {
@@ -3417,8 +3492,9 @@ describe("GitManagerModal", () => {
 
       const navItemRules = getRuleBlocks(mobile768, ".gm-nav-item");
       expect(navItemRules).toHaveLength(1);
+      // Mobile tabs are compact ICON-ONLY in one scrolling row: non-shrinking via flex:0 0 auto + intrinsic width:auto (overrides the base .gm-nav-item width:100% that otherwise made one tab fill the row).
       expect(navItemRules[0]).toContain("flex: 0 0 auto;");
-      expect(navItemRules[0]).toContain("min-height: calc(var(--space-xl) + var(--space-sm));");
+      expect(navItemRules[0]).toContain("width: auto;");
 
       expect(mobile720).not.toContain(".gm-sidebar");
       expect(mobile720).not.toContain(".gm-nav-item");

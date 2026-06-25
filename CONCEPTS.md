@@ -54,6 +54,17 @@ A Feature auto-generated from a failed Validator Run to carry the remediation wo
 ### Project
 A registered workspace that Fusion can operate on: it has a canonical local path, project-scoped settings and data, and must be backed by a usable Git work tree before task execution can create worktrees from it.
 
+A **workspace** is a special Project variant where the registered path is not
+itself a Git repository, but contains multiple Git repositories as direct
+sub-directories. Fusion discovers sub-repos at init time and records them in
+`.fusion/workspace.json`. In workspace mode, task execution does not require a
+single root-level worktree; instead, the agent acquires per-repo worktrees
+on demand via `fn_acquire_repo_worktree`.
+
+Workspace-task merges are **non-atomic**: each sub-repo lands on its own local
+integration ref independently, so a partial-land window (some sub-repos merged,
+others not) is possible mid-task — this state is local and operator-resettable.
+
 ### Project Identity
 The durable identity a registered Project carries locally so it can be reattached to the central registry after central state is lost or rebuilt, preserving rows keyed by the same project id instead of minting a replacement.
 
@@ -84,6 +95,9 @@ The authoritative task lifecycle runtime. It resolves a Task to workflow IR, wal
 
 ### Engine Singleton Lock
 A per-machine mutual-exclusion guard ensuring only one fusion process runs the engine for a given project, combining a lockfile in the project's `.fusion/` directory with a per-project loopback socket. Failure to acquire it (`EngineAlreadyRunningError`) is **positive proof an engine is already running** for that project elsewhere on the machine — not an error to swallow and not "no engine." A process refused the lock keeps that as a fact: it reports the engine as available (so UI surfaces don't claim it's down) while reconciliation keeps retrying, so it takes over if the current owner exits.
+
+### Active-session lease
+A path-keyed, in-memory claim that a given worktree path is held by a specific Task's running session (executor, step, workflow-step, AI-merge, or a workspace sub-repo acquire/land). It serves two jobs at once: mutual exclusion (a second Task may not register a path already held by a different Task — the foreign-task guard) and liveness (self-healing treats a held path as proof the Task is actively running and must not be rebounded). The key is the path, so the registry is only as correct as the path chosen: a path uniquely owned by one Task gives real exclusivity, but a path shared across Tasks (e.g. a workspace's browse-only root) must be made Task-scoped before registration or the guard will reject every concurrent sibling. Re-registration by the same Task is idempotent; cleanup must unregister the exact key that was registered.
 
 ### ACP Ask Path
 A one-turn read-only model ask routed through the ACP runtime rather than a CLI print mode. The runner accumulates streamed prose, may recover a trailing JSON object for structured seams, and treats abnormal ACP stop reasons as incomplete answers for validator use.
@@ -244,11 +258,19 @@ A persisted crash-safe marker (`tasks.transitionPending`) written in the same tr
 ### Step instance
 One runtime expansion of a `foreach` template subgraph, bound to a single planned step (`Task.steps[i]`). Identity is deterministic — `<foreachNodeId>#<stepIndex>:<templateNodeId>` — so resume reconstructs the full instance set from the pinned step count without persisting the expansion itself. Each instance carries its own run-state (current node, rework count, baseline/checkpoint, and in worktree mode its branch and integration status) in its own persisted run-state table. The step count is pinned at expansion; a later disagreement with the live step list is a `pin-mismatch` failure, never a silent re-expansion. An instance's lifecycle writes flow through `store.updateStep` so `Task.steps[]` stays the physical projection sink for every existing consumer.
 
+### Artifact
+A persisted registry entry produced by agents, dashboard chat, workflows, or tasks for reusable deliverables and intermediate products. Artifacts have a type (`document`, `image`, `video`, `audio`, or `other`), author attribution, optional task linkage, metadata such as MIME type/size, and either inline text `content` or a `uri`/path reference for stored media. The artifact registry stores metadata for cross-agent discovery, while the dashboard surfaces task-linked and task-less entries in the Artifacts view's **Artifacts** gallery.
+
 ### parse-steps
 A workflow graph node that reads a declared Artifact and runs a registry parser to write the canonical step list (`Task.steps[]`) — the only graph-side writer of steps. Built-in parsers are `step-headings` (the `### Step N:` convention, extracted byte-identically from the legacy regex, including the `(depends: N,M)` annotation) and `json-steps`; plugins contribute parsers under `plugin:<pluginId>:<parserId>`. Parsing failures fail closed to a routable `outcome:parse-error` rather than crashing. A parse-steps node must dominate (precede on all paths) any `foreach(source:"task-steps")`, and running one after a foreach has already expanded trips pin protection (an audited failure) so re-plan loops cannot desynchronize an expanded region.
 
 ### Custom task field
 A workflow-declared, typed task field (`string | text | number | boolean | enum | multi-enum | date | url`, with enum options and render hints) whose values live in `tasks.customFields`, keyed by field id. The task model is thereby recast as core fields (title, description) + standard metadata + these workflow-defined fields. Writes pass through a single store authority (`updateTaskCustomFields`) that validates each value against the resolving workflow's schema and returns typed rejections (offending `fieldId` + `code`); agents write them via `fn_task_update`'s `custom_fields` patch. Editing a workflow's fields or switching a task's workflow orphans (never destroys) values for removed or type-incompatible ids — orphans are retained and surfaced under a detail disclosure, excluded from cards. Same id means the same field within a project; there is no cross-workflow shared field namespace.
+
+### Optional step group
+A workflow graph container node (alongside `foreach`/`loop`) whose template subgraph runs once when a task has enabled it and is bypassed otherwise — the graph-native way to make a step optional per task. Enablement is a per-task toggle set seeded from the group's workflow-level default; the group's own node id is the toggle key. It replaces the earlier execution-inert *declaration* model (a separate optional-step list run through a hidden seam), so optional steps are now real, placeable nodes rather than an out-of-graph facet.
+
+Single pass — no iteration or rework inside the template (this is what distinguishes it from `foreach`/`loop`). Because the toggle key is the node id, renaming or recreating a group resets its per-task enablement; and because that id may deliberately equal a built-in step-template id, the per-task enable set must keep group ids identity-stable rather than round-tripping them through legacy step-template materialization (which would remap the key and silently bypass the group).
 
 ## Persistence & migrations
 

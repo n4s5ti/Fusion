@@ -23,25 +23,52 @@ Task Detail modal opens from onboarding, activity log, and task-to-task navigati
 
 **Left Sidebar Navigation** is enabled by default for desktop/tablet project screens, moving project navigation out of the Header and into a persistent left sidebar. To opt out, open **Settings → Experimental Features** and turn **Left Sidebar Navigation** off (`leftSidebarNav: false`).
 
-When enabled on desktop or tablet project screens, the sidebar starts with a centered **New Task** button that opens the existing New Task dialog from any project screen. Expanded mode shows the plus icon and **New Task** label; collapsed rail mode keeps the centered icon-only button accessible through its label/title. Below that action, the sidebar contains the primary destinations (Board, List, Agents, Command Center, Missions, Chat, Artifacts, Mailbox, and plugin primary views), selected auxiliary destinations as regular entries (Research, Insights, Skills, Memory, Secrets, Stash Recovery, Evals, Goals, Todos, Dev Server, and plugin overflow views when their flags/plugins are enabled), and a footer with the collapse toggle directly above the Settings button. The Header retains the Fusion brand and project selector, keeps its non-navigation controls, and hides the view-toggle row and **More views** trigger so there is only one canonical primary navigation surface.
+<!-- FNXC:DashboardDocs 2026-06-22-00:00: The dashboard navigation docs must mirror the post-reshuffle source of truth: the left sidebar owns primary content views plus Workflows, Import Tasks, and Automations, while the right dock owns only inline tool panels. -->
+<!-- FNXC:DashboardNavigationDocs 2026-06-22-09:30: FN-6897 synced the user-facing navigation guide after the sidebar/dock reshuffle. Desktop/tablet navigation is split between left-sidebar main-content destinations, a persistent far-right tools dock, and the footer-launched Terminal; stale Header overflow, duplicate dock/sidebar, and standalone Stash Recovery affordances must not be documented as current behavior. -->
+
+When enabled on desktop or tablet project screens, the sidebar starts with a centered **New Task** button that opens the existing New Task dialog from any project screen. Expanded mode shows the plus icon and **New Task** label; collapsed rail mode keeps the centered icon-only button accessible through its label/title. Below that action, the sidebar contains primary destinations (**Board**, **List**, **Agents** when enabled, **Command Center**, **Planning**, **Missions**, **Chat**, **Artifacts**, **Mailbox**, and plugin primary views) followed by secondary destinations (**Workflows**, **Import Tasks**, **Automations**, optional **Evals**, **Goals**, **Research**, **Insights**, **Skills**, **Memory**, **Dev Server**, and plugin overflow views when their flags/plugins are enabled). The footer contains the sidebar collapse toggle directly above **Settings**.
+
+Use the desktop/tablet sidebar this way:
+
+1. Select **New Task** at the top of the sidebar.
+   Expected outcome: the existing New Task dialog opens from any project screen, including advanced options such as priority, execution mode, workflow/model routing, and GitHub tracking.
+2. Select a primary destination such as **Board**, **Command Center**, **Planning**, or **Artifacts**.
+   Expected outcome: the selected view renders in the main content region and the sidebar item receives the active highlight.
+3. Select **Workflows**, **Import Tasks**, or **Automations** from the secondary section.
+   Expected outcome: each surface opens as an embedded main-content view. **Import Tasks** is the GitHub import surface.
+4. Use the footer **Collapse** control or drag the right-edge resize handle.
+   Expected outcome: the sidebar switches between labeled and icon-only rail modes or persists the resized width in browser `localStorage` (`fusion:left-sidebar-collapsed` and `fusion:left-sidebar-width`) for the next reload.
 
 While the sidebar is active on desktop/tablet project screens, Board and List workflow controls move into the Header slot that replaces the hidden view toggle. Board and List share one workflow dropdown: each workflow row includes an inline edit action, and a persistent **New workflow** action remains at the bottom of the dropdown while the workflow list scrolls. The standalone workflow row above the board/list content is removed in this mode. When the flag is off, outside project screens, or on mobile, workflow controls remain inline with the same consolidated dropdown.
 
-The footer collapse toggle uses the same row styling as other sidebar items: expanded mode shows a **Collapse** label, while collapsed rail mode hides the label and keeps the icon-only button accessible through its label/title. The active nav-item highlight and the resize-handle hover/focus accent track the active color theme's `--accent` token across all themes, so shadcn, forest, ocean, and other themes no longer show a fixed blue selected state. The expanded width can still be resized from the right-edge separator. Collapsed state and expanded width are saved in browser `localStorage` (`fusion:left-sidebar-collapsed` and `fusion:left-sidebar-width`) and restored on reload.
+The active nav-item highlight and the resize-handle hover/focus accent track the active color theme's `--accent` token across all themes, so shadcn, forest, ocean, and other themes no longer show a fixed blue selected state. The Header retains the Fusion brand and project selector, keeps non-navigation controls, and hides duplicate desktop view-toggle entries while the sidebar is active.
 
-On mobile viewports (`<=768px`), the sidebar is not rendered even when the default-on setting is enabled. The existing bottom `MobileNavBar` remains the navigation surface.
+On mobile viewports (`<=768px`), the sidebar is not rendered even when the default-on setting is enabled. The existing bottom `MobileNavBar` remains the navigation surface, with mobile-only More-sheet entries for compact tools such as Git Manager, Terminal, Files, and **Import from GitHub**.
 
 ## Right Dock (experimental, default on)
 
 The **Right Dock Panel** experiment is enabled by default. To disable it, open **Settings → Experimental Features** and turn off **Right Dock Panel**.
 
-When enabled on desktop or tablet project screens, the dock is visible by default as the persistent far-right sidebar in the project content row. Its in-dock collapse toggle (`right-dock-collapse-toggle`) replaces the former Header right-panel toggle, so there is no duplicate Header control when Left Sidebar Navigation is active or when the Header view-toggle row is visible.
+When enabled on desktop or tablet project screens, the right dock is a persistent far-right tools sidebar in the project content row. Use the in-dock collapse control to switch between the full tool panel and the compact far-right rail; the selected tool, expanded/collapsed state, width, and expanded modal size persist across reloads.
 
-The dock toolbar has exactly six destinations: **Activity**, **Activity Log**, **Import from GitHub**, **Git Manager**, **Files**, and **Automation**. The launcher tools reuse the same handlers as the former desktop Header toolbar buttons; **Files** remains the inline dock view, opens by default, and is the fallback when browser storage points at a removed dock key. Inline dock views have an expand button that opens the same view in a resizable modal, while action-only tools launch directly and are not expandable. Dock collapsed state, width, and expanded modal size persist across reloads.
+The dock toolbar has built-in inline tool panels for **Activity**, **Activity Log**, **Git Manager**, **Files**, and project tool launchers such as **Import from GitHub** / **Import Tasks** workflow entry points and **Automation** actions when available. **Activity**, **Activity Log**, **Git Manager**, and **Files** render in embedded mode inside the dock instead of opening fixed popup overlays; **Files** opens by default and is the fallback when browser storage points at a removed dock key. Inline dock views have an expand button that opens the same view in a resizable modal for more room. Plugin overflow views may add additional right-dock tool tabs, except plugin destinations that explicitly belong in the left sidebar.
 
-Content views such as Artifacts, Research, Insights, Skills, Memory, Secrets, Evals, Goals, Todos, and Dev Server live in the left sidebar (or compact mobile navigation) rather than the right dock. The six tool buttons are no longer duplicated in the desktop top Header toolbar, and the former desktop overflow trigger is removed when it would otherwise be empty.
+Use the desktop/tablet right dock this way:
 
-On mobile viewports, the Right Dock never renders. The compact Header overflow and bottom `MobileNavBar` keep their existing behavior even when the experiment is enabled.
+1. Open a project screen with **Right Dock Panel** enabled.
+   Expected outcome: the dock appears on the far right with **Files** selected unless a valid previous dock view is stored.
+2. Select **Activity**, **Activity Log**, **Git Manager**, **Files**, or another available tool in the dock toolbar.
+   Expected outcome: the selected tool renders inline inside the dock body and the toolbar tab becomes active.
+3. Drag the dock's left-edge resize handle, or focus the separator and use the arrow keys.
+   Expected outcome: the dock width changes within its min/max bounds and is saved for future reloads.
+4. Select the dock expand action.
+   Expected outcome: the same inline tool opens in a resizable modal while the dock remains the source navigation surface.
+5. Use the dock's own collapse control.
+   Expected outcome: the far-right surface switches between full panel and compact rail without creating duplicate left-sidebar destinations; mobile viewports never render the right dock.
+
+Content views such as Artifacts, Research, Insights, Skills, Memory, Evals, Goals, Dev Server, **Workflows**, **Import Tasks**, and **Automations** live in the left sidebar (or compact mobile navigation) rather than the right dock. On desktop/tablet, GitHub import lives under **Import Tasks**; mobile keeps compact GitHub import entries in the More surfaces.
+
+On mobile viewports, the Right Dock never renders. The compact Header actions and bottom `MobileNavBar` keep their existing mobile behavior even when the experiment is enabled.
 
 ## Deep Links
 
@@ -111,12 +138,36 @@ Features:
 
 ![List view](./screenshots/list-view.png)
 
+## Import Tasks (GitHub import)
+
+**Import Tasks** is the desktop/tablet sidebar destination for importing GitHub issues and pull requests onto the board. It embeds the GitHub import surface in the main content region; the same component can still appear as a modal from compact mobile paths.
+
+Use Import Tasks on desktop/tablet:
+
+1. Select **Import Tasks** in the left sidebar.
+   Expected outcome: the GitHub import surface opens in the main content region with GitHub issue and pull request tabs.
+2. Choose or enter a repository (`owner/repo`). If Git remotes are detected, use the remote selector.
+   Expected outcome: Fusion loads import candidates for the selected repository and shows repository/load state feedback.
+3. Stay on **Issues** or switch to **Pull Requests**, then optionally enter issue label filters before loading results.
+   Expected outcome: the list pane shows matching open issues or pull requests and marks entries that already exist on the board.
+4. Select an issue or pull request row.
+   Expected outcome: the preview pane shows its title, source link, body excerpt/content, labels or PR metadata, and import availability.
+5. Select the import action.
+   Expected outcome: Fusion creates a task (or review task for a pull request) on the board and preserves GitHub provenance/tracking metadata.
+
+Use GitHub import on mobile:
+
+1. Open the compact Header actions or bottom **More** sheet and select **Import from GitHub**.
+   Expected outcome: the same import workflow opens in the mobile modal layout.
+2. Choose the repository, issue/PR tab, candidate row, and import action.
+   Expected outcome: Fusion creates the board task with the same GitHub provenance/tracking metadata as the desktop/tablet **Import Tasks** view.
+
 ## Graph View
 
 Graph view visualizes task dependencies as an interactive node/edge map.
 
 Navigation:
-- Desktop: **Header → More views → Graph**
+- Desktop/tablet: left sidebar or applicable plugin/content navigation entry for **Graph** when the dependency graph surface is enabled
 - Mobile: **MobileNavBar → More → Graph**
 
 Behavior:
@@ -143,7 +194,7 @@ The workflow editor opens as a full-screen modal editor for inspecting built-ins
 Navigation:
 - Open a task or board surface that shows the workflow selector, then choose **Manage…**.
 - From the Board or List workflow dropdown, use the inline edit button on a workflow row to open that workflow directly, or use the persistent **New workflow** footer to create a workflow without leaving the dropdown. The same dropdown previews each workflow's Todo / In Progress / Done task counts inline before switching.
-- Use the global **Workflow** / **Workflows** entry point from desktop header, compact header overflow, or mobile **More** navigation to browse definitions.
+- Use **Workflows** in the desktop/tablet left sidebar, compact mobile actions, or mobile **More** navigation to browse definitions.
 - From Settings moved-setting stubs, choose **Open workflow settings** to jump to the default workflow's settings values.
 
 Behavior:
@@ -161,6 +212,8 @@ Behavior:
 ## Custom Providers
 
 Custom Providers live in **Settings → Authentication → Custom Providers**, inside the **Advanced: Custom Providers** disclosure. Use this section to add user-defined model providers that speak an OpenAI-compatible API, the OpenAI Responses API, an Anthropic-compatible API, or Google Generative AI. After a provider is saved with models, those models become selectable in model dropdowns, including **Settings → Project Models** lanes and workflow model lanes.
+
+Settings → Global Models also includes **Model pricing overrides** for Command Center estimates. Add or edit rows with lowercased `provider:model` keys (or bare `:model` fallback keys), USD-per-1M token prices for input/output/cache read/cache write, and optional source text. **Fetch LiteLLM pricing** performs an explicit one-click refresh from LiteLLM's published model pricing JSON, replaces the override table only after a successful parse, and records the fetched timestamp/source; failed fetches keep the existing overrides.
 
 Supported **API type** values match the dropdown in the form:
 
@@ -225,7 +278,7 @@ For the stored settings shape, see [`customProviders` in the Settings Reference]
 
 ## Planning Mode
 
-Planning Mode now includes branch controls on the summary screen before you create a task.
+Planning is a desktop/tablet left-sidebar main-content destination after **Command Center**. It opens the planning-session list and composer in the main content region; mobile continues to use the compact planning entry points. Planning Mode now includes branch controls on the summary screen before you create a task.
 
 - **Branch strategy** options mirror Subtask Breakdown semantics:
   - `Use project/default branch`
@@ -239,6 +292,10 @@ Planning Mode now includes branch controls on the summary screen before you crea
 These values are sent with the Planning Mode create-task request as `branchSelection`, so created tasks persist branch/base-branch settings consistently with other branch-aware task creation flows.
 
 When inline quick-create, Planning Mode, or Subtask Breakdown is opened from a workflow-filtered board/list lane, the create request also carries that active workflow selection. Quick-created tasks appear on the selected workflow lane immediately while board-workflows metadata refreshes, and planning saves, planning breakdown saves, and subtask-breakdown saves create their tasks directly on the selected workflow lane instead of briefly landing on the default board.
+
+The **New Task** dialog's workflow selector also defaults to the current or last selected Board/List workflow lane for the current project. If no valid lane has been selected, or the remembered lane was deleted, the selector falls back to the project default workflow and task creation omits an explicit `workflowId`.
+
+Quick entry, inline quick-create, and the full **New Task** dialog all check for similar active tasks before creating. When possible duplicates exist, the warning lists each match by task description (falling back to title, then “No description”) and lets you open an existing task, cancel, or create anyway with the duplicates acknowledged.
 
 Completed single-task planning sessions remain in the Planning Mode history after you create the task, and selecting one restores the completed summary instead of restarting the composer. History rows are deduplicated by session id even if the initial load and live session updates arrive out of order, and deleting a history entry now waits for the server delete to persist (failures keep the row visible and surface an error instead of silently disappearing until refresh).
 
@@ -259,7 +316,7 @@ Rules:
 - `Merge target / base branch` stays optional for all modes and uses the same branch-dropdown + `Custom…` fallback behavior as Planning Mode.
 - In **More options → Model Configuration**, **Auto-merge** is a per-task override with three states: **Default** (follow project setting), **Enabled**, or **Disabled**.
 
-The dialog also exposes the board quick-add AI handoffs: **Plan** opens Planning Mode with the current description, and **Subtask** opens Subtask Breakdown with the current description when **Settings → Experimental Features → Subtask Breakdown** is enabled. The Subtask handoff is hidden by default; visible handoff buttons remain disabled until the description has content, matching the quick-add row behavior.
+The dialog also exposes the board quick-add AI handoffs: **Plan** opens Planning Mode with the current description, and **Subtask** opens Subtask Breakdown with the current description when **Settings → Experimental Features → Subtask Breakdown** is enabled. The Subtask handoff is hidden by default; visible handoff buttons remain disabled until the description has content, matching the quick-add row behavior. **Execution mode** is available in the New Task dialog as well as quick entry, so users can choose Fast or standard execution before creating a task from either surface.
 
 ## Chat View
 
@@ -352,12 +409,13 @@ Mailbox view shows inbox/outbox communication threads and unread state.
 - Inbox renders one row per message (no sender-based collapsing)
 - clicking a message in the Mail tab opens the task detail pane with full message content and conversation context
 - reply rows in the mailbox modal can expand inline to show the replied-to message context for easier thread reading
+- when an agent or dashboard chat session registers an artifact with `fn_artifact_register`, Fusion sends a best-effort `system` → user inbox message announcing the new artifact (for example, `New image artifact registered: <title>`) with metadata for `artifactId`, `artifactType`, `title`, `authorId`, and optional `taskId`; notification delivery is informational and never blocks or rolls back the artifact registration
 - mailbox now includes an **Approvals** tab with pending and history filters (`approved` / `denied` / `completed`), approval detail context, and inline approve/deny actions for pending requests
 - in the **Agents** tab, the agent selector now includes **All agents**, which shows one combined agent-to-agent stream (with sender + recipient labels); selecting a specific agent still shows Inbox/Outbox subtabs
 - mailbox entry points now show unread/pending indicators: the desktop/tablet Header mailbox toggle shows a pending-approval dot first or an unread dot when unread mail exists without pending approvals, the mobile bottom-nav Mailbox tab carries the mobile badges/dots, and the compact Header actions overflow keeps a Mailbox entry only when the mobile bottom nav is disabled
 - approval lifecycle SSE events (`approval:requested`, `approval:updated`, `approval:decided`) trigger mailbox approvals refresh without manual reload
 - when a task newly enters `awaiting-approval`, the app shows a persistent approval banner above project content with an **Open Mailbox** CTA; dismissals are remembered per approval item until that item advances or a different one arrives
-- when a task first transitions into `done`, the dashboard shows a one-time **Enjoying Fusion?** GitHub star prompt in the project view; clicking **Star on GitHub** or dismissing the card marks it shown in browser `localStorage`, so it does not reappear on reload or later task completions
+- when a task first transitions into `done`, the dashboard shows a one-time **Enjoying Fusion?** GitHub star prompt in the project view after first-run setup is closed; clicking **Star on GitHub** or dismissing the card marks it shown in browser `localStorage`, so it does not reappear on reload or later task completions. The setup wizard does not add a second star prompt.
 - Visible message history/threading is driven by explicit `message.metadata.replyTo.messageId` links
 - Separate top-level messages from the same sender remain independent in the inbox and detail pane
 
@@ -365,14 +423,32 @@ Mailbox view shows inbox/outbox communication threads and unread state.
 
 ## Interactive Terminal
 
-Fusion embeds a terminal using xterm.js.
+Fusion embeds a terminal using xterm.js. Desktop and tablet use the footer status bar as the terminal launcher; mobile keeps the full-screen terminal path.
+
+Use the terminal on desktop/tablet:
+
+1. Select the **Terminal** button in the footer executor status bar.
+   Expected outcome: the terminal opens as a bottom-docked panel with the active shell session and a draggable top resize handle.
+2. Drag the top edge of the docked panel.
+   Expected outcome: the panel height changes within its viewport-safe bounds and persists per project.
+3. Select **Pop out** from the terminal header.
+   Expected outcome: the terminal switches to a floating window that can be dragged and freely resized; size, position, and display mode are saved per project.
+4. Select **Dock** in the floating terminal.
+   Expected outcome: the terminal returns to the bottom docked panel using the saved docked height.
+5. Select the scripts chevron beside the footer **Terminal** button.
+   Expected outcome: the quick scripts menu opens without toggling the terminal; choosing a script runs it in the terminal, and the menu footer opens script management.
+
+Use the terminal on mobile:
+
+1. Open the bottom navigation **More** sheet and select **Terminal**.
+   Expected outcome: the terminal opens as a full-screen, keyboard-aware modal rather than the desktop/tablet docked or floating surface.
+2. Use the mobile terminal controls and close the modal when finished.
+   Expected outcome: terminal sessions reconnect/recover normally without desktop dock state affecting the mobile layout.
 
 Features:
 
 - Multiple terminal tabs
 - PTY-backed shell sessions
-- On desktop and tablet, the terminal opens from the footer executor status bar as a bottom-docked panel with a draggable top resize handle; use **Pop out** to switch to a draggable, freely resizable floating terminal, then **Dock** to return it to the footer panel.
-- Mobile keeps the terminal as a full-screen modal with the existing keyboard-aware layout instead of the docked or floating desktop/tablet modes.
 - Ctrl/Cmd+C copies the current terminal selection, while plain Ctrl+C with no selection still sends SIGINT
 - Ctrl/Cmd+V pastes clipboard text into the active terminal session
 - The Shortcuts panel includes Ctrl/Alt helpers, ESC/Tab, common shell shortcuts, and Up/Down/Left/Right arrow buttons that send standard ANSI cursor sequences for keyboard-less shell history and line editing
@@ -387,7 +463,18 @@ Features:
 
 ## Git Manager
 
-Git manager centralizes repo operations in the dashboard.
+Git Manager centralizes repo operations in the dashboard. On desktop/tablet it is available as an embedded right-dock panel and can expand into a resizable modal; on mobile it opens from the compact More surfaces.
+
+Use Git Manager:
+
+1. On desktop/tablet, open the right dock and select **Git Manager**.
+   Expected outcome: Git Manager renders inline in the right dock with its section tabs and repository status.
+2. Select the dock expand action if you need more room.
+   Expected outcome: the same Git Manager surface opens in a resizable modal without changing the selected dock tool.
+3. On mobile, open the compact Header overflow or bottom **More** sheet and select **Git Manager**.
+   Expected outcome: Git Manager opens in the mobile modal layout with the section tabs restored as a horizontal scrolling strip.
+4. Select **Status**, **Changes**, **Commits**, **Branches**, **Worktrees**, **Stashes**, **Recovery**, or **Remotes**.
+   Expected outcome: the corresponding section panel replaces the previous section while preserving the same Git Manager session.
 
 Features:
 
@@ -398,10 +485,10 @@ Features:
 - One-click **Sync** action in Remotes (`git pull --rebase` followed by push; it stops and surfaces an error instead of pushing when the pull conflicts or fails)
 - Remote editing controls
 - Stash inspection (view stat + patch) before apply/pop/drop actions
-- Stash Recovery tab for orphaned merger-autostashes; orphan counts appear on Git Manager entry points instead of a standalone Stash Recovery view
+- **Recovery** tab for orphaned merger-autostashes; orphan counts appear on Git Manager entry points
 - Remotes tab keeps "Recent commits on {remote}" in sync immediately after successful push/pull actions
 
-![Git manager](./screenshots/git-manager.png)
+![Git Manager](./screenshots/git-manager.png)
 
 ## Merge Advance Notice
 
@@ -478,18 +565,27 @@ For per-run aggregation, `GET /api/agents/:id/runs/:runId/cited-goals` returns `
 
 ## Artifacts View
 
-Artifacts view aggregates task documents, project markdown files, and registered artifacts.
+Artifacts view aggregates project markdown files, task documents, and registered artifacts. The dashboard title is **Artifacts**; the internal tab bar keeps the shipped **Project Files**, **Task Documents**, and **Artifacts** labels.
 
 Features:
 
 - Group task documents by task ID (with revision history metadata)
 - Search documents across tasks
 - Open project markdown files with inline preview
-- Browse the **Artifacts** tab for media registered by agents, users, or the system across tasks
-- Preview artifact images inline, play video and audio with native controls, read document previews, and open generic artifacts through their media URL
-- Jump directly from a document group or artifact card to the owning task detail modal when a task is linked; inside task detail, the **Artifacts** tab shows that task's documents and registered media artifacts together
+- Browse the **Artifacts** tab for registry media registered by any agent, dashboard chat/user action, or system tool across tasks
+- Use the tab-count badges to see the current counts for Project Files, Task Documents, and Artifacts; the Artifacts badge reflects the loaded `GET /api/artifacts` result set, including active search filters
+- Use the responsive media gallery to scan thumbnail-first image and video cards with consistent framing, while audio, document, and generic artifacts remain readable cards in the same grid
+- Expand image and video artifact thumbnails into a full-size lightbox; dismiss it with the close button, backdrop click, or Escape while non-previewable artifact cards keep their normal controls and links
+- Preview artifact images inline, play video and audio with native controls, read document previews from inline content/description, and open generic `other` artifacts through their media URL (`GET /api/artifacts/:id/media`)
+- Read artifact metadata on each card: type badge (`Image`, `Video`, `Audio`, `Document`, or `Other`), title, optional description/content preview, author ID, timestamp, and linked task title/ID when present
+- Use **Open task** on an artifact card to jump back to the originating task when the artifact has a `taskId`; inside task detail, the **Artifacts** tab shows that task's documents and registered media artifacts together
+- Loading state: the Artifacts tab shows `Loading artifacts…` while the first artifact list request is pending and no artifact results are loaded
+- Empty states: with no search query it shows `No artifacts yet.` plus the hint that artifacts are created by agents, users, and system tools; with a search query it shows `No artifacts match "<query>".`
+- Error state: a failed artifact list request uses the shared `Failed to load artifacts: <error>` panel with a **Retry** action that re-runs the artifact fetch
 - Toggle between raw text and rendered markdown using the **Markdown/Plain** button
 - Highlight text in raw or rendered project-file previews, choose **Add comment**, and send the file path, selected snippet, and your comment to the **New Task** dialog
+
+Agent registrations also surface through the [Mailbox View](#mailbox-view): successful `fn_artifact_register` calls send a best-effort system inbox notification so users can discover new media even before opening the gallery.
 
 ![Artifacts view](./screenshots/documents-view.png)
 
@@ -498,7 +594,7 @@ Features:
 Reports View is available when the **Reports** plugin is installed and enabled.
 
 Navigation:
-- Desktop: **Header → More views → Reports**
+- Desktop/tablet: left sidebar plugin/content entry for **Reports** when the Reports plugin is installed and enabled
 - Mobile: **More** sheet → **Reports**
 
 Features:
@@ -529,8 +625,7 @@ Todo View is an experimental full-height dashboard surface for managing per-proj
 > Available when `experimentalFeatures.todoView` is enabled.
 
 Navigation:
-- Desktop/tablet with Left Sidebar Navigation enabled: **Left sidebar → Todos**
-- Desktop/tablet with the left-sidebar opt-out layout: **Header → More views → Todos**
+- Desktop/tablet: **Left sidebar → Todos** when the Todo view is enabled
 - Mobile: **More** sheet → **Todos**
 
 For full behavior, API contracts, and storage details, use the canonical [Todo View guide](./todo-view.md).
@@ -553,9 +648,9 @@ Features:
 - Graceful unavailable/setup messaging when research backend capability is disabled or not configured
 
 Navigation:
-- Desktop: **Header → More views** overflow menu
+- Desktop/tablet: **Left sidebar → Research** when the Research view is enabled
 - Mobile: **More** sheet in `MobileNavBar`
-- Research is intentionally not shown in the primary board/list/agents/missions/chat toggle row
+- Research is intentionally separate from the primary Board/List workflow controls
 
 For the full research workflow, provider setup, CLI commands, API reference, and agent integration, see the canonical [Research guide](./research.md).
 
@@ -593,6 +688,8 @@ Navigation:
 Features:
 - Switch between **List**, **Board**, and **Org chart** layouts
 - Filter by role/state, include/exclude system agents, and inspect health/status
+- Agent list cards show the configured **Model** or plugin **Runtime** for each agent, falling back to **Auto** when no override is set
+- First-run setup asks whether to create an optional project agent after project registration. The default template is **CEO**; users can choose another preset, use the AI interview when `experimentalFeatures.agentOnboarding` is enabled, or skip it. Fusion can still build tasks without an agent by starting temporary agents to plan, code, review, and merge task work.
 - Start, pause, stop, and trigger agent runs from the view and from detail panels
 - In **Agent detail**, use the kebab **Bulk agent actions** button in the header utility cluster (next to **Refresh** and **Close**) to run project-wide lifecycle transitions for non-ephemeral agents in the current project — **Pause All Agents** targets agents in the `active` or `running` state, while **Resume All Agents** targets agents in the `paused` state only
 - Bulk menu items stay disabled when nothing is eligible and show an inline hint (`Loading eligible agents...`, `No active agents eligible`, `No paused agents eligible`, or the current eligible count such as `Pause 2 active/running agents`)
@@ -614,7 +711,7 @@ Roadmaps view manages roadmap hierarchies (roadmaps, milestones, features) and p
 > Hidden when a plugin replaces Roadmaps navigation.
 
 Navigation:
-- Desktop: **Header → More views → Roadmaps**
+- Desktop/tablet: left sidebar plugin/content entry for **Roadmaps** when the Roadmap plugin is enabled
 - Mobile: **More** sheet (or promoted to a top tab when eligible based on mobile nav slot rules)
 
 Features:
@@ -665,7 +762,7 @@ Evals view is a dedicated dashboard surface for reviewing scheduled task-evaluat
 > Available when `experimentalFeatures.evalsView` is enabled.
 
 Navigation:
-- Desktop: **Header → More views → Evals**
+- Desktop/tablet: **Left sidebar → Evals** when evaluations are enabled
 - Mobile: **More** sheet → **Evals**
 
 Features:
@@ -681,7 +778,7 @@ Insights view surfaces categorized project insights and lets you turn findings i
 > Available when `experimentalFeatures.insights` is enabled.
 
 Navigation:
-- Desktop: **Header → More views → Insights**
+- Desktop/tablet: **Left sidebar → Insights** when insights are enabled
 - Mobile: **More** sheet → **Insights**
 
 Features:
@@ -705,10 +802,11 @@ Features:
 - **Overview controls dashboard** sits at the top of the Overview landing surface on desktop and mobile. It includes AI engine stop/start backed by `globalPause`, live scheduler status from executor stats, range sliders for `maxConcurrent`, `maxTriageConcurrent`, and `maxWorktrees` that persist through `/api/settings`, and a compact theme dropdown with the same color-chip swatches and Shadcn variant list as Settings → Appearance. These controls reuse existing APIs and App-level theme setters; they do not add a new backend route or second theme owner.
 - **Overview** summarizes token usage/cost, autonomy, active nodes, sessions, agent runs, tasks done, model breadth, and real open signals, and includes the SDLC throughput funnel for the selected range at the bottom of the Overview content in loading, error, empty, and populated states. Its token total and Live activity snapshot token metric refresh on a bounded live cadence and animate number changes while preserving reduced-motion preferences. The sessions card uses the selected-range `ActivityAnalytics.sessions` value already loaded for the overview. The Live activity snapshot also shows the current board-state count for tasks in progress, independent of the selected analytics date range. Overview includes a graph-rich software-factory snapshot with the existing tokens-by-model bar, tool-category bar, real recharts token-share pie, and the daily activity multi-series line chart placed before the daily activity sparkline/trend so the richer line graph sits higher in the chart grid. These reuse the already-loaded tokens, tools, activity, and signals analytics; the signals count comes from `/api/command-center/signals` and renders unavailable (`—`) while the incidents-backed response is loading or unavailable. The chart reveal/glow accents are decorative and disabled when reduced-motion preferences are active. The SDLC completion rate is shown as a radial gauge and is calculated as cohort conversion from in-range triage entrants, so the rate is capped at 100% even when older tasks finish during the range.
 <!-- FNXC:CommandCenter 2026-06-21-00:00: Command Center cost must read as an estimated, derived value from recorded token counts and the hand-maintained model pricing map; it is never persisted, and the UI must surface prices-as-of, stale low-confidence, and unavailable unknown-model states instead of implying billing truth. -->
-- **Tokens** breaks down token totals, estimated cost, tasks, and per-model usage. Per-model and per-provider breakdowns use the task's analytics-only actually-used model snapshot when available, so usage from settings-resolved runs appears under the real runtime model instead of `(unknown)` without changing future model resolution; estimated cost uses the same snapshot-first, legacy-fallback model identity so those resolved runs price normally when the model is in the pricing table. Estimated cost is derived at read time from recorded token counts multiplied by a hand-maintained per-model pricing table; it is not persisted, so historical rows stay tied to current maintained prices instead of stale stored billing truth. The Tokens area shows a **prices as of** date for that table, marks pricing older than the staleness threshold as low-confidence, and shows cost unavailable for models with no pricing entry rather than guessing a price. It includes the existing token-usage-over-time chart, an additive recharts multi-series line graph, and a token-share pie backed by the same grouped token analytics; use the granularity control to switch the time-series request between hourly, daily, and weekly buckets. The token total and charts poll on a bounded cadence, keep the previous data visible during refresh, animate decorative count/bar transitions, and disable those animations for reduced-motion users.
+<!-- FNXC:CommandCenter 2026-06-22-00:00: FN-6876 requires user-maintained/LiteLLM-fetched pricing overrides to feed Tokens and Team estimates immediately without implying provider billing reconciliation. -->
+- **Tokens** breaks down token totals, estimated cost, tasks, and per-model usage. Per-model and per-provider breakdowns use the task's analytics-only actually-used model snapshot when available, so usage from settings-resolved runs appears under the real runtime model instead of `(unknown)` without changing future model resolution; estimated cost uses the same snapshot-first, legacy-fallback model identity so those resolved runs price normally when the model is in the pricing table. Estimated cost is derived at read time from recorded token counts multiplied by the effective per-model pricing table: Settings → Global Models pricing overrides win first, then the built-in fallback table is used. It is not persisted, so historical rows stay tied to current maintained prices instead of stale stored billing truth. The Tokens area shows a **prices as of** date/source for the effective table, marks pricing older than the staleness threshold as low-confidence, and shows cost unavailable for models with no pricing entry rather than guessing a price. It includes the existing token-usage-over-time chart, an additive recharts multi-series line graph, and a token-share pie backed by the same grouped token analytics; use the granularity control to switch the time-series request between hourly, daily, and weekly buckets. The token total and charts poll on a bounded cadence, keep the previous data visible during refresh, animate decorative count/bar transitions, and disable those animations for reduced-motion users.
 - **Tools** shows autonomy ratio, tool-call volume, intervention counts, sessions, and tool categories. The area keeps the existing category bar and adds a recharts category-share pie from `ToolAnalytics.byCategory`. There is intentionally no tools line chart yet because `ToolAnalytics` does not expose a per-day tool trend; the dashboard does not fabricate one or call a new endpoint.
 - **Activity** tracks sessions, messages, active nodes, active agents, agent heartbeat runs, and stickiness. Agent-run sheets show total, active, completed, and failed runs for the selected range, and the Agent runs/day sparkline trends runs by `agentRuns.startedAt`. The area keeps the existing live animated line charts for messages/day, active agents/day, active nodes/day, and combined throughput/day (`messages + active agents + active nodes`), and adds a recharts multi-series line graph for messages, active agents, and agent runs plus an agent-run outcome pie from the existing `agentRuns` split. These charts reuse the existing activity analytics endpoint, refresh on a bounded 15-second cadence while mounted, keep the previous data visible during refreshes, and disable decorative draw-on motion for reduced-motion users.
-- **Productivity** separates outcome counters (commits and pull requests), task-duration stats, and volume proxies such as modified files, lines changed, and files by language. The task-duration block counts done tasks completed in the selected range and shows average, median, p90, and total active execution time from `cumulativeActiveMs`; when no qualifying duration data exists, duration values render the unavailable `—` sentinel rather than `0`. It keeps the files-by-language bar and adds a language-share pie from `ProductivityAnalytics.byLanguage`. There is intentionally no productivity line chart because the current productivity response has no per-day throughput or completion time series; no new endpoint is called.
+- **Productivity** separates outcome counters (commits and pull requests), task-duration stats, and volume proxies such as modified files, lines changed, and files by language. The task-duration block counts done tasks completed in the selected range and shows average, median, p90, and total active execution time from `cumulativeActiveMs`; when no qualifying duration data exists, duration values render the unavailable `—` sentinel rather than `0`. The Lines changed card includes **Preview LOC backfill**, an explicit operator control for historical commit-association diff stats. Preview runs the project-scoped backfill in dry-run mode by default and reports scanned rows, distinct commits, updated rows, skipped unavailable commits, and skipped invalid SHAs without writing; **Apply backfill** appears after a preview and requires danger confirmation before persisting additions/deletions to `task_commit_associations`, then renders the same counts as an applied report. It keeps the files-by-language bar and adds a language-share pie from `ProductivityAnalytics.byLanguage`. There is intentionally no productivity line chart because the current productivity response has no per-day throughput or completion time series; no new endpoint is called.
 - **Team** shows the read-only agent org chart, heartbeat pause/resume backed by the existing `enginePaused` setting, a per-agent analytics table, tokens-by-agent and tasks-done-by-agent charts, and a real token-share pie from the same per-agent token totals. The org chart is styled by Command Center's Team CSS, not lazy Agents view CSS, auto-switches to a horizontal top-down tree when the container is wide enough using the same breakpoint resolver as the full Agents view, and otherwise keeps the vertical nested list inside the taller scrollable org-chart container. The org-chart scroll container supports mouse click-and-drag panning while touch devices keep native scrolling. Parent agents draw connector lines to child agents in both horizontal and vertical Team layouts across desktop and mobile breakpoints. Org nodes show only agent names so role/title description/meta text does not clutter Team operations. Metrics come only from the project-scoped `tasks` and `agents` tables: token totals and estimated cost are summed from the `tokenUsage*` columns by `assignedAgentId`, files changed counts parsed `tasks.modifiedFiles` paths, tasks done counts `column = 'done'` moves in the selected range, and in-progress / in-review values reflect current task columns. Agent name, role, and live state come from the `agents` table; deleted-agent task history falls back to the raw agent id instead of crashing. The tab uses `/api/command-center/team`, adds no schema, never calls GitHub, and intentionally leaves per-agent issues filed/fixed to FN-6653. Team has no per-day analytics series today, so it intentionally does not render a line chart or fabricate a trend. Decorative chart reveal motion uses duration tokens and is disabled for reduced-motion users.
 - **Ecosystem** shows active model breadth, per-model task activity, and real plugin activations for the selected range. Plugin activation counts come from project-scoped plugin/extension load events via `/api/command-center/plugin-activations`; if no activation rows exist in range, the metric renders unavailable (`—`) rather than fabricating zero. The tab still reuses the tokens analytics endpoint grouped by model, adds a task-share-by-model pie from `TokenAnalytics.groups`, and renders a tokens/tasks trend line when `TokenAnalytics.series` buckets are present; if series buckets are absent, no synthetic trend is shown.
 <!-- FNXC:CommandCenter 2026-06-21-07:07: FN-6722 requires the GitHub area to expose a resolved-issue detail list from local task-store analytics only, with exact close timestamps flagged when reconciliation populated `sourceIssueClosedAt` and approximation called out otherwise. -->
@@ -759,24 +857,31 @@ Dev Server view manages detected dev server commands, preview URLs, and live log
 > Available when `experimentalFeatures.devServerView` is enabled (`devServer` is treated as a legacy alias).
 
 Navigation:
-- Desktop: **Header → More views → Dev Server**
+- Desktop/tablet: **Left sidebar → Dev Server** when the Dev Server view is enabled
 - Mobile: **More** sheet → **Dev Server**
 
 Features:
 - Detect candidate dev server commands and choose which command/session to run
+- Pick an executing task to run the dev server against that task's worktree and preview its in-progress work; the selected task's descriptor is shown so you know what you're previewing.
 - Start, stop, and restart the current server session
 - Manage preview URLs with embedded preview and **Open in new tab** fallback
 - Tail live logs, load older history, and refresh session status
+- When Dev Server is hosted in a very narrow right sidebar, open the preview from the compact **Open preview** launcher; the modal keeps preview actions available while configuration and logs stay usable in the sidebar.
+
+<!-- FNXC:DevServerDocs 2026-06-23-00:00: The narrow right-sidebar Dev Server host must describe the preview modal launcher so users do not expect the preview iframe to remain inline when the dock is too constrained for logs and preview together. -->
 
 For module-level behavior and API surfaces, see [Dev Server modules](./dev-server-modules.md).
 
 ## Stash Recovery in Git Manager
 
-Stash Recovery helps recover orphaned merger autostashes (`fusion-merger-autostash:*`) left behind when merge restore could not fully complete. It now lives as the **Recovery** tab in **Git Manager**; the former standalone top-level Stash Recovery view is removed from desktop and mobile navigation.
+Stash Recovery helps recover orphaned merger autostashes (`fusion-merger-autostash:*`) left behind when merge restore could not fully complete. It now lives as the **Recovery** tab in **Git Manager** and is reached through Git Manager on desktop/tablet and mobile.
 
 Navigation:
-- Desktop: **Git Manager → Recovery**
-- Mobile: **More** sheet → **Git Manager → Recovery**
+
+1. On desktop/tablet, open the right dock, select **Git Manager**, then select **Recovery**.
+   Expected outcome: the Recovery section opens inside the embedded Git Manager panel; expanding Git Manager keeps the same section available in the modal.
+2. On mobile, open the **More** sheet, select **Git Manager**, then select **Recovery** from the horizontal section-tab strip.
+   Expected outcome: the Recovery section opens in the mobile Git Manager modal with the tab strip still scrollable.
 
 Features:
 - Lists orphaned stash entries grouped by source task ID (or **Unknown source** when unavailable)
@@ -816,11 +921,13 @@ Inspect task definition, logs, review feedback, comments, artifacts, workflow ou
 
 - Editable tasks with descriptions show **Summarize as title** beside the read-mode title; it asks AI to generate a concise title from the description and saves it without opening the edit form.
 - The **Chat** tab includes an expand/collapse control that lets the transcript and composer fill the task-detail modal, then restores the normal header, tabs, and action footer when collapsed.
+- Task-detail Chat messages are persisted as user comments/steering guidance and surfaced to every relevant agent lane: live executor sessions receive steering injection, while planner, reviewer (spec/plan/code), and merger agents (standard and clean-room AI merge/review) receive the latest user comments in their next prompt/pass.
 - The priority chip in task metadata is an inline picker: you can change priority directly without entering full edit mode.
 - Execution mode has a read-mode inline lightning-bolt toggle for Fast mode on/off without opening the full edit form.
 - These two metadata controls share matched sizing/alignment in read mode (including mobile wrapping) so they behave like a single polished control group.
 - Task metadata keeps priority, execution mode, provenance, optional PR context, and compact `Created` / `Updated` timestamps in one wrapping row across desktop and mobile widths; recent timestamps render as relative time (`just now`, `Xm`, `Xh`, `Xd`) and older values switch to short month/day dates.
 - The **Actions** menu exposes **Pause** / **Unpause** for eligible non-terminal tasks, including tasks assigned to agents. If a task was paused by an agent, the **Paused by agent** note is informational; users can still unpause it manually from the same menu.
+- After delete confirmations are complete, Task Detail closes immediately while the delete request finishes in the background; success and error outcomes still appear as toasts.
 - Eligible existing tasks (triage, todo, in-progress, in-review) expose a **GitHub tracking** section directly in Task Detail, even when tracking is currently disabled.
 - The GitHub tracking section now defaults to a compact summary row; use the disclosure arrow to expand linked-issue details plus tracking edit controls.
 - Backstop reconciliation runs every 15 minutes to close tracked GitHub issues for soft-deleted and archived tasks even after restart; the sweep is paginated so large archive backlogs are eventually drained.
@@ -831,7 +938,7 @@ Inspect task definition, logs, review feedback, comments, artifacts, workflow ou
 - The **Create Pull Request** modal now offers in-app remediation for every blocking preflight check. If `branchOnRemote` is false, use **Push branch to remote** and Fusion will publish `fusion/<task-id-lower>` to `origin` and refresh preflight. If `conflictsWithBase` is true, use **Resolve conflicts with AI** and Fusion will use an AI coding agent to resolve merge markers on the task branch, commit and push real merge changes, or report success without an empty commit when the selected base is already merged; preflight then refreshes so normal PR creation can continue once all checks pass.
 - The modal shell renders immediately: preflight checks and PR options load independently of AI-generated title/body metadata, so slow AI suggestions no longer block base-branch selection, diagnostics, or manual PR authoring.
 - AI title/body generation is bounded to 60 seconds and is canceled if the dialog request disconnects; on timeout/cancel, Fusion falls back to deterministic task-based PR title/body content instead of leaving the spinner stuck forever.
-- The **Artifacts** tab combines task documents written by agents or users with task-scoped registered media artifacts. Images preview inline, video and audio use native controls, document artifacts show text previews, and generic artifacts open through their media URL.
+- The **Artifacts** tab combines task documents written by agents or users with task-scoped registered media artifacts. The gallery uses thumbnail-first image/video cards, image and video previews can expand into a dismissible full-size lightbox, video and audio use native controls, document artifacts show text previews, and generic artifacts open through their media URL.
 - The **Review** tab is separate from **Comments**: Review shows actionable PR/reviewer feedback and same-task revision controls, while Comments remains the general collaboration thread.
 - **Request revision** in Review resumes work on the same task ID (no refinement task): `in-progress` tasks get steering injection, while `in-review` tasks are moved back to `in-progress` for the same branch/worktree revision pass.
 - Review supports a manual **Refresh** action in-place: PR mode pulls latest GitHub review state/decision, while direct mode rehydrates reviewer-agent feedback from persisted task data (no GitHub call).
@@ -1356,10 +1463,9 @@ Manage project and global secrets directly inside **Settings → Project → Sec
 
 ### Lazy-Loaded Heavy Views
 
-These 22 views are lazy-loaded via `React.lazy()` with `<Suspense fallback={null}>`. `prefetchLazyViews()` warms App-level chunks once on mount via `requestIdleCallback`; AppModals lazy modal imports (`SettingsModal`, `WorkflowNodeEditor`, `SetupWizardModal`) are part of the same inventory. **Do not make these eager.**
+These 20 views are lazy-loaded via `React.lazy()` with `<Suspense fallback={null}>`. `prefetchLazyViews()` warms App-level chunks once on mount via `requestIdleCallback`; AppModals lazy modal imports (`SettingsModal`, `WorkflowNodeEditor`, `SetupWizardModal`) are part of the same inventory. **Do not make these eager.** The user-facing **Artifacts** section is still implemented by the `DocumentsView` component name.
 
 - `AgentsView`
-- `NodesView`
 - `ChatView`
 - `MemoryView`
 - `DevServerView`
@@ -1372,7 +1478,6 @@ These 22 views are lazy-loaded via `React.lazy()` with `<Suspense fallback={null
 - `EvalsView`
 - `TodoView`
 - `GoalsView`
-- `StashRecoveryView`
 - `PullRequestView`
 - `SetupWizardModal`
 - `SettingsModal`
@@ -1380,6 +1485,8 @@ These 22 views are lazy-loaded via `React.lazy()` with `<Suspense fallback={null
 - `PluginManager`
 - `PiExtensionsManager`
 - `AgentDetailView`
+
+Embedded Workflows (`_WorkflowEditorView`), Import Tasks (`_ImportTasksView`), Automations (`_AutomationsView`), and Settings (`_SettingsView`) reuse existing lazy chunks and are intentionally excluded from the curated count by the underscore-prefixed App const convention.
 
 When adding or removing entries, update `packages/dashboard/app/__tests__/lazy-loaded-views-docs.test.ts` (expected set + count).
 

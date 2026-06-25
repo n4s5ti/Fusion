@@ -1,42 +1,18 @@
 import { useState, useCallback, useEffect, useMemo, useRef, lazy, Suspense } from "react";
 import { useTranslation } from "react-i18next";
 import {
-  computeCapacityRisk,
-  DEFAULT_CAPACITY_RISK_TODO_THRESHOLD,
-  type ChatRoomMessage,
   type Task,
   type TaskDetail,
   type WorkflowStep,
 } from "@fusion/core";
-import { isNearDuplicateCanonicalInactive } from "../../core/src/near-duplicate-canonical";
 import { Header, useViewportMode } from "./components/Header";
-import { Board } from "./components/Board";
-import { TaskCard } from "./components/TaskCard";
-import { ListView } from "./components/ListView";
-import { ProjectOverview } from "./components/ProjectOverview";
-import { MissionManager } from "./components/MissionManager";
-import { MailboxView } from "./components/MailboxView";
-import { PageErrorBoundary } from "./components/ErrorBoundary";
+import { TaskDetailContent } from "./components/TaskDetailModal";
+import { FloatingWindow } from "./components/FloatingWindow";
 import { AppModals } from "./components/AppModals";
-import { BackendConnectionErrorPage } from "./components/BackendConnectionErrorPage";
 import { DashboardLoader, type DashboardLoaderStage } from "./components/DashboardLoader";
 import { TopProgressBar } from "./components/TopProgressBar";
 import { ExecutorStatusBar } from "./components/ExecutorStatusBar";
-import { SessionNotificationBanner, type CliActionId } from "./components/SessionNotificationBanner";
-import { CliBinaryInstallBanner } from "./components/CliBinaryInstallBanner";
-import { SetupWarningBanner } from "./components/SetupWarningBanner";
-import { CapacityRiskBanner } from "./components/CapacityRiskBanner";
-import { TestModeBanner } from "./components/TestModeBanner";
-import { EngineUnavailableBanner } from "./components/EngineUnavailableBanner";
-import { OAuthReloginBanner } from "./components/OAuthReloginBanner";
-import { TaskIdIntegrityBanner } from "./components/TaskIdIntegrityBanner";
-import { DbCorruptionBanner } from "./components/DbCorruptionBanner";
-import { UpdateAvailableBanner } from "./components/UpdateAvailableBanner";
-import MergeAdvanceNotice from "./components/MergeAdvanceNotice";
-import { ApprovalNotificationBanner } from "./components/ApprovalNotificationBanner";
-import { GitHubStarPrompt } from "./components/GitHubStarPrompt";
-import { OnboardingResumeCard } from "./components/OnboardingResumeCard";
-import { PostOnboardingRecommendations } from "./components/PostOnboardingRecommendations";
+import { type CliActionId } from "./components/SessionNotificationBanner";
 import {
   isOnboardingCompleted,
   isOnboardingResumable,
@@ -74,7 +50,6 @@ import { useUpdateCheck } from "./hooks/useUpdateCheck";
 import { useViewState, type TaskView } from "./hooks/useViewState";
 import { NavigationHistoryProvider, useNavigationHistory } from "./hooks/useNavigationHistory";
 import { usePluginDashboardViews } from "./hooks/usePluginDashboardViews";
-import { PluginDashboardViewHost } from "./plugins/PluginDashboardViewHost";
 import { isPluginViewId, isPluginViewRegistered } from "./plugins/pluginViewRegistry";
 import { registerBundledPluginViews } from "./plugins/registerBundledPluginViews";
 import { useProjectActions } from "./hooks/useProjectActions";
@@ -88,17 +63,50 @@ import { ShellProvider } from "./context/ShellContext";
 import { RetryWarningProvider } from "./context/RetryWarningContext";
 import { ShellHostProvider, useShellHostContext } from "./context/ShellHostContext";
 import { useShellConnection } from "./hooks/useShellConnection";
+import { useStashOrphanCount } from "./hooks/useStashOrphanCount";
+import { useChatUnreadBadge } from "./hooks/useChatUnreadBadge";
+import { useMailboxUnread } from "./hooks/useMailboxUnread";
+import { useApprovalBanner } from "./hooks/useApprovalBanner";
+import { useBranchTaskFilters } from "./hooks/useBranchTaskFilters";
+import { useDashboardHealth } from "./hooks/useDashboardHealth";
+import { useAuthTokenRecovery } from "./hooks/useAuthTokenRecovery";
+import { useScopedDismissFlag } from "./hooks/useScopedDismissFlag";
+import { useCapacityRiskBanner } from "./hooks/useCapacityRiskBanner";
+import { useMainPanelTaskDetail } from "./hooks/useMainPanelTaskDetail";
+import { useBoardScrollRestore } from "./hooks/useBoardScrollRestore";
+import { usePoppedOutTasks } from "./hooks/usePoppedOutTasks";
 import { NativeShellOnboardingModal } from "./components/NativeShellOnboardingModal";
 import { NativeShellConnectionManager } from "./components/NativeShellConnectionManager";
 import { ShellConnectionStatus } from "./components/ShellConnectionStatus";
 import { getShellConnectionNativeResult, type ShellConnectionNativeResult } from "./shell-native";
-import type { AiSessionSummary, DashboardHealthResponse } from "./api";
-import { api, fetchDashboardHealth, fetchUnreadCount, fetchTaskDetail, fetchWorkflowSteps, refreshDashboardHealth, relaunchCliSession } from "./api";
-import { getScopedItem, removeScopedItem, setScopedItem } from "./utils/projectStorage";
+import type { AiSessionSummary, PluginDashboardViewEntry } from "./api";
+import { fetchTaskDetail, fetchWorkflowSteps } from "./api";
+import {
+  SETUP_WARNING_DISMISSED_KEY,
+  RETRY_WARNING_RATIO,
+  buildRemoteDashboardUrl,
+  requiresNativeShellOnboarding,
+  shouldShowFirstEverBootLoader,
+  isSessionNeedingInputForBanner,
+  getCliActionDisabledReasonForBanner,
+  executeCliSessionBannerAction,
+} from "./utils/appLifecycle";
+// Re-export the unit-tested lifecycle helpers so existing `from "./App"` /
+// `from "../../App"` imports keep resolving after the bodies moved to utils.
+export {
+  didEnterAwaitingApproval,
+  didEnterDone,
+  requiresNativeShellOnboarding,
+  shouldShowFirstEverBootLoader,
+  isSessionNeedingInputForBanner,
+  getCliActionDisabledReasonForBanner,
+  executeCliSessionBannerAction,
+} from "./utils/appLifecycle";
 import { subscribeSse } from "./sse-bus";
-import { AUTH_TOKEN_RECOVERY_REQUIRED_EVENT } from "./auth";
 import { AuthTokenRecoveryDialog } from "./components/AuthTokenRecoveryDialog";
-import { PlanningModeModal } from "./components/PlanningModeModal";
+import { MainContent } from "./components/dashboard/MainContent";
+import { DashboardBanners } from "./components/dashboard/DashboardBanners";
+import type { DashboardBannersProps, MainContentProps } from "./components/dashboard/types";
 
 // ChatView's CSS is imported eagerly so the styles bundle into the main
 // CSS file. Without this, the lazy ChatView JS chunk loaded its own CSS
@@ -123,6 +131,22 @@ const DevServerView = lazy(() => import("./components/DevServerView").then((m) =
 const TodoView = lazy(() => import("./components/TodoView").then((m) => ({ default: m.TodoView })));
 const GoalsView = lazy(() => import("./components/GoalsView").then((m) => ({ default: m.GoalsView })));
 const PullRequestView = lazy(() => import("./components/PullRequestView").then((m) => ({ default: m.PullRequestView })));
+/*
+FNXC:Navigation 2026-06-22-00:00:
+Workflows, Import Tasks (GitHub import), and Automations render as embedded main-content views (presentation="embedded") via these lazy chunks; the same components still mount as modals in AppModals for the mobile overflow path.
+*/
+/*
+FNXC:DashboardLazyViews 2026-06-22-00:00:
+WorkflowEditorView, ImportTasksView, and AutomationsView are embedded main-content presentations that REUSE already-documented chunks (WorkflowNodeEditor, plus the GitHub import and scheduled-tasks modals mounted in AppModals). They are excluded from the curated "Lazy-Loaded Heavy Views" App-level inventory via the leading-underscore convention so the docs guard counts each heavy chunk once; renaming the underlying component would double-count it.
+*/
+const _WorkflowEditorView = lazy(() => import("./components/WorkflowNodeEditor").then((m) => ({ default: m.WorkflowNodeEditor })));
+const _ImportTasksView = lazy(() => import("./components/GitHubImportModal").then((m) => ({ default: m.GitHubImportModal })));
+const _AutomationsView = lazy(() => import("./components/ScheduledTasksModal").then((m) => ({ default: m.ScheduledTasksModal })));
+/*
+FNXC:Settings 2026-06-22-00:00:
+SettingsView is the embedded main-content presentation of the SettingsModal chunk. It REUSES the already-documented SettingsModal lazy chunk (mounted in AppModals), so it uses the leading-underscore convention to stay out of the curated "Lazy-Loaded Heavy Views" inventory and avoid double-counting.
+*/
+const _SettingsView = lazy(() => import("./components/SettingsModal").then((m) => ({ default: m.SettingsView })));
 
 // Warm lazy chunks during browser idle so first navigation to each view is
 // instant. Each chunk is ~10–80 kB; total prefetch finishes well under a
@@ -155,175 +179,6 @@ function prefetchLazyViews() {
 }
 
 registerBundledPluginViews();
-
-const SETUP_WARNING_DISMISSED_KEY = "kb-setup-warning-dismissed";
-const WORKING_BRANCH_FILTER_STORAGE_KEY = "kb-dashboard-working-branch-filter";
-const BASE_BRANCH_FILTER_STORAGE_KEY = "kb-dashboard-base-branch-filter";
-const NO_BRANCH_FILTER_VALUE = "__fusion:no-branch__";
-const APPROVAL_BANNER_DISMISSED_STORAGE_KEY = "fusion:approval-banner-dismissed";
-const CAPACITY_RISK_DISMISSED_KEY = "kb-capacity-risk-banner-dismissed";
-const RETRY_WARNING_RATIO = 0.8;
-
-interface ApprovalBannerCandidate {
-  dedupeKey: string;
-  updatedAtMs: number;
-}
-
-export function didEnterAwaitingApproval(nextStatus: string | undefined, previousStatus: string | undefined): boolean {
-  return nextStatus === "awaiting-approval" && previousStatus !== "awaiting-approval";
-}
-
-export function didEnterDone(nextStatus: string | undefined, previousStatus: string | undefined): boolean {
-  return nextStatus === "done" && previousStatus !== undefined && previousStatus !== "done";
-}
-
-function parseDateMs(value: string | undefined): number {
-  if (!value) return 0;
-  const parsed = Date.parse(value);
-  return Number.isFinite(parsed) ? parsed : 0;
-}
-
-function loadApprovalBannerDismissals(): Map<string, number> {
-  if (typeof window === "undefined") return new Map();
-  try {
-    const raw = window.localStorage.getItem(APPROVAL_BANNER_DISMISSED_STORAGE_KEY);
-    if (!raw) return new Map();
-    const parsed = JSON.parse(raw) as Record<string, number>;
-    const map = new Map<string, number>();
-    for (const [key, value] of Object.entries(parsed)) {
-      if (typeof value === "number" && Number.isFinite(value)) {
-        map.set(key, value);
-      }
-    }
-    return map;
-  } catch {
-    return new Map();
-  }
-}
-
-function persistApprovalBannerDismissals(map: Map<string, number>): void {
-  if (typeof window === "undefined") return;
-  try {
-    const data: Record<string, number> = {};
-    for (const [key, value] of map) {
-      data[key] = value;
-    }
-    window.localStorage.setItem(APPROVAL_BANNER_DISMISSED_STORAGE_KEY, JSON.stringify(data));
-  } catch {
-    // no-op
-  }
-}
-
-function buildRemoteDashboardUrl(serverUrl: string, authToken?: string | null): string {
-  const url = new URL(serverUrl);
-  if (authToken) {
-    url.searchParams.set("rt", authToken);
-  }
-  return url.toString();
-}
-
-export function requiresNativeShellOnboarding(
-  shellState: { host: "web" | "mobile-shell" | "desktop-shell"; desktopMode?: "local" | "remote"; activeProfileId: string | null },
-  shellReady: boolean,
-  shellOnboardingComplete: boolean,
-): boolean {
-  if (!shellReady || shellOnboardingComplete || shellState.host === "web") {
-    return false;
-  }
-
-  if (shellState.host === "mobile-shell") {
-    return !shellState.activeProfileId;
-  }
-
-  if (shellState.desktopMode === "local") {
-    return false;
-  }
-
-  return !shellState.activeProfileId;
-}
-
-export function shouldShowFirstEverBootLoader(projectsLoading: boolean, projectCount: number): boolean {
-  return projectsLoading && projectCount === 0;
-}
-
-export function isSessionNeedingInputForBanner(session: AiSessionSummary): boolean {
-  return (
-    session.status === "awaiting_input" ||
-    session.status === "error" ||
-    session.status === "waiting_on_input" ||
-    session.status === "needs_attention"
-  );
-}
-
-export function getCliActionDisabledReasonForBanner(session: AiSessionSummary, action: CliActionId): string | null {
-  if ((action === "advance" || action === "relaunch") && !session.cliSessionId) {
-    return "CLI session id is missing.";
-  }
-  return null;
-}
-
-interface CliActionDeps {
-  currentProjectId?: string;
-  retryTask: (id: string) => Promise<unknown>;
-  moveTask: (id: string, column: "todo") => Promise<unknown>;
-  openAuthenticationSettings: () => void;
-  addToast: (message: string, type: "success" | "error") => void;
-  apiClient?: typeof api;
-  relaunchCliSessionClient?: typeof relaunchCliSession;
-}
-
-export async function executeCliSessionBannerAction(
-  session: AiSessionSummary,
-  action: CliActionId,
-  deps: CliActionDeps,
-): Promise<void> {
-  try {
-    /*
-     * FNXC:SessionBanner 2026-06-14-19:32:
-     * CLI banner verbs must either call an existing dashboard route/flow or be disabled by the banner. `advance` confirms the CLI session, `retry` and `cancel` reuse task operations keyed by the session id until summaries expose a distinct task id, and `reauthenticate` opens the existing authentication settings flow.
-     *
-     * FNXC:SessionBanner 2026-06-14-20:16:
-     * `relaunch` is now a supported route-backed action for resume-exhausted CLI sessions; if `cliSessionId` is absent the handler exits without firing a malformed API call, preserving the no-silent-no-op invariant through the banner disabled reason.
-     */
-    if (action === "advance") {
-      if (!session.cliSessionId) {
-        throw new Error("CLI session id is required to advance this session.");
-      }
-      await (deps.apiClient ?? api)(`/cli-sessions/${encodeURIComponent(session.cliSessionId)}/confirm-advance`, {
-        method: "POST",
-        body: JSON.stringify({ decision: "advance", ...(deps.currentProjectId ? { projectId: deps.currentProjectId } : {}) }),
-      });
-      return;
-    }
-
-    if (action === "relaunch") {
-      if (!session.cliSessionId) return;
-      await (deps.relaunchCliSessionClient ?? relaunchCliSession)(session.cliSessionId, deps.currentProjectId);
-      deps.addToast("CLI session relaunch requested", "success");
-      return;
-    }
-
-    if (action === "retry") {
-      await deps.retryTask(session.id);
-      return;
-    }
-
-    if (action === "cancel") {
-      await deps.moveTask(session.id, "todo");
-      return;
-    }
-
-    if (action === "reauthenticate") {
-      deps.openAuthenticationSettings();
-      return;
-    }
-
-    throw new Error("This CLI action is not supported yet.");
-  } catch (err) {
-    const message = err instanceof Error ? err.message : "CLI action failed";
-    deps.addToast(message, "error");
-  }
-}
 
 function AppInner() {
   const { t } = useTranslation("app");
@@ -394,23 +249,6 @@ function AppInner() {
   
   // Search query state - must be defined before useTasks
   const [searchQuery, setSearchQuery] = useState("");
-  const [branchFilter, setBranchFilter] = useState("");
-  const [baseBranchFilter, setBaseBranchFilter] = useState("");
-
-  useEffect(() => {
-    setBranchFilter(getScopedItem(WORKING_BRANCH_FILTER_STORAGE_KEY, currentProject?.id) ?? "");
-    setBaseBranchFilter(getScopedItem(BASE_BRANCH_FILTER_STORAGE_KEY, currentProject?.id) ?? "");
-  }, [currentProject?.id]);
-
-  const handleBranchFilterChange = useCallback((value: string) => {
-    setBranchFilter(value);
-    setScopedItem(WORKING_BRANCH_FILTER_STORAGE_KEY, value, currentProject?.id);
-  }, [currentProject?.id]);
-
-  const handleBaseBranchFilterChange = useCallback((value: string) => {
-    setBaseBranchFilter(value);
-    setScopedItem(BASE_BRANCH_FILTER_STORAGE_KEY, value, currentProject?.id);
-  }, [currentProject?.id]);
 
   // Host capability handed to plugin dashboard views: subscribe to a plugin's
   // custom SSE events (forwarded by the server as `plugin:custom`, scoped to the
@@ -486,10 +324,10 @@ function AppInner() {
     setThemeMode,
   });
 
-  const { views: pluginDashboardViews } = usePluginDashboardViews(currentProject?.id);
+  const { views: rawPluginDashboardViews } = usePluginDashboardViews(currentProject?.id);
   const graphPluginTaskView = useMemo(() => {
     // Prefer API response for the graph view (supports dynamic plugin discovery)
-    const graphView = pluginDashboardViews.find(
+    const graphView = rawPluginDashboardViews.find(
       (entry) => entry.pluginId === "fusion-plugin-dependency-graph" && entry.view.viewId === "graph",
     );
     if (graphView) return `plugin:${graphView.pluginId}:${graphView.view.viewId}` as const;
@@ -499,7 +337,7 @@ function AppInner() {
       return `plugin:fusion-plugin-dependency-graph:graph` as const;
     }
     return null;
-  }, [pluginDashboardViews]);
+  }, [rawPluginDashboardViews]);
 
   // History-aware view change handler — pushes nav entry on back-navigation stack.
   const handleTaskViewChange = useCallback((newView: TaskView) => {
@@ -528,6 +366,21 @@ function AppInner() {
       sseEnabled: taskSseEnabled,
     }
   );
+
+  /*
+  FNXC:Navigation 2026-06-22-00:00:
+  Snapshot of the task whose detail is shown in the main panel (Board card click → full-panel detail). Kept as a snapshot so the view survives a tasks revalidation; renderMainContent prefers the live row from `tasks` by id and falls back to this snapshot.
+
+  FNXC:TaskDetail 2026-06-23-00:41:
+  Board task-card secondary actions can deep-link into the inline main-panel task detail. Files-changed must land on the embedded Changes tab instead of reopening the task in the modal path.
+  */
+  const { task: mainPanelDetailTask, initialTab: mainPanelDetailInitialTab, setTask: setMainPanelDetailTask, setInitialTab: setMainPanelDetailInitialTab } = useMainPanelTaskDetail();
+  const { capture: captureCurrentBoardScrollSnapshot, requestRestore } = useBoardScrollRestore(taskView);
+  /*
+  FNXC:FloatingWindow 2026-06-22-20:45:
+  Open popped-out task-detail windows. Each entry is a task snapshot rendered inside its own movable, resizable, non-blocking FloatingWindow. Several can be open at once and coexist with the right-dock pop-out and terminal (all click-through overlays). Snapshots survive a tasks revalidation; rendering prefers the live row by id and falls back to the snapshot. Pop-out dedupes by task id — re-popping an already-open task is a no-op (its window stays; focus-to-front in FloatingWindow handles re-raising on click).
+  */
+  const { tasks: poppedOutTasks, popOut: popOutTaskDetail, close: closePoppedOutTask } = usePoppedOutTasks();
 
   const previousTaskViewRef = useRef<TaskView>(taskView);
 
@@ -631,222 +484,29 @@ function AppInner() {
   useMobileViewportRestoreReset(isMobile);
 
   // App-level mailbox/chat unread state (used for header/mobile nav badges)
-  const [mailboxUnreadCount, setMailboxUnreadCount] = useState(0);
-  const [mailboxPendingApprovalCount, setMailboxPendingApprovalCount] = useState(0);
-  const [chatHasUnreadResponse, setChatHasUnreadResponse] = useState(false);
-  const [stashOrphanCount, setStashOrphanCount] = useState(0);
-  const [approvalBannerCandidate, setApprovalBannerCandidate] = useState<ApprovalBannerCandidate | null>(null);
+  const { mailboxUnreadCount, mailboxPendingApprovalCount, setMailboxUnreadCount, refresh: mailboxRefresh } = useMailboxUnread(currentProject?.id);
+  const { chatHasUnreadResponse } = useChatUnreadBadge(currentProject?.id, { taskView, quickChatOpen });
+  const { stashOrphanCount } = useStashOrphanCount(currentProject?.id);
   const [showGitHubStarPrompt, setShowGitHubStarPrompt] = useState(false);
-  const taskStatusByIdRef = useRef<Map<string, string | undefined>>(new Map());
-  const seenApprovalKeysRef = useRef<Set<string>>(new Set());
-  const approvalDismissalsRef = useRef<Map<string, number>>(loadApprovalBannerDismissals());
   const gitHubStarPromptShown = useGitHubStarPromptShown();
+  const handleStarPrompt = useCallback(() => setShowGitHubStarPrompt(true), []);
+  const { candidate: approvalBannerCandidate, dismissApproval } = useApprovalBanner({
+    tasks,
+    currentProjectId: currentProject?.id,
+    gitHubStarPromptShown,
+    onStarPrompt: handleStarPrompt,
+    onMailboxRefresh: mailboxRefresh,
+  });
 
-  const refreshMailboxUnreadCount = useCallback(() => {
-    fetchUnreadCount(currentProject?.id)
-      .then((data: { unreadCount: number; pendingApprovalCount?: number }) => {
-        setMailboxUnreadCount(data.unreadCount);
-        setMailboxPendingApprovalCount(data.pendingApprovalCount ?? 0);
-      })
-      .catch((err) => {
-        console.warn("[App] Failed to fetch mailbox unread count:", err);
-      });
-  }, [currentProject?.id]);
-
-  useEffect(() => {
-    const next = new Map<string, string | undefined>();
-    const nextSeen = new Set<string>();
-    for (const task of tasks) {
-      next.set(task.id, task.status);
-      if (task.status === "awaiting-approval") {
-        nextSeen.add(`task:${task.id}`);
-      }
-    }
-    taskStatusByIdRef.current = next;
-    seenApprovalKeysRef.current = nextSeen;
-  }, [tasks]);
-
-  // Initial fetch + live updates from mailbox SSE events.
-  useEffect(() => {
-    refreshMailboxUnreadCount();
-
-    const params = new URLSearchParams();
-    if (currentProject?.id) {
-      params.set("projectId", currentProject.id);
-    }
-    const query = params.size > 0 ? `?${params.toString()}` : "";
-
-    const triggerApprovalBanner = (candidate: ApprovalBannerCandidate) => {
-      const dismissedAt = approvalDismissalsRef.current.get(candidate.dedupeKey);
-      if (dismissedAt !== undefined && candidate.updatedAtMs <= dismissedAt) {
-        return;
-      }
-      setApprovalBannerCandidate(candidate);
-    };
-
-    return subscribeSse(`/api/events${query}`, {
-      onReconnect: refreshMailboxUnreadCount,
-      events: {
-        "message:sent": refreshMailboxUnreadCount,
-        "message:received": refreshMailboxUnreadCount,
-        "message:read": refreshMailboxUnreadCount,
-        "message:deleted": refreshMailboxUnreadCount,
-        "approval:requested": (event: MessageEvent) => {
-          refreshMailboxUnreadCount();
-          try {
-            const payload = JSON.parse(event.data) as { id?: string; taskId?: string; updatedAt?: string; createdAt?: string };
-            const dedupeKey = payload.id ? `approval:${payload.id}` : payload.taskId ? `task:${payload.taskId}` : undefined;
-            if (!dedupeKey || seenApprovalKeysRef.current.has(dedupeKey)) {
-              return;
-            }
-            seenApprovalKeysRef.current.add(dedupeKey);
-            triggerApprovalBanner({
-              dedupeKey,
-              updatedAtMs: parseDateMs(payload.updatedAt ?? payload.createdAt),
-            });
-          } catch {
-            // no-op
-          }
-        },
-        "approval:updated": refreshMailboxUnreadCount,
-        "approval:decided": refreshMailboxUnreadCount,
-        "task:updated": (event: MessageEvent) => {
-          try {
-            const payload = JSON.parse(event.data) as { id?: string; status?: string; updatedAt?: string };
-            if (!payload?.id) {
-              return;
-            }
-            const dedupeKey = `task:${payload.id}`;
-            const previousStatus = taskStatusByIdRef.current.get(payload.id);
-            taskStatusByIdRef.current.set(payload.id, payload.status);
-            if (!gitHubStarPromptShown && didEnterDone(payload.status, previousStatus)) {
-              setShowGitHubStarPrompt(true);
-            }
-            if (payload.status !== "awaiting-approval") {
-              seenApprovalKeysRef.current.delete(dedupeKey);
-              approvalDismissalsRef.current.delete(dedupeKey);
-              persistApprovalBannerDismissals(approvalDismissalsRef.current);
-              return;
-            }
-            if (seenApprovalKeysRef.current.has(dedupeKey)) {
-              return;
-            }
-            if (didEnterAwaitingApproval(payload.status, previousStatus)) {
-              seenApprovalKeysRef.current.add(dedupeKey);
-              triggerApprovalBanner({
-                dedupeKey,
-                updatedAtMs: parseDateMs(payload.updatedAt),
-              });
-              refreshMailboxUnreadCount();
-            }
-          } catch {
-            // no-op
-          }
-        },
-      },
-    });
-  }, [currentProject?.id, gitHubStarPromptShown, refreshMailboxUnreadCount]);
-
-  useEffect(() => {
-    if (taskView === "chat") {
-      setChatHasUnreadResponse(false);
-    }
-  }, [taskView]);
-
-  useEffect(() => {
-    let cancelled = false;
-    const load = async () => {
-      try {
-        const data = await api<{ count: number }>("/stash-recovery/orphans");
-        if (!cancelled) setStashOrphanCount(data.count ?? 0);
-      } catch {
-        if (!cancelled) setStashOrphanCount(0);
-      }
-    };
-    void load();
-    const timer = window.setInterval(() => void load(), 30000);
-    return () => {
-      cancelled = true;
-      window.clearInterval(timer);
-    };
-  }, [currentProject?.id]);
-
-  useEffect(() => {
-    const params = new URLSearchParams();
-    if (currentProject?.id) {
-      params.set("projectId", currentProject.id);
-    }
-    const query = params.size > 0 ? `?${params.toString()}` : "";
-
-    return subscribeSse(`/api/events${query}`, {
-      events: {
-        "chat:message:added": (event: MessageEvent) => {
-          try {
-            const payload = JSON.parse(event.data) as { role?: string; projectId?: string | null };
-            if (payload.role !== "assistant") return;
-            if (taskView === "chat") return;
-            if (payload.projectId && currentProject?.id && payload.projectId !== currentProject.id) return;
-            setChatHasUnreadResponse(true);
-          } catch {
-            // no-op
-          }
-        },
-        "chat:room:message:added": (event: MessageEvent) => {
-          try {
-            const payload = JSON.parse(event.data) as ChatRoomMessage & { projectId?: string | null };
-            if (payload.role === "user") return;
-            if (taskView === "chat") return;
-            if (payload.projectId && currentProject?.id && payload.projectId !== currentProject.id) return;
-            setChatHasUnreadResponse(true);
-          } catch {
-            // no-op
-          }
-        },
-      },
-    });
-  }, [currentProject?.id, taskView]);
-
-  const branchOptions = useMemo(() => {
-    return Array.from(
-      new Set(
-        boardSourceTasks
-          .map((task) => task.branch?.trim())
-          .filter((branch): branch is string => Boolean(branch && branch.length > 0)),
-      ),
-    ).sort((a, b) => a.localeCompare(b));
-  }, [boardSourceTasks]);
-
-  const baseBranchOptions = useMemo(() => {
-    return Array.from(
-      new Set(
-        boardSourceTasks
-          .map((task) => task.baseBranch?.trim())
-          .filter((baseBranch): baseBranch is string => Boolean(baseBranch && baseBranch.length > 0)),
-      ),
-    ).sort((a, b) => a.localeCompare(b));
-  }, [boardSourceTasks]);
-
-  const filteredBoardTasks = useMemo(() => {
-    return boardSourceTasks.filter((task) => {
-      const taskBranch = task.branch?.trim() ?? "";
-      const taskBaseBranch = task.baseBranch?.trim() ?? "";
-      if (branchFilter === NO_BRANCH_FILTER_VALUE) {
-        if (taskBranch.length > 0) {
-          return false;
-        }
-      } else if (branchFilter.length > 0 && taskBranch !== branchFilter) {
-        return false;
-      }
-      if (baseBranchFilter === NO_BRANCH_FILTER_VALUE) {
-        if (taskBaseBranch.length > 0) {
-          return false;
-        }
-      } else if (baseBranchFilter.length > 0 && taskBaseBranch !== baseBranchFilter) {
-        return false;
-      }
-      return true;
-    });
-  }, [boardSourceTasks, branchFilter, baseBranchFilter]);
+  const {
+    branchFilter,
+    baseBranchFilter,
+    branchOptions,
+    baseBranchOptions,
+    filteredBoardTasks,
+    onBranchFilterChange: handleBranchFilterChange,
+    onBaseBranchFilterChange: handleBaseBranchFilterChange,
+  } = useBranchTaskFilters({ boardSourceTasks, currentProjectId: currentProject?.id });
 
   const [retryingProjects, setRetryingProjects] = useState(false);
   const [missionResumeSessionId, setMissionResumeSessionId] = useState<string | undefined>(undefined);
@@ -869,82 +529,15 @@ function AppInner() {
       setSelectedPrId(undefined);
     }
   }, [selectedPrId, taskView]);
-  const [authTokenRecoveryOpen, setAuthTokenRecoveryOpen] = useState(false);
-  const [dashboardHealth, setDashboardHealth] = useState<DashboardHealthResponse | null>(null);
-  const [dbCorruptionRefreshing, setDbCorruptionRefreshing] = useState(false);
-  const [dbCorruptionRefreshError, setDbCorruptionRefreshError] = useState<string | null>(null);
-  const [setupWarningDismissed, setSetupWarningDismissed] = useState(
-    () => getScopedItem(SETUP_WARNING_DISMISSED_KEY, currentProject?.id) === "true",
-  );
-  const [capacityRiskDismissed, setCapacityRiskDismissed] = useState(
-    () => getScopedItem(CAPACITY_RISK_DISMISSED_KEY, currentProject?.id) === "true",
-  );
-
-  useEffect(() => {
-    setSetupWarningDismissed(
-      getScopedItem(SETUP_WARNING_DISMISSED_KEY, currentProject?.id) === "true",
-    );
-  }, [currentProject?.id]);
-
-  useEffect(() => {
-    setCapacityRiskDismissed(
-      getScopedItem(CAPACITY_RISK_DISMISSED_KEY, currentProject?.id) === "true",
-    );
-  }, [currentProject?.id]);
-
-  const refreshDbCorruptionHealth = useCallback(async () => {
-    setDbCorruptionRefreshing(true);
-    setDbCorruptionRefreshError(null);
-    try {
-      const health = await refreshDashboardHealth();
-      setDashboardHealth(health);
-    } catch (error) {
-      setDbCorruptionRefreshError(error instanceof Error ? error.message : "Failed to refresh database health.");
-    } finally {
-      setDbCorruptionRefreshing(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    let cancelled = false;
-
-    fetchDashboardHealth()
-      .then((health) => {
-        if (!cancelled) {
-          setDashboardHealth(health);
-        }
-      })
-      .catch(() => {
-        if (!cancelled) {
-          setDashboardHealth(null);
-        }
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  useEffect(() => {
-    const handleDaemonAuthFailure = () => {
-      setAuthTokenRecoveryOpen(true);
-    };
-
-    window.addEventListener(AUTH_TOKEN_RECOVERY_REQUIRED_EVENT, handleDaemonAuthFailure);
-    return () => {
-      window.removeEventListener(AUTH_TOKEN_RECOVERY_REQUIRED_EVENT, handleDaemonAuthFailure);
-    };
-  }, []);
-
-  const handleDismissSetupWarning = useCallback(() => {
-    setScopedItem(SETUP_WARNING_DISMISSED_KEY, "true", currentProject?.id);
-    setSetupWarningDismissed(true);
-  }, [currentProject?.id]);
-
-  const handleDismissCapacityRisk = useCallback(() => {
-    setScopedItem(CAPACITY_RISK_DISMISSED_KEY, "true", currentProject?.id);
-    setCapacityRiskDismissed(true);
-  }, [currentProject?.id]);
+  const { open: authTokenRecoveryOpen } = useAuthTokenRecovery();
+  const {
+    health: dashboardHealth,
+    setHealth: setDashboardHealth,
+    refreshing: dbCorruptionRefreshing,
+    refreshError: dbCorruptionRefreshError,
+    refresh: refreshDbCorruptionHealth,
+  } = useDashboardHealth();
+  const { dismissed: setupWarningDismissed, dismiss: handleDismissSetupWarning } = useScopedDismissFlag(SETUP_WARNING_DISMISSED_KEY, currentProject?.id);
 
   // Settings state
   const {
@@ -956,7 +549,7 @@ function AppInner() {
     staleHighFanoutBlockerAgeThresholdMs,
     capacityRiskBannerEnabled,
     capacityRiskTodoThreshold,
-    showQuickChatFAB,
+    quickChatButtonMode,
     maxTotalRetriesBeforeFail,
     prAuthAvailable,
     settingsLoaded,
@@ -966,9 +559,20 @@ function AppInner() {
     devServerEnabled,
     todosEnabled,
     goalsEnabled,
+    setQuickChatButtonModeImmediate,
     toggleAutoMerge,
     refresh: refreshAppSettings,
   } = useAppSettings(currentProject?.id);
+
+  const pluginDashboardViews = useMemo<PluginDashboardViewEntry[]>(() => {
+    /*
+    FNXC:RoadmapsNavigation 2026-06-22-18:50:
+    The roadmap app view and experimental toggle were removed from the dashboard surface. Filter any plugin-provided Roadmaps dashboard view here so an installed/persisted plugin cannot reintroduce the sidebar destination.
+    */
+    return rawPluginDashboardViews.filter(
+      (entry) => !(entry.pluginId === "fusion-plugin-roadmap" && entry.view.viewId === "roadmaps"),
+    );
+  }, [rawPluginDashboardViews]);
 
   const { stats: agentStats } = useAgents(currentProject?.id);
 
@@ -980,52 +584,18 @@ function AppInner() {
     () => boardSourceTasks.filter((task) => task.column === "in-review").length,
     [boardSourceTasks],
   );
-  const capacityRiskSignal = useMemo(
-    () =>
-      computeCapacityRisk({
-        todoCount: agentStats?.todoTaskCount ?? 0,
-        inProgressCount,
-        inReviewCount,
-        idleNonEphemeralAgentCount: agentStats?.idleNonEphemeralCount ?? 0,
-        threshold: capacityRiskTodoThreshold ?? DEFAULT_CAPACITY_RISK_TODO_THRESHOLD,
-      }),
-    [agentStats?.todoTaskCount, agentStats?.idleNonEphemeralCount, inProgressCount, inReviewCount, capacityRiskTodoThreshold],
-  );
+  const { signal: capacityRiskSignal, dismissed: capacityRiskDismissed, dismiss: handleDismissCapacityRisk } = useCapacityRiskBanner({
+    agentStats,
+    inProgressCount,
+    inReviewCount,
+    capacityRiskBannerEnabled,
+    capacityRiskTodoThreshold,
+    settingsLoaded,
+    currentProjectId: currentProject?.id,
+  });
 
-  const previousCapacityRiskBannerEnabledRef = useRef(capacityRiskBannerEnabled);
-  const previousCapacityRiskTodoThresholdRef = useRef(capacityRiskTodoThreshold);
-  const previousCapacityRiskProjectIdRef = useRef(currentProject?.id);
-  const capacityRiskSettingsHydratedRef = useRef(false);
-
-  useEffect(() => {
-    if (!settingsLoaded) {
-      return;
-    }
-
-    if (!capacityRiskSettingsHydratedRef.current || previousCapacityRiskProjectIdRef.current !== currentProject?.id) {
-      capacityRiskSettingsHydratedRef.current = true;
-      previousCapacityRiskProjectIdRef.current = currentProject?.id;
-      previousCapacityRiskBannerEnabledRef.current = capacityRiskBannerEnabled;
-      previousCapacityRiskTodoThresholdRef.current = capacityRiskTodoThreshold;
-      return;
-    }
-
-    const wasEnabled = previousCapacityRiskBannerEnabledRef.current;
-    const previousThreshold = previousCapacityRiskTodoThresholdRef.current;
-    const bannerEnabledChangedToTrue = !wasEnabled && capacityRiskBannerEnabled;
-    const thresholdChanged = previousThreshold !== capacityRiskTodoThreshold;
-
-    if (bannerEnabledChangedToTrue || thresholdChanged) {
-      removeScopedItem(CAPACITY_RISK_DISMISSED_KEY, currentProject?.id);
-      setCapacityRiskDismissed(false);
-    }
-
-    previousCapacityRiskProjectIdRef.current = currentProject?.id;
-    previousCapacityRiskBannerEnabledRef.current = capacityRiskBannerEnabled;
-    previousCapacityRiskTodoThresholdRef.current = capacityRiskTodoThreshold;
-  }, [settingsLoaded, capacityRiskBannerEnabled, capacityRiskTodoThreshold, currentProject?.id]);
-
-  const skillsEnabled = experimentalFeatures.skillsView === true;
+  /* FNXC:DefaultNavigation 2026-06-23-01:26: Skills graduated from Experimental and should remain visible on upgrades even when stale `experimentalFeatures.skillsView=false` is present. */
+  const skillsEnabled = true;
   const nodesEnabled = experimentalFeatures.nodesView === true;
   const researchEnabled = experimentalFeatures.researchView === true;
   const evalsEnabled = experimentalFeatures.evalsView === true;
@@ -1039,8 +609,8 @@ function AppInner() {
   Left sidebar navigation is now the default primary navigation on non-mobile project screens. Keep `leftSidebarNav: false` as the explicit opt-out and keep mobile on the bottom navigation bar.
   */
   const leftSidebarNavEnabled = experimentalFeatures.leftSidebarNav !== false;
-  /* FNXC:Navigation 2026-06-21-00:00: The default-on right dock makes tablet/desktop More views toggle a persistent right panel unless settings store `rightDock: false`; mobile remains legacy. */
-  const rightDockEnabled = experimentalFeatures.rightDock !== false;
+  /* FNXC:Navigation 2026-06-22-18:00: The right dock panel is no longer experimental or user-toggleable; tablet/desktop project screens always support it regardless of any stale persisted `rightDock` setting. */
+  const rightDockEnabled = true;
   const executorFooterVisible = viewMode === "project" && !!currentProject;
   const rightDockActive = rightDockEnabled && !isMobile && executorFooterVisible;
   const sidebarActive = leftSidebarNavEnabled && !isMobile && executorFooterVisible;
@@ -1188,15 +758,6 @@ function AppInner() {
     addToast,
   });
 
-  const handleOpenDetailWithTab = useCallback((task: Task | TaskDetail, initialTab: "changes" | "retries" | "workflow") => {
-    if (initialTab === "changes") {
-      modalManager.openDetailWithChangesTab(task);
-    } else {
-      modalManager.openDetailTask(task, initialTab);
-    }
-    pushNav({ type: "modal", close: modalManager.closeDetailTask });
-  }, [modalManager, pushNav]);
-
   const handleOpenTaskLogs = useCallback(async (taskId: string) => {
     try {
       const task = await fetchTaskDetail(taskId, currentProject?.id);
@@ -1240,10 +801,42 @@ function AppInner() {
     pushNav({ type: "modal", close: modalManager.closeDetailTask });
   }, [modalManager, pushNav]);
 
+  /*
+  FNXC:Navigation 2026-06-22-00:00:
+  Board card clicks open task detail as a full main-content view that replaces the board (design: "Full main panel (replaces board)"), instead of the TaskDetailModal overlay. We store a snapshot of the clicked task and navigate to the registered `task-detail` view; renderMainContent renders TaskDetailContent embedded with a Back-to-board button. Only the Board uses this handler — list-view split-detail, right-dock cards, and other openDetail callers keep the modal behavior.
+  */
+  const openTaskDetailInMainPanel = useCallback((task: Task | TaskDetail, initialTab: DetailTaskTab = "chat") => {
+    captureCurrentBoardScrollSnapshot();
+    setMainPanelDetailTask(task);
+    setMainPanelDetailInitialTab(initialTab);
+    handleTaskViewChange("task-detail");
+  }, [captureCurrentBoardScrollSnapshot, handleTaskViewChange]);
+
+  // FNXC:Navigation 2026-06-22-00:00: Leaving task-detail clears the snapshot so a stale task never lingers if the view is reopened empty.
+  const closeTaskDetailMainPanel = useCallback(() => {
+    requestRestore();
+    setMainPanelDetailTask(null);
+    setMainPanelDetailInitialTab("chat");
+    handleTaskViewChange("board");
+  }, [handleTaskViewChange]);
+
+  const handleOpenDetailWithTab = useCallback((task: Task | TaskDetail, initialTab: "changes" | "retries" | "workflow") => {
+    if (initialTab === "changes") {
+      openTaskDetailInMainPanel(task, "changes");
+      return;
+    }
+    modalManager.openDetailTask(task, initialTab);
+    pushNav({ type: "modal", close: modalManager.closeDetailTask });
+  }, [modalManager, openTaskDetailInMainPanel, pushNav]);
+
+  /*
+  FNXC:Settings 2026-06-22-00:00:
+  Settings is now a main-content destination. The header/sidebar entry points navigate to the embedded `settings` view (carrying the requested deep-link section via setSettingsSection) instead of opening the modal overlay. handleTaskViewChange owns the back-navigation history entry, so no modal nav entry is pushed here.
+  */
   const openSettingsWithNav = useCallback((section?: Parameters<typeof modalManager.openSettings>[0]) => {
-    modalManager.openSettings(section);
-    pushNav({ type: "modal", close: handleSettingsClose });
-  }, [modalManager, pushNav, handleSettingsClose]);
+    modalManager.setSettingsSection(section);
+    handleTaskViewChange("settings");
+  }, [modalManager, handleTaskViewChange]);
 
   const openNewTaskWithNav = useCallback(() => {
     modalManager.openNewTask();
@@ -1410,7 +1003,7 @@ function AppInner() {
         currentProjectId: currentProject?.id,
         retryTask,
         moveTask,
-        openAuthenticationSettings: () => modalManager.openSettings("authentication" as SectionId),
+        openAuthenticationSettings: () => openSettingsWithNav("authentication" as SectionId),
         addToast,
       }),
     [addToast, currentProject?.id, modalManager, moveTask, retryTask],
@@ -1491,451 +1084,150 @@ function AppInner() {
     Boolean(projectsError) &&
     !isSuppressedProjectResumeError;
 
-  // Render main content based on view mode
-  const renderMainContent = () => {
-    if (showBackendConnectionErrorPage) {
-      return (
-        <BackendConnectionErrorPage
-          errorMessage={projectsError ?? t("app.backendError.failedFetch", "Failed to fetch projects")}
-          isRetrying={retryingProjects}
-          onRetry={handleRetryProjects}
-          onManageConnection={shellApi ? () => {
-            void shellApi.openConnectionManager();
-          } : undefined}
-        />
-      );
-    }
-
-    if (viewMode === "overview") {
-      return (
-        <PageErrorBoundary>
-          <ProjectOverview
-            projects={projects}
-            loading={projectsLoading}
-            onSelectProject={handleSelectProject}
-            onAddProject={handleAddProject}
-            onPauseProject={handlePauseProject}
-            onResumeProject={handleResumeProject}
-            onRemoveProject={handleRemoveProject}
-            nodes={nodes}
-          />
-        </PageErrorBoundary>
-      );
-    }
-
-    const resolvedPluginTaskView = taskView === "graph" ? graphPluginTaskView : (isPluginViewId(taskView) ? taskView : null);
-
-    // Project view
-    if (resolvedPluginTaskView) {
-      const pluginTasks = isRemote && remoteData.tasks.length > 0 ? remoteData.tasks : tasks;
-      return (
-        <PageErrorBoundary>
-          <PluginDashboardViewHost
-            taskView={resolvedPluginTaskView as `plugin:${string}:${string}`}
-            context={{
-              projectId: currentProject?.id,
-              tasks: pluginTasks,
-              workflowSteps,
-              subscribePluginEvents,
-              openTaskDetail: (task: Task | TaskDetail, initialTab?: DetailTaskTab) => openDetailTask(task, initialTab),
-              openFile: openFileInBrowser,
-              renderTaskCard: (task: Task | TaskDetail) => (
-                <TaskCard
-                  task={task}
-                  projectId={currentProject?.id}
-                  onOpenDetail={(value: Task | TaskDetail) => openDetailTask(value)}
-                  addToast={addToast}
-                  workflowStepNameLookup={workflowStepNameLookup}
-                  disableDrag={true}
-                  prAuthAvailable={prAuthAvailable}
-                  autoMergeEnabled={autoMerge}
-                  nearDuplicateCanonicalInactive={typeof task.sourceMetadata?.nearDuplicateOf === "string"
-                    ? isNearDuplicateCanonicalInactive(pluginTasks.find((candidate) => candidate.id === task.sourceMetadata?.nearDuplicateOf))
-                    : undefined}
-                />
-              ),
-              addToast,
-            }}
-          />
-        </PageErrorBoundary>
-      );
-    }
-
-    if (taskView === "skills") {
-      if (!settingsLoaded || !skillsEnabled) {
-        return null;
-      }
-      return (
-        <PageErrorBoundary>
-          <Suspense fallback={null}>
-            <SkillsView
-              addToast={addToast}
-              projectId={currentProject?.id}
-              onClose={() => handleChangeTaskView("board")}
-            />
-          </Suspense>
-        </PageErrorBoundary>
-      );
-    }
-
-    if (taskView === "chat") {
-      return (
-        <PageErrorBoundary>
-          <Suspense fallback={null}>
-            <ChatView
-              addToast={addToast}
-              projectId={currentProject?.id}
-              experimentalFeatures={experimentalFeatures}
-            />
-          </Suspense>
-        </PageErrorBoundary>
-      );
-    }
-
-    if (taskView === "mailbox") {
-      return (
-        <PageErrorBoundary>
-          <MailboxView
-            projectId={currentProject?.id}
-            addToast={addToast}
-            onUnreadCountChange={setMailboxUnreadCount}
-          />
-        </PageErrorBoundary>
-      );
-    }
-
-
-    if (taskView === "missions") {
-      return (
-        <PageErrorBoundary>
-          <MissionManager
-            isInline={true}
-            isOpen={true}
-            onClose={() => {
-              setMissionTargetId(undefined);
-              setMissionResumeSessionId(undefined);
-              setMilestoneSliceResumeSessionId(undefined);
-              handleChangeTaskView("board");
-            }}
-            addToast={addToast}
-            projectId={currentProject?.id}
-            onSelectTask={(taskId) => {
-              const task = tasks.find((t) => t.id === taskId);
-              if (task) openDetailTask(task as TaskDetail);
-            }}
-            availableTasks={tasks.map((t) => ({ id: t.id, title: t.title }))}
-            resumeSessionId={missionResumeSessionId}
-            targetMissionId={missionTargetId}
-            milestoneSliceResumeSessionId={milestoneSliceResumeSessionId}
-            onMilestoneSliceResumeFetchError={() => setMilestoneSliceResumeSessionId(undefined)}
-            onNavigateToGoal={(goalId) => {
-              setGoalAnchorId(goalId);
-              handleChangeTaskView("goalsView");
-            }}
-          />
-        </PageErrorBoundary>
-      );
-    }
-
-    if (taskView === "agents" && agentsEnabled) {
-      return (
-        <PageErrorBoundary>
-          <Suspense fallback={null}>
-            <AgentsView
-              addToast={addToast}
-              projectId={currentProject?.id}
-              onOpenTaskLogs={handleOpenTaskLogs}
-              agentOnboardingEnabled={agentOnboardingEnabled}
-            />
-          </Suspense>
-        </PageErrorBoundary>
-      );
-    }
-
-    if (taskView === "documents") {
-      return (
-        <PageErrorBoundary>
-          <Suspense fallback={null}>
-            <DocumentsView
-              projectId={currentProject?.id}
-              addToast={addToast}
-              onOpenDetail={openDetailTask}
-              onSendSelectionToTask={modalManager.openNewTaskWithDescription}
-            />
-          </Suspense>
-        </PageErrorBoundary>
-      );
-    }
-
-    if (taskView === "pull-requests") {
-      return (
-        <PageErrorBoundary>
-          <Suspense fallback={null}>
-            <PullRequestView pullRequestId={selectedPrId} projectId={currentProject?.id} />
-          </Suspense>
-        </PageErrorBoundary>
-      );
-    }
-
-    if (taskView === "insights") {
-      if (!settingsLoaded || !insightsEnabled) {
-        return null;
-      }
-      return (
-        <PageErrorBoundary>
-          <Suspense fallback={null}>
-            <InsightsView
-              projectId={currentProject?.id}
-              addToast={addToast}
-              onClose={() => handleChangeTaskView("board")}
-              onCreateTask={handleInsightTaskCreate}
-            />
-          </Suspense>
-        </PageErrorBoundary>
-      );
-    }
-
-    if (taskView === "research") {
-      if (!settingsLoaded || !researchEnabled) {
-        return null;
-      }
-      return (
-        <PageErrorBoundary>
-          <Suspense fallback={null}>
-            <ResearchView
-              projectId={currentProject?.id}
-              addToast={addToast}
-              onOpenSettings={(section) => modalManager.openSettings(section as SectionId)}
-              readinessVersion={researchReadinessVersion}
-            />
-          </Suspense>
-        </PageErrorBoundary>
-      );
-    }
-
-    if (taskView === "evals") {
-      if (!settingsLoaded || !evalsEnabled) {
-        return null;
-      }
-      return (
-        <PageErrorBoundary>
-          <Suspense fallback={null}>
-            <EvalsView
-              projectId={currentProject?.id}
-              onOpenSettings={(section) => modalManager.openSettings(section as SectionId)}
-              onOpenTaskDetail={(taskId) => {
-                void fetchTaskDetail(taskId, currentProject?.id)
-                  .then((task) => openDetailTask(task as TaskDetail))
-                  .catch((error) => addToast(error instanceof Error ? error.message : "Failed to open task detail", "error"));
-              }}
-            />
-          </Suspense>
-        </PageErrorBoundary>
-      );
-    }
-
-    if (taskView === "memory") {
-      if (!settingsLoaded || !memoryEnabled) {
-        return null;
-      }
-      return (
-        <PageErrorBoundary>
-          <Suspense fallback={null}>
-            <MemoryView
-              addToast={addToast}
-              projectId={currentProject?.id}
-              onSendSelectionToTask={modalManager.openNewTaskWithDescription}
-            />
-          </Suspense>
-        </PageErrorBoundary>
-      );
-    }
-
-    if (taskView === "secrets") {
-      return (
-        <PageErrorBoundary>
-          <Suspense fallback={null}>
-            <SecretsView addToast={addToast} />
-          </Suspense>
-        </PageErrorBoundary>
-      );
-    }
-
-    if (taskView === "goalsView") {
-      if (!settingsLoaded || !goalsEnabled) {
-        return null;
-      }
-      return (
-        <PageErrorBoundary>
-          <Suspense fallback={null}>
-            <GoalsView anchorGoalId={goalAnchorId} onNavigateToMission={handleOpenMission} />
-          </Suspense>
-        </PageErrorBoundary>
-      );
-    }
-    if (taskView === "todos") {
-      // FNXC:Todos 2026-06-21-09:21: Todos render as a docked right-content view, not a modal overlay, per FN-6829 so all dashboard navigation surfaces share the same taskView routing model.
-      if (!settingsLoaded || !todosEnabled) return null;
-      return (
-        <PageErrorBoundary>
-          <Suspense fallback={null}>
-            <TodoView projectId={currentProject?.id} addToast={addToast} onPlanningMode={openPlanningWithInitialPlanWithNav} onTaskCreated={(task) => ingestCreatedTasks([task])} />
-          </Suspense>
-        </PageErrorBoundary>
-      );
-    }
-    if (taskView === "command-center") {
-      return (
-        <PageErrorBoundary>
-          <Suspense fallback={null}>
-            <CommandCenter
-              projectId={currentProject?.id}
-              colorTheme={colorTheme}
-              themeMode={themeMode}
-              shadcnCustomColors={shadcnCustomColors}
-              resolvedThemeMode={resolvedThemeMode}
-              onColorThemeChange={setColorTheme}
-              onThemeModeChange={setThemeMode}
-              onShadcnCustomColorsChange={setShadcnCustomColors}
-              addToast={addToast}
-              nodesEnabled={nodesEnabled}
-            />
-          </Suspense>
-        </PageErrorBoundary>
-      );
-    }
-
-    if (taskView === "planning") {
-      /*
-      FNXC:Navigation 2026-06-21-00:00:
-      FN-6886 renders Planning Mode as a top-level main-content destination. Sidebar navigation opens an empty planning view, while Board, Todos, inline create, and resume entry points carry their initial plan/workflow/session state through modalManager.
-      */
-      const closePlanningView = () => {
-        modalManager.closePlanning();
-        handleChangeTaskView("board");
-      };
-      return (
-        <PageErrorBoundary>
-          <PlanningModeModal
-            isOpen={true}
-            onClose={closePlanningView}
-            onTaskCreated={handlePlanningTaskCreated}
-            onTasksCreated={handlePlanningTasksCreated}
-            tasks={tasks}
-            initialPlan={modalManager.planningInitialPlan ?? undefined}
-            projectId={currentProject?.id}
-            workflowId={modalManager.planningWorkflowId}
-            resumeSessionId={modalManager.planningResumeSessionId}
-            presentation="embedded"
-          />
-        </PageErrorBoundary>
-      );
-    }
-
-    if (taskView === "devserver" || taskView === "dev-server") {
-      if (!settingsLoaded || !devServerEnabled) {
-        return null;
-      }
-      return (
-        <PageErrorBoundary>
-          <Suspense fallback={null}>
-            <DevServerView addToast={addToast} projectId={currentProject?.id} />
-          </Suspense>
-        </PageErrorBoundary>
-      );
-    }
-
-    if (taskView === "board") {
-      return (
-        <PageErrorBoundary>
-          {capacityRiskBannerEnabled && !capacityRiskDismissed ? (
-            <CapacityRiskBanner signal={capacityRiskSignal} onDismiss={handleDismissCapacityRisk} />
-          ) : null}
-          <Board
-            tasks={filteredBoardTasks}
-            projectId={currentProject?.id}
-            maxConcurrent={maxConcurrent}
-            onMoveTask={moveTask}
-            onPauseTask={pauseTask}
-            onOpenDetail={openDetailTask}
-            onOpenGroupModal={openGroupModalWithNav}
-            addToast={addToast}
-            onQuickCreate={handleBoardQuickCreate}
-            onNewTask={openNewTaskWithNav}
-            onPlanningMode={openPlanningWithInitialPlanWithNav}
-            onSubtaskBreakdown={subtaskBreakdownEnabled ? openSubtaskBreakdownWithNav : undefined}
-            autoMerge={autoMerge}
-            onToggleAutoMerge={toggleAutoMerge}
-            globalPaused={globalPaused}
-            onUpdateTask={updateTask}
-            onRetryTask={retryTask}
-            onArchiveTask={archiveTask}
-            onUnarchiveTask={unarchiveTask}
-            onDeleteTask={deleteTask}
-            onArchiveAllDone={archiveAllDone}
-            onLoadArchivedTasks={loadArchivedTasks}
-            searchQuery={searchQuery}
-            availableModels={availableModels}
-            onOpenDetailWithTab={handleOpenDetailWithTab}
-            favoriteProviders={favoriteProviders}
-            favoriteModels={favoriteModels}
-            onToggleFavorite={handleToggleFavorite}
-            onToggleModelFavorite={handleToggleModelFavorite}
-            taskStuckTimeoutMs={taskStuckTimeoutMs}
-            staleHighFanoutBlockerAgeThresholdMs={staleHighFanoutBlockerAgeThresholdMs}
-            onOpenMission={handleOpenMission}
-            lastFetchTimeMs={lastFetchTimeMs}
-            prAuthAvailable={prAuthAvailable}
-            onOpenWorkflowEditor={openWorkflowEditorWithNav}
-            onCreateWorkflow={openCreateWorkflowWithNav}
-            workflowColumnsEnabled={experimentalFeatures.workflowColumns === true}
-            settingsLoaded={settingsLoaded}
-            workflowControlsInHeader={sidebarActive}
-          />
-        </PageErrorBoundary>
-      );
-    }
-
-    // List view
-    return (
-      <PageErrorBoundary>
-        <ListView
-          tasks={isRemote && remoteData.tasks.length > 0 ? remoteData.tasks : tasks}
-          projectId={currentProject?.id}
-          onMoveTask={moveTask}
-          onRetryTask={retryTask}
-          onDeleteTask={deleteTask}
-          onPauseTask={pauseTask}
-          onUnpauseTask={unpauseTask}
-          onArchiveTask={archiveTask}
-          onMergeTask={mergeTask}
-          onResetTask={resetTask}
-          onDuplicateTask={duplicateTask}
-          onOpenDetail={(task, options) => openDetailTask(task, undefined, options)}
-          addToast={addToast}
-          globalPaused={globalPaused}
-          onNewTask={openNewTaskWithNav}
-          onQuickCreate={handleBoardQuickCreate}
-          onPlanningMode={openPlanningWithInitialPlanWithNav}
-          onSubtaskBreakdown={subtaskBreakdownEnabled ? openSubtaskBreakdownWithNav : undefined}
-          availableModels={availableModels}
-          favoriteProviders={favoriteProviders}
-          favoriteModels={favoriteModels}
-          onToggleFavorite={handleToggleFavorite}
-          onToggleModelFavorite={handleToggleModelFavorite}
-          taskStuckTimeoutMs={taskStuckTimeoutMs}
-          searchQuery={searchQuery}
-          lastFetchTimeMs={lastFetchTimeMs}
-          prAuthAvailable={prAuthAvailable}
-          autoMerge={autoMerge}
-          onOpenWorkflowEditor={openWorkflowEditorWithNav}
-          onCreateWorkflow={openCreateWorkflowWithNav}
-          workflowColumnsEnabled={experimentalFeatures.workflowColumns === true}
-          settingsLoaded={settingsLoaded}
-          workflowControlsInHeader={sidebarActive}
-        />
-      </PageErrorBoundary>
-    );
+  // Props for the extracted <MainContent> switch (see components/dashboard/MainContent.tsx).
+  // Every value is passed by its App name; the switch renders the same subtrees as before.
+  const mainContentProps: MainContentProps = {
+    showBackendConnectionErrorPage,
+    projectsError,
+    t,
+    retryingProjects,
+    handleRetryProjects,
+    shellApi,
+    taskView,
+    modalManager,
+    handleChangeTaskView,
+    addToast,
+    currentProject,
+    themeMode,
+    setThemeMode,
+    colorTheme,
+    setColorTheme,
+    dashboardFontScalePct,
+    setDashboardFontScalePct,
+    shadcnCustomColors,
+    setShadcnCustomColors,
+    resolvedThemeMode,
+    setQuickChatButtonModeImmediate,
+    reopenOnboardingWithNav,
+    viewMode,
+    projects,
+    projectsLoading,
+    handleSelectProject,
+    handleAddProject,
+    handlePauseProject,
+    handleResumeProject,
+    handleRemoveProject,
+    nodes,
+    graphPluginTaskView,
+    isRemote,
+    remoteData,
+    tasks,
+    workflowSteps,
+    subscribePluginEvents,
+    openDetailTask,
+    openFileInBrowser,
+    workflowStepNameLookup,
+    prAuthAvailable,
+    autoMerge,
+    settingsLoaded,
+    skillsEnabled,
+    experimentalFeatures,
+    setQuickChatOpen,
+    setMailboxUnreadCount,
+    setMissionTargetId,
+    setMissionResumeSessionId,
+    setMilestoneSliceResumeSessionId,
+    missionResumeSessionId,
+    missionTargetId,
+    milestoneSliceResumeSessionId,
+    setGoalAnchorId,
+    goalAnchorId,
+    agentsEnabled,
+    agentOnboardingEnabled,
+    handleOpenTaskLogs,
+    popOutTaskDetail,
+    selectedPrId,
+    insightsEnabled,
+    handleInsightTaskCreate,
+    researchEnabled,
+    openSettingsWithNav,
+    researchReadinessVersion,
+    evalsEnabled,
+    memoryEnabled,
+    goalsEnabled,
+    handleOpenMission,
+    todosEnabled,
+    openPlanningWithInitialPlanWithNav,
+    ingestCreatedTasks,
+    nodesEnabled,
+    openWorkflowEditorWithNav,
+    handlePlanningTaskCreated,
+    handlePlanningTasksCreated,
+    handleGitHubImport,
+    devServerEnabled,
+    mainPanelDetailTask,
+    filteredBoardTasks,
+    maxConcurrent,
+    moveTask,
+    pauseTask,
+    openTaskDetailInMainPanel,
+    openGroupModalWithNav,
+    handleBoardQuickCreate,
+    openNewTaskWithNav,
+    subtaskBreakdownEnabled,
+    openSubtaskBreakdownWithNav,
+    toggleAutoMerge,
+    globalPaused,
+    updateTask,
+    retryTask,
+    archiveTask,
+    unarchiveTask,
+    deleteTask,
+    archiveAllDone,
+    loadArchivedTasks,
+    searchQuery,
+    availableModels,
+    favoriteProviders,
+    favoriteModels,
+    handleOpenDetailWithTab,
+    handleToggleFavorite,
+    handleToggleModelFavorite,
+    taskStuckTimeoutMs,
+    staleHighFanoutBlockerAgeThresholdMs,
+    lastFetchTimeMs,
+    openCreateWorkflowWithNav,
+    sidebarActive,
+    isMobile,
+    mainPanelDetailInitialTab,
+    closeTaskDetailMainPanel,
+    setMainPanelDetailTask,
+    setMainPanelDetailInitialTab,
+    mergeTask,
+    resetTask,
+    duplicateTask,
+    unpauseTask,
+    capacityRiskBannerEnabled,
+    capacityRiskDismissed,
+    capacityRiskSignal,
+    handleDismissCapacityRisk,
+    AgentsView,
+    ChatView,
+    CommandCenter,
+    DevServerView,
+    DocumentsView,
+    EvalsView,
+    GoalsView,
+    InsightsView,
+    MemoryView,
+    PullRequestView,
+    ResearchView,
+    SecretsView,
+    SkillsView,
+    TodoView,
+    _AutomationsView,
+    _ImportTasksView,
+    _SettingsView,
+    _WorkflowEditorView,
   };
 
   const showOnboardingResumeCard = !modalManager.modelOnboardingOpen && isOnboardingResumable();
@@ -1948,7 +1240,51 @@ function AppInner() {
   // Top progress bar reflects any in-flight revalidation: projects, current-project, or tasks.
   // Add new sources here, not inside TopProgressBar.
   const isRevalidating = projectsLoading || currentProjectLoading || isStale;
-  const rightDock = useRightDockController({ active: rightDockActive, projectId: currentProject?.id, addToast, settingsLoaded, researchReadinessVersion, goalAnchorId, tasks: isRemote && remoteData.tasks.length > 0 ? remoteData.tasks : tasks, workflowSteps, subscribePluginEvents, openDetailTask, openFileInBrowser, openSettings: (section?: string) => modalManager.openSettings(section as SectionId), onOpenUsage: openUsageWithNav, onOpenActivityLog: openActivityLogWithNav, onOpenGitHubImport: openGitHubImportWithNav, onOpenGitManager: openGitManagerWithNav, onOpenSchedules: openSchedulesWithNav, onSendSelectionToTask: modalManager.openNewTaskWithDescription, onCreateTaskFromInsight: handleInsightTaskCreate, onNavigateToMission: handleOpenMission, onTaskCreated: (task: Task) => ingestCreatedTasks([task]), workflowStepNameLookup, prAuthAvailable, autoMerge, visibilityOptions: { experimentalFeatures: { insights: insightsEnabled, memoryView: memoryEnabled, devServerView: devServerEnabled, researchView: researchEnabled, evalsView: evalsEnabled, goalsView: goalsEnabled }, showSkillsTab: skillsEnabled, todosEnabled, pluginDashboardViews }, footerVisible: executorFooterVisible });
+
+  // Props for the extracted <DashboardBanners> cluster (see components/dashboard/DashboardBanners.tsx).
+  // Every value is passed by its App name; the cluster renders the same banners as before.
+  const dashboardBannersProps: DashboardBannersProps = {
+    viewMode,
+    currentProject,
+    isTestMode,
+    dashboardHealth,
+    setDashboardHealth,
+    taskView,
+    modalManager,
+    sessionBannersHidden,
+    sessionsNeedingInput,
+    handleOpenBackgroundSession,
+    handleDismissNeedingInputSession,
+    handleDismissAllNeedingInputSessions,
+    handleCliAction,
+    getCliActionDisabledReasonForBanner,
+    openSettingsWithNav,
+    showOnboardingResumeCard,
+    showPostOnboardingRecommendations,
+    updateAvailable,
+    latestVersion,
+    currentVersion,
+    updateBannerDismissed,
+    dismissUpdateBanner,
+    refreshDbCorruptionHealth,
+    dbCorruptionRefreshing,
+    dbCorruptionRefreshError,
+    setupReadinessLoading,
+    hasWarnings,
+    setupWarningDismissed,
+    handleDismissSetupWarning,
+    hasAiProvider,
+    hasGithub,
+    approvalBannerCandidate,
+    dismissApproval,
+    mailboxPendingApprovalCount,
+    handleTaskViewChange,
+    showGitHubStarPrompt,
+    gitHubStarPromptShown,
+    markGitHubStarPromptShown,
+    setShowGitHubStarPrompt,
+  };
+  const rightDock = useRightDockController({ active: rightDockActive, projectId: currentProject?.id, addToast, settingsLoaded, researchReadinessVersion, goalAnchorId, tasks: isRemote && remoteData.tasks.length > 0 ? remoteData.tasks : tasks, workflowSteps, subscribePluginEvents, openDetailTask, openFileInBrowser, openSettings: (section?: string) => openSettingsWithNav(section as SectionId), onOpenUsage: openUsageWithNav, onOpenActivityLog: openActivityLogWithNav, onOpenGitHubImport: openGitHubImportWithNav, onOpenGitManager: openGitManagerWithNav, onOpenSchedules: openSchedulesWithNav, onSendSelectionToTask: modalManager.openNewTaskWithDescription, onCreateTaskFromInsight: handleInsightTaskCreate, onNavigateToMission: handleOpenMission, onTaskCreated: (task: Task) => ingestCreatedTasks([task]), workflowStepNameLookup, prAuthAvailable, autoMerge, visibilityOptions: { experimentalFeatures: { insights: insightsEnabled, memoryView: memoryEnabled, devServerView: devServerEnabled, researchView: researchEnabled, evalsView: evalsEnabled, goalsView: goalsEnabled }, showSkillsTab: skillsEnabled, todosEnabled, pluginDashboardViews }, footerVisible: executorFooterVisible });
 
   return (
     <NavigationHistoryProvider value={{ pushNav, replaceCurrent, removeNav }}>
@@ -1998,6 +1334,9 @@ function AppInner() {
         projectId={currentProject?.id}
         mobileNavEnabled={isMobile}
         leftSidebarNavActive={sidebarActive}
+        rightDockAvailable={rightDockActive}
+        rightDockOpen={rightDock.open}
+        onToggleRightDock={rightDock.toggle}
         // Node switching props
         availableNodes={nodes}
         currentNode={currentNode}
@@ -2030,113 +1369,7 @@ function AppInner() {
           ) : undefined
         }
       />
-      {viewMode === "project" && currentProject && (
-        <>
-          <TestModeBanner isActive={isTestMode} />
-          <EngineUnavailableBanner isVisible={dashboardHealth?.engine?.available === false} />
-          <OAuthReloginBanner
-            onReLogin={(_providerId) => modalManager.openSettings("authentication" as SectionId)}
-          />
-        </>
-      )}
-      {viewMode === "project" && currentProject && taskView !== "missions" && !modalManager.isPlanningOpen && !sessionBannersHidden && (
-        <SessionNotificationBanner
-          sessions={sessionsNeedingInput}
-          onResumeSession={handleOpenBackgroundSession}
-          onDismissSession={handleDismissNeedingInputSession}
-          onDismissAll={handleDismissAllNeedingInputSessions}
-          onCliAction={handleCliAction}
-          getCliActionDisabledReason={getCliActionDisabledReasonForBanner}
-        />
-      )}
-      {viewMode === "project" && currentProject && (
-        <CliBinaryInstallBanner
-          onOpenSettings={() => modalManager.openSettings("general" as SectionId)}
-        />
-      )}
-      {viewMode === "project" && currentProject && showOnboardingResumeCard && (
-        <OnboardingResumeCard onResume={modalManager.openModelOnboarding} />
-      )}
-      {viewMode === "project" && currentProject && showPostOnboardingRecommendations && (
-        <PostOnboardingRecommendations
-          onOpenModelOnboarding={modalManager.openModelOnboarding}
-          onOpenSettings={(section) => modalManager.openSettings(section as SectionId)}
-        />
-      )}
-      {viewMode === "project" && currentProject && updateAvailable && latestVersion && currentVersion && !updateBannerDismissed && (
-        <UpdateAvailableBanner
-          latestVersion={latestVersion}
-          currentVersion={currentVersion}
-          onDismiss={dismissUpdateBanner}
-        />
-      )}
-      {viewMode === "project" && currentProject && (
-        <MergeAdvanceNotice projectId={currentProject.id} />
-      )}
-      {viewMode === "project" && currentProject && dashboardHealth?.taskIdIntegrity?.status === "anomaly" && dashboardHealth.taskIdIntegrity.recommendedAction && (
-        <TaskIdIntegrityBanner
-          report={dashboardHealth.taskIdIntegrity}
-          recommendedAction={dashboardHealth.taskIdIntegrity.recommendedAction}
-          onRefresh={(report, recommendedAction) => {
-            setDashboardHealth((current) => {
-              if (!current) {
-                return null;
-              }
-              return {
-                ...current,
-                status:
-                  report.status === "anomaly"
-                  || !current.database.healthy
-                  || current.database.corruptionDetected
-                    ? "degraded"
-                    : "ok",
-                taskIdIntegrity: {
-                  ...report,
-                  recommendedAction,
-                },
-              };
-            });
-          }}
-        />
-      )}
-      {viewMode === "project" && currentProject && dashboardHealth?.database?.corruptionDetected === true && (
-        <DbCorruptionBanner
-          errors={dashboardHealth.database.corruptionErrors}
-          lastCheckedAt={dashboardHealth.database.lastCheckedAt}
-          onRefresh={refreshDbCorruptionHealth}
-          refreshing={dbCorruptionRefreshing}
-          refreshError={dbCorruptionRefreshError}
-        />
-      )}
-      {viewMode === "project" && currentProject && !setupReadinessLoading && hasWarnings && !setupWarningDismissed && (
-        <SetupWarningBanner
-          hasAiProvider={hasAiProvider}
-          hasGithub={hasGithub}
-          onDismiss={handleDismissSetupWarning}
-        />
-      )}
-      {viewMode === "project" && currentProject && approvalBannerCandidate && (
-        <ApprovalNotificationBanner
-          pendingCount={Math.max(mailboxPendingApprovalCount, 1)}
-          onOpenMailbox={() => handleTaskViewChange("mailbox")}
-          onDismiss={() => {
-            approvalDismissalsRef.current.set(
-              approvalBannerCandidate.dedupeKey,
-              Math.max(Date.now(), approvalBannerCandidate.updatedAtMs),
-            );
-            persistApprovalBannerDismissals(approvalDismissalsRef.current);
-            setApprovalBannerCandidate(null);
-          }}
-        />
-      )}
-      {viewMode === "project" && currentProject && showGitHubStarPrompt && !gitHubStarPromptShown && (
-        <GitHubStarPrompt
-          onDismiss={() => {
-            markGitHubStarPromptShown();
-            setShowGitHubStarPrompt(false);
-          }}
-        />
-      )}
+      <DashboardBanners {...dashboardBannersProps} />
       <div className={`dashboard-project-shell${sidebarActive ? " dashboard-project-shell--with-sidebar" : ""}${rightDockActive ? " dashboard-project-shell--with-right-dock" : ""}`} data-testid="dashboard-project-shell">
         {sidebarActive && (
           <LeftSidebarNav
@@ -2169,7 +1402,7 @@ function AppInner() {
         <div
           className={`project-content${executorFooterVisible && (!isMobile || !mobileKeyboardOpen) ? " project-content--with-footer" : ""}${isMobile && !mobileKeyboardOpen ? " project-content--with-mobile-nav" : ""}`}
         >
-          {renderMainContent()}
+          <MainContent {...mainContentProps} />
         </div>
         {rightDock.dock}
       </div>
@@ -2191,6 +1424,8 @@ function AppInner() {
           keyboardOpen={footerKeyboardOpen}
           hideWhenKeyboardOpen={mobileKeyboardOpen}
           onToggleTerminal={toggleTerminalWithNav}
+          quickChatButtonMode={quickChatButtonMode}
+          onOpenQuickChat={() => setQuickChatOpen(true)}
           onOpenScripts={openScriptsWithNav}
           onRunScript={runScriptWithNav}
         />
@@ -2243,19 +1478,91 @@ function AppInner() {
           ) : undefined
         }
       />
-      {viewMode === "project" && currentProject && taskView !== "chat" && taskView !== "mailbox" && taskView !== "insights" && taskView !== "evals" && taskView !== "devserver" && taskView !== "dev-server" && taskView !== "graph" && !isPluginViewId(taskView) && (
+      {/*
+      FNXC:ChatModal 2026-06-22-13:24:
+      Quick Chat is replaced by the full ChatView in a movable/resizable FloatingWindow. The launcher icon is only the minimized entry point: clicking it opens the Chat modal, and the modal's minimize button closes the window back into that icon. Main Chat can also pop out into this same full Chat modal.
+
+      FNXC:ChatModal 2026-06-22-14:57:
+      Reopening Quick Chat from the FAB restores the last floating Chat window geometry through FloatingWindow's persisted/clamped geometry key. The modal's maximize button routes to the full Chat view and closes the floating modal without clearing ChatView's shared session selection state.
+      */}
+      {viewMode === "project" && currentProject && (
         <QuickChatFAB
-          projectId={currentProject.id}
-          addToast={addToast}
-          showFAB={showQuickChatFAB}
+          showFAB={quickChatButtonMode === "floating"}
           open={quickChatOpen}
           onOpenChange={setQuickChatOpen}
-          favoriteProviders={favoriteProviders}
-          favoriteModels={favoriteModels}
-          onToggleFavorite={handleToggleFavorite}
-          onToggleModelFavorite={handleToggleModelFavorite}
         />
       )}
+      {quickChatOpen && currentProject && (
+        <FloatingWindow
+          windowKey="chat-modal"
+          title="Chat"
+          onClose={() => setQuickChatOpen(false)}
+          hideHeader
+          dragHandleSelector=".chat-view--floating .view-header"
+          className="floating-window--chat"
+          persistGeometryKey="kb-dashboard-chat-floating-window"
+          defaultSize={{ width: 980, height: 680 }}
+          /*
+          FNXC:ChatModal 2026-06-23-22:14:
+          The full Chat pop-out must be resizable into a very narrow desktop utility window. ChatView already switches to its mobile one-pane layout at narrow widths, so allow the FloatingWindow to shrink below the old two-pane desktop minimum while preserving enough width for composer controls.
+          */
+          minSize={{ width: 300, height: 420 }}
+        >
+          <Suspense fallback={null}>
+            <ChatView
+              addToast={addToast}
+              projectId={currentProject.id}
+              experimentalFeatures={experimentalFeatures}
+              floating
+              onMaximize={() => {
+                handleTaskViewChange("chat");
+                setQuickChatOpen(false);
+              }}
+              onMinimize={() => setQuickChatOpen(false)}
+              onClose={() => setQuickChatOpen(false)}
+            />
+          </Suspense>
+        </FloatingWindow>
+      )}
+      {/*
+      FNXC:FloatingWindow 2026-06-22-20:45:
+      One movable, resizable, non-blocking FloatingWindow per popped-out task. Each hosts the same embedded TaskDetailContent List/Board use, wired to the same App task handlers. Live row preferred by id; falls back to the snapshot. Terminal/destructive actions and the window close button both remove the entry. Multiple entries → multiple coexisting windows; FloatingWindow's per-window z-counter handles focus-to-front so the clicked one comes on top.
+
+      FNXC:TaskDetail 2026-06-22-12:20:
+      Task pop-outs use TaskDetailContent's own gray header as the only visible header, matching the one-header fixed task modal while keeping FloatingWindow drag/resize. The generic Maximize title chrome is hidden; close now lives beside edit inside the task header.
+      */}
+      {poppedOutTasks.map((snapshot) => {
+        const liveTask = tasks.find((candidate) => candidate.id === snapshot.id) ?? snapshot;
+        const close = () => closePoppedOutTask(snapshot.id);
+        return (
+          <FloatingWindow
+            key={snapshot.id}
+            windowKey={`task-detail-${snapshot.id}`}
+            title={liveTask.id}
+            onClose={close}
+            hideHeader
+            dragHandleSelector=".task-detail-content--embedded > .modal-header"
+          >
+            <TaskDetailContent
+              task={liveTask}
+              projectId={currentProject?.id}
+              tasks={tasks}
+              embedded
+              onOpenDetail={popOutTaskDetail}
+              onMoveTask={moveTask}
+              onDeleteTask={deleteTask}
+              onMergeTask={mergeTask}
+              onRetryTask={retryTask}
+              onResetTask={resetTask}
+              onDuplicateTask={duplicateTask}
+              onRequestClose={close}
+              addToast={addToast}
+              prAuthAvailable={prAuthAvailable}
+              autoMergeEnabled={autoMerge}
+            />
+          </FloatingWindow>
+        );
+      })}
       <AppModals
         projectId={currentProject?.id}
         tasks={tasks}
@@ -2277,10 +1584,11 @@ function AppInner() {
         onSubtaskBreakdown={subtaskBreakdownEnabled ? openSubtaskBreakdownWithNav : undefined}
         taskOperations={{ moveTask, deleteTask, mergeTask, archiveTask, retryTask, resetTask, duplicateTask }}
         deepLink={{ handleDetailClose }}
-        settings={{ prAuthAvailable, autoMerge, themeMode, colorTheme, dashboardFontScalePct, shadcnCustomColors, resolvedThemeMode, setThemeMode, setColorTheme, setDashboardFontScalePct, setShadcnCustomColors }}
+        settings={{ prAuthAvailable, autoMerge, themeMode, colorTheme, dashboardFontScalePct, shadcnCustomColors, resolvedThemeMode, setThemeMode, setColorTheme, setDashboardFontScalePct, setShadcnCustomColors, setQuickChatButtonModeImmediate }}
         onSettingsClose={handleSettingsCloseWithNav}
         onReopenOnboarding={reopenOnboardingWithNav}
         onOpenApprovals={(_approvalId) => handleTaskViewChange("mailbox")}
+        agentOnboardingEnabled={agentOnboardingEnabled}
       />
       <AuthTokenRecoveryDialog open={authTokenRecoveryOpen} />
             {shellApi && (

@@ -99,6 +99,11 @@ export type GitMutationType =
   | "worktree:incomplete-detected"
   | "worktree:reanchored"
   | "worktree:auto-recovered"
+  // FNXC:Workspace 2026-06-21-20:10: workspace per-repo acquisition audit events (U2).
+  // -busy: another task holds the same sub-repo's acquisition exclusivity lock (KTD4).
+  // -failed: a sub-repo worktree acquisition threw; surfaced + audited, never swallowed.
+  | "worktree:workspace-repo-acquire-busy"
+  | "worktree:workspace-repo-acquire-failed"
   /**
    * worktrunk run-audit metadata shape:
    *
@@ -443,6 +448,10 @@ export type DatabaseMutationType =
   | "mergeQueue:auto-cleanup-stale-row"
   | "task:auto-recover-already-merged"
   | "task:auto-recover-finalize-already-on-main"
+  /** Metadata: { taskId, previousColumn, targetColumn, commitSha, status, blockedBy, overlapBlockedBy, reason } */
+  | "task:auto-merge-finalize-column-mismatch-reconciled"
+  /** Metadata: { taskId, previousColumn, targetColumn, commitSha, status, blockedBy, overlapBlockedBy, reason } */
+  | "task:auto-merge-finalize-column-mismatch-no-action"
   | "task:auto-merge-skipped-already-done"
   /** Metadata: { taskId, commitSha, failedCommand, exitCode, errorTail } */
   | "task:post-finalize-verification-no-op"
@@ -511,6 +520,20 @@ export type DatabaseMutationType =
   | "task:resume-limbo-escalated"
   /** Metadata: { taskId, executionAgeMs, graceMs, staleBindingAgeFloorMs, checkedOutBy, agentPresent, lastActivityMs, hasRecentRunAudit, worktree, branch, worktreeExists, signalReason } */
   | "task:reclaim-phantom-executor-binding"
+  /* FNXC:Workspace 2026-06-22-09:30 (Phase D U1) — workspace-mode self-healing run-audit events. */
+  /** Metadata: { taskId, landedRepos: string[], unlandedRepos: string[], failedRepos: string[], action: "re-enqueue" | "park-failed", reason } */
+  | "task:reconcile-workspace-partial-land"
+  /** Metadata: { taskId, reason: "auto-merge-off" | "user-paused" | "live-worktree", livePaths: string[] } */
+  | "task:reconcile-workspace-partial-land-no-action"
+  /** Metadata: { taskId, path, kind: "workspace-repo-land", registeredAt, ageMs, staleBindingAgeFloorMs, ownerColumn } */
+  | "task:reclaim-phantom-workspace-land-lease"
+  /** Metadata: { taskId, repo, worktreePath, success, reason } */
+  | "task:reconcile-orphaned-workspace-worktree"
+  /**
+   * FNXC:AgentTaskStateDrift 2026-06-23-08:50:
+   * Self-healing must leave file-scope lease queues intact while recording when stale durable Agent.taskId/state drift is cleared. Metadata: { agentId, taskId, taskColumn, agentState, status, blockedBy, overlapBlockedBy, hadFreshRun, hadActiveExecution, reason }.
+   */
+  | "task:reconcile-stale-agent-assignment"
   /** Metadata: { taskId, branch, worktree, checkedOutBy, executionStartedAt, executionAgeMs, graceMs, liveWorktreeBoundBranch, reason } */
   | "task:reclaim-self-owned-branch-conflict-no-action"
   | "task:orphan-detected-no-action"

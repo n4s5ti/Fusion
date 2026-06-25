@@ -2,6 +2,7 @@
 FNXC:DashboardTests 2026-06-14-08:31:
 FN-6441 rescued this orphaned component test after standalone dashboard-app execution passed without assertion, timeout, or source-code changes. Keep the terminal modal coverage in app backfill because keyboard, session, and mobile terminal regressions are user-facing and should not remain skip-listed.
 */
+import { readFileSync } from "node:fs";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, fireEvent, waitFor, act } from "@testing-library/react";
 import { TerminalModal, _resetInitialViewportHeight, ctrlChar, altChar } from "../TerminalModal";
@@ -16,6 +17,8 @@ import {
 import * as useTerminalModule from "../../hooks/useTerminal";
 import * as useTerminalSessionsModule from "../../hooks/useTerminalSessions";
 import * as apiModule from "../../api";
+
+const terminalModalCss = readFileSync("app/components/TerminalModal.css", "utf8");
 
 function splitFontFamilies(stack: string): string[] {
   return stack
@@ -261,12 +264,14 @@ describe("TerminalModal", () => {
     expect(modal).not.toHaveClass("terminal-modal--floating");
 
     const fitCallBaseline = mockFitAddonFit.mock.calls.length;
-    const handle = screen.getByTestId("terminal-docked-resize-handle") as HTMLElement & { setPointerCapture: (pointerId: number) => void };
+    // FNXC:Terminal 2026-06-22-19:50: The resize handlers now capture the pointer and listen on the CAPTURED handle element (not document), so move/up are fired on the handle with the matching pointerId; stub setPointerCapture/releasePointerCapture (jsdom no-ops).
+    const handle = screen.getByTestId("terminal-docked-resize-handle") as HTMLElement & { setPointerCapture: (pointerId: number) => void; releasePointerCapture: (pointerId: number) => void };
     handle.setPointerCapture = vi.fn();
+    handle.releasePointerCapture = vi.fn();
 
     fireEvent.pointerDown(handle, { pointerId: 1, clientY: 500 });
-    fireEvent.pointerMove(document, { clientY: 420 });
-    fireEvent.pointerUp(document, { pointerId: 1 });
+    fireEvent.pointerMove(handle, { pointerId: 1, clientY: 420 });
+    fireEvent.pointerUp(handle, { pointerId: 1 });
 
     await waitFor(() => {
       expect(window.localStorage.getItem(`fusion:terminal-docked-height-${projectId}`)).toBe("440");
@@ -312,27 +317,40 @@ describe("TerminalModal", () => {
     expect(screen.getByTestId("terminal-floating-resize-se")).toBeInTheDocument();
 
     const fitCallBaseline = mockFitAddonFit.mock.calls.length;
-    const resizeHandle = screen.getByTestId("terminal-floating-resize-se") as HTMLElement & { setPointerCapture: (pointerId: number) => void };
+    // FNXC:Terminal 2026-06-22-19:50: Floating resize/drag now capture the pointer and listen on the CAPTURED element (not document); fire move/up on that element with the matching pointerId and stub set/releasePointerCapture.
+    const resizeHandle = screen.getByTestId("terminal-floating-resize-se") as HTMLElement & { setPointerCapture: (pointerId: number) => void; releasePointerCapture: (pointerId: number) => void };
     resizeHandle.setPointerCapture = vi.fn();
+    resizeHandle.releasePointerCapture = vi.fn();
 
     fireEvent.pointerDown(resizeHandle, { pointerId: 1, clientX: 100, clientY: 100 });
-    fireEvent.pointerMove(document, { clientX: 140, clientY: 130 });
-    fireEvent.pointerUp(document, { pointerId: 1 });
+    fireEvent.pointerMove(resizeHandle, { pointerId: 1, clientX: 140, clientY: 130 });
+    fireEvent.pointerUp(resizeHandle, { pointerId: 1 });
 
     await waitFor(() => {
       expect(window.localStorage.getItem(`fusion:terminal-modal-size-${projectId}`)).toBe(JSON.stringify({ width: 992, height: 590 }));
       expect(mockFitAddonFit.mock.calls.length).toBeGreaterThan(fitCallBaseline);
     });
 
-    const header = modal.querySelector(".terminal-header") as HTMLElement & { setPointerCapture: (pointerId: number) => void };
+    const header = modal.querySelector(".terminal-header") as HTMLElement & { setPointerCapture: (pointerId: number) => void; releasePointerCapture: (pointerId: number) => void };
     header.setPointerCapture = vi.fn();
+    header.releasePointerCapture = vi.fn();
     fireEvent.pointerDown(header, { pointerId: 2, clientX: 100, clientY: 100 });
-    fireEvent.pointerMove(document, { clientX: 125, clientY: 135 });
-    fireEvent.pointerUp(document, { pointerId: 2 });
+    fireEvent.pointerMove(header, { pointerId: 2, clientX: 125, clientY: 135 });
+    fireEvent.pointerUp(header, { pointerId: 2 });
 
     await waitFor(() => {
       expect(window.localStorage.getItem(`fusion:terminal-float-pos-${projectId}`)).toBeTruthy();
     });
+  });
+
+  it("keeps the floating terminal touch-draggable with theme-controlled shadow", () => {
+    const panelRule = terminalModalCss.match(/\.modal\.terminal-modal\.terminal-modal--floating\s*\{([^}]*)\}/)?.[1] ?? "";
+    const headerRule = terminalModalCss.match(/\.terminal-header--draggable\s*\{([^}]*)\}/)?.[1] ?? "";
+
+    expect(panelRule).toContain("box-shadow: var(--floating-window-shadow, var(--shadow-lg));");
+    expect(headerRule).toContain("touch-action: none;");
+    expect(headerRule).toContain("min-height: 48px;");
+    expect(terminalModalCss).not.toContain("var(--shadow-xl)");
   });
 
   it("keeps mobile terminal on the full-screen modal path without docked or floating controls", async () => {

@@ -4,13 +4,14 @@ import "./LeftSidebarNav.css";
 FNXC:Navigation 2026-06-19-00:00:
 When the leftSidebarNav experiment is active, this component owns the non-mobile primary navigation destinations that Header previously exposed through inline and overflow view controls. Mobile remains owned by MobileNavBar, so this sidebar keeps the desktop/tablet contract only.
 */
-import { useCallback, useMemo, useState, type ComponentType, type KeyboardEvent as ReactKeyboardEvent } from "react";
+import { useCallback, useEffect, useMemo, useState, type ComponentType, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import { useTranslation } from "react-i18next";
 import {
   Bot,
   Brain,
   ChevronLeft,
   ChevronRight,
+  Clock,
   FileText,
   Gauge,
   Lightbulb,
@@ -18,12 +19,12 @@ import {
   List,
   Mail,
   MessageSquare,
-  Monitor,
   Plus,
   Search,
   Settings,
   Sparkles,
   Target,
+  Workflow,
   Zap,
   type LucideProps,
 } from "lucide-react";
@@ -31,6 +32,7 @@ import type { ProjectInfo, PluginDashboardViewEntry } from "../api";
 import type { TaskView } from "../hooks/useViewState";
 import { buildPluginTaskViewId } from "../plugins/pluginViewRegistry";
 import { getPluginNavIcon } from "./pluginNavIcon";
+import { GithubIcon } from "./GithubIcon";
 
 export interface LeftSidebarExperimentalFeatures {
   insights?: boolean;
@@ -143,7 +145,7 @@ FNXC:Navigation 2026-06-20-00:00:
 Experimental sidebar plugin labels must read as plain navigation nouns without an appended "view" suffix. The Compound Engineering plugin is intentionally shortened to "Compound" so its label fits the narrower sidebar.
 */
 function getSidebarPluginLabel(entry: PluginDashboardViewEntry): string {
-  return entry.pluginId === "fusion-plugin-compound-engineering" ? "Compound" : entry.view.label;
+  return entry.pluginId === "fusion-plugin-compound-engineering" ? "Compound Eng" : entry.view.label;
 }
 
 export function LeftSidebarNav({
@@ -163,6 +165,14 @@ export function LeftSidebarNav({
   const { t } = useTranslation("app");
   const [sidebarWidth, setSidebarWidth] = useState(readStoredSidebarWidth);
   const [isCollapsed, setIsCollapsed] = useState(readStoredCollapsed);
+  /*
+  FNXC:Navigation 2026-06-23-02:15:
+  Optimistic active highlight: when a nav item is clicked, paint the active color IMMEDIATELY instead of waiting for the (possibly lazy-loaded via Suspense) target view to mount and flip `isActive`. Without this the clicked row lingers on the hover/highlight color until the view swaps. `optimisticView` is set on click and cleared once the real `view` prop catches up.
+  */
+  const [optimisticView, setOptimisticView] = useState<string | null>(null);
+  useEffect(() => {
+    setOptimisticView(null);
+  }, [view]);
 
   const toggleCollapsed = useCallback(() => {
     setIsCollapsed((current) => {
@@ -220,16 +230,70 @@ export function LeftSidebarNav({
 
   const newTaskLabel = t("nav.newTask", "New Task");
 
-  const primaryPluginViews = useMemo(
-    () => sortPluginViews(pluginDashboardViews.filter((entry) => entry.view.placement === "primary")),
-    [pluginDashboardViews],
-  );
-  const overflowPluginViews = useMemo(
-    () => sortPluginViews(pluginDashboardViews.filter((entry) => entry.view.placement !== "primary")),
+  /*
+  FNXC:Navigation 2026-06-22-12:00:
+  All plugin dashboard views are flattened into a single sorted pool. Placement no longer splits the sidebar into primary/secondary sections; the sidebar is now ONE explicitly-ordered list (FN navigation reorder). The dependency-graph and compound-engineering plugin views are hoisted into fixed positions (graph after List, compound after Goals), so they must be excluded from the trailing "remaining plugin views" append to avoid duplication.
+  */
+  const sortedPluginViews = useMemo(
+    () => sortPluginViews(pluginDashboardViews),
     [pluginDashboardViews],
   );
 
-  const primaryEntries: SidebarNavEntry[] = [
+  const mapPluginEntry = useCallback(
+    (entry: PluginDashboardViewEntry): SidebarNavEntry => {
+      const PluginIcon = getPluginNavIcon(entry.view.icon);
+      const targetView = getPluginEntryView(entry);
+      return {
+        id: `plugin-${entry.pluginId}-${entry.view.viewId}`,
+        label: getSidebarPluginLabel(entry),
+        view: targetView,
+        isActive: isPluginEntryActive(view, entry),
+        icon: PluginIcon,
+        testId: `sidebar-nav-plugin-${entry.pluginId}-${entry.view.viewId}`,
+        onSelect: () => onChangeView(targetView),
+      };
+    },
+    [view, onChangeView],
+  );
+
+  const graphPluginEntry = sortedPluginViews.find(
+    (entry) => entry.pluginId === "fusion-plugin-dependency-graph" && entry.view.viewId === "graph",
+  );
+  const compoundPluginEntry = sortedPluginViews.find(
+    (entry) => entry.pluginId === "fusion-plugin-compound-engineering",
+  );
+  const remainingPluginViews = sortedPluginViews.filter(
+    (entry) =>
+      entry !== graphPluginEntry &&
+      entry !== compoundPluginEntry &&
+      !(entry.pluginId === "fusion-plugin-roadmap" && entry.view.viewId === "roadmaps"),
+  );
+
+  /*
+  FNXC:Navigation 2026-06-22-12:00:
+  Single explicit sidebar order (top to bottom): board, list, graph, agents, chat, mailbox, planning, missions, goals, compound, automation, import, workflows, insight, research, command-center, documents (Artifacts), skills, memory, evals, then any remaining plugin views in their sorted order.
+
+  Dev Server is intentionally absent: it moved to the right dock. Secrets and Todos remain omitted (they live in the right dock / mobile More-sheet / Header overflow).
+
+  Flag gates preserved verbatim from the prior layout: agents (showAgentsTab), goals (goalsView), insight (insights), research (researchView), skills (showSkillsTab), memory (memoryView), evals (evalsView). graph and compound are skipped when their plugin view is absent.
+
+  FNXC:Navigation 2026-06-22-18:50:
+  Roadmaps is no longer a dashboard navigation destination. Keep filtering it out even if a persisted plugin dashboard-view row is present, while preserving other plugin views in their sorted fallback section.
+  */
+  const navEntries: SidebarNavEntry[] = [
+    /*
+    FNXC:Navigation 2026-06-22-01:15:
+    Command Center is labeled "Dashboard" and sits at the very top of the sidebar. The board remains the default view on load (useViewState initial taskView is still "board").
+    */
+    {
+      id: "command-center",
+      label: t("nav.commandCenter", "Dashboard"),
+      view: "command-center",
+      isActive: view === "command-center",
+      icon: Gauge,
+      testId: "sidebar-nav-command-center",
+      onSelect: () => onChangeView("command-center"),
+    },
     {
       id: "board",
       label: t("nav.board", "Board"),
@@ -248,34 +312,13 @@ export function LeftSidebarNav({
       testId: "sidebar-nav-list",
       onSelect: () => onChangeView("list"),
     },
-    ...(showAgentsTab
-      ? [
-          {
-            id: "agents",
-            label: t("nav.agents", "Agents"),
-            view: "agents" as TaskView,
-            isActive: view === "agents",
-            icon: Bot,
-            testId: "sidebar-nav-agents",
-            onSelect: () => onChangeView("agents"),
-          },
-        ]
-      : []),
-    {
-      id: "command-center",
-      label: t("nav.commandCenter", "Command Center"),
-      view: "command-center",
-      isActive: view === "command-center",
-      icon: Gauge,
-      testId: "sidebar-nav-command-center",
-      onSelect: () => onChangeView("command-center"),
-    },
+    ...(graphPluginEntry ? [mapPluginEntry(graphPluginEntry)] : []),
+    /*
+    FNXC:Navigation 2026-06-23-01:30:
+    Planning and Missions sit directly below Graph and above Agents (moved up from after Memory) per user request, so the planning/mission destinations sit next to the structural Board/List/Graph group.
+    */
     {
       id: "planning",
-      /*
-      FNXC:Navigation 2026-06-21-00:00:
-      FN-6886 makes Planning Mode a first-class sidebar destination immediately after Command Center so the experimental sidebar owns the desktop planning affordance.
-      */
       label: t("nav.planning", "Planning"),
       view: "planning",
       isActive: view === "planning",
@@ -292,6 +335,19 @@ export function LeftSidebarNav({
       testId: "sidebar-nav-missions",
       onSelect: () => onChangeView("missions"),
     },
+    ...(showAgentsTab
+      ? [
+          {
+            id: "agents",
+            label: t("nav.agents", "Agents"),
+            view: "agents" as TaskView,
+            isActive: view === "agents",
+            icon: Bot,
+            testId: "sidebar-nav-agents",
+            onSelect: () => onChangeView("agents"),
+          },
+        ]
+      : []),
     {
       id: "chat",
       label: t("nav.chat", "Chat"),
@@ -302,6 +358,27 @@ export function LeftSidebarNav({
       dot: chatHasUnreadResponse && view !== "chat" ? "pending" : undefined,
       onSelect: () => onChangeView("chat"),
     },
+    {
+      id: "mailbox",
+      label: t("nav.mailbox", "Mailbox"),
+      view: "mailbox",
+      isActive: view === "mailbox",
+      icon: Mail,
+      testId: "sidebar-nav-mailbox",
+      badge: mailboxUnreadCount > 0 ? mailboxUnreadCount : undefined,
+      dot: view !== "mailbox" && mailboxPendingApprovalCount > 0 ? "pending" : view !== "mailbox" && mailboxUnreadCount > 0 ? "online" : undefined,
+      onSelect: () => onChangeView("mailbox"),
+    },
+    /*
+    FNXC:Navigation 2026-06-22-00:50:
+    Skills and Memory sit directly after Mailbox (still flag-gated by showSkillsTab / memoryView).
+    */
+    ...(showSkillsTab
+      ? [{ id: "skills", label: t("header.skillsView", "Skills"), view: "skills" as TaskView, isActive: view === "skills", icon: Zap, testId: "sidebar-nav-skills", onSelect: () => onChangeView("skills") }]
+      : []),
+    ...(experimentalFeatures?.memoryView
+      ? [{ id: "memory", label: t("header.memoryView", "Memory"), view: "memory" as TaskView, isActive: view === "memory", icon: Brain, testId: "sidebar-nav-memory", onSelect: () => onChangeView("memory") }]
+      : []),
     {
       id: "documents",
       /*
@@ -315,85 +392,70 @@ export function LeftSidebarNav({
       testId: "sidebar-nav-documents",
       onSelect: () => onChangeView("documents"),
     },
-    {
-      id: "mailbox",
-      label: t("nav.mailbox", "Mailbox"),
-      view: "mailbox",
-      isActive: view === "mailbox",
-      icon: Mail,
-      testId: "sidebar-nav-mailbox",
-      badge: mailboxUnreadCount > 0 ? mailboxUnreadCount : undefined,
-      dot: view !== "mailbox" && mailboxPendingApprovalCount > 0 ? "pending" : view !== "mailbox" && mailboxUnreadCount > 0 ? "online" : undefined,
-      onSelect: () => onChangeView("mailbox"),
-    },
-    ...primaryPluginViews.map((entry): SidebarNavEntry => {
-      const PluginIcon = getPluginNavIcon(entry.view.icon);
-      const targetView = getPluginEntryView(entry);
-      return {
-        id: `plugin-${entry.pluginId}-${entry.view.viewId}`,
-        label: getSidebarPluginLabel(entry),
-        view: targetView,
-        isActive: isPluginEntryActive(view, entry),
-        icon: PluginIcon,
-        testId: `sidebar-nav-plugin-${entry.pluginId}-${entry.view.viewId}`,
-        onSelect: () => onChangeView(targetView),
-      };
-    }),
-  ];
-
-  /*
-  FNXC:Navigation 2026-06-21-00:00:
-  Secrets and Todos are intentionally omitted from the left sidebar. They live in the right dock through RightDock/overflowViewRegistry, while mobile keeps its More-sheet entries and the Header opt-out layout keeps its overflow entries.
-  */
-  const secondaryEntries: SidebarNavEntry[] = [
-    ...(experimentalFeatures?.evalsView
-      ? [{ id: "evals", label: t("header.evalsView", "Evals"), view: "evals" as TaskView, isActive: view === "evals", icon: Target, testId: "sidebar-nav-evals", onSelect: () => onChangeView("evals") }]
-      : []),
     ...(experimentalFeatures?.goalsView
       ? [{ id: "goals", label: t("header.goalsView", "Goals"), view: "goalsView" as TaskView, isActive: view === "goalsView", icon: Target, testId: "sidebar-nav-goals", onSelect: () => onChangeView("goalsView") }]
+      : []),
+    /*
+    FNXC:Navigation 2026-06-22-00:00 (reordered 2026-06-23-01:45):
+    Workflows, Import Tasks, and Automations are left-sidebar destinations that load in the main content area (not modals). Import Tasks is the GitHub import view (labeled "Import Tasks", not "Import from GitHub"). Automations + Import Tasks sit directly ABOVE Compound Eng per user request.
+    */
+    {
+      id: "automations",
+      label: t("nav.automations", "Automations"),
+      view: "automations" as TaskView,
+      isActive: view === "automations",
+      icon: Clock,
+      testId: "sidebar-nav-automations",
+      onSelect: () => onChangeView("automations"),
+    },
+    {
+      id: "import-tasks",
+      label: t("nav.importTasks", "Import Tasks"),
+      view: "import-tasks" as TaskView,
+      isActive: view === "import-tasks",
+      icon: GithubIcon,
+      testId: "sidebar-nav-import-tasks",
+      onSelect: () => onChangeView("import-tasks"),
+    },
+    ...(compoundPluginEntry ? [mapPluginEntry(compoundPluginEntry)] : []),
+    {
+      id: "workflows",
+      label: t("nav.workflows", "Workflows"),
+      view: "workflows" as TaskView,
+      isActive: view === "workflows",
+      icon: Workflow,
+      testId: "sidebar-nav-workflows",
+      onSelect: () => onChangeView("workflows"),
+    },
+    ...(experimentalFeatures?.insights
+      ? [{ id: "insights", label: t("header.insightsView", "Insights"), view: "insights" as TaskView, isActive: view === "insights", icon: Sparkles, testId: "sidebar-nav-insights", onSelect: () => onChangeView("insights") }]
       : []),
     ...(experimentalFeatures?.researchView
       ? [{ id: "research", label: t("header.researchView", "Research"), view: "research" as TaskView, isActive: view === "research", icon: Search, testId: "sidebar-nav-research", onSelect: () => onChangeView("research") }]
       : []),
-    ...(experimentalFeatures?.insights
-      ? [{ id: "insights", label: t("header.insightsView", "Insights"), view: "insights" as TaskView, isActive: view === "insights", icon: Sparkles, testId: "sidebar-nav-insights", onSelect: () => onChangeView("insights") }]
+    ...(experimentalFeatures?.evalsView
+      ? [{ id: "evals", label: t("header.evalsView", "Evals"), view: "evals" as TaskView, isActive: view === "evals", icon: Target, testId: "sidebar-nav-evals", onSelect: () => onChangeView("evals") }]
       : []),
-    ...(showSkillsTab
-      ? [{ id: "skills", label: t("header.skillsView", "Skills"), view: "skills" as TaskView, isActive: view === "skills", icon: Zap, testId: "sidebar-nav-skills", onSelect: () => onChangeView("skills") }]
-      : []),
-    ...(experimentalFeatures?.memoryView
-      ? [{ id: "memory", label: t("header.memoryView", "Memory"), view: "memory" as TaskView, isActive: view === "memory", icon: Brain, testId: "sidebar-nav-memory", onSelect: () => onChangeView("memory") }]
-      : []),
-    ...(experimentalFeatures?.devServerView
-      ? [{ id: "devserver", label: t("header.devServerView", "Dev Server"), view: "devserver" as TaskView, isActive: view === "dev-server" || view === "devserver", icon: Monitor, testId: "sidebar-nav-devserver", onSelect: () => onChangeView("devserver") }]
-      : []),
-    ...overflowPluginViews.map((entry): SidebarNavEntry => {
-      const PluginIcon = getPluginNavIcon(entry.view.icon);
-      const targetView = getPluginEntryView(entry);
-      return {
-        id: `plugin-${entry.pluginId}-${entry.view.viewId}`,
-        label: getSidebarPluginLabel(entry),
-        view: targetView,
-        isActive: isPluginEntryActive(view, entry),
-        icon: PluginIcon,
-        testId: `sidebar-nav-plugin-${entry.pluginId}-${entry.view.viewId}`,
-        onSelect: () => onChangeView(targetView),
-      };
-    }),
+    ...remainingPluginViews.map(mapPluginEntry),
   ];
 
   const renderEntry = (entry: SidebarNavEntry) => {
     const Icon = entry.icon;
+    // Active the moment it's clicked (optimistic), then the real `view` confirms it.
+    const isActive = entry.isActive || (optimisticView !== null && entry.view === optimisticView);
     return (
       <button
         key={entry.id}
         type="button"
-        className={`left-sidebar-nav__item${entry.isActive ? " left-sidebar-nav__item--active" : ""}`}
+        className={`left-sidebar-nav__item${isActive ? " left-sidebar-nav__item--active" : ""}`}
         aria-label={entry.label}
-        aria-current={entry.isActive && entry.view ? "page" : undefined}
+        aria-current={isActive && entry.view ? "page" : undefined}
         title={entry.label}
         data-testid={entry.testId}
-        onClick={entry.onSelect}
+        onClick={() => {
+          if (entry.view) setOptimisticView(entry.view);
+          entry.onSelect();
+        }}
       >
         <span className="left-sidebar-nav__icon-wrap">
           <Icon size={16} />
@@ -412,25 +474,28 @@ export function LeftSidebarNav({
       aria-label={t("nav.sidebarAriaLabel", "Sidebar navigation")}
       style={isCollapsed ? undefined : { width: sidebarWidth, minWidth: sidebarWidth }}
     >
-      {onNewTask ? (
-        <button
-          type="button"
-          className="btn left-sidebar-nav__item left-sidebar-nav__new-task"
-          aria-label={newTaskLabel}
-          title={newTaskLabel}
-          data-testid="sidebar-nav-new-task"
-          onClick={onNewTask}
-        >
-          <Plus size={16} />
-          <span className="left-sidebar-nav__label">{newTaskLabel}</span>
-        </button>
-      ) : null}
       <nav className="left-sidebar-nav__list" aria-label={t("nav.primaryNavAriaLabel", "Primary navigation")}>
-        <div className="left-sidebar-nav__section">{primaryEntries.map(renderEntry)}</div>
-        <div className="left-sidebar-nav__section left-sidebar-nav__section--secondary">{secondaryEntries.map(renderEntry)}</div>
+        <div className="left-sidebar-nav__section">{navEntries.map(renderEntry)}</div>
       </nav>
 
       <div className="left-sidebar-nav__footer">
+        {/*
+        FNXC:Navigation 2026-06-23-02:30:
+        New Task now lives in the footer, directly ABOVE Collapse (and Settings), per user request — the primary create action sits with the other persistent footer affordances instead of at the top of the rail.
+        */}
+        {onNewTask ? (
+          <button
+            type="button"
+            className="btn left-sidebar-nav__item left-sidebar-nav__new-task"
+            aria-label={newTaskLabel}
+            title={newTaskLabel}
+            data-testid="sidebar-nav-new-task"
+            onClick={onNewTask}
+          >
+            <Plus size={16} />
+            <span className="left-sidebar-nav__label">{newTaskLabel}</span>
+          </button>
+        ) : null}
         {/*
         FNXC:Navigation 2026-06-21-00:00:
         The sidebar collapse affordance belongs in the footer immediately above Settings, using the same row-item visual language. Expanded mode shows the Collapse label, while rail mode relies on the shared label-hiding rule so the button remains icon-only like Settings.
@@ -453,7 +518,8 @@ export function LeftSidebarNav({
           aria-label={t("header.settings", "Settings")}
           title={t("header.settings", "Settings")}
           data-testid="sidebar-nav-settings"
-          onClick={onOpenSettings}
+          /* FNXC:Navigation 2026-06-22-12:00: Wrap so React's MouseEvent is not forwarded as onOpenSettings' settingsInitialSection arg. */
+          onClick={() => onOpenSettings?.()}
         >
           <Settings size={16} />
           <span className="left-sidebar-nav__label">{t("header.settings", "Settings")}</span>

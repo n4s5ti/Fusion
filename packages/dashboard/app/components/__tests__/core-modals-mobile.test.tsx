@@ -279,9 +279,12 @@ describe("core modals mobile css coverage", () => {
     const mobileBlock = getMainMobileBlock(css);
 
     expect(mobileBlock).toContain(".modal-overlay.git-manager-modal-overlay,");
-    expect(mobileBlock).toContain(".modal.gm-modal[style*=\"--keyboard-overlap\"]");
+    // FNXC:GitManager 2026-06-22-09:30: The mobile viewport-takeover (and its keyboard rule)
+    // is now scoped to the NON-embedded dialog via :not(.gm-modal--embedded) so the right-dock
+    // embedded Git Manager keeps its 100%-of-pane sizing instead of hiding the Header/MobileNavBar.
+    expect(mobileBlock).toContain(".modal.gm-modal:not(.gm-modal--embedded)[style*=\"--keyboard-overlap\"]");
 
-    const keyboardRule = mobileBlock.match(/\.modal\.gm-modal\[style\*=\"--keyboard-overlap\"\]\s*\{[^}]+\}/s);
+    const keyboardRule = mobileBlock.match(/\.modal\.gm-modal:not\(\.gm-modal--embedded\)\[style\*=\"--keyboard-overlap\"\]\s*\{[^}]+\}/s);
     expect(keyboardRule).not.toBeNull();
     expect(keyboardRule![0]).toContain("height: var(--vv-height, 100dvh)");
     expect(keyboardRule![0]).toContain("min-height: var(--vv-height, 100dvh)");
@@ -311,11 +314,16 @@ describe("core modals mobile css coverage", () => {
   it("GitManagerModal: file sections and file lists keep independent scrolling constraints", () => {
     const css = loadAllAppCss();
 
-    const fileSectionRule = css.match(/\.gm-file-section\s*\{[^}]+\}/s);
-    expect(fileSectionRule).not.toBeNull();
-    expect(fileSectionRule![0]).toContain("display: flex");
-    expect(fileSectionRule![0]).toContain("flex-direction: column");
-    expect(fileSectionRule![0]).toContain("min-height: 0");
+    // FNXC:GitManager 2026-06-22-09:30: Multiple .gm-file-section rules exist (base + mobile
+    // overrides), and concatenation order is not guaranteed, so select the BASE rule by its
+    // defining flex-column property instead of relying on first-match.
+    const fileSectionRule = [...css.matchAll(/\.gm-file-section\s*\{[^}]+\}/gs)]
+      .map((m) => m[0])
+      .find((rule) => rule.includes("display: flex"));
+    expect(fileSectionRule).toBeTruthy();
+    expect(fileSectionRule!).toContain("display: flex");
+    expect(fileSectionRule!).toContain("flex-direction: column");
+    expect(fileSectionRule!).toContain("min-height: 0");
 
     const fileListRule = css.match(/\.gm-file-list\s*\{[^}]+\}/s);
     expect(fileListRule).not.toBeNull();
@@ -442,7 +450,13 @@ describe("core modals mobile css coverage", () => {
     const css = loadAllAppCss();
     const mobileBlock = getMainMobileBlock(css);
 
-    // Verify the quick-fields dep-trigger rule exists with min-height: 36px
+    // Verify the promoted screenshot action row and quick-fields dep/agent buttons keep the mobile touch target.
+    const actionButtonMatch = mobileBlock.match(
+      /\.task-form-description-actions \.btn\s*\{[^}]+\}/,
+    );
+    expect(actionButtonMatch).not.toBeNull();
+    expect(actionButtonMatch![0]).toContain("min-height: 36px");
+
     const quickFieldsTriggerMatch = mobileBlock.match(
       /\.new-task-quick-fields \.dep-trigger\s*\{[^}]+\}/,
     );

@@ -19,6 +19,7 @@ import { CommandCenterControls } from "./CommandCenterControls";
 import { ReliabilityView } from "../ReliabilityView";
 import { NodesView } from "../NodesView";
 import type { ToastType } from "../../hooks/useToast";
+import type { TaskView } from "../../hooks/useViewState";
 import { SdlcFunnel } from "./SdlcFunnel";
 import { Bar, type BarDatum } from "./charts/Bar";
 import { Sparkline } from "./charts/Sparkline";
@@ -106,6 +107,11 @@ interface CommandCenterProps {
   onShadcnCustomColorsChange?: (colors: Record<string, string>) => void;
   addToast?: (message: string, type?: ToastType) => void;
   nodesEnabled?: boolean;
+  /*
+  FNXC:CommandCenter 2026-06-22-15:30:
+  The Overview (Command Center landing) surfaces "View Board"/"View Agents" shortcuts directly under the Live activity snapshot (the engine-activity strip, the closest "AI engine" element on Overview). Navigation is owned by App's view router, so thread an optional onChangeView down to OverviewTab rather than letting the Command Center mutate routing state itself. Moved here from the Team-tab Heartbeat card (FN earlier).
+  */
+  onChangeView?: (view: TaskView) => void;
 }
 
 function OverviewTab({
@@ -118,6 +124,7 @@ function OverviewTab({
   onColorThemeChange = () => {},
   onThemeModeChange = () => {},
   onShadcnCustomColorsChange = () => {},
+  onChangeView,
 }: { range: DateRange } & CommandCenterProps) {
   const { t } = useTranslation("app");
   const tokens = useAnalyticsArea<TokenAnalytics>("/command-center/tokens?groupBy=model", range, {
@@ -239,12 +246,10 @@ function OverviewTab({
       subLabel: costLabel,
     },
     { id: "autonomy", label: t("commandCenter.overview.autonomy", "Autonomy ratio"), value: autonomyLabel },
-    { id: "nodes", label: t("commandCenter.overview.activeNodes", "Active nodes"), value: formatCount(activeNodes) },
     /*
-    FNXC:CommandCenter 2026-06-19-00:00:
-    Session counts were already present on ActivityAnalytics for the selected date range but missing from the Overview stat grid. Surface the existing value here without adding a new endpoint.
+    FNXC:CommandCenter 2026-06-23-01:30:
+    The "Active nodes" and "Sessions" Overview stat cards were removed to declutter the stat grid; the underlying activeNodes/sessionsCount values are still fetched and reused by the activity-trend sparkline and hasActivityData guard, so the data wiring stays. The grid uses auto-fill, so the remaining cards reflow without an orphan column.
     */
-    { id: "sessions", label: t("commandCenter.overview.sessions", "Sessions"), value: formatCount(sessionsCount) },
     { id: "agentRuns", label: t("commandCenter.overview.agentRuns", "Agent runs"), value: formatCount(agentRunsTotal) },
     { id: "tasksDone", label: t("commandCenter.overview.tasksDone", "Tasks done"), value: formatCount(tasksDone) },
     { id: "models", label: t("commandCenter.overview.uniqueModels", "Unique models"), value: formatCount(uniqueModels) },
@@ -260,17 +265,24 @@ function OverviewTab({
   // The throughput funnel reads its own data (activityLog transitions) and shows
   // its own empty state, so it renders even when the stat-card aggregates have no
   // data yet.
+  /*
+  FNXC:CommandCenter 2026-06-22-20:55:
+  The Overview's AI-engine controls are a SINGLE instance: the CommandCenterControls "AI engine" card (Stop AI Engine) now also hosts the "View Board"/"View Agents" shortcuts (threaded onChangeView). The earlier duplicate `.cc-overview-engine-panel` (a second AI Engine row) was removed — the buttons moved into the first instance.
+  */
   const controlsSection = (
-    <CommandCenterControls
-      projectId={projectId}
-      colorTheme={colorTheme}
-      themeMode={themeMode}
-      shadcnCustomColors={shadcnCustomColors}
-      resolvedThemeMode={resolvedThemeMode}
-      onColorThemeChange={onColorThemeChange}
-      onThemeModeChange={onThemeModeChange}
-      onShadcnCustomColorsChange={onShadcnCustomColorsChange}
-    />
+    <>
+      <CommandCenterControls
+        projectId={projectId}
+        colorTheme={colorTheme}
+        themeMode={themeMode}
+        shadcnCustomColors={shadcnCustomColors}
+        resolvedThemeMode={resolvedThemeMode}
+        onColorThemeChange={onColorThemeChange}
+        onThemeModeChange={onThemeModeChange}
+        onShadcnCustomColorsChange={onShadcnCustomColorsChange}
+        onChangeView={onChangeView}
+      />
+    </>
   );
   const throughputSection = (
     <div className="cc-overview-throughput" data-testid="command-center-throughput">
@@ -284,7 +296,7 @@ function OverviewTab({
         {controlsSection}
         <div className="cc-loading" data-testid="command-center-overview-loading">
           <div className="cc-chart-skeleton" />
-          <p><LoadingSpinner label={t("commandCenter.loading", "Loading command center...")} /></p>
+          <p><LoadingSpinner label={t("commandCenter.loading", "Loading dashboard...")} /></p>
         </div>
         {throughputSection}
       </div>
@@ -310,7 +322,7 @@ function OverviewTab({
         {controlsSection}
         <div className="cc-empty" data-testid="command-center-empty">
           <Gauge size={28} />
-          <p>{t("commandCenter.empty", "No usage data yet. Run some agents to populate the Command Center.")}</p>
+          <p>{t("commandCenter.empty", "No usage data yet. Run some agents to populate the Dashboard.")}</p>
         </div>
         {throughputSection}
       </div>
@@ -456,6 +468,7 @@ export function CommandCenter({
   onShadcnCustomColorsChange = () => {},
   addToast = () => {},
   nodesEnabled = false,
+  onChangeView,
 }: CommandCenterProps = {}) {
   const { t } = useTranslation("app");
   const subViews = useSubViews(nodesEnabled);
@@ -521,6 +534,7 @@ export function CommandCenter({
             onColorThemeChange={onColorThemeChange}
             onThemeModeChange={onThemeModeChange}
             onShadcnCustomColorsChange={onShadcnCustomColorsChange}
+            onChangeView={onChangeView}
           />
         );
       case "tokens":
@@ -532,7 +546,7 @@ export function CommandCenter({
       case "productivity":
         return <ProductivityArea range={range} />;
       case "team":
-        return <TeamArea range={range} projectId={projectId} />;
+        return <TeamArea range={range} projectId={projectId} addToast={addToast} />;
       case "ecosystem":
         return <EcosystemArea range={range} />;
       case "github":
@@ -555,9 +569,10 @@ export function CommandCenter({
   return (
     <section className="command-center" data-testid="command-center">
       <header className="cc-header">
+        {/* FNXC:CommandCenter 2026-06-22-01:00: Icon size aligned to 20 to match the shared ViewHeader (cc-header is the model for ViewHeader; title is already 1.125rem with --space-lg padding). */}
         <h2 className="cc-title">
-          <Gauge size={18} />
-          {t("commandCenter.heading", "Command Center")}
+          <Gauge size={20} />
+          {t("commandCenter.heading", "Dashboard")}
         </h2>
         <DateRangePicker value={range} onChange={setRange} />
       </header>
@@ -565,7 +580,7 @@ export function CommandCenter({
       <div
         className="cc-tablist"
         role="tablist"
-        aria-label={t("commandCenter.tablistLabel", "Command Center sections")}
+        aria-label={t("commandCenter.tablistLabel", "Dashboard sections")}
       >
         {subViews.map((sub, index) => {
           const selected = sub.id === activeTab;

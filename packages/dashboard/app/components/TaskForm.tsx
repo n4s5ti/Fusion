@@ -8,8 +8,9 @@ import { applyPresetToSelection, getRecommendedPresetForSize } from "../utils/mo
 import { CustomModelDropdown } from "./CustomModelDropdown";
 import { NodeHealthDot } from "./NodeHealthDot";
 import { LoadingSpinner } from "./LoadingSpinner";
-import { Sparkles, ChevronUp, ChevronDown, Maximize2, Minimize2 } from "lucide-react";
+import { Sparkles, ChevronUp, ChevronDown, Maximize2, Minimize2, Paperclip, Flag, Zap, Brain, Server } from "lucide-react";
 import { REPO_OVERRIDE_RE, resolveEffectiveGithubRepoDefault } from "./githubTracking";
+import { ProviderIcon } from "./ProviderIcon";
 
 function getNodeStatusLabel(status: NodeInfo["status"], t: (key: string, defaultValue: string) => string): string {
   if (status === "online") return t("taskForm.nodeStatusOnline", "Online");
@@ -138,6 +139,12 @@ export interface TaskFormProps {
   onSubtaskBreakdown?: (description: string, workflowId?: string | null) => void;
   onClose?: () => void;
 
+  // Create-mode primary submission. NewTaskModal owns duplicate checks and payload shaping;
+  // TaskForm only places the visible Create affordance in the quick-action row.
+  onCreateSubmit?: () => void;
+  createSubmitLabel?: string;
+  createSubmitDisabled?: boolean;
+
   /** Optional content to render between the primary section and the "More options" toggle. */
   renderBelowPrimary?: React.ReactNode;
   /** Optional content to render inside "More options" below Model Configuration. */
@@ -146,6 +153,14 @@ export interface TaskFormProps {
   hideDependencies?: boolean;
   /** When true (default), More options auto-expands when non-default advanced selections are present. */
   autoExpandMoreOptionsOnSelection?: boolean;
+  /**
+   * FNXC:NewTask 2026-06-22-20:30:
+   * When true, the advanced controls disclosure is always shown — the collapsible disclosure is force-open and its toggle is hidden. Other surfaces keep the default collapsed disclosure.
+   *
+   * FNXC:NewTask 2026-06-23-00:10:
+   * The New Task dialog NO LONGER forces this open. The deep/advanced options (model selectors, branch/base, node, review level, GitHub tracking, etc.) are collapsed by default behind the "Advanced" disclosure; only the common quick-add buttons (Attach, Fast, Priority) are surfaced inline next to Plan. This prop remains for any caller that still wants every advanced control un-collapsed.
+   */
+  forceMoreOptionsOpen?: boolean;
 }
 
 export function TaskForm({
@@ -196,10 +211,14 @@ export function TaskForm({
   onPlanningMode,
   onSubtaskBreakdown,
   onClose,
+  onCreateSubmit,
+  createSubmitLabel,
+  createSubmitDisabled,
   renderBelowPrimary,
   renderBelowModelConfiguration,
   hideDependencies,
   autoExpandMoreOptionsOnSelection = true,
+  forceMoreOptionsOpen = false,
   reviewLevel,
   onReviewLevelChange,
   autoMerge,
@@ -234,6 +253,8 @@ export function TaskForm({
   const [showMoreOptions, setShowMoreOptions] = useState(
     autoExpandMoreOptionsOnSelection ? hasInitialMoreOptions : false,
   );
+  // FNXC:NewTask 2026-06-22-20:30: When force-open (New Task dialog), the advanced section is always expanded regardless of the local disclosure toggle.
+  const moreOptionsOpen = forceMoreOptionsOpen || showMoreOptions;
   const [depSearch, setDepSearch] = useState("");
   const [availableModels, setAvailableModels] = useState<ModelInfo[]>([]);
   const [favoriteProviders, setFavoriteProviders] = useState<string[]>([]);
@@ -435,10 +456,10 @@ export function TaskForm({
 
   // Keep dependency dropdown state clean when advanced options are collapsed.
   useEffect(() => {
-    if (showMoreOptions) return;
+    if (moreOptionsOpen) return;
     setShowDepDropdown(false);
     setDepSearch("");
-  }, [showMoreOptions]);
+  }, [moreOptionsOpen]);
 
   // Auto-select title input text in edit mode (focus is handled by autoFocus)
   useEffect(() => {
@@ -686,6 +707,22 @@ export function TaskForm({
 
   // U6/R3: the project default workflow id (preselected + "(default)" badged).
   const defaultWorkflowId = settings?.defaultWorkflowId ?? null;
+  const selectedWorkflow = selectedWorkflowId === null
+    ? null
+    : workflows.find((workflow) => workflow.id === (selectedWorkflowId ?? defaultWorkflowId));
+  const workflowInlineLabel = selectedWorkflowId === null
+    ? t("taskForm.workflowNone", "No workflow")
+    : selectedWorkflow?.name ?? t("taskForm.workflowInlineDefault", "Normal");
+  const selectedNode = (nodeOptions ?? []).find((node) => node.id === nodeId);
+  const nodeInlineLabel = selectedNode?.name ?? t("taskForm.nodeInlineDefault", "Node");
+  const modelInlineLabel = selectedPreset?.name ?? (presetMode === "custom" ? t("taskForm.modelsCustom", "Models") : t("taskForm.modelsDefault", "Models"));
+
+  const revealAdvancedControl = useCallback((selector: string) => {
+    if (!forceMoreOptionsOpen) setShowMoreOptions(true);
+    window.setTimeout(() => {
+      document.querySelector<HTMLElement>(selector)?.focus();
+    }, 0);
+  }, [forceMoreOptionsOpen]);
 
   const availableDeps = tasks
     .filter((t) => !dependencies.includes(t.id))
@@ -829,9 +866,30 @@ export function TaskForm({
         </div>
       </div>
 
-      {/* AI-assisted creation actions — adjacent to description (create mode only) */}
-      {mode === "create" && (onPlanningMode || onSubtaskBreakdown) && (
+      {/*
+      FNXC:NewTask 2026-06-23-00:10:
+      Common quick-add action row, adjacent to the description (create mode only). The deep/advanced controls stay collapsed behind the "Advanced" disclosure, but the buttons users reach for most — Attach, Fast (execution-mode), Priority — are surfaced INLINE here next to Plan, styled identically to QuickEntryBox's quick-add buttons (shared `.btn .btn-sm`, `.dep-trigger`, lucide icons at size 12). They are wired to TaskForm's existing state/handlers, NOT duplicated:
+        - Attach   → fileInputRef.click() (same hidden input the Advanced Attachments group uses; onImagesChange handles the file).
+        - Fast     → toggles executionMode standard⇄fast via onExecutionModeChange (mirrors QuickEntryBox quick-entry-fast-toggle).
+        - Priority → cycles through TASK_PRIORITIES via onPriorityChange (Flag affordance).
+      Plan/Subtask remain gated on their handoff callbacks. Model selectors, branch/base, node, review level, and GitHub tracking stay in the Advanced disclosure.
+
+      FNXC:NewTaskDialogAffordances 2026-06-23-21:20:
+      The regular New Task dialog must visibly expose the screenshot quick-add button contract in the immediate action cluster while Advanced remains the deep configuration editor. TaskForm hosts the cluster so create payload state has one source of truth; NewTaskModal only supplies the submit handler and its existing dependency/agent quick controls.
+      */}
+      {mode === "create" && (
         <div className="task-form-description-actions" data-testid="task-form-description-actions">
+          {onCreateSubmit && (
+            <button
+              type="button"
+              className="btn btn-primary btn-sm"
+              onClick={onCreateSubmit}
+              disabled={disabled || createSubmitDisabled}
+              data-testid="task-form-inline-create"
+            >
+              {createSubmitLabel ?? t("taskForm.createTask", "Create")}
+            </button>
+          )}
           {onPlanningMode && (
             <button
               type="button"
@@ -870,30 +928,151 @@ export function TaskForm({
               {t("taskForm.subtaskButton", "Subtask")}
             </button>
           )}
+
+          {/* FNXC:NewTask 2026-06-23-00:10: Attach — reuses the Advanced section's hidden file input; programmatic .click() works even while that section is collapsed. */}
+          <button
+            type="button"
+            className="btn btn-sm"
+            onClick={() => fileInputRef.current?.click()}
+            disabled={disabled}
+            data-testid="task-form-inline-attach"
+            title={t("taskForm.attachScreenshot", "Attach Screenshot")}
+          >
+            <Paperclip size={12} className="task-form-action-icon" />
+            {pendingImages.length > 0
+              ? t("taskForm.attachCount", "Attach ({{count}})", { count: pendingImages.length })
+              : t("taskForm.attach", "Attach")}
+          </button>
+
+          {/* FNXC:NewTask 2026-06-23-00:10: Fast — toggles executionMode standard⇄fast; btn-primary when active, matching QuickEntryBox's fast toggle. */}
+          {onExecutionModeChange && executionMode !== undefined && (
+            <button
+              type="button"
+              className={`btn btn-sm ${executionMode === "fast" ? "btn-primary" : ""}`}
+              onClick={() => onExecutionModeChange(executionMode === "fast" ? "standard" : "fast")}
+              aria-pressed={executionMode === "fast"}
+              disabled={disabled}
+              data-testid="task-form-inline-fast"
+              title={t("taskForm.toggleFastMode", "Toggle fast execution mode")}
+            >
+              <Zap size={12} className="task-form-action-icon" />
+              {t("taskForm.fast", "Fast")}
+            </button>
+          )}
+
+          {/* FNXC:NewTaskDialogAffordances 2026-06-23-21:31: GitHub/workflow/models/node are promoted as visible chips that mutate or focus the same Advanced controls instead of duplicating create-payload state. */}
+          {onGithubTrackingEnabledChange && (
+            <button
+              type="button"
+              className={`btn btn-sm ${githubTrackingEnabled ? "btn-primary" : ""}`}
+              onClick={() => {
+                githubTrackingDefaultAppliedRef.current = true;
+                onGithubTrackingEnabledChange(!githubTrackingEnabled);
+              }}
+              aria-pressed={githubTrackingEnabled === true}
+              disabled={disabled}
+              data-testid="task-form-inline-github"
+              title={t("taskForm.githubTrackingLabel", "GitHub Tracking")}
+            >
+              <ProviderIcon provider="github" size="sm" />
+              {t("taskForm.githubInline", "GitHub")}
+            </button>
+          )}
+
+          {onWorkflowIdChange && (
+            <button
+              type="button"
+              className="btn btn-sm"
+              onClick={() => revealAdvancedControl("#task-workflow-select, [data-testid='task-workflow-cta']")}
+              disabled={disabled}
+              data-testid="task-form-inline-workflow"
+              aria-label={t("taskForm.workflowInlineAria", "Choose workflow: {{workflow}}", { workflow: workflowInlineLabel })}
+              title={t("taskForm.workflowLabel", "Workflow")}
+            >
+              {workflowInlineLabel}
+            </button>
+          )}
+
+          <button
+            type="button"
+            className="btn btn-sm"
+            onClick={() => revealAdvancedControl("#model-preset, #executor-model")}
+            disabled={disabled}
+            data-testid="task-form-inline-models"
+            aria-label={t("taskForm.modelsInlineAria", "Choose models: {{models}}", { models: modelInlineLabel })}
+            title={t("taskForm.modelConfigLabel", "Model Configuration")}
+          >
+            <Brain size={12} className="task-form-action-icon" />
+            {modelInlineLabel}
+          </button>
+
+          {onNodeIdChange && (
+            <button
+              type="button"
+              className="btn btn-sm"
+              onClick={() => revealAdvancedControl("#task-node-select")}
+              disabled={disabled || nodeOverrideDisabled}
+              data-testid="task-form-inline-node"
+              aria-label={t("taskForm.nodeInlineAria", "Choose execution node: {{node}}", { node: nodeInlineLabel })}
+              title={nodeOverrideDisabled ? nodeOverrideDisabledReason : t("taskForm.nodeOverrideLabel", "Execution Node Override")}
+            >
+              {selectedNode ? <NodeHealthDot status={selectedNode.status} compact className="task-form-action-icon" /> : <Server size={12} className="task-form-action-icon" />}
+              {nodeInlineLabel}
+            </button>
+          )}
+
+          {/* FNXC:NewTask 2026-06-23-00:10: Priority — cycles TASK_PRIORITIES via onPriorityChange (Flag affordance, same label shape as QuickEntryBox). */}
+          {onPriorityChange && (
+            <button
+              type="button"
+              className="btn btn-sm"
+              onClick={() => {
+                const current = priority ?? DEFAULT_TASK_PRIORITY;
+                const idx = TASK_PRIORITIES.indexOf(current);
+                const next = TASK_PRIORITIES[(idx + 1) % TASK_PRIORITIES.length];
+                onPriorityChange(next);
+              }}
+              disabled={disabled}
+              data-testid="task-form-inline-priority"
+              title={t("taskForm.priorityLabel", "Priority")}
+            >
+              <Flag size={12} className="task-form-action-icon" />
+              {(() => {
+                const p = priority ?? DEFAULT_TASK_PRIORITY;
+                return `${p[0].toUpperCase()}${p.slice(1)}`;
+              })()}
+            </button>
+          )}
         </div>
       )}
       </div>
 
       {renderBelowPrimary}
 
-      <button
-        type="button"
-        className="task-form-more-options-toggle"
-        onClick={() => setShowMoreOptions((prev) => !prev)}
-        aria-expanded={showMoreOptions}
-        aria-controls="task-form-more-options"
-        disabled={disabled}
-        data-testid="task-form-more-options-toggle"
-      >
-        <span>{t("taskForm.moreOptions", "More options")}</span>
-        {showMoreOptions ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
-      </button>
+      {/*
+      FNXC:NewTask 2026-06-22-20:30: Hide the disclosure toggle entirely when force-open — there is nothing to collapse.
+      FNXC:NewTask 2026-06-23-00:10: The disclosure now reads "Advanced" (was "More options"). It stays collapsed by default and hides only the DEEP options (model selectors, branch/base, node, review level, GitHub tracking, workflow). The common quick-add buttons (Attach/Fast/Priority) live inline next to Plan and are always visible, so they are NOT buried behind this toggle.
+      */}
+      {!forceMoreOptionsOpen && (
+        <button
+          type="button"
+          className="task-form-more-options-toggle"
+          onClick={() => setShowMoreOptions((prev) => !prev)}
+          aria-expanded={showMoreOptions}
+          aria-controls="task-form-more-options"
+          disabled={disabled}
+          data-testid="task-form-more-options-toggle"
+        >
+          <span>{t("taskForm.advancedOptions", "Advanced")}</span>
+          {showMoreOptions ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+        </button>
+      )}
 
       <div
         id="task-form-more-options"
-        className={`task-form-more-options${showMoreOptions ? "" : " collapsed"}`}
-        aria-hidden={!showMoreOptions}
-        hidden={!showMoreOptions}
+        className={`task-form-more-options${moreOptionsOpen ? "" : " collapsed"}`}
+        aria-hidden={!moreOptionsOpen}
+        hidden={!moreOptionsOpen}
         data-testid="task-form-more-options"
       >
       {/* Attachments */}
@@ -949,6 +1128,7 @@ export function TaskForm({
           <label htmlFor="task-node-select">{t("taskForm.nodeOverrideLabel", "Execution Node Override")}</label>
           <select
             id="task-node-select"
+            data-testid="task-node-select"
             className="select"
             value={nodeId ?? ""}
             onChange={(e) => onNodeIdChange(e.target.value || undefined)}

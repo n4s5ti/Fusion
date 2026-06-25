@@ -195,7 +195,6 @@ const qualityAppComponentTests = [
   "TaskDetailModal.create-pr-integration",
   "TaskDetailModal.github-tracking-header",
   "TaskDetailModal.github-tracking-stale",
-  "TaskDetailModal.rebind-banner",
   "TaskDocumentsTab",
   "TaskFieldsSection",
   "TaskForm",
@@ -296,6 +295,9 @@ FN-6722 workspace verification observed dev-server-process time out only in the 
 
 FNXC:DashboardTestQuarantine 2026-06-21-12:42:
 FN-6860 rescued dev-server-process by settling stdout detection and fallback-probe lifecycle work before stop/close/failure teardown, then removed its ledger/config quarantine entry. The same loaded API shard also confirmed FN-6742's session-cross-tab rescue still holds, so its stale ledger-only entry was removed to restore lockstep.
+
+FNXC:DashboardTestQuarantine 2026-06-22-18:05:
+FN-6937 verified that FN-6860's claimed session-cross-tab ledger removal had not landed: the file was active because this exclude list was empty, but `test-quarantine.json` still carried the stale 2026-06-19 row. The repeated loaded `dashboard-api-quality-backfill` runs and lock-holder mutation proof confirmed FN-6742's rescue still holds, so remove the orphaned ledger row and keep this list empty to restore ledger↔config lockstep.
 */
 const quarantinedDashboardTests: string[] = [];
 
@@ -424,6 +426,7 @@ export default defineConfig({
       "@fusion/plugin-sdk": resolve(__dirname, "../plugin-sdk/src/index.ts"),
       "@fusion/test-utils": resolve(__dirname, "../core/src/__test-utils__/workspace.ts"),
       "@fusion/dashboard/app/components/TaskCard": resolve(__dirname, "app/components/TaskCard.tsx"),
+      "@fusion/dashboard/app/components/ViewHeader": resolve(__dirname, "app/components/ViewHeader.tsx"),
       "@fusion/dashboard/app/plugins/types": resolve(__dirname, "app/plugins/types.ts"),
       "@fusion/dashboard/app/utils/projectStorage": resolve(__dirname, "app/utils/projectStorage.ts"),
       "@fusion/dashboard/app/utils/taskStuck": resolve(__dirname, "app/utils/taskStuck.ts"),

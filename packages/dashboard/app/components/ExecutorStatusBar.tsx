@@ -7,7 +7,7 @@ import {
   STALE_HIGH_FANOUT_BLOCKER_AGE_THRESHOLD_MS,
   type Task,
 } from "@fusion/core";
-import { AlertTriangle, Clock, Folder, Pause, Play, Zap } from "lucide-react";
+import { AlertTriangle, Clock, Folder, MessageSquare, Pause, Play, Square, Zap } from "lucide-react";
 import { computeBlockerFanoutMap } from "../hooks/useBlockerFanout";
 import { useExecutorStats } from "../hooks/useExecutorStats";
 import { isLikelyTabSuspensionError } from "../hooks/visibilitySuspension";
@@ -51,6 +51,10 @@ interface ExecutorStatusBarProps {
   onOpenScripts?: () => void;
   /** Runs a configured script in the terminal from the footer launcher dropdown. */
   onRunScript?: (name: string, command: string) => void;
+  /** Quick Chat launcher placement from Settings. */
+  quickChatButtonMode?: "floating" | "footer" | "off";
+  /** Opens the full Chat modal from the footer launcher. */
+  onOpenQuickChat?: () => void;
 }
 
 /**
@@ -76,7 +80,10 @@ function formatRelativeTime(timestamp: string | undefined, t: TFunction<"app">):
 }
 
 /**
- * Get display configuration for an executor state
+ * Get display configuration for an executor state.
+ *
+ * FNXC:EngineControls 2026-06-22-00:00:
+ * A stopped engine must use the same stop-rectangle affordance as the engine-control menu and error-red status text so operators do not confuse it with idle capacity.
  */
 function getStateDisplay(state: ExecutorState, t: TFunction<"app">): { label: string; color: string; icon: typeof Play } {
   switch (state) {
@@ -84,6 +91,8 @@ function getStateDisplay(state: ExecutorState, t: TFunction<"app">): { label: st
       return { label: t("executor.stateRunning", "Running"), color: "var(--color-success)", icon: Play };
     case "paused":
       return { label: t("executor.statePaused", "Paused"), color: "var(--triage)", icon: Pause };
+    case "stopped":
+      return { label: t("executor.stateStopped", "Stopped"), color: "var(--color-error)", icon: Square };
     case "idle":
     default:
       return { label: t("executor.stateIdle", "Idle"), color: "var(--text-muted)", icon: Zap };
@@ -97,13 +106,18 @@ function getStateDisplay(state: ExecutorState, t: TFunction<"app">): { label: st
  * - Running tasks count with pulsing animation when > 0
  * - Blocked tasks count with warning color when > 0
  * - Queued tasks count
- * - Executor state badge (idle/running/paused)
+ * - Executor state badge (idle/running/paused/stopped)
  * - Last activity timestamp
  */
-export function ExecutorStatusBar({ tasks, projectId, taskStuckTimeoutMs, staleHighFanoutBlockerAgeThresholdMs, backgroundSessions, backgroundGenerating, backgroundNeedsInput, onOpenBackgroundSession, onDismissBackgroundSession, lastFetchTimeMs, currentProjectPath, onOpenProjectDirectory, keyboardOpen, hideWhenKeyboardOpen, onToggleTerminal, onOpenScripts, onRunScript }: ExecutorStatusBarProps) {
+export function ExecutorStatusBar({ tasks, projectId, taskStuckTimeoutMs, staleHighFanoutBlockerAgeThresholdMs, backgroundSessions, backgroundGenerating, backgroundNeedsInput, onOpenBackgroundSession, onDismissBackgroundSession, lastFetchTimeMs, currentProjectPath, onOpenProjectDirectory, keyboardOpen, hideWhenKeyboardOpen, onToggleTerminal, onOpenScripts, onRunScript, quickChatButtonMode = "off", onOpenQuickChat }: ExecutorStatusBarProps) {
   const { t } = useTranslation("app");
   const viewportMode = useViewportMode();
   const showTerminalLauncher = viewportMode !== "mobile" && Boolean(onToggleTerminal);
+  /*
+   * FNXC:ChatLauncher 2026-06-22-15:18:
+   * Settings can route Quick Chat to a footer launcher beside Terminal, keep the draggable floating FAB, or hide the launcher entirely. Footer launch stays desktop/tablet-only like Terminal while mobile opens from the floating path as a full-screen modal.
+   */
+  const showQuickChatFooterLauncher = viewportMode !== "mobile" && quickChatButtonMode === "footer" && Boolean(onOpenQuickChat);
   const { stats, loading, error } = useExecutorStats(tasks, projectId, taskStuckTimeoutMs, lastFetchTimeMs);
   const [isProjectPathVisible, setIsProjectPathVisible] = useState(false);
   const engineControlMenuRef = useRef<EngineControlMenuHandle>(null);
@@ -298,6 +312,24 @@ export function ExecutorStatusBar({ tasks, projectId, taskStuckTimeoutMs, staleH
 
       {/* Spacer */}
       <div className="executor-status-bar__spacer" />
+
+      {showQuickChatFooterLauncher && (
+        <>
+          <div className="executor-status-bar__segment executor-status-bar__segment--quick-chat-launcher" data-testid="executor-quick-chat-launcher-segment">
+            <button
+              type="button"
+              className="executor-status-bar__footer-launcher"
+              onClick={onOpenQuickChat}
+              aria-label={t("chat.openQuickChat", "Open Quick Chat")}
+              data-testid="executor-quick-chat-launcher"
+            >
+              <MessageSquare size={12} aria-hidden="true" />
+              <span>{t("chat.quickChat", "Quick Chat")}</span>
+            </button>
+          </div>
+          <span className="executor-status-bar__divider" aria-hidden="true" />
+        </>
+      )}
 
       {showTerminalLauncher && (
         <>

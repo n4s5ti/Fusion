@@ -1,7 +1,7 @@
 import "./TaskDetailModal.css";
 import React, { Suspense, lazy, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Pencil, Bot, X, ChevronDown, ChevronRight, GitBranch, ArrowLeft, Zap, Loader2, AlertTriangle, Sparkles } from "lucide-react";
+import { Pencil, Bot, X, ChevronDown, ChevronRight, GitBranch, ArrowLeft, Zap, Loader2, AlertTriangle, Sparkles, Maximize2 } from "lucide-react";
 import { useModalResizePersist } from "../hooks/useModalResizePersist";
 import { useMobileScrollLock } from "../hooks/useMobileScrollLock";
 import { useOverlayDismiss } from "../hooks/useOverlayDismiss";
@@ -9,6 +9,7 @@ import { useColumnLabel } from "../i18n/labels";
 import ReactMarkdown from "react-markdown";
 import type { Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { sharedRehypePlugins, createMermaidCodeComponent } from "./markdownPipeline";
 import type { Task, TaskDetail, TaskAttachment, Column, ColumnId, MergeResult, Settings, GlobalSettings, AgentLogEntry, Agent, TaskPriority, TaskSourceIssue, WorkflowStepResult, GithubIssueAction } from "@fusion/core";
 import {
   DEFAULT_TASK_PRIORITY,
@@ -23,8 +24,8 @@ import {
 } from "@fusion/core";
 import { isNearDuplicateCanonicalInactive } from "../../../core/src/near-duplicate-canonical";
 import { resolveEffectiveAutoMerge } from "../../../core/src/task-merge";
-import { uploadAttachment, deleteAttachment, updateTask, pauseTask, unpauseTask, fetchTaskDetail, fetchSettings, fetchGlobalSettings, requestSpecRevision, rebuildTaskSpec, approvePlan, rejectPlan, refineTask, fetchWorkflowResults, assignTask, fetchAgents, fetchAgent, recoverBranchBinding, refreshPrStatus, fetchBoardWorkflows, updateTaskCustomFields, summarizeTitle, api } from "../api";
-import type { RecoverBranchBindingOutcome, WorkflowFieldDefinition, CustomFieldRejection } from "../api";
+import { uploadAttachment, deleteAttachment, updateTask, pauseTask, unpauseTask, fetchTaskDetail, fetchSettings, fetchGlobalSettings, requestSpecRevision, rebuildTaskSpec, approvePlan, rejectPlan, refineTask, fetchWorkflowResults, assignTask, fetchAgents, fetchAgent, refreshPrStatus, fetchBoardWorkflows, updateTaskCustomFields, summarizeTitle, api } from "../api";
+import type { WorkflowFieldDefinition, CustomFieldRejection } from "../api";
 import { ApiRequestError } from "../api";
 import { TaskFieldsSection } from "./TaskFieldsSection";
 import type { ToastType } from "../hooks/useToast";
@@ -39,6 +40,7 @@ import { TaskChatTab } from "./TaskChatTab";
 import { TaskReviewTab } from "./TaskReviewTab";
 import { MergeDetails } from "./MergeDetails";
 import { TaskChangesTab } from "./TaskChangesTab";
+import { WorkspaceWorktreesSummary, isWorkspaceTask } from "./WorkspaceWorktreesSummary";
 import { TaskForm, type PendingImage } from "./TaskForm";
 import { useNodes } from "../hooks/useNodes";
 import { WorkflowResultsTab } from "./WorkflowResultsTab";
@@ -79,17 +81,30 @@ function isStringValue(value: unknown): value is string {
   return Object.prototype.toString.call(value) === STRING_OBJECT_TAG;
 }
 
+/*
+FNXC:Markdown 2026-06-23-03:30:
+The task DESCRIPTION (spec/prompt) + SUMMARY render via these components plus the
+shared rehype chain (sharedRehypePlugins) so they gain sanitized raw HTML
+(`<details>`/tables/`<kbd>`), drop HTML comments, and render ```mermaid diagrams —
+matching the shared markdown renderer. They KEEP their `.markdown-body` styling
+(NOT the `.mailbox-markdown` wrapper), so the look is unchanged for normal markdown.
+The file-path linkify `code` renderer is preserved as the fallback for non-mermaid
+code, so links AND html AND mermaid all work together.
+*/
+const markdownLinkifyCodeComponent: NonNullable<Components["code"]> = ({ children, ...props }) => {
+  const text = React.Children.toArray(children).join(EMPTY_MARKDOWN_CHILD_SEPARATOR);
+  const linkedChildren = linkifyFilePaths(text);
+  if (linkedChildren.length === 1 && linkedChildren[0]?.constructor === String) {
+    return <code {...props}>{children}</code>;
+  }
+  return <code {...props}>{linkedChildren}</code>;
+};
+
 const markdownLinkifyComponents: Components = {
   p: ({ children, ...props }) => <p {...props}>{linkifyReactChildren(children)}</p>,
   li: ({ children, ...props }) => <li {...props}>{linkifyReactChildren(children)}</li>,
-  code: ({ children, ...props }) => {
-    const text = React.Children.toArray(children).join(EMPTY_MARKDOWN_CHILD_SEPARATOR);
-    const linkedChildren = linkifyFilePaths(text);
-    if (linkedChildren.length === 1 && linkedChildren[0]?.constructor === String) {
-      return <code {...props}>{children}</code>;
-    }
-    return <code {...props}>{linkedChildren}</code>;
-  },
+  // Mermaid fences render as diagrams; all other code falls through to file-path linkify.
+  code: createMermaidCodeComponent("task-detail-mermaid-diagram", markdownLinkifyCodeComponent),
 };
 
 /**
@@ -247,6 +262,11 @@ function resolveEffectivePlanning(
     return fromLog;
   }
   return resolveTaskPlanningModel(task, settings);
+}
+
+function toTaskChatModelInfo(model: ModelSelection): { provider: string; modelId?: string } | null {
+  if (!model.provider) return null;
+  return model.modelId ? { provider: model.provider, modelId: model.modelId } : { provider: model.provider };
 }
 
 function getStepStatusColor(status: string): string {
@@ -408,7 +428,21 @@ export interface TaskDetailModalProps {
 
 export type TaskDetailContentProps = Omit<TaskDetailModalProps, "onClose"> & {
   embedded?: boolean;
+  /*
+  FNXC:TaskDetail 2026-06-22-12:20:
+  Embedded task detail can be hosted by a movable FloatingWindow. In that surface the task header is the only visible header, so onRequestClose must render a close icon beside edit instead of relying on separate window chrome.
+  */
   onRequestClose?: () => void;
+  /*
+  FNXC:TaskDetail 2026-06-22-18:40:
+  onBackToBoard powers the board-card full-panel "Back to board" affordance rendered in the gray header (far right). It is only honored when embedded is also true, so ListView split-pane and modal usages never show it.
+  */
+  onBackToBoard?: () => void;
+  /*
+  FNXC:FloatingWindow 2026-06-22-20:45:
+  onPopOut, when supplied, renders a Maximize2 "Pop out" button in the gray header. List/Board wire it to push this task into App's floating task-detail window array, opening the same embedded TaskDetailContent inside a movable, resizable, non-blocking FloatingWindow. It is independent of embedded/onBackToBoard so List split-pane and the board full-panel can both expose it.
+  */
+  onPopOut?: (task: Task) => void;
 };
 
 function truncate(s: string, max: number): string {
@@ -583,6 +617,8 @@ export function TaskDetailContent({
   mobileHeaderMode = "close",
   embedded = false,
   onRequestClose,
+  onBackToBoard,
+  onPopOut,
   workflowFieldDefs: workflowFieldDefsProp,
 }: TaskDetailContentProps) {
   const { t } = useTranslation("app");
@@ -900,9 +936,7 @@ export function TaskDetailContent({
   const [githubTrackingEnabledDraft, setGithubTrackingEnabledDraft] = useState<boolean | null>(null);
   const [githubRepoOverrideError, setGithubRepoOverrideError] = useState<string | null>(null);
   const [isSavingGithubTracking, setIsSavingGithubTracking] = useState(false);
-  const [isRecoveringBranchBinding, setIsRecoveringBranchBinding] = useState(false);
   const [isCheckingPrStatus, setIsCheckingPrStatus] = useState(false);
-  const [recoverBranchBindingOutcome, setRecoverBranchBindingOutcome] = useState<RecoverBranchBindingOutcome | null>(null);
   const moveMenuRef = useRef<HTMLDivElement>(null);
   const activityListRef = useRef<HTMLDivElement>(null);
   const moveButtonRef = useRef<HTMLButtonElement>(null);
@@ -1009,8 +1043,6 @@ export function TaskDetailContent({
     setGithubTrackingEnabledDraft(null);
     setGithubRepoOverrideError(null);
     setIsEditing(false);
-    setRecoverBranchBindingOutcome(null);
-    setIsRecoveringBranchBinding(false);
   }, [task.id, task.title, task.description, task.branch, task.baseBranch, task.sourceIssue, task.executionMode, workingTask.githubTracking]);
 
   useEffect(() => {
@@ -1852,6 +1884,18 @@ export function TaskDetailContent({
 
   const handleDelete = useCallback(async () => {
     let allowResurrection = false;
+    let deleteCloseRequested = false;
+    const closeBeforeDeleteRequest = () => {
+      if (deleteCloseRequested) {
+        return;
+      }
+      /*
+      FNXC:TaskDetailDelete 2026-06-23-10:55:
+      Task detail hosts must close optimistically after the operator completes every required delete prompt and before the server delete request settles. Keep async success/error toasts attached to the delete promise so conflict handling and failure reporting continue after the modal, embedded panel, or floating host is gone.
+      */
+      requestClose();
+      deleteCloseRequested = true;
+    };
 
     if (task.column !== "archived" && onArchiveTask) {
       const deleteChoice = await confirmWithChoice({
@@ -1939,12 +1983,12 @@ export function TaskDetailContent({
     }
 
     try {
+      closeBeforeDeleteRequest();
       if (githubIssueAction) {
         await onDeleteTask(task.id, { githubIssueAction, allowResurrection });
       } else {
         await onDeleteTask(task.id, { allowResurrection });
       }
-      requestClose();
       const issueSuffix = trackedIssue?.owner && trackedIssue.repo && trackedIssue.number && githubIssueAction
         ? ` ${t("taskDetail.delete.issueSuffix", "and {{action}} issue {{ref}}", { action: githubIssueAction === "close" ? t("taskDetail.delete.actionClosed", "closed") : githubIssueAction === "delete" ? t("taskDetail.delete.actionDeleted", "deleted") : t("taskDetail.delete.actionLeft", "left"), ref: `${trackedIssue.owner}/${trackedIssue.repo}#${trackedIssue.number}` })}`
         : "";
@@ -1965,13 +2009,13 @@ export function TaskDetailContent({
         }
 
         try {
+          closeBeforeDeleteRequest();
           await onDeleteTask(task.id, {
             removeDependencyReferences: true,
             removeLineageReferences: true,
             githubIssueAction,
             allowResurrection,
           });
-          requestClose();
           addToast(t("taskDetail.delete.deletedAfterRemovingDeps", "Deleted {{id}} after removing dependency references", { id: task.id }), "info");
         } catch (retryErr) {
           const lineageConflict = extractLineageDeleteConflict(retryErr);
@@ -1992,13 +2036,13 @@ export function TaskDetailContent({
           }
 
           try {
+            closeBeforeDeleteRequest();
             await onDeleteTask(task.id, {
               removeDependencyReferences: true,
               removeLineageReferences: true,
               githubIssueAction,
               allowResurrection,
             });
-            requestClose();
             addToast(t("taskDetail.delete.deletedAfterUnlinkLineage", "Deleted {{id}} after unlinking lineage references", { id: task.id }), "info");
           } catch (lineageRetryErr) {
             addToast(getErrorMessage(lineageRetryErr), "error");
@@ -2025,13 +2069,13 @@ export function TaskDetailContent({
       }
 
       try {
+        closeBeforeDeleteRequest();
         await onDeleteTask(task.id, {
           removeDependencyReferences: true,
           removeLineageReferences: true,
           githubIssueAction,
           allowResurrection,
         });
-        requestClose();
         addToast(t("taskDetail.delete.deletedAfterUnlinkLineage", "Deleted {{id}} after unlinking lineage references", { id: task.id }), "info");
       } catch (retryErr) {
         addToast(getErrorMessage(retryErr), "error");
@@ -2130,25 +2174,6 @@ export function TaskDetailContent({
   }, [onArchiveTask, confirm, task.id, nearDuplicateOf, addToast, requestClose]);
 
   const isTaskPaused = task.paused || task.userPaused;
-  const showRecoverBranchBindingBanner = task.column === "in-review" && !task.branch;
-
-  const handleRecoverBranchBinding = useCallback(async () => {
-    setIsRecoveringBranchBinding(true);
-    try {
-      const outcome = await recoverBranchBinding(task.id, projectId);
-      setRecoverBranchBindingOutcome(outcome);
-      if (outcome.result === "applied") {
-        addToast(t("taskDetail.branchBinding.reattached", "Reattached branch for {{id}} ({{branch}})", { id: task.id, branch: outcome.branch }), "success");
-        onTaskUpdated?.({ ...task, branch: outcome.branch, worktree: undefined });
-      } else {
-        addToast(t("taskDetail.branchBinding.skipped", "Branch reattachment skipped for {{id}}: {{reason}}", { id: task.id, reason: outcome.reason }), "info");
-      }
-    } catch (err) {
-      addToast(getErrorMessage(err), "error");
-    } finally {
-      setIsRecoveringBranchBinding(false);
-    }
-  }, [addToast, onTaskUpdated, projectId, task]);
 
   const handleTogglePause = useCallback(async () => {
     try {
@@ -2744,6 +2769,46 @@ export function TaskDetailContent({
                 <Pencil size={14} />
               </button>
             )}
+            {/*
+            FNXC:FloatingWindow 2026-06-22-20:45 (updated 2026-06-22-18:32):
+            "Pop out" affordance opens this task detail in a movable, resizable, non-blocking FloatingWindow. Header action order is edit, then expand/pop-out, then Back to board pinned far right so board-card detail controls read as edit/resize/navigation.
+            */}
+            {onPopOut && (
+              <button
+                type="button"
+                className="modal-edit-btn"
+                onClick={() => onPopOut(task)}
+                title={t("taskDetail.header.popOut", "Pop out")}
+                aria-label="Pop out"
+                data-testid="task-detail-pop-out"
+              >
+                <Maximize2 size={14} />
+              </button>
+            )}
+            {/*
+            FNXC:TaskDetail 2026-06-22-18:40 (updated 2026-06-22-18:32):
+            Board-card full-panel "Back to board" must be the far-right header action, after edit and expand/pop-out. margin-left:auto pushes it away from the utility controls while keeping it in the same gray header row. Only rendered when embedded AND onBackToBoard are supplied (board-card detail), never in ListView split-pane or modal usages.
+            */}
+            {embedded && onBackToBoard && (
+              <button
+                type="button"
+                className="task-detail-header-back-btn"
+                onClick={onBackToBoard}
+              >
+                <ArrowLeft size={14} aria-hidden="true" />
+                <span>{t("app.taskDetail.backToBoard", "Back to board")}</span>
+              </button>
+            )}
+            {embedded && onRequestClose && !onBackToBoard && (
+              <button
+                className="modal-close task-detail-floating-close"
+                onClick={requestClose}
+                aria-label={t("common.close", "Close")}
+                type="button"
+              >
+                <X size={16} aria-hidden="true" />
+              </button>
+            )}
             {!embedded && mobileHeaderMode === "back" && (
               <button
                 className="modal-close task-detail-mobile-back"
@@ -2857,6 +2922,10 @@ export function TaskDetailContent({
           ) : (
             <>
               <>
+                {/*
+                FNXC:TaskDetail 2026-06-22-20:00:
+                Summarize-as-title renders inline with the title inside .detail-heading-row and is positioned (CSS) to the far bottom-right as an in-field affordance, not a separate full-width row. Markup order is preserved; only layout changed.
+                */}
                 <div className="detail-heading-row">
                   <h2
                     ref={titleRef}
@@ -3065,6 +3134,14 @@ export function TaskDetailContent({
               {task.branchContext?.groupId && (
                 <BranchGroupCard groupId={task.branchContext.groupId} projectId={projectId} />
               )}
+              {/* FNXC:Workspace 2026-06-21-00:00: workspace tasks have no singular
+                  task.worktree/task.branch; surface their acquired per-sub-repo worktrees
+                  as a flat read-only list so the detail view isn't blank (U3/KTD5). */}
+              {/* FNXC:Workspace 2026-06-22-09:00: gate/render off the hydrated
+                  workingTask, not the sparse task row. workspaceWorktrees is only
+                  present in fetched detail, so keying off task renders blank on the
+                  optimistic-open path before the detail fetch resolves. */}
+              {isWorkspaceTask(workingTask) && <WorkspaceWorktreesSummary task={workingTask} />}
             </>
           )}
           {task.status === "failed" && task.error && (
@@ -3230,6 +3307,12 @@ export function TaskDetailContent({
                 onTaskUpdated={handleChatTaskUpdated}
                 expanded={chatExpanded}
                 onToggleExpanded={() => setChatExpanded((value) => !value)}
+                effectiveModels={{
+                  triage: toTaskChatModelInfo(resolveEffectivePlanning(workingTask, agentLogEntries, settings)),
+                  executor: toTaskChatModelInfo(resolveEffectiveExecutor(workingTask, agentLogEntries, assignedAgent, settings)),
+                  reviewer: toTaskChatModelInfo(resolveEffectiveValidator(workingTask, agentLogEntries, assignedAgent, settings)),
+                  merger: toTaskChatModelInfo(resolveEffectiveValidator(workingTask, agentLogEntries, assignedAgent, settings)),
+                }}
               />
             </div>
           ) : activeTab === "logs" ? (
@@ -3316,7 +3399,7 @@ export function TaskDetailContent({
               )}
             </div>
           ) : activeTab === "changes" ? (
-            <TaskChangesTab taskId={task.id} worktree={task.worktree} projectId={projectId} column={task.column} mergeDetails={task.mergeDetails} modifiedFiles={task.modifiedFiles} />
+            <TaskChangesTab taskId={task.id} worktree={task.worktree} projectId={projectId} column={task.column} mergeDetails={task.mergeDetails} modifiedFiles={task.modifiedFiles} isWorkspace={isWorkspaceTask(workingTask)} />
           ) : activeTab === "review" ? (
             <TaskReviewTab
               task={task}
@@ -3519,7 +3602,7 @@ export function TaskDetailContent({
             <div className="detail-section detail-summary">
               <h4>{t("taskDetail.summary.heading", "Summary")}</h4>
               <div className="markdown-body">
-                <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownLinkifyComponents}>
+                <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={sharedRehypePlugins} components={markdownLinkifyComponents}>
                   {task.summary}
                 </ReactMarkdown>
               </div>
@@ -3787,7 +3870,7 @@ export function TaskDetailContent({
               <div className="spec-loading"><LoadingSpinner label={t("taskDetail.spec.loading", "Loading specification…")} /></div>
             ) : workingTask.prompt ? (
               <div className="markdown-body">
-                <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownLinkifyComponents}>
+                <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={sharedRehypePlugins} components={markdownLinkifyComponents}>
                   {workingTask.prompt.replace(/^#\s+[^\n]*\n+/, "")}
                 </ReactMarkdown>
               </div>
@@ -4193,44 +4276,15 @@ export function TaskDetailContent({
             addToast={addToast}
           />
         )}
-        {showRecoverBranchBindingBanner && (
-          <div className="detail-section rebind-banner" role="status">
-            <div className="rebind-banner-header">
-              <GitBranch aria-hidden="true" />
-              <span className="rebind-banner-headline">{t("taskDetail.branchBinding.headline", "Branch needs reattachment")}</span>
-            </div>
-            <p className="rebind-banner-copy">
-              {t("taskDetail.branchBinding.copy", "This in-review task isn't currently attached to a fusion branch. If a live fusion branch still exists for it, you can reattach it here.")}
-            </p>
-            {recoverBranchBindingOutcome && (
-              <div className="rebind-banner-result">
-                {recoverBranchBindingOutcome.result === "applied"
-                  ? t("taskDetail.branchBinding.reattachedResult", "Reattached {{branch}} ({{count}} commits ahead of {{base}}).", { branch: recoverBranchBindingOutcome.branch, count: recoverBranchBindingOutcome.aheadCount, base: recoverBranchBindingOutcome.integrationBase })
-                  : t("taskDetail.branchBinding.skippedResult", "Reattachment skipped: {{reason}}", { reason: recoverBranchBindingOutcome.reason })}
-                {recoverBranchBindingOutcome.result === "skipped" && recoverBranchBindingOutcome.candidates?.length ? (
-                  <span>
-                    {` ${t("taskDetail.branchBinding.candidates", "Candidates:")} ${recoverBranchBindingOutcome.candidates.map((entry) => `${entry.branch} (${entry.aheadCount})`).join(", ")}`}
-                  </span>
-                ) : null}
-              </div>
-            )}
-            <div className="rebind-banner-actions">
-              <button
-                type="button"
-                className="btn btn-primary btn-sm"
-                onClick={() => void handleRecoverBranchBinding()}
-                disabled={isRecoveringBranchBinding}
-              >
-                {isRecoveringBranchBinding ? (
-                  <>
-                    <Loader2 size={16} className="spin" aria-hidden="true" />
-                    {t("taskDetail.branchBinding.reattaching", "Reattaching…")}
-                  </>
-                ) : t("taskDetail.branchBinding.reattachBtn", "Reattach branch")}
-              </button>
-            </div>
-          </div>
-        )}
+        {/*
+        FNXC:Workspace 2026-06-24-23:10:
+        The "Branch needs reattachment" banner was removed. It fired for any in-review task with a
+        null singular `task.branch`, which is the NORMAL, healthy state for a workspace task (its
+        attachment is the per-sub-repo worktrees in `task.workspaceWorktrees`, not a root branch), so
+        the banner was a permanent false positive for workspace tasks. Reattachment of a genuinely
+        lost binding is handled automatically by self-healing's reconcileInReviewBranchRebind, which
+        runs event-driven on the move-to-in-review and on its sweep — no manual user action needed.
+        */}
         <div className="modal-actions">
           {isEditing ? (
             <>

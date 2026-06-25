@@ -16,6 +16,18 @@ function extractRuleBody(source: string, selector: string): string {
   return match?.[1] ?? "";
 }
 
+function extractGroupedRuleBody(source: string, selector: string): string {
+  const sourceWithoutComments = source.replace(/\/\*[\s\S]*?\*\//g, "");
+  const match = [...sourceWithoutComments.matchAll(/(^|})\s*([^{}]+)\s*\{([\s\S]*?)\}/g)].find(([, , selectors]) =>
+    selectors
+      .split(",")
+      .map((part) => part.trim())
+      .includes(selector),
+  );
+  expect(match, `${selector} grouped rule should exist in LeftSidebarNav.css`).not.toBeNull();
+  return match?.[3] ?? "";
+}
+
 describe("left sidebar active accent CSS", () => {
   /**
    * FNXC:DashboardStyling 2026-06-21-11:16:
@@ -23,7 +35,7 @@ describe("left sidebar active accent CSS", () => {
    */
   it("uses the theme accent token for active item and resize handle styling", () => {
     const source = readLeftSidebarCss();
-    const activeItemBody = extractRuleBody(source, ".left-sidebar-nav__item--active");
+    const activeItemBody = extractGroupedRuleBody(source, ".left-sidebar-nav__item--active");
 
     expect(activeItemBody).toContain("var(--accent)");
     expect(activeItemBody).not.toContain("var(--todo)");

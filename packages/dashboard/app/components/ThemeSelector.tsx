@@ -42,7 +42,7 @@ export function ThemeSelector({
   const { t } = useTranslation("app");
   const handleReset = useCallback(() => {
     onThemeModeChange("dark");
-    onColorThemeChange("default");
+    onColorThemeChange("ocean");
     onDashboardFontScaleChange(100);
     onShadcnCustomColorsChange({});
   }, [onThemeModeChange, onColorThemeChange, onDashboardFontScaleChange, onShadcnCustomColorsChange]);

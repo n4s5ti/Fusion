@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import type { Task, TaskDetail } from "@fusion/core";
 import type { SectionId } from "../components/SettingsModal";
 import type { ToastType } from "./useToast";
+import { removeScopedItem } from "../utils/projectStorage";
 
 export type DetailTaskTab =
   | "chat"
@@ -97,6 +98,11 @@ export interface ModalManager {
   closeGroupModal: () => void;
 
   openSettings: (section?: SectionId) => void;
+  /*
+  FNXC:Settings 2026-06-22-00:00:
+  Sets the Settings initial/active section WITHOUT opening the modal overlay. Used by the embedded main-content Settings view so header/sidebar/deep-link entry points can carry a requested section while navigating to taskView === "settings" instead of mounting the dialog.
+  */
+  setSettingsSection: (section?: SectionId) => void;
   closeSettings: () => void;
 
   openSchedules: () => void;
@@ -331,6 +337,9 @@ export function useModalManager(options: UseModalManagerOptions): ModalManager {
     setSettingsInitialSection(section);
     setSettingsOpen(true);
   }, []);
+  const setSettingsSection = useCallback((section?: SectionId) => {
+    setSettingsInitialSection(section);
+  }, []);
   const closeSettings = useCallback(() => {
     setSettingsOpen(false);
     setSettingsInitialSection(undefined);
@@ -419,18 +428,29 @@ export function useModalManager(options: UseModalManagerOptions): ModalManager {
   const openModelOnboarding = useCallback(() => setModelOnboardingOpen(true), []);
   const closeModelOnboarding = useCallback(() => setModelOnboardingOpen(false), []);
 
+  const clearQuickAddPlanningDrafts = useCallback(() => {
+    /*
+    FNXC:QuickAddPlanningPreserve 2026-06-22-00:00:
+    Planning completion, not planning exit, is the only modal-manager transition that clears preserved quick-add drafts. Use the active project id so scoped drafts are removed from the correct workspace.
+    */
+    removeScopedItem("kb-quick-entry-text", options.projectId);
+    removeScopedItem("kb-inline-create-text", options.projectId);
+  }, [options.projectId]);
+
   const onPlanningTaskCreated = useCallback((task: Task, addToast: (message: string, type?: ToastType) => void) => {
     addToast(t("modalManager.createdFromPlanning", "Created {{id}} from planning mode", { id: task.id }), "success");
+    clearQuickAddPlanningDrafts();
     setIsPlanningOpen(false);
     setPlanningInitialPlan(null);
-  }, [t]);
+  }, [clearQuickAddPlanningDrafts, t]);
 
   const onPlanningTasksCreated = useCallback((tasks: Task[], addToast: (message: string, type?: ToastType) => void) => {
     const ids = tasks.map((task) => task.id).join(", ");
     addToast(t("modalManager.createdMultipleFromPlanning", "Created {{ids}} from planning mode", { ids }), "success");
+    clearQuickAddPlanningDrafts();
     setIsPlanningOpen(false);
     setPlanningInitialPlan(null);
-  }, [t]);
+  }, [clearQuickAddPlanningDrafts, t]);
 
   const onSubtaskTasksCreated = useCallback((tasks: Task[], addToast: (message: string, type?: ToastType) => void) => {
     const ids = tasks.map((task) => task.id).join(", ");
@@ -495,6 +515,7 @@ export function useModalManager(options: UseModalManagerOptions): ModalManager {
     openGroupModal,
     closeGroupModal,
     openSettings,
+    setSettingsSection,
     closeSettings,
     openSchedules,
     closeSchedules,

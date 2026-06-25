@@ -10,7 +10,7 @@ import { existsSync, lstatSync, realpathSync } from "node:fs";
 import { readFile, rm, writeFile } from "node:fs/promises";
 import type { TaskStore, Task, TaskDetail, TaskTokenUsage, StepStatus, Settings, WorkflowStep, MissionStore, Slice, AgentState, AgentCapability, RunMutationContext, AgentHeartbeatConfig, Agent, AgentMemoryInclusionMode, ProjectSettings, MergeResult, WorkflowIrNode, WorkflowIrNodeKind } from "@fusion/core";
 import { getUnmetSchedulingDependencies } from "./scheduler.js";
-import { RetryStormError, TaskDeletedError, serializeRetryStormError, isExperimentalFeatureEnabled, isWorkflowColumnsEnabled, resolveWorkflowIrForTask, resolveColumnAgentBinding, resolveEffectiveAgent, instanceNodeId, getWorkflowExtensionRegistry, getBuiltinWorkflow, parseNoOpCompletionMarker, allowsAutoMergeProcessing, isSharedBranchGroupMemberIntegration, resolveMaxAutoMergeRetries } from "@fusion/core";
+import { RetryStormError, TaskDeletedError, serializeRetryStormError, isExperimentalFeatureEnabled, resolveWorkflowIrForTask, resolveColumnAgentBinding, resolveEffectiveAgent, instanceNodeId, getWorkflowExtensionRegistry, getBuiltinWorkflow, parseNoOpCompletionMarker, allowsAutoMergeProcessing, isSharedBranchGroupMemberIntegration, resolveMaxAutoMergeRetries } from "@fusion/core";
 import { mergeEffectiveSettings } from "./effective-settings.js";
 import type { TaskStep, WorkflowIr, WorkflowFieldDefinition, WorkflowColumnAgent, EffectiveAgentInput, WorkflowWorkEngineDispatchResult } from "@fusion/core";
 import {
@@ -55,6 +55,8 @@ import {
   resolveEffectiveAgentPermissionPolicy,
   resolveProjectDefaultModel,
   resolveAgentMemoryInclusionMode,
+  loadWorkspaceConfig,
+  type WorkspaceConfig,
   type RunCommandResult,
 } from "@fusion/core";
 import { findWorktreeUser, getConflictedFiles } from "./merger.js";
@@ -64,7 +66,7 @@ import {
   VERIFICATION_LOG_MAX_CHARS,
   type VerificationResult,
 } from "./verification-utils.js";
-import { canonicalStepInstanceBranchName, generateWorktreeName, resolveTaskWorkingBranch } from "./worktree-names.js";
+import { canonicalFusionBranchName, canonicalStepInstanceBranchName, generateWorktreeName, resolveTaskWorkingBranch } from "./worktree-names.js";
 import { resolveTaskWorktreePath, resolveWorktreesDir } from "./worktree-paths.js";
 import { Type, type Static } from "@earendil-works/pi-ai";
 import { describeModel, promptWithFallback, compactSessionContext } from "./pi.js";
@@ -75,11 +77,18 @@ import {
   resolveExecutorSessionModel,
 } from "./agent-session-helpers.js";
 import { buildSessionSkillContext } from "./session-skill-context.js";
-import { reviewStep, type ReviewVerdict } from "./reviewer.js";
+import { reviewStep, type ReviewVerdict, type ReviewResult } from "./reviewer.js";
+import { selectUserCommentsForAgentContext } from "./agent-user-comments.js";
 import { resolveSandboxBackend } from "./sandbox/index.js";
 import type { SandboxBackend } from "./sandbox/types.js";
 import { ModelRegistry, SessionManager, type ToolDefinition, type AgentSession } from "@earendil-works/pi-coding-agent";
 import { PRIORITY_EXECUTE, type AgentSemaphore } from "./concurrency.js";
+// FNXC:Workspace 2026-06-21-15:00: F5/F8 — wire in the previously dead workspace-path helpers.
+// `normalizeRepoRelPath` is the single shared scope-path normalizer (F8); `deriveRepoScopeSubset`
+// maps the task's repo-prefixed declared File Scope to a repo-LOCAL subset so the per-repo scope-leak
+// filter reuses the SAME always-allowed/scope-match surface as the non-workspace path (F5). One-way
+// executor→workspace-paths edge (workspace-paths imports nothing).
+import { deriveRepoScopeSubset, normalizeRepoRelPath } from "./workspace-paths.js";
 import { RemovalReason, classifyTaskWorktree, describeRegisteredWorktrees, detectNestedWorktreeRoot, getRegisteredWorktreePaths, isGitRepository, isInsideWorktreesDir, isRegisteredGitWorktree, removeWorktree, type WorktreePool } from "./worktree-pool.js";
 import { attemptBranchAutocorrect } from "./branch-autocorrect.js";
 import { ActiveSessionWorktreeRemovalError } from "./worktree-backend.js";
@@ -140,7 +149,8 @@ import type { PluginRunner } from "./plugin-runner.js";
 import { isContextLimitError } from "./context-limit-detector.js";
 import { StepSessionExecutor } from "./step-session-executor.js";
 import { makeAncestryBlastRadiusGuard, resetStepToBaseline, runTaskStep } from "./step-runner.js";
-import { acquireTaskWorktree } from "./worktree-acquisition.js";
+// FNXC:MergerUnification 2026-06-21-19:05: the foundation branch imported `acquireWorkspaceRepoWorktree` here but never used it in executor.ts (the agent tool wraps it via agent-tools.ts), which fails lint on the inherited base. Removed until master-plan U1 re-adds it together with its per-repo acquisition usage.
+import { acquireTaskWorktree, type AcquireTaskWorktreeResult } from "./worktree-acquisition.js";
 import { resolveCapturedBaseCommitSha } from "./base-commit-capture.js";
 import { installTaskWorktreeIdentityGuard } from "./worktree-hooks.js";
 import {
@@ -178,6 +188,9 @@ import {
   createUpdateAgentConfigTool,
   createResearchTools,
   createSendMessageTool,
+  createArtifactListTool as sharedCreateArtifactListTool,
+  createArtifactRegisterTool as sharedCreateArtifactRegisterTool,
+  createArtifactViewTool as sharedCreateArtifactViewTool,
   createTaskCreateTool as sharedCreateTaskCreateTool,
   createTaskDocumentReadTool as sharedCreateTaskDocumentReadTool,
   createTaskDocumentWriteTool as sharedCreateTaskDocumentWriteTool,
@@ -191,6 +204,7 @@ import {
   createWorkflowDeleteTool as sharedCreateWorkflowDeleteTool,
   createWorkflowSettingsTool as sharedCreateWorkflowSettingsTool,
   createTraitListTool as sharedCreateTraitListTool,
+  createAcquireRepoWorktreeTool,
 } from "./agent-tools.js";
 import { getTaskCompletionBlockerForStore } from "./task-completion.js";
 import { createStreamingDeltaNormalizer } from "./streaming-delta.js";
@@ -588,13 +602,14 @@ export interface WorkflowRevisionFeedbackPartition {
 const WORKFLOW_SCRIPT_OUTPUT_MAX_CHARS = 4_000;
 const WORKFLOW_FEEDBACK_PATH_REGEX = /`([^`\n]+)`|(?<![A-Za-z0-9_.-])((?:\.\.?\/)?(?:@?[A-Za-z0-9._-]+\/)+[A-Za-z0-9._-]+(?:\.[A-Za-z0-9._-]+)?)/g;
 
+// FNXC:Workspace 2026-06-21-15:00: F8 — delegate to the single shared normalizer (workspace-paths.ts).
+// Was a near-duplicate that did NOT strip a leading slash and only collapsed a single trailing slash;
+// the shared `normalizeRepoRelPath` additionally strips leading slashes and collapses repeated trailing
+// slashes. For repo-relative inputs (the only inputs in practice) the result is unchanged; the extra
+// canonicalization only hardens absolute/trailing-slash edge cases so workspace and non-workspace scope
+// matching agree. Kept as a thin alias so existing call sites stay put.
 function normalizeWorkflowScopePath(pathValue: string): string {
-  return pathValue
-    .trim()
-    .replace(/\\/g, "/")
-    .replace(/^\.\//, "")
-    .replace(/\/+/g, "/")
-    .replace(/\/$/, "");
+  return normalizeRepoRelPath(pathValue);
 }
 
 function stripTrailingPathPunctuation(pathValue: string): string {
@@ -1253,6 +1268,10 @@ You can save and retrieve named documents for this task. Use these to store plan
 
 Documents are versioned — each write creates a new revision. Use meaningful keys like "plan", "notes", "research", "architecture".
 
+## Artifact Registry
+
+Use \`fn_artifact_register\` to register multi-type artifacts for discovery across agents and tasks, \`fn_artifact_list\` to find registered artifacts by type/author/task/search, and \`fn_artifact_view\` to inspect artifact metadata plus inline content or URI references. Artifact registration sends a best-effort system inbox notification to the dashboard user; notification failures do not make registration fail.
+
 **IMPORTANT — Save your deliverables as documents:** When your task produces written output (documentation, specifications, reports, API references, README updates, guides, or any other content), you MUST save that content as a task document using \`fn_task_document_write\`. Use a key that describes the deliverable (e.g., key="readme", key="api-docs", key="changelog"). Do this in addition to writing the file to disk — the document persists in the task for review even after the worktree is cleaned up.
 
 If the task's PROMPT.md includes a "Documentation Requirements" section listing files to update, save each updated file's final content as a task document with a matching key.
@@ -1289,6 +1308,11 @@ You are running in an **isolated git worktree**. This means:
 If you attempt to write to a path outside the worktree, the file tools will reject the operation with an error explaining the boundary.
 
 ## Guardrails
+<!--
+FNXC:WorkflowRouting 2026-06-22-17:26:
+Executors must not move the workflow of the task they are executing unless the user explicitly asked for that task's workflow. Agents remain free to set workflows on tasks they create because they are the creator for those new tasks.
+-->
+- Do not call \`fn_workflow_select\` to change the workflow of the task you are executing; you did not create that task, the user or triage did. The only exception is when the user explicitly requested a specific workflow for this task in a steering comment, task instruction, or similar direct instruction. You may still set the workflow on tasks you create via \`fn_task_create\` or \`fn_delegate_task\`, because you are the creator of those new tasks.
 - **NEVER kill processes on port 4040.** Port 4040 is the production dashboard. Do not run \`kill\`, \`pkill\`, \`killall\`, or \`lsof -ti:4040 | xargs kill\` against it. If you need to start a test server, use \`--port 0\` for a random free port. If port 4040 is occupied, pick a different port — do NOT kill the occupant.
 - Treat the File Scope in PROMPT.md as the expected starting scope, not a hard boundary when quality gates fail
 - Read "Context to Read First" files before starting
@@ -1461,7 +1485,28 @@ interface ActiveExecutorSessionState {
 }
 
 export class TaskExecutor {
-  private activeWorktrees = new Map<string, string>();
+  /*
+  FNXC:Workspace 2026-06-21-12:00:
+  activeWorktrees tracks the worktree paths a task currently holds for liveness/owner checks. In workspace mode a single task acquires N sub-repo worktrees (foundation `task.workspaceWorktrees`), so the value is a SET of paths, not one path. A non-workspace (single-repo) task holds a one-element set — every consumer is converted to membership semantics so the single-repo path is byte-for-byte unchanged (KTD2). Helpers below add/remove/iterate the set.
+  */
+  private activeWorktrees = new Map<string, Set<string>>();
+
+  /**
+   * FNXC:Workspace 2026-06-21-12:00: Register a worktree path under a task's active set, creating the set on first add (KTD2). Single-repo tasks call this once → one-element set.
+   */
+  private addActiveWorktree(taskId: string, worktreePath: string): void {
+    const set = this.activeWorktrees.get(taskId) ?? new Set<string>();
+    set.add(worktreePath);
+    this.activeWorktrees.set(taskId, set);
+  }
+
+  /**
+   * FNXC:Workspace 2026-06-21-12:00: Read-only snapshot of every worktree path a task currently holds (KTD2). Empty when the task holds none.
+   */
+  private getActiveWorktreePaths(taskId: string): string[] {
+    const set = this.activeWorktrees.get(taskId);
+    return set ? Array.from(set) : [];
+  }
   private executing = new Set<string>();
   /** Tasks currently being prepared for unpause resume, before execute() has registered them. */
   private resumingUnpaused = new Set<string>();
@@ -1536,6 +1581,11 @@ export class TaskExecutor {
   private stuckAborted = new Map<string, boolean>();
   /** Tasks explicitly canceled by user move (in-progress → todo). */
   private userCanceledTaskIds = new Set<string>();
+  /*
+  FNXC:WorkflowLifecycle 2026-06-23-21:16:
+  During graph-owned execute nodes, the inner executor may intentionally self-requeue a task to `todo` for recoverable worktree/session repair. Persisted rows can be stale in tests or during store races, so keep a run-local marker that tells the outer graph failure sink not to overwrite that recovery with an in-review handoff.
+  */
+  private graphExecuteSelfRequeued = new Set<string>();
   /** In-memory loop recovery state per task. Keyed by taskId, not persisted.
    *  Tracks compact-and-resume attempt count per execute() lifecycle.
    *  Reset at execute() lifecycle end (finally block). */
@@ -1552,6 +1602,7 @@ export class TaskExecutor {
   private workflowRerunWatchdogs = new Map<string, ReturnType<typeof setTimeout>>();
   /** Set of ephemeral spawned agent IDs with in-flight cleanup (prevents duplicate deletion attempts). */
   private pendingEphemeralDeletions = new Set<string>();
+  private workspaceConfig: WorkspaceConfig | null | undefined = undefined;
 
   private markPausedAborted(taskId: string, provenance: "global-pause" | "merge-seam" | "hard-cancel" | "completion-finalize" = "hard-cancel"): void {
     this.pausedAborted.add(taskId);
@@ -1569,25 +1620,57 @@ export class TaskExecutor {
     this.completionFinalizedTaskIds.delete(taskId);
   }
 
+  /*
+  FNXC:Workspace 2026-06-24-15:45 (concurrent workspace tasks — shared browse-root collision):
+  In workspace mode `this.rootDir` is the SHARED browse-only (non-git) workspace root, and EVERY
+  workspace task runs its agent session rooted there (per-sub-repo worktrees are acquired on demand).
+  The session registrations below are keyed in the GLOBAL path-keyed activeSessionRegistry, whose
+  foreign-task guard rejects a second task registering a path already held by a different task. With
+  the bare root as the key, the second concurrent workspace task fails with "active-session path
+  <root> is held by task <other>; task <self> may not overwrite it" — so only ONE task per workspace
+  could ever run. Per-task session liveness does NOT require path-exclusivity on the shared root
+  (real per-sub-repo exclusivity is enforced separately by the workspace-repo-acquire lease in
+  worktree-acquisition.ts, keyed by sub-repo path). Give each task a task-scoped synthetic session
+  key so the registry stays per-task. The in-memory activeWorktrees Set still holds the REAL root, so
+  getActiveWorktreePaths() consumers that cd into a path are unaffected; only the registry key changes.
+  Non-workspace tasks (unique worktree path != rootDir) are returned unchanged.
+  */
+  private sessionRegistryPath(taskId: string, worktreePath: string): string {
+    if (this.workspaceConfig && worktreePath === this.rootDir) {
+      return `${worktreePath}#session:${taskId}`;
+    }
+    return worktreePath;
+  }
+
   private setActiveSession(taskId: string, sessionState: ActiveExecutorSessionState, worktreePath: string): void {
     this.activeSessions.set(taskId, sessionState);
-    activeSessionRegistry.registerPath(worktreePath, { taskId, kind: "executor", ownerKey: taskId });
+    activeSessionRegistry.registerPath(this.sessionRegistryPath(taskId, worktreePath), { taskId, kind: "executor", ownerKey: taskId });
+  }
+
+  private markGraphExecuteSelfRequeued(taskId: string): void {
+    if (this.graphRouting.has(taskId)) {
+      this.graphExecuteSelfRequeued.add(taskId);
+    }
   }
 
   private deleteActiveSession(taskId: string, worktreePath?: string): void {
     this.activeSessions.delete(taskId);
     // U5: drop the effective column-agent principal for this task's session.
     this.effectiveColumnAgentByTask.delete(taskId);
-    const resolvedWorktreePath = worktreePath ?? this.activeWorktrees.get(taskId);
-    if (resolvedWorktreePath) {
-      activeSessionRegistry.unregisterPath(resolvedWorktreePath);
+    // FNXC:Workspace 2026-06-21-12:00: KTD2 — when no explicit path is given, unregister EVERY worktree path the task holds (a workspace task holds N sub-repo paths); single-repo tasks resolve a one-element set.
+    const resolvedWorktreePaths = worktreePath ? [worktreePath] : this.getActiveWorktreePaths(taskId);
+    for (const path of resolvedWorktreePaths) {
+      // FNXC:Workspace 2026-06-24-15:45: map through sessionRegistryPath so the task-scoped synthetic
+      // session key registered for the shared workspace browse-root is the one we unregister (the
+      // in-memory Set holds the REAL root). Non-workspace/sub-repo paths pass through unchanged.
+      activeSessionRegistry.unregisterPath(this.sessionRegistryPath(taskId, path));
     }
   }
 
   private setActiveStepExecutor(taskId: string, stepExecutor: StepSessionExecutor, worktreePath: string, seenSteeringIds = new Set<string>()): void {
     this.activeStepExecutors.set(taskId, stepExecutor);
     this.activeStepExecutorSeenSteeringIds.set(taskId, seenSteeringIds);
-    activeSessionRegistry.registerPath(worktreePath, { taskId, kind: "step-session", ownerKey: `${taskId}#step-session` });
+    activeSessionRegistry.registerPath(this.sessionRegistryPath(taskId, worktreePath), { taskId, kind: "step-session", ownerKey: `${taskId}#step-session` });
   }
 
   private deleteActiveStepExecutor(taskId: string, worktreePath?: string): void {
@@ -1595,24 +1678,32 @@ export class TaskExecutor {
     this.activeStepExecutorSeenSteeringIds.delete(taskId);
     // U5: drop the effective column-agent principal for this task's step session.
     this.effectiveColumnAgentByTask.delete(taskId);
-    const resolvedWorktreePath = worktreePath ?? this.activeWorktrees.get(taskId);
-    if (resolvedWorktreePath) {
-      activeSessionRegistry.unregisterPath(resolvedWorktreePath);
+    // FNXC:Workspace 2026-06-21-12:00: KTD2 — unregister every held worktree path (Set), not one.
+    const resolvedWorktreePaths = worktreePath ? [worktreePath] : this.getActiveWorktreePaths(taskId);
+    for (const path of resolvedWorktreePaths) {
+      // FNXC:Workspace 2026-06-24-15:45: map through sessionRegistryPath so the task-scoped synthetic
+      // session key registered for the shared workspace browse-root is the one we unregister (the
+      // in-memory Set holds the REAL root). Non-workspace/sub-repo paths pass through unchanged.
+      activeSessionRegistry.unregisterPath(this.sessionRegistryPath(taskId, path));
     }
   }
 
   private setActiveWorkflowStepSession(taskId: string, session: AgentSession, worktreePath: string, seenSteeringIds = new Set<string>()): void {
     this.activeWorkflowStepSessions.set(taskId, session);
     this.activeWorkflowStepSessionSeenSteeringIds.set(taskId, seenSteeringIds);
-    activeSessionRegistry.registerPath(worktreePath, { taskId, kind: "workflow-step", ownerKey: `${taskId}#workflow-step` });
+    activeSessionRegistry.registerPath(this.sessionRegistryPath(taskId, worktreePath), { taskId, kind: "workflow-step", ownerKey: `${taskId}#workflow-step` });
   }
 
   private deleteActiveWorkflowStepSession(taskId: string, worktreePath?: string): void {
     this.activeWorkflowStepSessions.delete(taskId);
     this.activeWorkflowStepSessionSeenSteeringIds.delete(taskId);
-    const resolvedWorktreePath = worktreePath ?? this.activeWorktrees.get(taskId);
-    if (resolvedWorktreePath) {
-      activeSessionRegistry.unregisterPath(resolvedWorktreePath);
+    // FNXC:Workspace 2026-06-21-12:00: KTD2 — unregister every held worktree path (Set), not one.
+    const resolvedWorktreePaths = worktreePath ? [worktreePath] : this.getActiveWorktreePaths(taskId);
+    for (const path of resolvedWorktreePaths) {
+      // FNXC:Workspace 2026-06-24-15:45: map through sessionRegistryPath so the task-scoped synthetic
+      // session key registered for the shared workspace browse-root is the one we unregister (the
+      // in-memory Set holds the REAL root). Non-workspace/sub-repo paths pass through unchanged.
+      activeSessionRegistry.unregisterPath(this.sessionRegistryPath(taskId, path));
     }
   }
 
@@ -2048,7 +2139,8 @@ export class TaskExecutor {
       return false;
     }
 
-    const worktreePath = this.activeWorktrees.get(taskId);
+    // FNXC:Workspace 2026-06-21-12:00: KTD2 — collect every worktree path the task holds (a workspace task holds N) before clearing the binding, so the registry sweep below unregisters all of them, not just one.
+    const heldWorktreePaths = this.getActiveWorktreePaths(taskId);
     this.activeWorktrees.delete(taskId);
     this.executing.delete(taskId);
     this.recoveringCompleted.delete(taskId);
@@ -2058,8 +2150,8 @@ export class TaskExecutor {
     this.effectiveColumnAgentByTask.delete(taskId);
 
     const registeredPaths = new Set(activeSessionRegistry.pathsForTask(taskId));
-    if (worktreePath) {
-      registeredPaths.add(worktreePath);
+    for (const path of heldWorktreePaths) {
+      registeredPaths.add(path);
     }
     for (const path of registeredPaths) {
       activeSessionRegistry.unregisterPath(path);
@@ -3368,6 +3460,7 @@ export class TaskExecutor {
         nextRecoveryAt: decision.nextState.nextRecoveryAt,
         sessionFile: null,
       });
+      this.markGraphExecuteSelfRequeued(task.id);
       await this.store.moveTask(task.id, "todo", { preserveResumeState: true });
       return true;
     }
@@ -3801,10 +3894,9 @@ export class TaskExecutor {
       }
     }
 
-    // Pass 2: tasks whose EFFECTIVE column agent resolves to `agentId`. Only
-    // experimental graph-executor tasks can carry a column binding; the IR resolve
-    // is best-effort and skipped for tasks already dispatched/executing.
-    if (!isExperimentalFeatureEnabled(settings, "workflowGraphExecutor")) return;
+    // Pass 2: tasks whose EFFECTIVE column agent resolves to `agentId`. The graph
+    // engine is the default runtime; the IR resolve is best-effort and skipped
+    // for tasks already dispatched/executing.
     for (const task of tasks) {
       if (dispatched.has(task.id) || !isDispatchable(task)) continue;
       // Skip tasks the assigned-agent filter already covers — a redundant column
@@ -3826,11 +3918,10 @@ export class TaskExecutor {
    *  `resumeTaskForAgent` second pass to re-dispatch column-bound tasks the
    *  `assignedAgentId` filter misses. Best-effort: an unresolvable IR yields false. */
   private async taskEffectiveAgentMatches(task: Task, agentId: string): Promise<boolean> {
-    // R10 kill-switch (PR #1432 review): this path resolves the IR directly (it
-    // does not go through the per-run resolver map), so it needs its own flag
-    // guard — resume pass 2 must be inert when workflowColumns is off.
-    const settings = await this.store.getSettings();
-    if (!isWorkflowColumnsEnabled(settings)) return false;
+    /*
+    FNXC:WorkflowColumns 2026-06-22-18:00:
+    Workflow columns are the default runtime, so resume pass 2 always resolves the task workflow IR. Persisted experimentalFeatures.workflowColumns=false values must not make column-agent dispatch inert.
+    */
     const ir = await resolveWorkflowIrForTask(this.store, task.id);
     if (!ir || ir.version !== "v2") return false;
 
@@ -4008,12 +4099,11 @@ export class TaskExecutor {
    */
   // ── Workflow graph interpreter (cutover M-B/M-C) ─────────────────────────
   //
-  // When `experimentalFeatures.workflowGraphExecutor` is enabled and a task has
-  // a selected custom workflow, the graph runner owns lifecycle SEQUENCING:
+  // The workflow graph runner owns lifecycle SEQUENCING for every task:
   // custom prompt/script/gate nodes run via the WorkflowStep machinery, and the
-  // planning/execute/review/merge seam nodes delegate to the legacy engine
-  // implementations. Any interpreter-level error falls back to the legacy
-  // pipeline — a task is never stranded by interpreter bugs.
+  // planning/execute/review/merge seam nodes delegate to the engine primitives.
+  // Interpreter-level failure parks the task as a workflow failure rather than
+  // falling through to a second runtime path.
 
   /** Completion interceptors for graph-driven tasks: when present for a task,
    *  execute() stops at the implementation-complete boundary (no workflow
@@ -4113,19 +4203,21 @@ export class TaskExecutor {
         });
         return true;
       }
-      const hasWorkflowResolver = typeof this.store.getTaskWorkflowSelection === "function";
-      const explicitlyEnabled = isExperimentalFeatureEnabled(settings, "workflowGraphExecutor");
-      if (!hasWorkflowResolver && !explicitlyEnabled) return false;
-      settings = {
-        ...settings,
-        experimentalFeatures: {
-          ...(settings.experimentalFeatures ?? {}),
-          workflowGraphExecutor: true,
-        },
-      };
+      /*
+      FNXC:WorkflowExecution 2026-06-22-18:00:
+      workflowGraphExecutor graduated from Experimental. Every task routes through the graph runner by default, and stale persisted experimentalFeatures.workflowGraphExecutor=false values are ignored so the product no longer has a user-facing or runtime graph-engine kill switch.
+      */
+      settings = { ...settings };
       let selection: { workflowId: string; stepIds: string[] } | undefined;
+      if (typeof this.store.getTaskWorkflowSelection !== "function") {
+        /*
+        FNXC:WorkflowExecution 2026-06-23-22:01:
+        Graph execution is the default for production TaskStore implementations, which expose workflow-selection APIs. Minimal test stores and older embedded adapters can lack that API; fall back to the legacy executor instead of half-entering graph routing with no workflow persistence surface.
+        */
+        return false;
+      }
       try {
-        selection = this.store.getTaskWorkflowSelection?.(task.id);
+        selection = this.store.getTaskWorkflowSelection(task.id);
       } catch (err) {
         await this.handleGraphFailure(task, {
           disposition: "failed",
@@ -4161,19 +4253,15 @@ export class TaskExecutor {
       // node callback. Resolve the IR ONCE per run (never an uncached per-node
       // fetch — mirrors the hold-release.ts irCache posture); best-effort, so a
       // resolution failure simply yields no bindings (R8 graceful degradation).
-      // R10 kill-switch (PR #1432 review): column agents require BOTH flags. The
-      // graph executor gate above covers workflowGraphExecutor; this guard makes
-      // disabling workflowColumns alone actually render bindings inert at
-      // execution time (the documented rollback) — no resolver installed means
-      // every downstream consumer (custom nodes, seams, watcher) sees no binding.
-      const columnAgentsEnabled = isWorkflowColumnsEnabled(settings);
+      /*
+      FNXC:WorkflowColumns 2026-06-22-18:00:
+      Column-agent binding now participates in every graph run. The former workflowColumns kill switch was removed, so stale persisted false values cannot silently disable custom-node, seam, or watcher bindings.
+      */
       let columnAgentIr: WorkflowIr | undefined;
-      if (columnAgentsEnabled) {
-        try {
-          columnAgentIr = await resolveWorkflowIrForTask(this.store, task.id);
-        } catch {
-          columnAgentIr = undefined;
-        }
+      try {
+        columnAgentIr = await resolveWorkflowIrForTask(this.store, task.id);
+      } catch {
+        columnAgentIr = undefined;
       }
       const resolveBindingForNode = (nodeId: string): WorkflowColumnAgent | undefined =>
         columnAgentIr ? resolveColumnAgentBinding(columnAgentIr, nodeId) : undefined;
@@ -4181,9 +4269,7 @@ export class TaskExecutor {
       // execute / step-execute seams (which key off a governing node id stamped
       // into context), so the coding/step session runs as the column agent under
       // the SAME binding lookup the custom-node seam uses (KTD-2 single resolver).
-      if (columnAgentsEnabled) {
-        this.graphColumnAgentResolver.set(task.id, resolveBindingForNode);
-      }
+      this.graphColumnAgentResolver.set(task.id, resolveBindingForNode);
 
       // (U3) Genuinely-unattended run signal. This is an EXPLICIT opt-in, not an
       // inferred heuristic: a run is unattended only when an entrypoint that
@@ -4269,7 +4355,14 @@ export class TaskExecutor {
       });
       let result: WorkflowGraphTaskRunResult;
       try {
-        const detail = await this.store.getTask(task.id);
+        const loadedDetail = await this.store.getTask(task.id);
+        /*
+        FNXC:WorkflowExecution 2026-06-23-11:36:
+        Graph dispatch must preserve the row identity that entered execute(). Minimal test stores and stale adapters can return an unrelated fallback task from getTask(); trusting that row would run the workflow under the wrong task id and bypass executor invariants. Use the refreshed row only when it matches the dispatch task.
+        */
+        const detail: TaskDetail = loadedDetail?.id === task.id
+          ? loadedDetail
+          : { ...task, prompt: task.prompt ?? task.description ?? "" };
         result = await runner.run(detail, settings);
       } catch (err) {
         executorLog.error(
@@ -4326,6 +4419,7 @@ export class TaskExecutor {
       this.graphColumnAgentResolver.delete(task.id);
       this.graphUnattendedRuns.delete(task.id);
       this.graphSeamGoverningNodeId.delete(task.id);
+      this.graphExecuteSelfRequeued.delete(task.id);
       // Per-instance keys: clear every instance slot owned by this task.
       const ctxPrefix = `${task.id}:`;
       for (const key of this.graphStepActiveContext.keys()) {
@@ -5070,6 +5164,12 @@ export class TaskExecutor {
     // completes; a step-review node (when present) decides done-ness instead.
     try {
       const live = await this.store.getTask(task.id);
+      if (!live || live.id !== task.id) {
+        return {
+          success: false,
+          error: `step ${stepIndex} live task unavailable after implementation pass`,
+        };
+      }
       const active = this.foreachActiveForTask(task.id, instanceId);
       const status = live.steps[stepIndex]?.status;
       if (status === "done" || status === "skipped") return { success: true };
@@ -5123,10 +5223,18 @@ export class TaskExecutor {
 
     return {
       prepareWorktree: async (_ctx, task) => {
-        const live = await this.store.getTask(task.id);
+        const live = await this.store.getTask(task.id).catch(() => null);
+        const liveTask = live?.id === task.id ? live : null;
+        /*
+        FNXC:WorkflowExecution 2026-06-23-11:49:
+        The workflow execute node must not perform a second worktree acquisition ahead of the authoritative executor. Passing the repo root as a prepared worktree makes the inner execute() reject a valid fresh-worktree task as repo-root reuse; pass only an existing task worktree and let execute() acquire when none exists.
+
+        FNXC:WorkflowExecution 2026-06-23-22:31:
+        Upgrade safety requires the graph primitive to tolerate older or minimal stores that return null or a mismatched row during startup/cutover. Only trust the live row when it is for the requested task; otherwise fall back to the runner snapshot.
+        */
         const prepared: PreparedWorktree = {
-          worktreePath: live.worktree || this.rootDir,
-          branchName: live.branch,
+          worktreePath: liveTask?.worktree || task.worktree || "",
+          branchName: liveTask?.branch || task.branch,
         };
         return { outcome: "success", value: "worktree-ready", data: prepared };
       },
@@ -5634,9 +5742,14 @@ export class TaskExecutor {
         const settings = await mergeEffectiveSettings(this.store, detail, await this.store.getSettings());
 
         const sem = this.options.semaphore;
-        const invokeReviewer = () =>
+        // FNXC:Workspace 2026-06-22-00:30: KTD3 — step-inversion review seam loops per sub-repo.
+        // `reviewStep` stays single-cwd; THIS CALLER loops. Single-cwd by default reviews
+        // `worktreePath`; in workspace mode that is the browse-only non-git root, so we instead spawn
+        // one reviewer per acquired sub-repo (cwd = repo.worktreePath) via reviewWorkspacePerRepo and
+        // aggregate as a conjunction. `invokeReviewerForCwd` is the per-cwd reviewStep call both modes share.
+        const invokeReviewerForCwd = (cwd: string) =>
           reviewStep(
-            worktreePath,
+            cwd,
             seamTask.id,
             stepIndex,
             stepName,
@@ -5672,10 +5785,18 @@ export class TaskExecutor {
               onSessionEnded: (s) => this.unregisterSubagentSession(seamTask.id, s),
             },
           );
+        const runForCwd = (cwd: string) => {
+          const invoke = () => invokeReviewerForCwd(cwd);
+          return sem ? sem.runNested(invoke) : invoke();
+        };
+        const invokeReviewer = () =>
+          this.workspaceConfig
+            ? this.reviewWorkspacePerRepo(detail, (cwd) => runForCwd(cwd))
+            : runForCwd(worktreePath);
 
         let review: { verdict: ReviewVerdict; review: string; summary: string };
         try {
-          review = sem ? await sem.runNested(invokeReviewer) : await invokeReviewer();
+          review = await invokeReviewer();
         } catch (err) {
           const message = err instanceof Error ? err.message : String(err);
           reviewerLog.error(`${seamTask.id}: step-review failed: ${message}`);
@@ -6714,7 +6835,17 @@ export class TaskExecutor {
     this.clearCompletedTaskWatchdog(task.id);
     this.options.stuckTaskDetector?.untrackTask(task.id);
     try {
-      const live = await this.store.getTask(task.id);
+      const loadedLive = await this.store.getTask(task.id);
+      /*
+      FNXC:WorkflowLifecycle 2026-06-23-12:01:
+      Graph failure handling must never mutate a different task row than the one that entered execute(). Minimal stores can return fallback rows from getTask(); treat that as an unavailable live snapshot and leave the inner executor recovery result intact instead of handing off the wrong task.
+      */
+      if (!loadedLive || loadedLive.id !== task.id) {
+        executorLog.warn(`${task.id}: graph failure live-state refetch returned ${loadedLive?.id ?? "null"} — preserving inner executor result`);
+        await this.persistTokenUsage(task.id);
+        return;
+      }
+      const live = loadedLive;
       // A paused/aborted implementation is not a graph failure while the task
       // is still in-progress — leave the pause machinery in charge instead of
       // parking the task in review.
@@ -6977,6 +7108,21 @@ export class TaskExecutor {
       const failedNode = result.visitedNodeIds[result.visitedNodeIds.length - 1];
       const mergeGraphFailure = this.isMergeGraphFailure(failedNode);
       const failureValue = this.graphFailureValue(result);
+      const executeNodeSelfRequeued = failedNode === "execute" && this.graphExecuteSelfRequeued.has(task.id);
+      if (failedNode === "execute" && (live.column === "todo" || executeNodeSelfRequeued)) {
+        /*
+        FNXC:WorkflowLifecycle 2026-06-23-12:03:
+        The graph execute node delegates to the authoritative executor. If that inner executor requeues the task to todo for self-heal/retry, the outer graph failure must not override it by parking the task in review.
+
+        FNXC:WorkflowLifecycle 2026-06-23-21:19:
+        Also honor the in-process self-requeue marker. Upgrade/restart races and minimal stores can return a stale `in-progress` live row even after the inner executor already moved the task to `todo`; stale reads must not strand progressing tasks in review.
+        */
+        const benignMessage = `Workflow graph execute node ended after executor re-queued task to todo (${failureValue ?? "no-value"}) — executor recovery preserved`;
+        executorLog.log(`${task.id}: ${benignMessage}`);
+        await this.store.logEntry(task.id, benignMessage, undefined, this.getRunContextFor(task.id));
+        await this.persistTokenUsage(task.id);
+        return;
+      }
       if (mergeGraphFailure && !this.isTerminalMergeGraphFailureValue(failureValue) && await this.routeGraphMergeFailureToRetry(live, result, abortProvenance)) {
         return;
       }
@@ -7409,7 +7555,18 @@ export class TaskExecutor {
         return;
       }
 
-      if (!await isGitRepository(this.rootDir)) {
+      if (this.workspaceConfig === undefined) {
+        this.workspaceConfig = await loadWorkspaceConfig(this.rootDir);
+      }
+      /*
+      FNXC:Workspace 2026-06-22-00:00:
+      Workspace mode is only meaningful with at least one usable sub-repo. An empty `{ repos: [] }`
+      must NOT bypass the git-repository guard, inject workspace instructions, or expose the
+      workspace tool — otherwise a non-git directory with an empty config would skip validation
+      and enable a workspace with nothing to work on. Gate every workspace check on repos.length > 0.
+      */
+      const hasWorkspaceRepos = (this.workspaceConfig?.repos.length ?? 0) > 0;
+      if (!hasWorkspaceRepos && !await isGitRepository(this.rootDir)) {
         await this.store.logEntry(
           task.id,
           "Cannot execute task: project directory is not a Git repository. Fusion requires a Git repository for worktree-based task execution.",
@@ -7422,7 +7579,19 @@ export class TaskExecutor {
       const hadAssignedWorktree = Boolean(task.worktree);
       const taskCommandAbortController = new AbortController();
       this.registerConfiguredCommandController(task.id, taskCommandAbortController);
-      const acquisition = await (async () => {
+      /*
+      FNXC:Workspace 2026-06-21-12:00:
+      KTD1 — in workspace mode `this.rootDir` is a NON-git parent. Acquiring a root worktree there fails. Skip root acquisition entirely and run the agent session rooted at the browse-only workspace root; the agent acquires per-sub-repo worktrees on demand via fn_acquire_repo_worktree. `task.worktree` stays unset. We synthesize a non-fresh, non-resume acquisition with an empty branch so the downstream env-injection/onStart bookkeeping runs unchanged while every rootDir git preflight (base capture, contamination, liveness) is gated off below. The non-workspace branch is byte-for-byte the original acquisition path.
+      */
+      const acquisition: AcquireTaskWorktreeResult = this.workspaceConfig
+        ? {
+            worktreePath: this.rootDir,
+            branch: "",
+            source: "existing",
+            hydrated: true,
+            isResume: Boolean(task.sessionFile),
+          }
+        : await (async () => {
         try {
           return await acquireTaskWorktree({
             task,
@@ -7512,6 +7681,11 @@ export class TaskExecutor {
         }
       }
 
+      /*
+      FNXC:Workspace 2026-06-21-12:00:
+      KTD1 — every preflight below (base-commit capture, contamination check, worktree-liveness gate) runs git against `worktreePath`, which equals the non-git workspace root in workspace mode. They would all fail. Gate the whole block off in workspace mode; the per-repo equivalents return in Phase B (master U3) against each acquired sub-repo worktree. The non-workspace branch is unchanged.
+      */
+      if (!this.workspaceConfig) {
       // Capture the base commit SHA for diff computation whenever a task
       // starts with a newly assigned worktree.
       if (!acquisition.isResume) {
@@ -7652,6 +7826,7 @@ export class TaskExecutor {
             undefined,
             this.getRunContextFor(task.id),
           );
+          this.markGraphExecuteSelfRequeued(task.id);
           await this.store.moveTask(task.id, "todo", { preserveProgress: true });
           executorLog.log(`✗ ${task.id} worktree liveness failed — requeued to todo (${nextRequeueCount}/${MAX_TASK_DONE_REQUEUE_RETRIES})`);
         } else {
@@ -7672,8 +7847,10 @@ export class TaskExecutor {
         this.options.onError?.(task, new Error(failureMessage));
         return;
       }
+      } // end !this.workspaceConfig preflight gate (FNXC:Workspace KTD1)
 
-      this.activeWorktrees.set(task.id, worktreePath);
+      // FNXC:Workspace 2026-06-21-12:00: KTD2 — register the worktree path under the task's Set. In workspace mode `worktreePath` is the browse-only root; per-repo sub-repo worktree paths ARE now added to the same Set as the agent acquires them (F2: fn_acquire_repo_worktree's onAcquired callback → addActiveWorktree), so the Set holds root + N sub-repo paths, not just the root. Non-workspace tasks add exactly one path → a one-element set (unchanged liveness/owner semantics).
+      this.addActiveWorktree(task.id, worktreePath);
       executorLog.log(`${task.id}: worktree ready at ${worktreePath}`);
 
       const injected = await this.buildInjectedRuntimeEnv(task.id, worktreePath, acquisition.branch ?? undefined);
@@ -7832,6 +8009,7 @@ export class TaskExecutor {
             }
             this.clearPausedAborted(task.id);
             await this.store.logEntry(task.id, "Execution paused — step sessions terminated, moved to todo", undefined, this.getRunContextFor(task.id));
+            this.markGraphExecuteSelfRequeued(task.id);
             await this.store.moveTask(task.id, "todo", { preserveResumeState: true });
             return;
           }
@@ -7859,6 +8037,47 @@ export class TaskExecutor {
           const allSuccess = results.every(r => r.success);
           if (allSuccess) {
             const updatedTask = await this.store.getTask(task.id);
+            // FNXC:Workspace 2026-06-21-23:30: KTD1 — per-repo post-session capture.
+            // The singular call below runs UNGATED with worktreePath = the browse-only non-git workspace root and silently returns [] (resolveDiffBaseRef swallows the git failure at the root). In workspace mode there is nothing to diff at the root; the real changes live in each acquired sub-repo worktree. So we ADD (not replace) a workspace branch that loops `task.workspaceWorktrees` and reuses the EXISTING captureModifiedFiles per repo — reusing it (rather than hand-building `git diff <base>..HEAD`) gives us the merge-base fallback for an undefined repo.baseCommitSha (resolveDiffBaseRef) AND restores the contamination/divergence audit (filterFilesToOwnTaskCommits) for free per repo. Returned files are repo-prefixed (e.g. `repo-a/src/foo.ts`) and aggregated into task.modifiedFiles.
+            if (this.workspaceConfig) {
+              const workspaceWorktrees = updatedTask.workspaceWorktrees ?? {};
+              const aggregated = await this.captureWorkspaceModifiedFiles(updatedTask, audit, "post-session");
+              for (const [repoRel, repo] of Object.entries(workspaceWorktrees)) {
+                // Per-repo branch-attribution audit (cwd = sub-repo). Run against repo.worktreePath/repo.branch, NOT the non-git root (a root call would fail and surface nothing). The contamination signal already rides on captureWorkspaceModifiedFiles above; this is the supplementary commit-attribution surface (FN-5233 pattern).
+                try {
+                  const attributionBase = await this.resolveContaminationBaseRef(repo.worktreePath);
+                  if (attributionBase && repo.branch) {
+                    const attribution = await reportBranchAttribution(repo.worktreePath, repo.branch, attributionBase, task.id);
+                    const hasAnomaly = attribution.foreign.length > 0 || attribution.unattributed.length > 0 || attribution.ownUntrailed.length > 0;
+                    if (hasAnomaly) {
+                      const summary = `branch-attribution anomalies on ${repoRel}@${repo.branch}: foreign=${attribution.foreign.length}, unattributed=${attribution.unattributed.length}, ownUntrailed=${attribution.ownUntrailed.length}, ownTrailed=${attribution.ownTrailed}`;
+                      executorLog.warn(`${task.id}: ${summary}`);
+                      await this.store.logEntry(task.id, `[branch-attribution] ${summary}`, undefined, this.getRunContextFor(task.id));
+                      await audit.git({
+                        type: "branch:attribution-anomaly",
+                        target: repo.branch,
+                        metadata: {
+                          taskId: task.id,
+                          repo: repoRel,
+                          baseSha: attributionBase,
+                          ownTrailed: attribution.ownTrailed,
+                          foreign: attribution.foreign,
+                          unattributed: attribution.unattributed,
+                          ownUntrailed: attribution.ownUntrailed,
+                        },
+                      });
+                    }
+                  }
+                } catch (attributionErr: unknown) {
+                  executorLog.warn(`${task.id}: post-session per-repo branch-attribution audit failed for ${repoRel}: ${attributionErr instanceof Error ? attributionErr.message : String(attributionErr)}`);
+                }
+              }
+              if (aggregated.length > 0) {
+                await this.store.updateTask(task.id, { modifiedFiles: aggregated });
+                executorLog.log(`${task.id}: captured ${aggregated.length} modified files across ${Object.keys(workspaceWorktrees).length} sub-repo(s)`);
+                await audit.filesystem({ type: "file:capture-modified", target: task.id, metadata: { files: aggregated } });
+              }
+            } else {
             const modifiedFiles = await this.captureModifiedFiles(worktreePath, updatedTask.baseCommitSha, task.id, audit, "post-session");
             if (modifiedFiles.length > 0) {
               await this.store.updateTask(task.id, { modifiedFiles });
@@ -7900,6 +8119,7 @@ export class TaskExecutor {
             } catch (attributionErr: unknown) {
               executorLog.warn(`${task.id}: post-session branch-attribution audit failed: ${attributionErr instanceof Error ? attributionErr.message : String(attributionErr)}`);
             }
+            } // end !this.workspaceConfig singular capture (FNXC:Workspace KTD1)
 
             this.scheduleCompletedTaskWatchdog(task.id, "step-session completion");
             if (await this.shouldDeferCompletionForGlobalPause(task.id, "before workflow steps after step-session completion")) {
@@ -8083,6 +8303,7 @@ export class TaskExecutor {
             }
             this.clearPausedAborted(task.id);
             await this.store.logEntry(task.id, "Execution paused during step-session", undefined, this.getRunContextFor(task.id));
+            this.markGraphExecuteSelfRequeued(task.id);
             await this.store.moveTask(task.id, "todo", { preserveResumeState: true });
           } else if (this.stuckAborted.has(task.id)) {
             stuckRequeue = this.stuckAborted.get(task.id) ?? true;
@@ -8126,6 +8347,7 @@ export class TaskExecutor {
                 worktree: null,
                 branch: null,
               });
+              this.markGraphExecuteSelfRequeued(task.id);
               await this.store.moveTask(task.id, "todo", { preserveProgress: true });
               stuckRequeue = null; // Prevent outer finally from re-processing
               return;
@@ -8219,6 +8441,7 @@ export class TaskExecutor {
                   branch: null,
                 });
                 if (latestTask.column !== "todo") {
+                  this.markGraphExecuteSelfRequeued(task.id);
                   await this.store.moveTask(task.id, "todo", preserveProgress ? { preserveProgress: true } : undefined);
                   executorLog.log(`${task.id} moved to todo for retry after stuck kill${preserveProgress ? " (progress preserved)" : ""}`);
                 }
@@ -8307,6 +8530,12 @@ export class TaskExecutor {
         this.createSpawnAgentTool(task.id, worktreePath, settings, taskEnv),
         this.createTaskDocumentWriteTool(task.id),
         this.createTaskDocumentReadTool(task.id),
+        // FNXC:ArtifactRegistry 2026-06-21-07:04: Artifact list/view are read-only discovery tools and must remain available even when the task has no assigned agent identity; only registration requires an authorId for persisted attribution and best-effort inbox notification.
+        this.createArtifactListTool(),
+        this.createArtifactViewTool(),
+        ...(assignedAgentId ? [
+          this.createArtifactRegisterTool(assignedAgentId),
+        ] : []),
         this.createWorkflowListTool(),
         this.createWorkflowGetTool(),
         this.createWorkflowSelectTool(task.id),
@@ -8359,6 +8588,26 @@ export class TaskExecutor {
         // Add plugin tools from PluginRunner
         ...getEnabledPluginTools(this.options.pluginRunner),
       ];
+
+      if (this.workspaceConfig && this.workspaceConfig.repos.length > 0) {
+        customTools.push(createAcquireRepoWorktreeTool({
+          workspaceRootDir: this.rootDir,
+          workspaceRepos: this.workspaceConfig.repos,
+          task,
+          store: this.store,
+          settings,
+          logger: executorLog,
+          secretsStore: this.options.secretsStore,
+          runContext: engineRunContext,
+          audit,
+          // FNXC:Workspace 2026-06-21-22:30: F2 — register each freshly-acquired sub-repo worktree path in this task's activeWorktrees Set (KTD2) so owner/liveness checks see live per-repo worktrees, not just the browse-only root.
+          onAcquired: (worktreePath: string) => this.addActiveWorktree(task.id, worktreePath),
+          taskEnv,
+          // FNXC:Workspace 2026-06-22 — forward the configured worktree-init runner so sub-repo worktrees run configured setup.
+          runConfiguredCommand: (command, cwd, timeoutMs, env) =>
+            runConfiguredCommand(command, cwd, timeoutMs, env, audit),
+        }));
+      }
 
       // Accumulates the full assistant text output for the most recent session.
       // Reset to "" each time a new session begins so detectPseudoPause only
@@ -8610,6 +8859,7 @@ export class TaskExecutor {
               worktreePath,
               this.options.pluginRunner,
               customFieldDefs,
+              this.workspaceConfig,
             );
             await promptWithFallback(session, agentPrompt);
           }
@@ -8726,6 +8976,7 @@ export class TaskExecutor {
             } else {
               executorLog.log(`${task.id} paused (graceful session exit) — moving to todo`);
               await this.store.logEntry(task.id, "Execution paused — session preserved for resume, moved to todo");
+              this.markGraphExecuteSelfRequeued(task.id);
               await this.store.moveTask(task.id, "todo", { preserveResumeState: true });
             }
             return;
@@ -8955,6 +9206,11 @@ export class TaskExecutor {
                   // mirroring the primary execute-seam session above.
                   actionGateContext: this.buildActionGateContext(task.id, identityAgent, settings.defaultAgentPermissionPolicy),
                   permanentAgentGating: this.buildPermanentAgentGatingContext(task.id, identityAgent, settings.defaultAgentPermissionPolicy),
+                  // FNXC:SessionRouting 2026-06-24-11:20:
+                  // #1675: propagate task id so retry-session requests carry the same
+                  // X-Session-Id/X-Session-Affinity as the primary session, keeping the
+                  // task's LLM requests grouped under one stable routing/observability id.
+                  taskId: task.id,
                 });
                 retrySession = createdRetrySession.session;
                 if (createdRetrySession.sessionFile) {
@@ -8999,7 +9255,7 @@ export class TaskExecutor {
                     "Do NOT ask for permission. Do NOT write a summary. Just call a tool and keep working.",
                     "",
                     "Original task:",
-                    buildExecutionPrompt(detail, this.rootDir, settings, worktreePath, this.options.pluginRunner, retryCustomFieldDefs),
+                    buildExecutionPrompt(detail, this.rootDir, settings, worktreePath, this.options.pluginRunner, retryCustomFieldDefs, this.workspaceConfig),
                   ].join("\n");
                 } else {
                   retryPrompt = [
@@ -9009,7 +9265,7 @@ export class TaskExecutor {
                     "2. If there is remaining work, finish it and then call fn_task_done.",
                     "",
                     "Original task:",
-                    buildExecutionPrompt(detail, this.rootDir, settings, worktreePath, this.options.pluginRunner, retryCustomFieldDefs),
+                    buildExecutionPrompt(detail, this.rootDir, settings, worktreePath, this.options.pluginRunner, retryCustomFieldDefs, this.workspaceConfig),
                   ].join("\n");
                 }
 
@@ -9124,6 +9380,7 @@ export class TaskExecutor {
               // the next pickup will re-anchor it on the fresh checkout.
               await this.store.updateTask(task.id, { worktree: null, branch: null, baseCommitSha: null });
               await this.persistTokenUsage(task.id);
+              this.markGraphExecuteSelfRequeued(task.id);
               await this.store.moveTask(task.id, "todo", { preserveProgress: true });
               executorLog.log(silentMessage);
             } else if (refusalHandled) {
@@ -9151,6 +9408,7 @@ export class TaskExecutor {
                   undefined,
                   this.getRunContextFor(task.id),
                 );
+                this.markGraphExecuteSelfRequeued(task.id);
                 await this.store.moveTask(task.id, "todo", { preserveProgress: true });
                 executorLog.log(`✗ ${task.id} failed after ${MAX_TASK_DONE_SESSION_RETRIES} retries — requeued to todo (${nextRequeueCount}/${MAX_TASK_DONE_REQUEUE_RETRIES})`);
               } else {
@@ -9332,6 +9590,7 @@ export class TaskExecutor {
             hasResumableProgress ? { worktree: undefined } : { worktree: undefined, branch: undefined },
           );
           await this.store.logEntry(task.id, "Execution paused — agent terminated, moved to todo", undefined, this.getRunContextFor(task.id));
+          this.markGraphExecuteSelfRequeued(task.id);
           await this.store.moveTask(task.id, "todo", hasResumableProgress ? { preserveResumeState: true } : undefined);
         }
       } else if (this.stuckAborted.has(task.id)) {
@@ -9439,6 +9698,7 @@ export class TaskExecutor {
               nextRecoveryAt: decision.nextState.nextRecoveryAt,
               sessionFile: null,
             });
+            this.markGraphExecuteSelfRequeued(task.id);
             await this.store.moveTask(task.id, "todo", { preserveResumeState: true });
             return;
           }
@@ -9621,6 +9881,7 @@ export class TaskExecutor {
               // "worktree gone" from "pointer not yet repopulated". Matches sibling
               // recovery paths in auto-recovery-handlers/contamination.ts,
               // tryBootstrapMisbindingRecovery, and self-healing reclaim.
+              this.markGraphExecuteSelfRequeued(task.id);
               await this.store.moveTask(task.id, "todo", { preserveResumeState: true, preserveWorktree: true });
               return;
             }
@@ -9812,6 +10073,7 @@ export class TaskExecutor {
               worktree: null,
               branch: null,
             });
+            this.markGraphExecuteSelfRequeued(task.id);
             await this.store.moveTask(task.id, "todo", { preserveProgress: true });
             return;
           }
@@ -9955,6 +10217,7 @@ export class TaskExecutor {
             // the captured snapshot can be hours old and would race against
             // any concurrent recovery (see comment above).
             if (latestTask.column !== "todo") {
+              this.markGraphExecuteSelfRequeued(task.id);
               await this.store.moveTask(task.id, "todo", preserveProgress ? { preserveProgress: true } : undefined);
               // Audit trail: record task move (FN-1404)
               await audit.database({ type: "task:move", target: task.id, metadata: { to: "todo" } });
@@ -10280,6 +10543,18 @@ export class TaskExecutor {
     return sharedCreateTaskDocumentReadTool(this.store, taskId);
   }
 
+  private createArtifactRegisterTool(authorId: string): ToolDefinition {
+    return sharedCreateArtifactRegisterTool(this.store, authorId, this.options.messageStore);
+  }
+
+  private createArtifactListTool(): ToolDefinition {
+    return sharedCreateArtifactListTool(this.store);
+  }
+
+  private createArtifactViewTool(): ToolDefinition {
+    return sharedCreateArtifactViewTool(this.store);
+  }
+
   private createWorkflowListTool(): ToolDefinition {
     return sharedCreateWorkflowListTool(this.store);
   }
@@ -10449,10 +10724,157 @@ export class TaskExecutor {
     worktreePathOverride?: string,
     allowReanchor = true,
     options?: { noOpCompletion?: boolean; noOpCompletionReason?: string },
-  ): Promise<{ ok: true } | { ok: false; reason: "wrong_toplevel" | "wrong_branch" | "no_commits"; observed: string; expected: string }> {
+  ): Promise<{ ok: true } | { ok: false; reason: "wrong_toplevel" | "wrong_branch" | "no_commits"; observed: string; expected: string; repo?: string }> {
     const settings = await this.store.getSettings();
+    // FNXC:Workspace 2026-06-21-23:30: KTD2 — un-stubbed per-repo worktree-invariant verification.
+    // Phase A returned a flat {ok:true} stub here (no root worktree to verify against the non-git root). Phase B iterates every `task.workspaceWorktrees` entry, asserting (a) the sub-repo worktree's git toplevel matches the recorded repo.worktreePath and (b) its HEAD is on the recorded `fusion/<id>` branch (repo.branch). The result union is PRESERVED EXACTLY — `{ok:true} | {ok:false; reason:'wrong_toplevel'|'wrong_branch'|'no_commits'; observed; expected}` — because the :10889 consumer switches on `reason` to drive requeue/handoff (:10894-10936). We ADD an optional `repo` field to the failure shape (purely additive; the consumer only reads reason/observed/expected) and return the FIRST failing repo. A zero-acquire workspace task (empty map) verifies vacuously → {ok:true}, matching Phase A so fn_task_done does not requeue it.
+    if (this.workspaceConfig) {
+      const workspaceWorktrees = task.workspaceWorktrees ?? {};
+      // FNXC:Workspace 2026-06-22-00:00: KTD2 — resolve the SAME task-wide no-commit eligibility the singular path
+      // uses (getNoCommitEligibilityReason / no-op-completion sentinel / prompt-derived), once, before the per-repo
+      // loop. When eligible (Plan-Only, verified no-op, etc.) the per-repo no_commits guard below is skipped so an
+      // intentionally commit-free workspace task is not blocked from completion.
+      const workspacePromptContent = (task as Task & { prompt?: unknown }).prompt;
+      const workspacePromptEligibility = evaluatePromptDerivedNoCommitEligibility(
+        task,
+        typeof workspacePromptContent === "string" ? workspacePromptContent : "",
+      );
+      const workspaceNoCommitEligibilityReason =
+        getNoCommitEligibilityReason(task) ??
+        (options?.noOpCompletion
+          ? options.noOpCompletionReason ?? "verified no-op/duplicate completion sentinel"
+          : null) ??
+        (workspacePromptEligibility.eligible
+          ? workspacePromptEligibility.reason ?? "prompt-derived no-commit eligibility"
+          : null);
+      if (workspaceNoCommitEligibilityReason) {
+        executorLog.log(`${task.id}: workspace fn_task_done no_commits guard skipped (${workspaceNoCommitEligibilityReason})`);
+      }
+      // FNXC:Workspace 2026-06-21-15:00: F6 — iterate sorted repo keys so the FIRST failing repo
+      // returned here is deterministic across runs/rehydrate (the value is surfaced to the operator).
+      for (const repoRel of Object.keys(workspaceWorktrees).sort()) {
+        const repo = workspaceWorktrees[repoRel];
+        const expectedBranch = repo.branch || canonicalFusionBranchName(task.id);
+        // Skip git checks if the worktree dir is gone (mirrors the singular FN-009 carve-out below): completion does not require a live worktree on disk.
+        if (!existsSync(repo.worktreePath)) {
+          executorLog.log(`${task.id}: workspace worktree for ${repoRel} not found at ${repo.worktreePath} — skipping git validation`);
+          continue;
+        }
+        let expectedWorktreeRealpath: string;
+        try {
+          expectedWorktreeRealpath = canonicalizePath(repo.worktreePath);
+        } catch (error) {
+          return {
+            ok: false,
+            reason: "wrong_toplevel",
+            repo: repoRel,
+            observed: `unresolvable repo worktree (${repo.worktreePath}): ${error instanceof Error ? error.message : String(error)}`,
+            expected: `resolvable worktree for ${repoRel}`,
+          };
+        }
+        try {
+          const { stdout } = await execAsync("git rev-parse --show-toplevel", {
+            cwd: repo.worktreePath,
+            encoding: "utf-8",
+            timeout: 10_000,
+            maxBuffer: 1024 * 1024,
+          });
+          const observedTopLevelRaw = stdout.trim();
+          if (observedTopLevelRaw) {
+            const observedTopLevel = canonicalizePath(observedTopLevelRaw);
+            if (observedTopLevel !== expectedWorktreeRealpath) {
+              return {
+                ok: false,
+                reason: "wrong_toplevel",
+                repo: repoRel,
+                observed: observedTopLevel,
+                expected: expectedWorktreeRealpath,
+              };
+            }
+          }
+        } catch (error) {
+          return {
+            ok: false,
+            reason: "wrong_toplevel",
+            repo: repoRel,
+            observed: error instanceof Error ? error.message : String(error),
+            expected: expectedWorktreeRealpath,
+          };
+        }
+        try {
+          const { stdout } = await execAsync("git rev-parse --abbrev-ref HEAD", {
+            cwd: repo.worktreePath,
+            encoding: "utf-8",
+            timeout: 10_000,
+            maxBuffer: 1024 * 1024,
+          });
+          const observedBranch = stdout.trim();
+          if (observedBranch && observedBranch !== expectedBranch) {
+            return {
+              ok: false,
+              reason: "wrong_branch",
+              repo: repoRel,
+              observed: observedBranch,
+              expected: expectedBranch,
+            };
+          }
+        } catch (error) {
+          return {
+            ok: false,
+            reason: "wrong_branch",
+            repo: repoRel,
+            observed: error instanceof Error ? error.message : String(error),
+            expected: expectedBranch,
+          };
+        }
+        // FNXC:Workspace 2026-06-22-00:00: KTD2 — per-repo no_commits guard (parity with the singular path at :10821).
+        // Phase B originally returned {ok:true} after the toplevel/branch checks, so a workspace task could call
+        // fn_task_done having committed NOTHING in any sub-repo (scope-leak sees zero touched files, branch names match)
+        // and still advance to in-review. Enforce the same `git rev-list --count <base>..HEAD > 0` invariant per repo,
+        // gated by the SAME task-wide no-commit eligibility below so Plan-Only / no-op-sentinel tasks stay exempt.
+        // The first sub-repo with zero commits fails with reason:'no_commits' (consumer-stable union).
+        if (!workspaceNoCommitEligibilityReason) {
+          const repoBaseRef = await this.resolveDiffBaseRef(repo.worktreePath, repo.baseCommitSha);
+          if (repoBaseRef) {
+            try {
+              const { stdout } = await execAsync(`git rev-list --count ${repoBaseRef}..HEAD`, {
+                cwd: repo.worktreePath,
+                encoding: "utf-8",
+                timeout: 10_000,
+                maxBuffer: 1024 * 1024,
+              });
+              const trimmedCount = stdout.trim();
+              if (trimmedCount) {
+                const count = Number.parseInt(trimmedCount, 10);
+                if (!Number.isFinite(count) || count <= 0) {
+                  return {
+                    ok: false,
+                    reason: "no_commits",
+                    repo: repoRel,
+                    observed: Number.isFinite(count) ? String(count) : trimmedCount,
+                    expected: "> 0",
+                  };
+                }
+              }
+            } catch (error) {
+              return {
+                ok: false,
+                reason: "no_commits",
+                repo: repoRel,
+                observed: error instanceof Error ? error.message : String(error),
+                expected: `git rev-list --count ${repoBaseRef}..HEAD > 0`,
+              };
+            }
+          } else {
+            executorLog.warn(`${task.id}: unable to resolve diff base for ${repoRel} no_commits guard; skipping for this sub-repo`);
+          }
+        }
+      }
+      return { ok: true };
+    }
     const branchName = resolveTaskWorkingBranch(task);
-    const worktreePath = worktreePathOverride ?? task.worktree ?? this.activeWorktrees.get(task.id) ?? null;
+    // Non-workspace tasks hold a one-element set; fall back to its sole member to preserve the original singular resolution.
+    const worktreePath = worktreePathOverride ?? task.worktree ?? this.getActiveWorktreePaths(task.id)[0] ?? null;
 
     if (!worktreePath) {
       return {
@@ -10678,24 +11100,107 @@ export class TaskExecutor {
       return { blocked: false };
     }
 
-    const [uncommittedTouchedFiles, branchCommittedFiles] = await Promise.all([
-      this.captureUncommittedModifiedFiles(worktreePath),
-      this.captureModifiedFiles(worktreePath, task.baseCommitSha, task.id, audit, "scope-leak-guard"),
-    ]);
-
-    const touchedFiles = [...new Set([...uncommittedTouchedFiles, ...branchCommittedFiles])];
-    if (touchedFiles.length === 0) {
-      return { blocked: false };
+    // FNXC:Workspace 2026-06-22-00:30: KTD4 — per-repo scope-leak guard.
+    // The singular capture below runs `captureUncommittedModifiedFiles` + `captureModifiedFiles`
+    // against `worktreePath`. In workspace mode `worktreePath` is the browse-only non-git workspace
+    // root, so both silently return [] (git failures swallowed) and the uncommitted-in-scope block
+    // never fires — a workspace task could complete with off-scope changes in any sub-repo. So we
+    // ITERATE every acquired sub-repo (cwd = repo.worktreePath, base = repo.baseCommitSha) and block
+    // on the FIRST repo carrying off-scope changes — naming the repo. The task-level preamble above
+    // (scopeOverride / declaredScope / enforcementMode) is shared and runs once. Return shape is
+    // preserved: `{blocked:false} | {blocked:true; message}`.
+    //
+    // FNXC:Workspace 2026-06-21-15:00: F1/F2/F5/F6 hardening of the per-repo scope-leak guard.
+    // F5 (false-block fix + dead-code wiring + single filter surface): we previously repo-prefixed each
+    // touched file (`${repoRel}/${file}`) BEFORE filtering, so `isAlwaysAllowedScopeLeakPath`'s
+    // `startsWith(".changeset/")` carve-out never matched a sub-repo changeset (`repo-a/.changeset/x.md`)
+    // and a legit per-repo changeset was wrongly flagged off-scope → fn_task_done wrongly REFUSED. Now we
+    // derive each repo's repo-LOCAL declared-scope subset (`deriveRepoScopeSubset`) and run the SAME
+    // `workflowPathMatchesDeclaredScope` + `isAlwaysAllowedScopeLeakPath` filter the non-workspace path
+    // uses against the repo-LOCAL touched file — one filter surface, not two. This wires in the formerly
+    // dead `deriveRepoScopeSubset`/`splitRepoScopedPath` helpers.
+    // F1 (fail CLOSED on throw): each repo iteration is wrapped in its own try/catch (like the
+    // attribution-audit loop). A thrown capture/diff error in workspace mode surfaces as a BLOCK naming
+    // the repo instead of bubbling to the outer `.catch()` that fails OPEN — an incomplete scope check
+    // must never let fn_task_done proceed.
+    // F2 (scoped-but-zero-acquire): a scoped task that acquired NO sub-repo worktrees aggregates zero
+    // off-scope files and would silently pass; we block it (scope is declared but unverifiable).
+    // F6 (deterministic ordering): iterate sorted repo keys so the reported offending repo is stable
+    // across runs/rehydrate.
+    let touchedFiles: string[];
+    let offendingRepo: string | undefined;
+    if (this.workspaceConfig) {
+      const workspaceWorktrees = task.workspaceWorktrees ?? {};
+      const repoKeys = Object.keys(workspaceWorktrees).sort();
+      // F2: declaredScope is non-empty here (the `declaredScope.length === 0` early-return above
+      // handled the unscoped case). A scoped task that acquired no sub-repo worktrees cannot have its
+      // scope verified at all — refuse rather than silently passing scope enforcement.
+      if (repoKeys.length === 0) {
+        const message = "workspace task declares File Scope but acquired no sub-repo worktrees — cannot verify scope";
+        executorLog.warn(`${task.id}: [scope-leak] ${message}`);
+        await this.store.logEntry(task.id, `[scope-leak] ${message}`, undefined, this.getRunContextFor(task.id));
+        return { blocked: true, message };
+      }
+      const aggregatedOffScope: string[] = [];
+      for (const repoRel of repoKeys) {
+        const repo = workspaceWorktrees[repoRel];
+        try {
+          const [repoUncommitted, repoCommitted] = await Promise.all([
+            this.captureUncommittedModifiedFiles(repo.worktreePath),
+            this.captureModifiedFiles(repo.worktreePath, repo.baseCommitSha, task.id, audit, "scope-leak-guard"),
+          ]);
+          // Repo-LOCAL touched files (no `${repoRel}/` prefix) so the always-allowed `.changeset/`
+          // carve-out and the scope match operate as the reviewer/cwd=repo sees them (F5).
+          const repoTouched = [...new Set([...repoUncommitted, ...repoCommitted])];
+          // Repo-LOCAL declared-scope subset for THIS repo (prefix stripped). Same filter as the
+          // non-workspace branch below — one surface.
+          const repoScopeSubset = deriveRepoScopeSubset(declaredScope, repoRel);
+          const repoOffScope = repoTouched
+            .filter((filePath) => !workflowPathMatchesDeclaredScope(filePath, repoScopeSubset))
+            .filter((filePath) => !isAlwaysAllowedScopeLeakPath(filePath))
+            // Re-prefix the surviving off-scope files for the operator-facing message/attribution.
+            .map((filePath) => `${repoRel}/${filePath}`);
+          if (repoOffScope.length > 0) {
+            // First offending repo wins (mirrors verifyWorktreeInvariants' first-failing-repo return).
+            if (!offendingRepo) offendingRepo = repoRel;
+            aggregatedOffScope.push(...repoOffScope);
+          }
+        } catch (repoErr: unknown) {
+          // F1: fail CLOSED. A capture/diff throw means scope is UNVERIFIED for this repo; refuse
+          // fn_task_done as a precaution rather than letting the outer `.catch()` fail open.
+          const errMessage = repoErr instanceof Error ? repoErr.message : String(repoErr);
+          const message = `workspace scope-leak guard failed to evaluate (${repoRel}/${errMessage}) — refusing fn_task_done as a precaution`;
+          executorLog.warn(`${task.id}: [scope-leak] ${message}`);
+          await this.store.logEntry(task.id, `[scope-leak] ${message}`, undefined, this.getRunContextFor(task.id));
+          return { blocked: true, message };
+        }
+      }
+      touchedFiles = aggregatedOffScope;
+      if (touchedFiles.length === 0) {
+        return { blocked: false };
+      }
+    } else {
+      const [uncommittedTouchedFiles, branchCommittedFiles] = await Promise.all([
+        this.captureUncommittedModifiedFiles(worktreePath),
+        this.captureModifiedFiles(worktreePath, task.baseCommitSha, task.id, audit, "scope-leak-guard"),
+      ]);
+      touchedFiles = [...new Set([...uncommittedTouchedFiles, ...branchCommittedFiles])];
+      if (touchedFiles.length === 0) {
+        return { blocked: false };
+      }
     }
 
-    const offScopeFiles = touchedFiles
-      .filter((filePath) => !workflowPathMatchesDeclaredScope(filePath, declaredScope))
-      // FN-4811 follow-up: by convention every task may add its own changeset entry
-      // under `.changeset/`, so changeset files are always considered in-scope and
-      // never flagged by the scope-leak guard. The file-scope invariant at squash and
-      // the broader contamination guards still catch cross-task changeset leakage at
-      // a higher signal-to-noise ratio than the per-execution scope-leak warning.
-      .filter((filePath) => !isAlwaysAllowedScopeLeakPath(filePath));
+    const offScopeFiles = (this.workspaceConfig
+      // In workspace mode `touchedFiles` is already the off-scope set (filtered per repo above).
+      ? touchedFiles
+      : touchedFiles
+        .filter((filePath) => !workflowPathMatchesDeclaredScope(filePath, declaredScope))
+        // FN-4811 follow-up: by convention every task may add its own changeset entry
+        // under `.changeset/`, so changeset files are always considered in-scope and
+        // never flagged by the scope-leak guard. The file-scope invariant at squash and
+        // the broader contamination guards still catch cross-task changeset leakage at
+        // a higher signal-to-noise ratio than the per-execution scope-leak warning.
+        .filter((filePath) => !isAlwaysAllowedScopeLeakPath(filePath)));
     if (offScopeFiles.length === 0) {
       return { blocked: false };
     }
@@ -10710,14 +11215,16 @@ export class TaskExecutor {
 
     const offScopePreview = renderListPreview(offScopeFiles);
     const declaredScopePreview = renderListPreview(declaredScope);
-    const message = `[scope-leak] reviewLevel=${reviewLevel} enforcement=${enforcementMode} off-scope touched files [${offScopePreview}]; declared scope [${declaredScopePreview}]; total off-scope=${offScopeFiles.length} total scope=${declaredScope.length}`;
+    // Name the offending sub-repo in workspace mode so the operator/agent knows where to revert.
+    const repoTag = offendingRepo ? ` repo=${offendingRepo}` : "";
+    const message = `[scope-leak] reviewLevel=${reviewLevel} enforcement=${enforcementMode}${repoTag} off-scope touched files [${offScopePreview}]; declared scope [${declaredScopePreview}]; total off-scope=${offScopeFiles.length} total scope=${declaredScope.length}`;
     executorLog.warn(`${task.id}: ${message}`);
     await this.store.logEntry(task.id, message, undefined, this.getRunContextFor(task.id));
 
     if (enforcementMode === "block") {
       return {
         blocked: true,
-        message: `Plan-Only scope-leak guard refused fn_task_done. Off-scope paths: [${offScopePreview}]. Revert them before retrying (for example: git checkout -- <paths>).`,
+        message: `Plan-Only scope-leak guard refused fn_task_done${offendingRepo ? ` (sub-repo ${offendingRepo})` : ""}. Off-scope paths: [${offScopePreview}]. Revert them before retrying (for example: git checkout -- <paths>).`,
       };
     }
 
@@ -10751,6 +11258,7 @@ export class TaskExecutor {
         undefined,
         this.getRunContextFor(task.id),
       );
+      this.markGraphExecuteSelfRequeued(task.id);
       await this.store.moveTask(task.id, "todo", { preserveProgress: true });
     } else {
       await this.store.updateTask(task.id, {
@@ -11150,7 +11658,9 @@ export class TaskExecutor {
           // Merge per-task effective workflow settings (U3, KTD-3) so the
           // validator model-lane reads below pick up workflow values; this tool
           // closure re-fetches independently. Behavior-inert by default.
-          const settings = await mergeEffectiveSettings(store, detail, await store.getSettings());
+          const latestDetailForReview = await store.getTask(taskId);
+          const userComments = selectUserCommentsForAgentContext(latestDetailForReview);
+          const settings = await mergeEffectiveSettings(store, latestDetailForReview, await store.getSettings());
           // Run the reviewer via semaphore.runNested so its slot accounting
           // is honest: activeCount transiently bumps to reflect the second
           // agent session, but the reviewer doesn't enter the wait queue
@@ -11160,8 +11670,13 @@ export class TaskExecutor {
           // result, so the soft breach of `limit` does not push real
           // LLM-active concurrency above the configured cap.
           const sem = options.semaphore;
-          const invokeReviewer = () => reviewStep(
-            worktreePath, taskId, step, step_name,
+          // FNXC:Workspace 2026-06-22-00:30: KTD3 — in-session fn_review_step loops per sub-repo.
+          // `reviewStep` stays single-cwd; THIS CALLER loops. Single-cwd by default reviews `worktreePath`;
+          // in workspace mode that is the browse-only non-git root, so we spawn one reviewer per acquired
+          // sub-repo (cwd = repo.worktreePath) via reviewWorkspacePerRepo and aggregate as a conjunction.
+          // `invokeReviewerForCwd` is the per-cwd reviewStep call both modes share.
+          const invokeReviewerForCwd = (cwd: string) => reviewStep(
+            cwd, taskId, step, step_name,
             reviewType, promptContent, baseline,
             {
               onText: (delta) => options.onAgentText?.(taskId, delta),
@@ -11170,10 +11685,10 @@ export class TaskExecutor {
               defaultModelId: settings.defaultModelId,
               fallbackProvider: settings.fallbackProvider,
               fallbackModelId: settings.fallbackModelId,
-              defaultThinkingLevel: detail.thinkingLevel ?? settings.defaultThinkingLevel,
+              defaultThinkingLevel: latestDetailForReview.thinkingLevel ?? settings.defaultThinkingLevel,
               // Task-level validator override (from task)
-              taskValidatorProvider: detail.validatorModelProvider,
-              taskValidatorModelId: detail.validatorModelId,
+              taskValidatorProvider: latestDetailForReview.validatorModelProvider,
+              taskValidatorModelId: latestDetailForReview.validatorModelId,
               // Project-level validator override
               projectValidatorProvider: settings.validatorProvider,
               projectValidatorModelId: settings.validatorModelId,
@@ -11188,7 +11703,8 @@ export class TaskExecutor {
               projectDefaultOverrideModelId: settings.defaultModelIdOverride,
               store,
               taskId,
-              task: detail,
+              task: latestDetailForReview,
+              userComments: userComments.length > 0 ? userComments : undefined,
               agentPrompts: settings.agentPrompts,
               agentStore: this.options.agentStore,
               rootDir: this.rootDir,
@@ -11200,9 +11716,13 @@ export class TaskExecutor {
               onSessionEnded: (s) => this.unregisterSubagentSession(taskId, s),
             },
           );
-          const result = sem
-            ? await sem.runNested(invokeReviewer)
-            : await invokeReviewer();
+          const runForCwd = (cwd: string) => {
+            const invoke = () => invokeReviewerForCwd(cwd);
+            return sem ? sem.runNested(invoke) : invoke();
+          };
+          const result = this.workspaceConfig
+            ? await this.reviewWorkspacePerRepo(currentTask, (cwd) => runForCwd(cwd))
+            : await runForCwd(worktreePath);
 
           await store.logEntry(
             taskId,
@@ -11754,6 +12274,10 @@ Do not refactor, rename broadly, or make opportunistic improvements.
         runAuditor: createRunAuditor(this.store, this.getRunContextFor(task.id)),
         settings,
         taskEnv: extraEnv,
+        // FNXC:SessionRouting 2026-06-24-11:20:
+        // #1675: propagate task id so verification-fix requests carry the same
+        // X-Session-Id/X-Session-Affinity as the primary session.
+        taskId: task.id,
         ...(skillContext?.skillSelectionContext ? { skillSelection: skillContext.skillSelectionContext } : {}),
       });
 
@@ -12204,6 +12728,115 @@ ${failureFeedback}
       executorLog.log(`Failed to capture modified files: ${errorMessage}`);
       return [];
     }
+  }
+
+  /**
+   * FNXC:Workspace 2026-06-21-23:30: KTD1 — per-repo modified-file capture for workspace tasks.
+   * Loops `task.workspaceWorktrees` and REUSES `captureModifiedFiles` per sub-repo (NOT a hand-built `git diff`), so each repo gets: (a) resolveDiffBaseRef's merge-base fallback when repo.baseCommitSha is undefined, and (b) the filterFilesToOwnTaskCommits raw-vs-attributed divergence/contamination audit for free. Returned files are repo-prefixed (`<repoRel>/<file>`) and aggregated, so a downstream File-Scope check / merge can attribute each change to its sub-repo. Returns [] for a zero-acquire workspace task.
+   */
+  private async captureWorkspaceModifiedFiles(
+    task: Task,
+    audit?: RunAuditor,
+    source = "post-session",
+  ): Promise<string[]> {
+    const workspaceWorktrees = task.workspaceWorktrees ?? {};
+    // FNXC:Workspace 2026-06-21-15:00: F4/F6 — per-repo error isolation + deterministic ordering.
+    // F4: an unexpected throw from one repo's `captureModifiedFiles` must NOT escape and skip the
+    // downstream `updateTask({modifiedFiles})` write — that would leave `task.modifiedFiles` empty and
+    // blind the merge file audit. Wrap each per-repo call (log + continue), mirroring the post-session
+    // branch-attribution loop. F6: iterate sorted repo keys so aggregation order is stable across runs.
+    const aggregated: string[] = [];
+    for (const repoRel of Object.keys(workspaceWorktrees).sort()) {
+      const repo = workspaceWorktrees[repoRel];
+      try {
+        const repoFiles = await this.captureModifiedFiles(repo.worktreePath, repo.baseCommitSha, task.id, audit, source);
+        for (const file of repoFiles) {
+          aggregated.push(`${repoRel}/${file}`);
+        }
+      } catch (repoErr: unknown) {
+        executorLog.warn(`${task.id}: per-repo modified-file capture failed for ${repoRel}: ${repoErr instanceof Error ? repoErr.message : String(repoErr)}`);
+      }
+    }
+    return aggregated;
+  }
+
+  /**
+   * FNXC:Workspace 2026-06-22-00:30: KTD3 — per-repo review by looping the EXISTING single-cwd reviewStep.
+   * The reviewer is an AGENT spawned with `cwd = worktree`, told (in prompt text, reviewer.ts) to run `git diff`
+   * itself — it does NOT read a diff passed in code. So per-repo review = ONE reviewer agent per sub-repo. We keep
+   * `reviewStep` single-cwd; the CALLERS loop. This helper is the shared loop+aggregate so both review entry points
+   * (`createReviewStepTool` and the step-inversion `stepReview` seam) iterate identically: it invokes the caller's
+   * own `invokeForCwd(cwd)` once per acquired worktree (cwd = repo.worktreePath) and aggregates the repo-tagged
+   * verdicts as a CONJUNCTION — the task is "reviewed" only if EVERY repo passes; the FIRST non-APPROVE repo's
+   * verdict becomes the aggregate verdict (mirroring verifyWorktreeInvariants' first-failing-repo return), and its
+   * findings are repo-tagged. A zero-acquire workspace task (empty map) returns UNAVAILABLE so the caller routes it
+   * rather than fabricating an APPROVE.
+   *
+   * Verdict severity for the conjunction: any RETHINK/REVISE/UNAVAILABLE fails the whole review; only all-APPROVE
+   * (or all-skipped UNAVAILABLE-advisory, handled by the caller) approves. We surface the first failing repo's exact
+   * verdict so the caller's existing verdict→edge mapping (APPROVE done-marking, REVISE block, RETHINK reset,
+   * UNAVAILABLE retry) is unchanged.
+   */
+  private async reviewWorkspacePerRepo(
+    // FNXC:Workspace 2026-06-21-15:00: F7 — drop the dead `repoRel` callback param.
+    // Both call sites bind `(cwd) => runForCwd(cwd)` and discard the second arg, so the type wrongly
+    // implied repo identity is observable inside `runForCwd`. Removed until a real consumer needs it
+    // (Phase C). The loop below still tags findings with `repoRel` from its own iteration key.
+    task: Task,
+    invokeForCwd: (cwd: string) => Promise<ReviewResult>,
+  ): Promise<ReviewResult> {
+    const workspaceWorktrees = task.workspaceWorktrees ?? {};
+    // FNXC:Workspace 2026-06-21-15:00: F6 — sort repo keys so the reported FIRST failing repo is
+    // deterministic across runs/rehydrate.
+    const repoKeys = Object.keys(workspaceWorktrees).sort();
+    if (repoKeys.length === 0) {
+      // No acquired worktree — surface UNAVAILABLE so the caller routes it rather than
+      // fabricating an authoritative APPROVE for an un-reviewable workspace task.
+      return {
+        verdict: "UNAVAILABLE",
+        review: "No acquired sub-repo worktree to review (workspace task with zero worktrees).",
+        summary: "Skipped: no sub-repo worktree",
+      };
+    }
+
+    const reviewSections: string[] = [];
+    const summarySections: string[] = [];
+    let firstFailing: { repo: string; result: ReviewResult } | undefined;
+    for (const repoRel of repoKeys) {
+      const repo = workspaceWorktrees[repoRel];
+      const result = await invokeForCwd(repo.worktreePath);
+      // Tag every per-repo finding with its sub-repo so downstream readers attribute it correctly.
+      reviewSections.push(`### [${repoRel}] ${result.verdict}\n${result.review}`);
+      summarySections.push(`[${repoRel}] ${result.verdict}: ${result.summary}`);
+      if (result.verdict !== "APPROVE") {
+        // FNXC:Workspace 2026-06-21-15:00: F3 — BREAK on the first non-APPROVE repo.
+        // The contract is "the FIRST non-APPROVE repo's verdict becomes the aggregate". Without the
+        // break, a LATER repo's reviewer throwing would discard this already-determined REVISE/RETHINK
+        // and the caller would see UNAVAILABLE — masking the real verdict. Stop at the first failure.
+        firstFailing = { repo: repoRel, result };
+        break;
+      }
+    }
+
+    if (firstFailing) {
+      // Conjunction failed: the aggregate carries the FIRST failing repo's verdict (so the caller's
+      // verdict→edge mapping is identical to single-cwd), with the full repo-tagged review body.
+      return {
+        verdict: firstFailing.result.verdict,
+        // FNXC:Workspace 2026-06-22-00:00: the conjunction BREAKS on the first non-APPROVE repo,
+        // so reviewSections holds only the repos evaluated up to (and including) the failure — not
+        // every sub-repo. Label it honestly so operators don't read a partial list as exhaustive.
+        review: `Workspace review failed in sub-repo \`${firstFailing.repo}\` (verdict ${firstFailing.result.verdict}). Per-repo verdicts (evaluation stopped at first failure; later repos not reviewed):\n\n${reviewSections.join("\n\n")}`,
+        summary: `${firstFailing.repo}: ${firstFailing.result.verdict} — ${summarySections.join(" | ")}`,
+      };
+    }
+
+    // Every sub-repo approved → the task is reviewed (conjunction satisfied).
+    return {
+      verdict: "APPROVE",
+      review: `All ${repoKeys.length} sub-repo(s) approved. Per-repo verdicts:\n\n${reviewSections.join("\n\n")}`,
+      summary: `APPROVE across ${repoKeys.length} sub-repo(s): ${summarySections.join(" | ")}`,
+    };
   }
 
   private async captureUncommittedModifiedFiles(worktreePath: string): Promise<string[]> {
@@ -12941,6 +13574,10 @@ You have access to the file system to review changes.${verdictBlock}`;
         runAuditor: createRunAuditor(this.store, this.getRunContextFor(task.id)),
         settings,
         taskEnv: stepEnv,
+        // FNXC:SessionRouting 2026-06-24-11:20:
+        // #1675: propagate task id so workflow-step requests carry the same
+        // X-Session-Id/X-Session-Affinity as the primary session.
+        taskId: task.id,
         // Skill selection: assigned-agent / role-fallback skills, plus the step's
         // own named skill (U1) made discoverable via additionalSkillPaths.
         ...(effectiveSkillSelection ? { skillSelection: effectiveSkillSelection } : {}),
@@ -13215,6 +13852,7 @@ You have access to the file system to review changes.${verdictBlock}`;
         paused: false,
         pausedReason: null,
       });
+      this.markGraphExecuteSelfRequeued(task.id);
       await this.store.moveTask(task.id, "todo", { preserveResumeState: false, preserveWorktree: true });
       return true;
     } catch (error) {
@@ -13839,6 +14477,9 @@ You have access to the file system to review changes.${verdictBlock}`;
       source: "executor-session-start",
       auditor: audit,
     });
+    if (recovery.outcome !== "escalate-exhausted") {
+      this.markGraphExecuteSelfRequeued(task.id);
+    }
 
     await audit.git({
       type: "worktree:auto-recovered",
@@ -14434,9 +15075,9 @@ You have access to the file system to review changes.${verdictBlock}`;
     conflictPath: string,
     currentTaskId: string,
   ): Promise<boolean> {
-    // Check if conflicting worktree is in our active set
-    for (const [taskId, worktreePath] of this.activeWorktrees) {
-      if (taskId !== currentTaskId && worktreePath === conflictPath) {
+    // FNXC:Workspace 2026-06-21-12:00: KTD2 — a task may hold N worktree paths; the conflict check is membership across the set, not equality on a single path.
+    for (const [taskId, worktreePaths] of this.activeWorktrees) {
+      if (taskId !== currentTaskId && worktreePaths.has(conflictPath)) {
         return true;
       }
     }
@@ -14473,8 +15114,11 @@ You have access to the file system to review changes.${verdictBlock}`;
    */
   listWorktreeHolders(): Array<{ taskId: string; worktreePath: string }> {
     const holders: Array<{ taskId: string; worktreePath: string }> = [];
-    for (const [taskId, worktreePath] of this.activeWorktrees) {
-      holders.push({ taskId, worktreePath });
+    // FNXC:Workspace 2026-06-21-12:00: KTD2 — flat-map each task's Set into one holder row per worktree path. A workspace task emits N rows; the FN-6782 reaper (self-healing.ts) and in-process-runtime adapter key purely off taskId (verified) and are idempotent across duplicate-task rows, so multi-row holders do not mis-count maxWorktrees slots.
+    for (const [taskId, worktreePaths] of this.activeWorktrees) {
+      for (const worktreePath of worktreePaths) {
+        holders.push({ taskId, worktreePath });
+      }
     }
     return holders;
   }
@@ -14483,8 +15127,9 @@ You have access to the file system to review changes.${verdictBlock}`;
     worktreePath: string,
     requestingTaskId: string,
   ): Promise<string | null> {
-    for (const [taskId, path] of this.activeWorktrees) {
-      if (taskId !== requestingTaskId && path === worktreePath) {
+    // FNXC:Workspace 2026-06-21-12:00: KTD2 — membership across the task's worktree set (a workspace task holds N).
+    for (const [taskId, paths] of this.activeWorktrees) {
+      if (taskId !== requestingTaskId && paths.has(worktreePath)) {
         return taskId;
       }
     }
@@ -14492,10 +15137,18 @@ You have access to the file system to review changes.${verdictBlock}`;
       const tasks = await this.store.listTasks({ slim: true, includeArchived: false });
       for (const t of tasks) {
         if (t.id === requestingTaskId) continue;
-        if (t.worktree !== worktreePath) continue;
         if (t.column !== "in-progress") continue;
         if (t.paused === true) continue;
-        return t.id;
+        if (t.worktree === worktreePath) return t.id;
+        // FNXC:Workspace 2026-06-22-09:00: workspace tasks hold their worktrees in
+        // task.workspaceWorktrees, not the singular task.worktree column. The DB liveness
+        // fallback must check those per-sub-repo paths too — otherwise a conflict against a
+        // sub-repo worktree owned by an in-progress workspace task is missed, especially
+        // before its in-memory activeWorktrees entry is (re)registered after restart.
+        const wsEntries = t.workspaceWorktrees;
+        if (wsEntries && Object.values(wsEntries).some((entry) => entry.worktreePath === worktreePath)) {
+          return t.id;
+        }
       }
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -14510,12 +15163,9 @@ You have access to the file system to review changes.${verdictBlock}`;
    * Returns true if cleanup succeeded.
    */
   private hasActiveWorktreeBinding(taskId: string, worktreePath: string): boolean {
-    for (const [activeTaskId, activePath] of this.activeWorktrees) {
-      if (activeTaskId === taskId && activePath === worktreePath) {
-        return true;
-      }
-    }
-    return false;
+    // FNXC:Workspace 2026-06-21-12:00: KTD2 — membership across the task's worktree set.
+    const paths = this.activeWorktrees.get(taskId);
+    return paths ? paths.has(worktreePath) : false;
   }
 
   private async reconcileSelfOwnedBeforeRemove(worktreePath: string, taskId: string): Promise<void> {
@@ -14913,10 +15563,17 @@ You have access to the file system to review changes.${verdictBlock}`;
    * always cleaned up by the merger on a per-task basis.
    */
   async cleanup(taskId: string): Promise<void> {
-    const worktreePath = this.activeWorktrees.get(taskId);
-    if (!worktreePath) return;
+    const worktreePaths = this.getActiveWorktreePaths(taskId);
+    if (worktreePaths.length === 0) return;
 
     this.activeWorktrees.delete(taskId);
+
+    // FNXC:Workspace 2026-06-21-12:00: KTD1 — in workspace mode the tracked path is the non-git workspace root (browse-only), never a removable worktree. Drop the in-memory tracking above but never remove the root. Per-repo worktree teardown returns in Phase B.
+    if (this.workspaceConfig) {
+      return;
+    }
+    // Non-workspace tasks hold a one-element set — preserve the original single-path removal semantics.
+    const worktreePath = worktreePaths[0];
 
     // Check if another task still needs this worktree
     const otherUser = await findWorktreeUser(this.store, worktreePath, taskId);
@@ -15232,6 +15889,20 @@ You have access to the file system to review changes.${verdictBlock}`;
           const preserveProgress = settings.preserveProgressOnStuckRequeue !== false;
           const latestTask = await this.store.getTask(taskId);
           const worktreePath = this.getWorktreePath(taskId) ?? latestTask.worktree;
+          /*
+          FNXC:Workspace 2026-06-21-22:30:
+          F8 — observability for the workspace case. A workspace task has no singular
+          worktree (getWorktreePath returns undefined for a multi-worktree task, and
+          latestTask.worktree is null on the browse-only root), so the removeWorktree
+          block below silently no-ops. Per-repo teardown is Phase B; until then make
+          the skip visible rather than silent. Behavior is unchanged.
+          */
+          if (this.workspaceConfig && !worktreePath) {
+            await this.store.logEntry(
+              taskId,
+              `workspace task ${taskId}: no singular worktree to force-requeue (per-repo teardown is Phase B)`,
+            );
+          }
           await this.store.logEntry(
             taskId,
             `Force-kill cleanup starting after stuck-kill unwind timeout — reaping in-flight surfaces and worktree`,
@@ -15414,8 +16085,14 @@ You have access to the file system to review changes.${verdictBlock}`;
     return true;
   }
 
+  /**
+   * FNXC:Workspace 2026-06-21-12:00: KTD2 single-path-getter contract. Returns the task's sole worktree path for single-repo tasks (one-element set). For a multi-worktree workspace task there is no single answer — callers must read the per-repo `task.workspaceWorktrees` entry instead — so this returns undefined. A workspace task tracked only at the browse-only root also returns undefined, matching the "no removable single worktree" semantics.
+   */
   getWorktreePath(taskId: string): string | undefined {
-    return this.activeWorktrees.get(taskId);
+    if (this.workspaceConfig) {
+      return undefined;
+    }
+    return this.getActiveWorktreePaths(taskId)[0];
   }
 
   // ── Agent Spawning ─────────────────────────────────────────────────────
@@ -15503,7 +16180,18 @@ You have access to the file system to review changes.${verdictBlock}`;
       const errorMessage = err instanceof Error ? err.message : String(err);
       executorLog.warn(`Child agent ${agentId} failed: ${errorMessage}`);
     } finally {
-      this.childSessions.delete(agentId);
+      /*
+      FNXC:AgentSpawning 2026-06-23-12:25:
+      Server memory must return to baseline after spawned child execution. A normally completed child session owns provider/runtime state until disposed; deleting it from childSessions first makes later parent cleanup unable to reach it.
+      */
+      if (this.childSessions.get(agentId) === childSession) {
+        try {
+          await childSession.dispose();
+        } catch (disposeErr) {
+          executorLog.warn(`Child agent ${agentId} session dispose failed: ${disposeErr instanceof Error ? disposeErr.message : String(disposeErr)}`);
+        }
+        this.childSessions.delete(agentId);
+      }
       this.totalSpawnedCount = Math.max(0, this.totalSpawnedCount - 1);
     }
   }
@@ -15651,6 +16339,10 @@ Child agent: ${agent.id} (${name})`;
             runAuditor: createRunAuditor(this.store, this.getRunContextFor(taskId)),
             settings,
             taskEnv,
+            // FNXC:SessionRouting 2026-06-24-11:20:
+            // #1675: propagate task id so child-agent requests carry the same
+            // X-Session-Id/X-Session-Affinity as the parent task session.
+            taskId,
             // Skill selection: use assigned agent skills if available, otherwise role fallback
             ...(skillContext.skillSelectionContext ? { skillSelection: skillContext.skillSelectionContext } : {}),
           });
@@ -15715,7 +16407,11 @@ function formatTimestamp(iso: string): string {
 // Project commands are injected here (for reliability) and also in the PROMPT.md (by triage).
 // This ensures the executor agent always sees the authoritative commands from settings,
 // even if the PROMPT.md was written manually or before commands were configured.
-function scopePromptToWorktree(prompt: string, rootDir?: string, worktreePath?: string): string {
+function scopePromptToWorktree(prompt: string, rootDir?: string, worktreePath?: string, workspaceConfig?: WorkspaceConfig | null): string {
+  // FNXC:Workspace 2026-06-21-12:00: KTD1 — in workspace mode the session is rooted at the workspace root itself (worktreePath === rootDir) and path rewriting to a per-task root worktree is meaningless: edits happen in per-sub-repo worktrees the agent acquires, not at the root. No-op the rewrite. (The rootDir === worktreePath guard below already covers this, but gate explicitly so intent survives future refactors.)
+  if (workspaceConfig) {
+    return prompt;
+  }
   if (!rootDir || !worktreePath || rootDir === worktreePath || !prompt.includes(rootDir)) {
     return prompt;
   }
@@ -15747,8 +16443,9 @@ export function buildExecutionPrompt(
   worktreePath?: string,
   pluginRunner?: PluginRunner,
   customFieldDefs?: WorkflowFieldDefinition[],
+  workspaceConfig?: WorkspaceConfig | null,
 ): string {
-  const prompt = scopePromptToWorktree(task.prompt, rootDir, worktreePath);
+  const prompt = scopePromptToWorktree(task.prompt, rootDir, worktreePath, workspaceConfig);
   const reviewLevel = parseReviewLevelFromPrompt(prompt);
 
   // Build co-author trailer arg for git commits based on settings. The user's
@@ -15880,7 +16577,7 @@ git log --oneline
   }
   const pluginTaskContributions = buildPluginPromptSection("executor-task", pluginRunner);
 
-  return `Execute this task.
+  const executionPrompt = `Execute this task.
 
 ## Task: ${task.id}
 ${task.title ? `**${task.title}**` : ""}
@@ -15933,6 +16630,18 @@ If the repo has a typecheck command, run it before \`fn_task_done()\` and fix an
 Use \`fn_task_create\` for truly separate follow-up work, including unrelated/pre-existing broad-suite failures.
 If lint is configured and failing, fix that too before completion.
 Do not repeatedly rerun a broad failing or hanging workspace command without a new hypothesis and a narrower confirming command.`;
+
+  if (workspaceConfig && workspaceConfig.repos.length > 0) {
+    return executionPrompt + `\n\n## Workspace mode\n` +
+      `This project is a workspace containing multiple git repositories.\n` +
+      `Available repos:\n` +
+      workspaceConfig.repos.map((r: string) => `- \`${r}\``).join("\n") +
+      `\n\nBefore editing files in any sub-repo, call \`fn_acquire_repo_worktree\` ` +
+      `with the repo name to get an isolated worktree path. ` +
+      `Work exclusively inside that returned path — never edit the repo's main checkout directly.\n`;
+  }
+
+  return executionPrompt;
 }
 
 /**

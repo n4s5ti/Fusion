@@ -1,8 +1,14 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import type { ComponentProps } from "react";
+import { readFileSync } from "node:fs";
 import { NewTaskModal } from "../NewTaskModal";
 import type { Task, Column } from "@fusion/core";
+import { checkDuplicateTasks, type BoardWorkflowsPayload } from "../../api";
+import { writeBoardWorkflowsCache } from "../../utils/boardWorkflowsCache";
+import { writeLastSelectedWorkflowId } from "../../utils/lastSelectedWorkflow";
+
+const newTaskModalCss = readFileSync("app/components/NewTaskModal.css", "utf8");
 
 // Mock lucide-react
 vi.mock("lucide-react", () => ({
@@ -15,11 +21,22 @@ vi.mock("lucide-react", () => ({
   Maximize2: () => null,
   Minimize2: () => null,
   Workflow: () => null,
+  Paperclip: () => null,
+  Flag: () => null,
+  Zap: () => null,
+  Brain: () => null,
+  Server: () => null,
+  Cpu: () => null,
+}));
+
+vi.mock("../ProviderIcon", () => ({
+  ProviderIcon: ({ provider }: { provider: string }) => <span data-testid={`provider-icon-${provider}`} />,
 }));
 
 // Mock the api module
 vi.mock("../../api", () => ({
   uploadAttachment: vi.fn().mockResolvedValue({}),
+  checkDuplicateTasks: vi.fn().mockResolvedValue([]),
   fetchModels: vi.fn().mockResolvedValue({ models: [
     { provider: "anthropic", id: "claude-sonnet-4-5", name: "Claude Sonnet 4.5", reasoning: true, contextWindow: 200000 },
     { provider: "openai", id: "gpt-4o", name: "GPT-4o", reasoning: false, contextWindow: 128000 },
@@ -53,11 +70,13 @@ vi.mock("../../hooks/useMobileKeyboard", () => ({
   useMobileKeyboard: (...args: unknown[]) => mockUseMobileKeyboard(...args),
 }));
 
+// FNXC:NewTask 2026-06-22-20:30: viewport mode is switchable so we can exercise both the mobile sheet (default) and the desktop floating window. Defaults to mobile to preserve the existing suite's layout assumptions.
+let mockViewportMode: "mobile" | "desktop" = "mobile";
 vi.mock("../../hooks/useViewportMode", () => ({
   MOBILE_MEDIA_QUERY: "(max-width: 768px), (max-height: 480px)",
-  getViewportMode: () => "mobile",
-  isMobileViewport: () => true,
-  useViewportMode: () => "mobile",
+  getViewportMode: () => mockViewportMode,
+  isMobileViewport: () => mockViewportMode === "mobile",
+  useViewportMode: () => mockViewportMode,
 }));
 
 function makeTask(id: string): Task {
@@ -92,8 +111,10 @@ function renderNewTaskModal(props: Partial<ComponentProps<typeof NewTaskModal>> 
 describe("NewTaskModal", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockViewportMode = "mobile";
     mockConfirm.mockReset();
     mockConfirm.mockResolvedValue(true);
+    vi.mocked(checkDuplicateTasks).mockResolvedValue([]);
     mockUseMobileKeyboard.mockReturnValue({
       keyboardOpen: false,
       keyboardOverlap: 0,
@@ -110,8 +131,9 @@ describe("NewTaskModal", () => {
       viewportOffsetTop: 50,
     });
 
-    const { container } = renderNewTaskModal();
-    const modal = container.querySelector(".new-task-modal");
+    renderNewTaskModal();
+    // FNXC: NewTaskModal portals to document.body, so query the modal from document (not the render container).
+    const modal = document.querySelector(".new-task-modal");
 
     expect(mockUseMobileKeyboard).toHaveBeenCalledWith({ enabled: true });
     expect(modal?.getAttribute("style")).toContain("--keyboard-overlap: 250px");
@@ -131,17 +153,33 @@ describe("NewTaskModal", () => {
     renderNewTaskModal();
 
     expect(screen.getByText("New Task")).toBeTruthy();
-    expect(screen.getByRole('textbox')).toBeTruthy();
-    expect(screen.queryByRole("button", { name: "Plan" })).toBeNull();
-    expect(screen.queryByRole("button", { name: "Subtask" })).toBeNull();
-    expect(screen.queryByTestId("task-form-description-actions")).toBeNull();
+    expect(screen.getByPlaceholderText("What needs to be done?")).toBeTruthy();
+    // Without AI-handoff callbacks there is no Plan/Subtask button…
+    expect(screen.queryByTestId("task-form-plan-button")).toBeNull();
+    expect(screen.queryByTestId("task-form-subtask-button")).toBeNull();
+    // …but FNXC:NewTask 2026-06-23-00:10: the inline quick-add action row still renders in create mode to host Attach/Fast/Priority.
+    expect(screen.getByTestId("task-form-description-actions")).toBeInTheDocument();
 
     // Dependencies and agent are in quick-fields — visible by default (no toggle needed)
     expect(screen.getByTestId("dep-trigger")).toBeInTheDocument();
     expect(screen.getByTestId("new-task-agent-button")).toBeInTheDocument();
 
-    fireEvent.click(screen.getByTestId("task-form-more-options-toggle"));
+    // FNXC:NewTaskDialogAffordances 2026-06-23-21:47: The regular New Task dialog exposes the screenshot quick-add buttons immediately; detailed selects stay in Advanced.
+    expect(screen.getByTestId("task-form-inline-create")).toBeVisible();
+    expect(screen.getByTestId("task-form-inline-attach")).toBeVisible();
+    expect(screen.getByTestId("task-form-inline-fast")).toBeVisible();
+    expect(screen.getByTestId("task-form-inline-github")).toBeVisible();
+    expect(screen.getByTestId("task-form-inline-workflow")).toBeVisible();
+    expect(screen.getByTestId("task-form-inline-models")).toBeVisible();
+    expect(screen.getByTestId("task-form-inline-node")).toBeVisible();
+    expect(screen.getByTestId("task-form-inline-priority")).toBeVisible();
 
+    // FNXC:NewTask 2026-06-23-00:10: The DEEP/advanced options now sit behind the collapsed "Advanced" disclosure. Model Configuration / Attachments are NOT shown until the toggle is expanded.
+    const advancedToggle = screen.getByTestId("task-form-more-options-toggle");
+    expect(advancedToggle).toHaveTextContent(/Advanced/i);
+    expect(screen.getByTestId("task-form-more-options")).toHaveAttribute("hidden");
+
+    fireEvent.click(advancedToggle);
     await waitFor(() => {
       expect(screen.getByText(/Model Configuration/i)).toBeTruthy();
       expect(screen.getByText(/Attachments/i)).toBeTruthy();
@@ -156,31 +194,54 @@ describe("NewTaskModal", () => {
       onSubtaskBreakdown: vi.fn(),
     });
 
-    fireEvent.change(screen.getByRole("textbox"), { target: { value: "Create parity coverage" } });
+    const advancedSection = screen.getByTestId("task-form-more-options");
+    expect(advancedSection).toHaveAttribute("hidden");
 
-    // Canonical QuickEntryBox action row includes Plan, Subtask, Refine, Deps, Attach, Models, Node, and Agent affordances; the modal maps these to existing TaskForm/quick-field controls instead of duplicating implementations.
+    // Empty description state: description-gated actions are disabled/absent, while configuration chips stay immediately usable.
+    expect(screen.getByTestId("task-form-inline-create")).toBeDisabled();
+    expect(screen.getByTestId("task-form-plan-button")).toBeDisabled();
+    expect(screen.queryByTestId("refine-button")).toBeNull();
+    expect(screen.getByTestId("task-form-inline-fast")).toBeVisible();
+    expect(screen.getByTestId("task-form-inline-github")).toBeVisible();
+    expect(screen.getByTestId("task-form-inline-workflow")).toBeVisible();
+    expect(screen.getByTestId("task-form-inline-models")).toBeVisible();
+    expect(screen.getByTestId("task-form-inline-node")).toBeVisible();
+    expect(screen.getByTestId("dep-trigger")).toBeVisible();
+    expect(screen.getByTestId("task-form-inline-attach")).toBeVisible();
+    expect(screen.getByTestId("new-task-agent-button")).toBeVisible();
+
+    fireEvent.change(screen.getByPlaceholderText("What needs to be done?"), { target: { value: "Create parity coverage" } });
+
+    // Populated description state: the complete screenshot affordance set is visible without opening Advanced.
+    expect(screen.getByTestId("task-form-inline-create")).toBeEnabled();
     expect(screen.getAllByTestId("task-form-plan-button")).toHaveLength(1);
-    expect(screen.getAllByTestId("task-form-subtask-button")).toHaveLength(1);
-    expect(screen.getByTestId("refine-button")).toBeInTheDocument();
-    expect(screen.getByTestId("dep-trigger")).toBeInTheDocument();
-    expect(screen.getByTestId("new-task-agent-button")).toBeInTheDocument();
+    expect(screen.getByTestId("task-form-plan-button")).toBeEnabled();
+    expect(screen.getByTestId("refine-button")).toBeVisible();
+    expect(screen.getByTestId("dep-trigger")).toBeVisible();
+    expect(screen.getByTestId("new-task-agent-button")).toBeVisible();
+    expect(screen.getByTestId("task-form-inline-attach")).toBeVisible();
+    expect(screen.getByTestId("task-form-inline-fast")).toBeVisible();
+    expect(screen.getByTestId("task-form-inline-github")).toBeVisible();
+    expect(screen.getByTestId("task-form-inline-workflow")).toBeVisible();
+    expect(screen.getByTestId("task-form-inline-models")).toBeVisible();
+    expect(screen.getByTestId("task-form-inline-node")).toBeVisible();
+    expect(screen.getByTestId("task-form-inline-priority")).toBeVisible();
 
-    fireEvent.click(screen.getByTestId("task-form-more-options-toggle"));
-
-    expect(screen.getByTestId("task-form-execution-mode-select")).toBeInTheDocument();
-    expect(screen.getByTestId("task-form-github-tracking")).toBeInTheDocument();
-    expect(screen.getByTestId("task-priority-select")).toBeInTheDocument();
-    expect(screen.getByText(/Attachments/i)).toBeInTheDocument();
-    expect(screen.getByText(/Node Override/i)).toBeInTheDocument();
+    // Detailed editors remain present only inside Advanced, not duplicated as visible siblings.
+    expect(advancedSection).toContainElement(screen.getByTestId("task-form-execution-mode-select"));
+    expect(advancedSection).toContainElement(screen.getByTestId("task-form-github-tracking"));
+    expect(advancedSection).toContainElement(screen.getByTestId("task-priority-select"));
+    expect(advancedSection).toContainElement(screen.getByTestId("task-node-select"));
+    expect(advancedSection).toHaveAttribute("hidden");
   });
 
-  it("renders the Fast and standard execution-mode affordance inside More options", () => {
+  it("keeps the detailed Fast/standard execution-mode select inside Advanced", () => {
     renderNewTaskModal();
 
-    fireEvent.click(screen.getByTestId("task-form-more-options-toggle"));
-
+    const advancedSection = screen.getByTestId("task-form-more-options");
     const select = screen.getByTestId("task-form-execution-mode-select") as HTMLSelectElement;
-    expect(select).toBeInTheDocument();
+    expect(advancedSection).toContainElement(select);
+    expect(advancedSection).toHaveAttribute("hidden");
     expect(select).toHaveValue("standard");
     expect(Array.from(select.options).map((option) => option.value)).toEqual(["standard", "fast"]);
   });
@@ -188,8 +249,7 @@ describe("NewTaskModal", () => {
   it("includes executionMode fast in the create payload when Fast is selected", async () => {
     const { props } = renderNewTaskModal();
 
-    fireEvent.click(screen.getByTestId("task-form-more-options-toggle"));
-    fireEvent.change(screen.getByTestId("task-form-execution-mode-select"), { target: { value: "fast" } });
+    fireEvent.click(screen.getByTestId("task-form-inline-fast"));
     fireEvent.change(screen.getByPlaceholderText("What needs to be done?"), { target: { value: "Fast parity task" } });
     fireEvent.click(screen.getByRole("button", { name: "Create Task" }));
 
@@ -203,10 +263,72 @@ describe("NewTaskModal", () => {
     });
   });
 
+  it("promoted GitHub, workflow, model, node, deps, agent, attach, and create controls are functional", async () => {
+    const { fetchWorkflows } = await import("../../api");
+    vi.mocked(fetchWorkflows).mockResolvedValueOnce([
+      {
+        id: "WF-quick",
+        name: "Quick Lane",
+        description: "",
+        kind: "workflow",
+        ir: { version: "v1", name: "Quick Lane", nodes: [], edges: [] },
+        layout: {},
+        createdAt: "",
+        updatedAt: "",
+      } as any,
+    ]);
+    const clickSpy = vi.spyOn(HTMLInputElement.prototype, "click").mockImplementation(() => undefined);
+    const { props } = renderNewTaskModal({ tasks: [makeTask("FN-777")] });
+
+    fireEvent.click(screen.getByTestId("task-form-inline-github"));
+    expect(screen.getByTestId("task-form-inline-github")).toHaveAttribute("aria-pressed", "true");
+
+    fireEvent.click(screen.getByTestId("task-form-inline-fast"));
+    expect(screen.getByTestId("task-form-inline-fast")).toHaveAttribute("aria-pressed", "true");
+
+    fireEvent.click(screen.getByTestId("task-form-inline-attach"));
+    expect(clickSpy).toHaveBeenCalled();
+
+    fireEvent.click(screen.getByTestId("dep-trigger"));
+    expect(screen.getByPlaceholderText("Search tasks…")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId("new-task-agent-button"));
+    await waitFor(() => expect(screen.getByText("No agents available")).toBeInTheDocument());
+
+    fireEvent.click(screen.getByTestId("task-form-inline-workflow"));
+    await waitFor(() => expect(screen.getByTestId("task-form-more-options")).not.toHaveAttribute("hidden"));
+    expect(await screen.findByTestId("task-workflow-select")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId("task-form-more-options-toggle"));
+    expect(screen.getByTestId("task-form-more-options")).toHaveAttribute("hidden");
+    fireEvent.click(screen.getByTestId("task-form-inline-models"));
+    await waitFor(() => expect(screen.getByTestId("task-form-more-options")).not.toHaveAttribute("hidden"));
+    expect(screen.getByText(/Model Configuration/i)).toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId("task-form-more-options-toggle"));
+    expect(screen.getByTestId("task-form-more-options")).toHaveAttribute("hidden");
+    fireEvent.click(screen.getByTestId("task-form-inline-node"));
+    await waitFor(() => expect(screen.getByTestId("task-form-more-options")).not.toHaveAttribute("hidden"));
+    expect(screen.getByTestId("task-node-select")).toBeInTheDocument();
+
+    fireEvent.change(screen.getByPlaceholderText("What needs to be done?"), { target: { value: "Promoted controls create task" } });
+    fireEvent.click(screen.getByRole("button", { name: "Create Task" }));
+
+    await waitFor(() => {
+      expect(props.onCreateTask).toHaveBeenCalledWith(
+        expect.objectContaining({
+          executionMode: "fast",
+          githubTracking: { enabled: true },
+        }),
+      );
+    });
+    clickSpy.mockRestore();
+  });
+
   it("omits executionMode from the create payload when Standard is selected", async () => {
     const { props } = renderNewTaskModal();
 
-    fireEvent.change(screen.getByRole("textbox"), { target: { value: "Standard parity task" } });
+    fireEvent.change(screen.getByPlaceholderText("What needs to be done?"), { target: { value: "Standard parity task" } });
     fireEvent.click(screen.getByRole("button", { name: "Create Task" }));
 
     await waitFor(() => {
@@ -219,7 +341,6 @@ describe("NewTaskModal", () => {
   it("resets executionMode to standard after canceling and discarding changes", async () => {
     const { props, rerender } = renderNewTaskModal();
 
-    fireEvent.click(screen.getByTestId("task-form-more-options-toggle"));
     fireEvent.change(screen.getByTestId("task-form-execution-mode-select"), { target: { value: "fast" } });
 
     await waitFor(() => {
@@ -237,7 +358,6 @@ describe("NewTaskModal", () => {
 
     rerender(<NewTaskModal {...props} isOpen={false} />);
     rerender(<NewTaskModal {...props} isOpen={true} />);
-    fireEvent.click(screen.getByTestId("task-form-more-options-toggle"));
 
     expect(screen.getByTestId("task-form-execution-mode-select")).toHaveValue("standard");
   });
@@ -250,7 +370,7 @@ describe("NewTaskModal", () => {
       onSubtaskBreakdown,
     });
 
-    fireEvent.change(screen.getByRole("textbox"), { target: { value: "  Break this down  " } });
+    fireEvent.change(screen.getByPlaceholderText("What needs to be done?"), { target: { value: "  Break this down  " } });
     fireEvent.click(screen.getByTestId("task-form-plan-button"));
 
     expect(props.onClose).toHaveBeenCalledTimes(1);
@@ -264,7 +384,7 @@ describe("NewTaskModal", () => {
       onSubtaskBreakdown,
     });
 
-    fireEvent.change(screen.getByRole("textbox"), { target: { value: "  Split into subtasks  " } });
+    fireEvent.change(screen.getByPlaceholderText("What needs to be done?"), { target: { value: "  Split into subtasks  " } });
     fireEvent.click(screen.getByTestId("task-form-subtask-button"));
 
     expect(onSubtaskBreakdown).toHaveBeenCalledWith("Split into subtasks");
@@ -283,55 +403,60 @@ describe("NewTaskModal", () => {
     expect(planButton).toBeDisabled();
     expect(subtaskButton).toBeDisabled();
 
-    fireEvent.change(screen.getByRole("textbox"), { target: { value: "Ready to plan" } });
+    fireEvent.change(screen.getByPlaceholderText("What needs to be done?"), { target: { value: "Ready to plan" } });
 
     expect(planButton).not.toBeDisabled();
     expect(subtaskButton).not.toBeDisabled();
   });
 
-  it("shows More options toggle and reveals advanced fields when clicked", async () => {
+  // FNXC:NewTask 2026-06-23-00:10: The New Task dialog NO LONGER force-opens TaskForm's advanced controls. The DEEP/advanced options (model selectors, workflow picker, etc.) are collapsed behind a disclosure relabeled "Advanced"; the common quick-add buttons (Attach/Fast/Priority) are surfaced inline next to Plan and are always visible.
+  it("keeps deep options behind a collapsed 'Advanced' disclosure while surfacing inline quick-add buttons", () => {
     renderNewTaskModal();
 
-    const toggle = screen.getByTestId("task-form-more-options-toggle");
-    const moreOptions = screen.getByTestId("task-form-more-options");
-    expect(toggle).toHaveAttribute("aria-expanded", "false");
-    expect(moreOptions).toHaveAttribute("hidden");
-    // Dependencies are now in quick-fields (visible by default), so the dep-trigger is present
+    // The disclosure toggle exists, reads "Advanced", and starts collapsed (section hidden).
+    const advancedToggle = screen.getByTestId("task-form-more-options-toggle");
+    expect(advancedToggle).toHaveTextContent(/Advanced/i);
+    expect(advancedToggle).toHaveAttribute("aria-expanded", "false");
+    // Deep options live inside the collapsed (hidden) section, so they are not shown to the user.
+    const advancedSection = screen.getByTestId("task-form-more-options");
+    expect(advancedSection).toHaveAttribute("hidden");
+    expect(advancedSection).toContainElement(screen.getByText(/Model Configuration/i));
+    expect(advancedSection).toContainElement(screen.getByText("Workflow"));
+
+    // Inline quick-add buttons (Attach/Fast/Priority) ARE visible without expanding (outside the hidden section).
+    expect(screen.getByTestId("task-form-inline-attach")).toBeInTheDocument();
+    expect(screen.getByTestId("task-form-inline-fast")).toBeInTheDocument();
+    expect(screen.getByTestId("task-form-inline-priority")).toBeInTheDocument();
     expect(screen.getByTestId("dep-trigger")).toBeInTheDocument();
 
-    fireEvent.click(toggle);
-
-    await waitFor(() => {
-      expect(toggle).toHaveAttribute("aria-expanded", "true");
-      expect(moreOptions).not.toHaveAttribute("hidden");
-    });
-    // Model Configuration, Attachments, and the Workflow picker are revealed
+    // Expanding the disclosure reveals the deep options.
+    fireEvent.click(advancedToggle);
+    expect(advancedToggle).toHaveAttribute("aria-expanded", "true");
+    expect(screen.getByTestId("task-form-more-options")).not.toHaveAttribute("hidden");
     expect(screen.getByText(/Model Configuration/i)).toBeTruthy();
-    expect(screen.getByText(/Attachments/i)).toBeTruthy();
     expect(screen.getByText("Workflow")).toBeTruthy();
   });
 
-  it("shows dependencies and agent picker by default without expanding More options", () => {
+  it("shows dependencies and agent picker by default", () => {
     renderNewTaskModal();
 
-    // Both dep-trigger and agent button should be visible by default
+    // Both dep-trigger and agent button should be visible by default (quick-fields).
     expect(screen.getByTestId("dep-trigger")).toBeInTheDocument();
     expect(screen.getByTestId("new-task-agent-button")).toBeInTheDocument();
-    // More options should be collapsed
-    expect(screen.getByTestId("task-form-more-options-toggle")).toHaveAttribute("aria-expanded", "false");
+    // The "Advanced" disclosure is collapsed by default.
+    expect(screen.getByTestId("task-form-more-options-toggle")).toHaveTextContent(/Advanced/i);
+    expect(screen.getByTestId("task-form-more-options")).toHaveAttribute("hidden");
   });
 
-  it("renders dependencies before attachments in form order (quick-fields before More options)", () => {
+  it("renders dependencies before attachments in form order (quick-fields before Advanced)", () => {
     renderNewTaskModal();
 
     const dependenciesLabel = screen.getByText("Dependencies");
-    // Attachments is inside the collapsed "More options" section, so we need to expand first
-    const toggle = screen.getByTestId("task-form-more-options-toggle");
-    fireEvent.click(toggle);
-
+    // Expand the Advanced disclosure so the Attachments group renders.
+    fireEvent.click(screen.getByTestId("task-form-more-options-toggle"));
     const attachmentsLabel = screen.getByText("Attachments");
 
-    // Dependencies (in quick-fields) appears before Attachments (in More options)
+    // Dependencies (in quick-fields) appears before Attachments (in the Advanced section).
     expect(
       dependenciesLabel.compareDocumentPosition(attachmentsLabel) & Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
@@ -340,7 +465,7 @@ describe("NewTaskModal", () => {
   it("focuses description textarea when modal opens", async () => {
     renderNewTaskModal();
     
-    const textarea = screen.getByRole('textbox');
+    const textarea = screen.getByPlaceholderText("What needs to be done?");
     await waitFor(() => {
       expect(document.activeElement).toBe(textarea);
     });
@@ -349,24 +474,24 @@ describe("NewTaskModal", () => {
   it("seeds the description when opened with an initial description", () => {
     renderNewTaskModal({ initialDescription: "File: README.md\n\nComment:\nFollow up" });
 
-    expect(screen.getByRole("textbox")).toHaveValue("File: README.md\n\nComment:\nFollow up");
+    expect(screen.getByPlaceholderText("What needs to be done?")).toHaveValue("File: README.md\n\nComment:\nFollow up");
     expect(screen.getByRole("button", { name: "Create Task" })).not.toBeDisabled();
   });
 
   it("does not clobber user edits when initialDescription changes while open", () => {
     const { rerender, props } = renderNewTaskModal({ initialDescription: "Seeded description" });
-    const descTextarea = screen.getByRole("textbox");
+    const descTextarea = screen.getByPlaceholderText("What needs to be done?");
 
     fireEvent.change(descTextarea, { target: { value: "User edited text" } });
     rerender(<NewTaskModal {...props} initialDescription="Different seed" />);
 
-    expect(screen.getByRole("textbox")).toHaveValue("User edited text");
+    expect(screen.getByPlaceholderText("What needs to be done?")).toHaveValue("User edited text");
   });
 
   it("creates task with description when submitted", async () => {
     const { props } = renderNewTaskModal();
     
-    const descTextarea = screen.getByRole('textbox');
+    const descTextarea = screen.getByPlaceholderText("What needs to be done?");
     fireEvent.change(descTextarea, { target: { value: "Test description" } });
     
     fireEvent.click(screen.getByRole("button", { name: "Create Task" }));
@@ -482,7 +607,6 @@ describe("NewTaskModal", () => {
     const { props } = renderNewTaskModal();
 
     fireEvent.change(screen.getByPlaceholderText("What needs to be done?"), { target: { value: "Task with branches" } });
-    fireEvent.click(screen.getByTestId("task-form-more-options-toggle"));
     fireEvent.change(screen.getByLabelText("Branch strategy"), { target: { value: "existing" } });
     fireEvent.change(screen.getByLabelText("Branch name"), { target: { value: " feature/fn-3422 " } });
     fireEvent.change(screen.getByLabelText("Merge target / base branch"), { target: { value: " main " } });
@@ -506,7 +630,6 @@ describe("NewTaskModal", () => {
     const { props } = renderNewTaskModal();
 
     fireEvent.change(screen.getByPlaceholderText("What needs to be done?"), { target: { value: "Task with auto new" } });
-    fireEvent.click(screen.getByTestId("task-form-more-options-toggle"));
     fireEvent.change(screen.getByLabelText("Branch strategy"), { target: { value: "auto-new" } });
     fireEvent.change(screen.getByLabelText("Merge target / base branch"), { target: { value: " main " } });
     fireEvent.click(screen.getByRole("button", { name: "Create Task" }));
@@ -527,7 +650,6 @@ describe("NewTaskModal", () => {
     const { props } = renderNewTaskModal();
 
     fireEvent.change(screen.getByPlaceholderText("What needs to be done?"), { target: { value: "Task with branches" } });
-    fireEvent.click(screen.getByTestId("task-form-more-options-toggle"));
     fireEvent.change(screen.getByLabelText("Branch strategy"), { target: { value: "custom-new" } });
 
     expect(screen.getByRole("button", { name: "Create Task" })).toBeDisabled();
@@ -541,7 +663,6 @@ describe("NewTaskModal", () => {
     const { props } = renderNewTaskModal();
 
     fireEvent.change(screen.getByPlaceholderText("What needs to be done?"), { target: { value: "Task with custom new" } });
-    fireEvent.click(screen.getByTestId("task-form-more-options-toggle"));
     fireEvent.change(screen.getByLabelText("Branch strategy"), { target: { value: "custom-new" } });
     fireEvent.change(screen.getByLabelText("Branch name"), { target: { value: " feature/custom " } });
     fireEvent.click(screen.getByRole("button", { name: "Create Task" }));
@@ -562,7 +683,6 @@ describe("NewTaskModal", () => {
     const { props } = renderNewTaskModal();
 
     fireEvent.change(screen.getByPlaceholderText("What needs to be done?"), { target: { value: "Task with shared group" } });
-    fireEvent.click(screen.getByTestId("task-form-more-options-toggle"));
     fireEvent.change(screen.getByLabelText("Branch strategy"), { target: { value: "shared-group" } });
 
     expect(screen.getByRole("button", { name: "Create Task" })).toBeDisabled();
@@ -576,7 +696,6 @@ describe("NewTaskModal", () => {
     const { props } = renderNewTaskModal();
 
     fireEvent.change(screen.getByPlaceholderText("What needs to be done?"), { target: { value: "Task with shared group" } });
-    fireEvent.click(screen.getByTestId("task-form-more-options-toggle"));
     fireEvent.change(screen.getByLabelText("Branch strategy"), { target: { value: "shared-group" } });
     fireEvent.change(screen.getByLabelText("Shared feature branch"), { target: { value: " feature/shared " } });
     fireEvent.click(screen.getByRole("button", { name: "Create Task" }));
@@ -606,7 +725,7 @@ describe("NewTaskModal", () => {
       expect(screen.getByText("GitHub not connected")).toBeTruthy();
     });
 
-    const descTextarea = screen.getByRole("textbox");
+    const descTextarea = screen.getByPlaceholderText("What needs to be done?");
     fireEvent.change(descTextarea, { target: { value: "Submit despite warning" } });
     fireEvent.click(screen.getByRole("button", { name: "Create Task" }));
 
@@ -622,7 +741,7 @@ describe("NewTaskModal", () => {
   it("closes modal after successful creation", async () => {
     const { props } = renderNewTaskModal();
     
-    const descTextarea = screen.getByRole('textbox');
+    const descTextarea = screen.getByPlaceholderText("What needs to be done?");
     fireEvent.change(descTextarea, { target: { value: "Test" } });
     
     fireEvent.click(screen.getByRole("button", { name: "Create Task" }));
@@ -638,7 +757,7 @@ describe("NewTaskModal", () => {
       onCreateTask: vi.fn().mockResolvedValue({ id: "FN-042" }),
     });
     
-    const descTextarea = screen.getByRole('textbox');
+    const descTextarea = screen.getByPlaceholderText("What needs to be done?");
     fireEvent.change(descTextarea, { target: { value: "Test description" } });
     
     fireEvent.click(screen.getByRole("button", { name: "Create Task" }));
@@ -651,7 +770,7 @@ describe("NewTaskModal", () => {
   it("confirms before closing with dirty state", async () => {
     const { props } = renderNewTaskModal();
 
-    const descTextarea = screen.getByRole('textbox');
+    const descTextarea = screen.getByPlaceholderText("What needs to be done?");
     fireEvent.change(descTextarea, { target: { value: "Test description" } });
 
     mockConfirm.mockResolvedValueOnce(false);
@@ -678,7 +797,7 @@ describe("NewTaskModal", () => {
   it("creates task with title undefined by default", async () => {
     const { props } = renderNewTaskModal();
     
-    const descTextarea = screen.getByRole('textbox');
+    const descTextarea = screen.getByPlaceholderText("What needs to be done?");
     fireEvent.change(descTextarea, { target: { value: "Only description" } });
     
     fireEvent.click(screen.getByRole("button", { name: "Create Task" }));
@@ -696,7 +815,7 @@ describe("NewTaskModal", () => {
   it("calls onCreateTask when form is submitted", async () => {
     const { props } = renderNewTaskModal();
 
-    const descTextarea = screen.getByRole('textbox');
+    const descTextarea = screen.getByPlaceholderText("What needs to be done?");
     fireEvent.change(descTextarea, { target: { value: "Normal task" } });
 
     fireEvent.click(screen.getByRole("button", { name: "Create Task" }));
@@ -710,6 +829,105 @@ describe("NewTaskModal", () => {
     });
   });
 
+  it("checks for duplicates and creates directly when none are found", async () => {
+    const { props } = renderNewTaskModal({ projectId: "project-alpha" });
+
+    fireEvent.change(screen.getByRole("textbox"), { target: { value: "Unique task description" } });
+    fireEvent.click(screen.getByRole("button", { name: "Create Task" }));
+
+    await waitFor(() => {
+      expect(checkDuplicateTasks).toHaveBeenCalledWith({ description: "Unique task description" }, "project-alpha");
+      expect(props.onCreateTask).toHaveBeenCalledWith(
+        expect.objectContaining({ description: "Unique task description" }),
+      );
+    });
+    expect(screen.queryByText("Possible duplicates")).not.toBeInTheDocument();
+  });
+
+  it("shows duplicate warning and does not create when matches are found", async () => {
+    vi.mocked(checkDuplicateTasks).mockResolvedValueOnce([
+      { id: "FN-301", title: "Title should not display", description: "Existing similar full-dialog task", column: "todo", score: 0.88 },
+    ]);
+    const { props } = renderNewTaskModal();
+
+    fireEvent.change(screen.getByRole("textbox"), { target: { value: "New full-dialog task" } });
+    fireEvent.click(screen.getByRole("button", { name: "Create Task" }));
+
+    expect(await screen.findByText("Possible duplicates")).toBeInTheDocument();
+    expect(screen.getByText("Existing similar full-dialog task")).toBeInTheDocument();
+    expect(screen.queryByText("Title should not display")).not.toBeInTheDocument();
+    expect(props.onCreateTask).not.toHaveBeenCalled();
+  });
+
+  it("creates with acknowledged duplicate ids after Create anyway", async () => {
+    vi.mocked(checkDuplicateTasks).mockResolvedValueOnce([
+      { id: "FN-401", title: "Existing title", description: "Existing duplicate description", column: "todo", score: 0.93 },
+      { id: "FN-402", title: "Second title", description: "Second duplicate description", column: "in-progress", score: 0.82 },
+    ]);
+    const { props } = renderNewTaskModal();
+
+    fireEvent.change(screen.getByRole("textbox"), { target: { value: "Create anyway duplicate" } });
+    fireEvent.click(screen.getByRole("button", { name: "Create Task" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Create anyway" }));
+
+    await waitFor(() => {
+      expect(props.onCreateTask).toHaveBeenCalledWith(
+        expect.objectContaining({
+          description: "Create anyway duplicate",
+          acknowledgedDuplicates: ["FN-401", "FN-402"],
+        }),
+      );
+    });
+  });
+
+  it("dismisses duplicate warning on Cancel without creating", async () => {
+    vi.mocked(checkDuplicateTasks).mockResolvedValueOnce([
+      { id: "FN-501", title: "Existing title", description: "Cancel duplicate description", column: "todo", score: 0.9 },
+    ]);
+    const { props } = renderNewTaskModal();
+
+    fireEvent.change(screen.getByRole("textbox"), { target: { value: "Cancel duplicate" } });
+    fireEvent.click(screen.getByRole("button", { name: "Create Task" }));
+    await screen.findByText("Possible duplicates");
+    fireEvent.click(screen.getAllByRole("button", { name: "Cancel" }).at(-1)!);
+
+    await waitFor(() => {
+      expect(screen.queryByText("Possible duplicates")).not.toBeInTheDocument();
+    });
+    expect(props.onCreateTask).not.toHaveBeenCalled();
+  });
+
+  it("opens the selected duplicate task and closes the dialog", async () => {
+    vi.mocked(checkDuplicateTasks).mockResolvedValueOnce([
+      { id: "FN-601", title: "Existing title", description: "Open duplicate description", column: "todo", score: 0.9 },
+    ]);
+    const { props } = renderNewTaskModal();
+
+    fireEvent.change(screen.getByRole("textbox"), { target: { value: "Open duplicate" } });
+    fireEvent.click(screen.getByRole("button", { name: "Create Task" }));
+    fireEvent.click((await screen.findAllByRole("button", { name: "Open" }))[0]);
+
+    await waitFor(() => {
+      expect(window.location.hash).toBe("#/tasks/FN-601");
+      expect(props.onClose).toHaveBeenCalled();
+    });
+    expect(props.onCreateTask).not.toHaveBeenCalled();
+  });
+
+  it("fails open and creates when duplicate check throws", async () => {
+    vi.mocked(checkDuplicateTasks).mockRejectedValueOnce(new Error("duplicate check unavailable"));
+    const { props } = renderNewTaskModal();
+
+    fireEvent.change(screen.getByRole("textbox"), { target: { value: "Fail open duplicate check" } });
+    fireEvent.click(screen.getByRole("button", { name: "Create Task" }));
+
+    await waitFor(() => {
+      expect(props.addToast).toHaveBeenCalledWith("Duplicate check failed; creating task anyway.", "error");
+      expect(props.onCreateTask).toHaveBeenCalledWith(
+        expect.objectContaining({ description: "Fail open duplicate check" }),
+      );
+    });
+  });
 
   it("disables Create Task when description is empty", () => {
     renderNewTaskModal();
@@ -721,7 +939,7 @@ describe("NewTaskModal", () => {
   it("enables Create Task when description has content", () => {
     renderNewTaskModal();
     
-    const descTextarea = screen.getByRole('textbox');
+    const descTextarea = screen.getByPlaceholderText("What needs to be done?");
     fireEvent.change(descTextarea, { target: { value: "Some text" } });
     
     const createButton = screen.getByRole("button", { name: "Create Task" });
@@ -733,7 +951,7 @@ describe("NewTaskModal", () => {
     it("omits modelPresetId from payload when in default mode", async () => {
       const { props } = renderNewTaskModal();
 
-      const descTextarea = screen.getByRole('textbox');
+      const descTextarea = screen.getByPlaceholderText("What needs to be done?");
       fireEvent.change(descTextarea, { target: { value: "Default mode task" } });
 
       fireEvent.click(screen.getByRole("button", { name: "Create Task" }));
@@ -767,7 +985,7 @@ describe("NewTaskModal", () => {
       });
 
       // Type a description
-      fireEvent.change(screen.getByRole('textbox'), { target: { value: "Preset task" } });
+      fireEvent.change(screen.getByPlaceholderText("What needs to be done?"), { target: { value: "Preset task" } });
 
       // Select the preset
       const select = document.getElementById("model-preset") as HTMLSelectElement;
@@ -808,7 +1026,7 @@ describe("NewTaskModal", () => {
       });
 
       // Type a description
-      fireEvent.change(screen.getByRole('textbox'), { target: { value: "Custom task" } });
+      fireEvent.change(screen.getByPlaceholderText("What needs to be done?"), { target: { value: "Custom task" } });
 
       // Select a preset first
       const select = document.getElementById("model-preset") as HTMLSelectElement;
@@ -857,7 +1075,7 @@ describe("NewTaskModal", () => {
         expect(screen.getByTestId("task-workflow-select")).toBeTruthy();
       });
 
-      fireEvent.change(screen.getByRole("textbox"), { target: { value: "Inherit default" } });
+      fireEvent.change(screen.getByPlaceholderText("What needs to be done?"), { target: { value: "Inherit default" } });
       fireEvent.click(screen.getByRole("button", { name: "Create Task" }));
 
       await waitFor(() => {
@@ -876,7 +1094,7 @@ describe("NewTaskModal", () => {
       });
 
       fireEvent.change(screen.getByTestId("task-workflow-select"), { target: { value: "WF-1" } });
-      fireEvent.change(screen.getByRole("textbox"), { target: { value: "Pick a workflow" } });
+      fireEvent.change(screen.getByPlaceholderText("What needs to be done?"), { target: { value: "Pick a workflow" } });
       fireEvent.click(screen.getByRole("button", { name: "Create Task" }));
 
       await waitFor(() => {
@@ -897,7 +1115,7 @@ describe("NewTaskModal", () => {
       // Pick a workflow, then switch to "No workflow" to register an explicit null.
       fireEvent.change(screen.getByTestId("task-workflow-select"), { target: { value: "WF-1" } });
       fireEvent.change(screen.getByTestId("task-workflow-select"), { target: { value: "__none__" } });
-      fireEvent.change(screen.getByRole("textbox"), { target: { value: "No workflow task" } });
+      fireEvent.change(screen.getByPlaceholderText("What needs to be done?"), { target: { value: "No workflow task" } });
       fireEvent.click(screen.getByRole("button", { name: "Create Task" }));
 
       await waitFor(() => {
@@ -924,7 +1142,7 @@ describe("NewTaskModal", () => {
     it("omits reviewLevel from payload when not selected", async () => {
       const { props } = renderNewTaskModal();
 
-      const descTextarea = screen.getByRole('textbox');
+      const descTextarea = screen.getByPlaceholderText("What needs to be done?");
       fireEvent.change(descTextarea, { target: { value: "Task without review level" } });
 
       fireEvent.click(screen.getByRole("button", { name: "Create Task" }));
@@ -942,7 +1160,6 @@ describe("NewTaskModal", () => {
       const { props } = renderNewTaskModal();
 
       // Open more options to access the review level selector
-      fireEvent.click(screen.getByTestId("task-form-more-options-toggle"));
 
       await waitFor(() => {
         expect(screen.getByLabelText("Review")).toBeTruthy();
@@ -970,7 +1187,6 @@ describe("NewTaskModal", () => {
       const { props } = renderNewTaskModal();
 
       // Open more options to access the review level selector
-      fireEvent.click(screen.getByTestId("task-form-more-options-toggle"));
 
       await waitFor(() => {
         expect(screen.getByLabelText("Review")).toBeTruthy();
@@ -999,7 +1215,7 @@ describe("NewTaskModal", () => {
     it("omits autoMerge from payload when default is selected", async () => {
       const { props } = renderNewTaskModal();
 
-      fireEvent.change(screen.getByRole("textbox"), { target: { value: "Task default auto-merge" } });
+      fireEvent.change(screen.getByPlaceholderText("What needs to be done?"), { target: { value: "Task default auto-merge" } });
       fireEvent.click(screen.getByRole("button", { name: "Create Task" }));
 
       await waitFor(() => {
@@ -1012,7 +1228,6 @@ describe("NewTaskModal", () => {
     it("includes autoMerge true when Enabled is selected", async () => {
       const { props } = renderNewTaskModal();
 
-      fireEvent.click(screen.getByTestId("task-form-more-options-toggle"));
       await waitFor(() => {
         expect(screen.getByTestId("task-automerge-select")).toBeTruthy();
       });
@@ -1030,7 +1245,6 @@ describe("NewTaskModal", () => {
     it("includes autoMerge false when Disabled is selected", async () => {
       const { props } = renderNewTaskModal();
 
-      fireEvent.click(screen.getByTestId("task-form-more-options-toggle"));
       await waitFor(() => {
         expect(screen.getByTestId("task-automerge-select")).toBeTruthy();
       });
@@ -1050,7 +1264,7 @@ describe("NewTaskModal", () => {
     it("includes default normal priority in create payload", async () => {
       const { props } = renderNewTaskModal();
 
-      fireEvent.change(screen.getByRole("textbox"), { target: { value: "Task with default priority" } });
+      fireEvent.change(screen.getByPlaceholderText("What needs to be done?"), { target: { value: "Task with default priority" } });
       fireEvent.click(screen.getByRole("button", { name: "Create Task" }));
 
       await waitFor(() => {
@@ -1065,7 +1279,6 @@ describe("NewTaskModal", () => {
     it("includes selected priority and resets back to normal after submit", async () => {
       const { props } = renderNewTaskModal();
 
-      fireEvent.click(screen.getByTestId("task-form-more-options-toggle"));
       fireEvent.change(screen.getByTestId("task-priority-select"), { target: { value: "urgent" } });
       fireEvent.change(screen.getByPlaceholderText("What needs to be done?"), { target: { value: "Task with urgent priority" } });
       fireEvent.click(screen.getByRole("button", { name: "Create Task" }));
@@ -1086,7 +1299,6 @@ describe("NewTaskModal", () => {
     it("treats non-default priority as dirty state on cancel", async () => {
       renderNewTaskModal();
 
-      fireEvent.click(screen.getByTestId("task-form-more-options-toggle"));
       fireEvent.change(screen.getByTestId("task-priority-select"), { target: { value: "high" } });
       mockConfirm.mockResolvedValueOnce(false);
 
@@ -1156,7 +1368,7 @@ describe("NewTaskModal", () => {
       const { props } = renderNewTaskModal();
 
       // Type description
-      fireEvent.change(screen.getByRole('textbox'), { target: { value: "Task with agent" } });
+      fireEvent.change(screen.getByPlaceholderText("What needs to be done?"), { target: { value: "Task with agent" } });
 
       // Open agent picker and select agent
       fireEvent.click(screen.getByTestId("new-task-agent-button"));
@@ -1182,7 +1394,7 @@ describe("NewTaskModal", () => {
     it("omits assignedAgentId from payload when no agent is selected", async () => {
       const { props } = renderNewTaskModal();
 
-      fireEvent.change(screen.getByRole('textbox'), { target: { value: "Task without agent" } });
+      fireEvent.change(screen.getByPlaceholderText("What needs to be done?"), { target: { value: "Task without agent" } });
 
       fireEvent.click(screen.getByRole("button", { name: "Create Task" }));
 
@@ -1204,7 +1416,7 @@ describe("NewTaskModal", () => {
       const { props } = renderNewTaskModal();
 
       // Type description
-      fireEvent.change(screen.getByRole('textbox'), { target: { value: "Task with agent" } });
+      fireEvent.change(screen.getByPlaceholderText("What needs to be done?"), { target: { value: "Task with agent" } });
 
       // Open agent picker and select agent
       fireEvent.click(screen.getByTestId("new-task-agent-button"));
@@ -1274,7 +1486,7 @@ describe("NewTaskModal", () => {
       renderNewTaskModal();
 
       // Type description
-      fireEvent.change(screen.getByRole('textbox'), { target: { value: "Task with agent" } });
+      fireEvent.change(screen.getByPlaceholderText("What needs to be done?"), { target: { value: "Task with agent" } });
 
       // Open agent picker and select agent
       fireEvent.click(screen.getByTestId("new-task-agent-button"));
@@ -1298,7 +1510,6 @@ describe("NewTaskModal", () => {
     it("renders GitHub tracking after the Workflow picker in more options", async () => {
       renderNewTaskModal();
 
-      fireEvent.click(screen.getByTestId("task-form-more-options-toggle"));
 
       const workflowLabel = await screen.findByText("Workflow");
       const githubTrackingSection = screen.getByTestId("task-form-github-tracking");
@@ -1318,7 +1529,7 @@ describe("NewTaskModal", () => {
       });
 
       const { props } = renderNewTaskModal();
-      fireEvent.change(screen.getByRole("textbox"), { target: { value: "Task with tracking" } });
+      fireEvent.change(screen.getByPlaceholderText("What needs to be done?"), { target: { value: "Task with tracking" } });
 
       const toggle = await screen.findByLabelText("Enable GitHub issue tracking for this task");
       fireEvent.click(toggle);
@@ -1329,6 +1540,61 @@ describe("NewTaskModal", () => {
       await waitFor(() => {
         expect(props.onCreateTask).toHaveBeenCalledTimes(1);
       });
+    });
+  });
+
+  /*
+  FNXC:NewTask 2026-06-22-20:30:
+  On desktop the New Task dialog is a floating, draggable, resizable, NON-BLOCKING window: the overlay is `pointer-events: none` and aria-modal="false" so behind-clicks pass through and never close the dialog (only the header X / Cancel / Escape dismiss). It carries a draggable header handle and resize handles.
+  */
+  describe("desktop floating window", () => {
+    beforeEach(() => {
+      mockViewportMode = "desktop";
+    });
+
+    it("renders a non-blocking (pointer-events: none, aria-modal=false) overlay that does not dismiss on click", () => {
+      const onClose = vi.fn();
+      renderNewTaskModal({ onClose });
+
+      const overlay = screen.getByTestId("new-task-modal-overlay");
+      // Non-blocking: click-through overlay, not a modal.
+      expect(overlay).toHaveClass("new-task-modal-overlay");
+      expect(overlay).toHaveAttribute("aria-modal", "false");
+
+      // A behind-click on the overlay must NOT close the dialog (no overlay click-to-dismiss).
+      fireEvent.click(overlay);
+      expect(onClose).not.toHaveBeenCalled();
+    });
+
+    it("exposes a draggable header handle and resize handles", () => {
+      renderNewTaskModal();
+
+      expect(screen.getByTestId("new-task-drag-handle")).toHaveClass("new-task-modal__header--draggable");
+      // All eight corner/edge resize handles are present.
+      for (const dir of ["n", "s", "e", "w", "ne", "nw", "se", "sw"]) {
+        expect(screen.getByTestId(`new-task-resize-${dir}`)).toBeInTheDocument();
+      }
+      // The floating panel is the fixed-positioned window.
+      const panel = document.querySelector(".new-task-modal--floating");
+      expect(panel).not.toBeNull();
+    });
+
+    it("keeps the floating window touch-draggable with theme-controlled shadow", () => {
+      const panelRule = newTaskModalCss.match(/\.new-task-modal--floating\s*\{([^}]*)\}/)?.[1] ?? "";
+      const headerRule = newTaskModalCss.match(/\.new-task-modal__header--draggable\s*\{([^}]*)\}/)?.[1] ?? "";
+
+      expect(panelRule).toContain("box-shadow: var(--floating-window-shadow, var(--shadow-lg));");
+      expect(headerRule).toContain("touch-action: none;");
+      expect(headerRule).toContain("min-height: 48px;");
+      expect(newTaskModalCss).not.toContain("var(--shadow-xl)");
+    });
+
+    it("still closes via the header close button (X)", async () => {
+      const onClose = vi.fn();
+      renderNewTaskModal({ onClose });
+
+      fireEvent.click(screen.getByLabelText("Close"));
+      await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1));
     });
   });
 });

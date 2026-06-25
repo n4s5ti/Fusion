@@ -335,7 +335,7 @@ describe("Mobile Feature Access Regression Guard", () => {
     }
   });
 
-  it("right dock flag off keeps the desktop and tablet More views chevron dropdown", () => {
+  it("keeps the desktop and tablet More views chevron dropdown when the right dock is unavailable", () => {
     for (const tier of ["desktop", "tablet"] as const) {
       mockViewport(tier);
       const { unmount } = render(

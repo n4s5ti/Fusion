@@ -834,17 +834,18 @@ describe("InlineCreateCard Plan and Subtask buttons", () => {
     expect(subtaskButton.disabled).toBe(false);
   });
 
-  it("calls onPlanningMode with description and clears input when Plan clicked", () => {
+  it("calls onPlanningMode with description and preserves input draft when Plan clicked", () => {
     const onPlanningMode = vi.fn();
     renderCard([], { onPlanningMode });
     expandCard();
-    const textarea = screen.getByPlaceholderText("What needs to be done?");
+    const textarea = screen.getByPlaceholderText("What needs to be done?") as HTMLTextAreaElement;
 
-    fireEvent.change(textarea, { target: { value: "Plan this task" } });
+    fireEvent.change(textarea, { target: { value: "  Plan this task  " } });
     fireEvent.click(screen.getByTestId("plan-button"));
 
     expect(onPlanningMode).toHaveBeenCalledWith("Plan this task");
-    expect((textarea as HTMLTextAreaElement).value).toBe("");
+    expect(textarea.value).toBe("  Plan this task  ");
+    expect(localStorage.getItem(INLINE_CREATE_STORAGE_KEY)).toBe("  Plan this task  ");
   });
 
   it("calls onSubtaskBreakdown with description and clears input when Subtask clicked", () => {

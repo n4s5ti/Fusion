@@ -13,6 +13,15 @@ interface UsageIndicatorProps {
   onClose: () => void;
   projectId?: string;
   anchorRect?: DOMRect | null;
+  /**
+   * FNXC:UsageIndicator 2026-06-22-00:00:
+   * Right-dock redesign renders dock items inline instead of as popup modals.
+   * "embedded" presentation makes the usage view render as a plain flow container
+   * inside the right-dock (no fixed overlay, no popover anchoring, no close button,
+   * filling its parent at width/height 100%). Modal behavior is unchanged when
+   * presentation is "modal"/undefined.
+   */
+  presentation?: "modal" | "embedded";
 }
 
 /**
@@ -612,8 +621,9 @@ function UsageSkeleton() {
  * Shows hourly and weekly usage windows with percentage bars,
  * reset timers, and pace indicators.
  */
-export function UsageIndicator({ isOpen, onClose, projectId, anchorRect }: UsageIndicatorProps) {
+export function UsageIndicator({ isOpen, onClose, projectId, anchorRect, presentation = "modal" }: UsageIndicatorProps) {
   const { t } = useTranslation("app");
+  const isEmbedded = presentation === "embedded";
   const { providers, loading, error, lastUpdated, hasFetched, refresh } = useUsageData({
     autoRefresh: isOpen, // Only poll when modal is open
   });
@@ -644,8 +654,10 @@ export function UsageIndicator({ isOpen, onClose, projectId, anchorRect }: Usage
   }, [projectId]);
 
   // Persist user resizes via ResizeObserver (debounced).
+  // FNXC:UsageIndicator 2026-06-22-00:00: embedded presentation has no resizable
+  // popover surface, so skip the desktop popover resize-observer entirely.
   useEffect(() => {
-    if (!isOpen || !isDesktopViewport) return;
+    if (isEmbedded || !isOpen || !isDesktopViewport) return;
     const el = modalRef.current;
     if (!el || typeof ResizeObserver === "undefined") return;
 
@@ -669,7 +681,7 @@ export function UsageIndicator({ isOpen, onClose, projectId, anchorRect }: Usage
       if (timer) clearTimeout(timer);
       observer.disconnect();
     };
-  }, [isOpen, isDesktopViewport, projectId]);
+  }, [isEmbedded, isOpen, isDesktopViewport, projectId]);
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -872,8 +884,10 @@ export function UsageIndicator({ isOpen, onClose, projectId, anchorRect }: Usage
   }, [refresh]);
 
   // Close on Escape key
+  // FNXC:UsageIndicator 2026-06-22-00:00: embedded presentation has no modal to
+  // dismiss, so Escape-to-close is a modal-only behavior.
   useEffect(() => {
-    if (!isOpen) return;
+    if (isEmbedded || !isOpen) return;
 
     const handleKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
@@ -883,7 +897,7 @@ export function UsageIndicator({ isOpen, onClose, projectId, anchorRect }: Usage
 
     document.addEventListener("keydown", handleKey);
     return () => document.removeEventListener("keydown", handleKey);
-  }, [isOpen, onClose]);
+  }, [isEmbedded, isOpen, onClose]);
 
   // Close on overlay click
   const handleOverlayClick = useCallback(
@@ -921,10 +935,16 @@ export function UsageIndicator({ isOpen, onClose, projectId, anchorRect }: Usage
   const usageContent = (
       <div
         ref={modalRef}
-        className={`usage-modal${showDesktopPopover ? " usage-modal--popover" : " modal"}`}
+        className={
+          isEmbedded
+            ? "usage-modal usage-modal--embedded"
+            : `usage-modal${showDesktopPopover ? " usage-modal--popover" : " modal"}`
+        }
         data-testid="usage-modal"
         style={
-          showDesktopPopover
+          isEmbedded
+            ? undefined
+            : showDesktopPopover
             ? ({
                 position: "fixed",
                 top: desktopTop,
@@ -958,14 +978,18 @@ export function UsageIndicator({ isOpen, onClose, projectId, anchorRect }: Usage
                 {t("usage.viewModeRemaining", "Remaining")}
               </button>
             </div>
-            <button
-              className="modal-close"
-              onClick={onClose}
-              aria-label={t("actions.closeModal", "Close usage modal")}
-              data-testid="usage-modal-close"
-            >
-              <X size={20} />
-            </button>
+            {/* FNXC:UsageIndicator 2026-06-22-00:00: embedded presentation drops the
+                modal close button; the right-dock owns dismissal. */}
+            {!isEmbedded && (
+              <button
+                className="modal-close"
+                onClick={onClose}
+                aria-label={t("actions.closeModal", "Close usage modal")}
+                data-testid="usage-modal-close"
+              >
+                <X size={20} />
+              </button>
+            )}
           </div>
         </div>
 
@@ -1046,6 +1070,17 @@ export function UsageIndicator({ isOpen, onClose, projectId, anchorRect }: Usage
         </div>
       </div>
   );
+
+  // FNXC:UsageIndicator 2026-06-22-00:00: embedded presentation renders the usage
+  // view as a plain flow container inside the right-dock (no fixed overlay, no
+  // popover backdrop), filling its parent.
+  if (isEmbedded) {
+    return (
+      <div className="usage-indicator-embedded right-dock-embedded-view">
+        {usageContent}
+      </div>
+    );
+  }
 
   if (showDesktopPopover) {
     return (

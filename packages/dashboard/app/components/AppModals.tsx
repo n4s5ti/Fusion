@@ -82,6 +82,7 @@ interface AppModalsProps {
     setColorTheme: (theme: ColorTheme) => void;
     setDashboardFontScalePct: (scalePct: number) => void;
     setShadcnCustomColors: (colors: Record<string, string>) => void;
+    setQuickChatButtonModeImmediate: (mode: "floating" | "footer" | "off") => void;
   };
   /** Optional override for the settings modal close handler. When provided, this is called instead of modalManager.closeSettings. */
   onSettingsClose?: () => void;
@@ -89,6 +90,8 @@ interface AppModalsProps {
   onReopenOnboarding?: () => void;
   /** Optional callback to open mailbox approvals from Settings. */
   onOpenApprovals?: (approvalId?: string) => void;
+  /** Enables planning-style agent onboarding entry points inside setup. */
+  agentOnboardingEnabled?: boolean;
 }
 
 export function AppModals({
@@ -110,6 +113,7 @@ export function AppModals({
   onSettingsClose,
   onReopenOnboarding,
   onOpenApprovals,
+  agentOnboardingEnabled = false,
 }: AppModalsProps) {
   const { pushNav, removeNav } = useNavigationHistoryContext();
   const [firstCreatedTask, setFirstCreatedTask] = useState<Task | null>(null);
@@ -329,6 +333,7 @@ export function AppModals({
               resolvedThemeMode={settings.resolvedThemeMode}
               onDashboardFontScaleChange={settings.setDashboardFontScalePct}
               onShadcnCustomColorsChange={settings.setShadcnCustomColors}
+              onQuickChatButtonModeChange={settings.setQuickChatButtonModeImmediate}
               onReopenOnboarding={onReopenOnboarding}
               onOpenApprovals={onOpenApprovals}
               onOpenWorkflowSettings={() => {
@@ -471,11 +476,14 @@ export function AppModals({
           <SetupWizardModal
             onProjectRegistered={projectActions.handleSetupComplete}
             onClose={closeSetupWizardWithNav}
+            agentOnboardingEnabled={agentOnboardingEnabled}
+            includeAgentStep={!modalManager.modelOnboardingOpen}
           />
         </Suspense>
       )}
 
-      {modalManager.modelOnboardingOpen && (
+      {/* FNXC:Onboarding 2026-06-22-05:06: Brand-new onboarding owns AI/GitHub first, then opens the project setup wizard only as the Project step sub-flow. Hide model onboarding while that project wizard is mounted so users never see both flows at once. */}
+      {modalManager.modelOnboardingOpen && !modalManager.setupWizardOpen && (
         <ModelOnboardingModal
           onComplete={projectActions.handleModelOnboardingComplete}
           addToast={addToast}
@@ -485,6 +493,7 @@ export function AppModals({
           onOpenGitHubImport={handleOpenGitHubImport}
           firstCreatedTask={firstCreatedTask}
           onViewTask={handleOnboardingViewTask}
+          agentOnboardingEnabled={agentOnboardingEnabled}
         />
       )}
 

@@ -179,7 +179,7 @@ function readSidebarWidth(projectId?: string): number {
   return fallbackWidth;
 }
 
-const LIST_SIDEBAR_MIN_WIDTH = 120; // FNXC:ListView 2026-06-21-22:31: The desktop task-list split sidebar minimum is 120 instead of 200 so users can shrink the left panel significantly further on narrow desktop layouts while resize, keyboard, and ARIA paths share one clamp value.
+const LIST_SIDEBAR_MIN_WIDTH = 64; // FNXC:ListView 2026-06-22-00:00: The desktop task-list split sidebar minimum is 64 (was 120) so users can shrink the left panel much further; task titles wrap to two lines (.list-split-sidebar .list-cell-title) so they stay legible at narrow widths. Resize, keyboard, and ARIA paths share one clamp value.
 const LIST_SIDEBAR_MAX_RATIO = 0.65;
 const LIST_SIDEBAR_KEYBOARD_STEP = 16;
 
@@ -208,6 +208,11 @@ interface ListViewProps {
   onResetTask?: (id: string) => Promise<Task>;
   onDuplicateTask?: (id: string) => Promise<Task>;
   onOpenDetail: (task: Task | TaskDetail, options?: { origin?: "list-mobile" }) => void;
+  /*
+  FNXC:FloatingWindow 2026-06-22-20:45:
+  onPopOut pops the split-pane task detail into a movable, resizable, non-blocking FloatingWindow managed at App level. Wired to the Maximize2 "Pop out" button in TaskDetailContent's header.
+  */
+  onPopOut?: (task: Task | TaskDetail) => void;
   addToast: (message: string, type?: ToastType) => void;
   globalPaused?: boolean;
   onNewTask?: () => void;
@@ -291,6 +296,7 @@ export function ListView({
   onMergeTask,
   onResetTask,
   onDuplicateTask,
+  onPopOut,
   onOpenDetail,
   addToast,
   globalPaused,
@@ -349,7 +355,7 @@ export function ListView({
       return;
     }
     setHeaderWorkflowSlot(document.getElementById("header-workflow-slot"));
-  }, [workflowControlsInHeader]);
+  }, [workflowControlsInHeader, viewportMode]);
 
   // Column visibility state - initialize from localStorage or reduced default columns
   const [visibleColumns, setVisibleColumns] = useState<Set<ListColumn>>(() => readVisibleColumns(projectId));
@@ -405,6 +411,8 @@ export function ListView({
   const [sidebarWidth, setSidebarWidth] = useState<number>(() => readSidebarWidth(projectId));
   const splitLayoutRef = useRef<HTMLDivElement>(null);
   const splitSidebarRef = useRef<HTMLDivElement>(null);
+  // FNXC:ListView 2026-06-22-18:00: Holds the active pointer-drag teardown so move/up/cancel/unmount all detach the same listeners — prevents the "window mousemove with no cleanup" leak called out by the frontend-races review.
+  const splitResizeTeardownRef = useRef<(() => void) | null>(null);
   const previousStorageProjectIdRef = useRef(projectId);
   const boardWorkflowsFetchSeqRef = useRef(0);
 
@@ -515,8 +523,16 @@ export function ListView({
     if (!container) return;
 
     const applyClamp = () => {
+      /*
+      FNXC:ListView 2026-06-22-18:00:
+      A zero/unmeasurable container width must NOT clamp the persisted sidebar width down to the 64px
+      min — that collapse made the resize handle appear broken (drag snapped the pane to the minimum
+      and refused to widen). Only re-clamp when the container reports a real width.
+      */
+      const containerWidth = container.clientWidth;
+      if (containerWidth <= 0) return;
       // Keep width valid when viewport/container size changes.
-      const clamped = clampSidebarWidth(sidebarWidth, container.clientWidth);
+      const clamped = clampSidebarWidth(sidebarWidth, containerWidth);
       if (clamped !== sidebarWidth) {
         setSidebarWidth(clamped);
       }
@@ -849,25 +865,6 @@ export function ListView({
   const filteredCount = useMemo(() => {
     return Object.values(groupedTasks).reduce((sum, group) => sum + group.length, 0);
   }, [groupedTasks]);
-
-  // Calculate done and archived task counts for stats display
-  const completedTaskCount = useMemo(() => {
-    const completedColumns = new Set(
-      listColumns
-        .filter((column) => column.flags.complete || column.flags.archived)
-        .map((column) => column.id),
-    );
-    return tasks.filter((task) => {
-      if (selectedWorkflowTaskIds && !selectedWorkflowTaskIds.has(task.id)) return false;
-      return completedColumns.has(task.column);
-    }).length;
-  }, [listColumns, selectedWorkflowTaskIds, tasks]);
-
-  // Calculate hidden done+archived tasks count
-  const hiddenCompletedCount = useMemo(() => {
-    if (!hideDoneTasks) return 0;
-    return completedTaskCount;
-  }, [hideDoneTasks, completedTaskCount]);
 
   // Selection logic that depends on groupedTasks (must be after groupedTasks definition)
   // Toggle all visible tasks
@@ -1529,26 +1526,60 @@ export function ListView({
     setDragOverColumn(null);
   }, []);
 
-  const handleSplitResizeStart = useCallback((event: React.MouseEvent<HTMLDivElement>) => {
+  /*
+  FNXC:ListView 2026-06-22-18:00:
+  Pointer-based split resize. setPointerCapture keeps move/up events flowing to the handle even when
+  the cursor leaves it, and a single teardown ref (cleared on pointerup/pointercancel/unmount) detaches
+  every listener exactly once. Width is measured from a live rect per move (re-reading rect.left/width
+  each frame) and clamped between LIST_SIDEBAR_MIN_WIDTH (64) and 65% of the container so the inline
+  style={{ width }} — which wins over the grid `auto` track — updates live and persists.
+  */
+  const handleSplitResizeStart = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
     if (isMobile) return;
-    event.preventDefault();
     const container = splitLayoutRef.current;
     if (!container) return;
+    event.preventDefault();
 
-    const rect = container.getBoundingClientRect();
-    const onMouseMove = (moveEvent: MouseEvent) => {
+    // Detach any prior drag (defensive against a missed pointerup).
+    splitResizeTeardownRef.current?.();
+
+    const handle = event.currentTarget;
+    const pointerId = event.pointerId;
+    try {
+      handle.setPointerCapture(pointerId);
+    } catch {
+      // setPointerCapture is best-effort (e.g. synthetic events in tests).
+    }
+
+    const onPointerMove = (moveEvent: PointerEvent) => {
+      const rect = container.getBoundingClientRect();
+      // Guard against an unmeasurable container so a drag never collapses the pane to the min.
+      const containerWidth = rect.width > 0 ? rect.width : container.clientWidth;
+      if (containerWidth <= 0) return;
       const proposedWidth = moveEvent.clientX - rect.left;
-      setSidebarWidth(clampSidebarWidth(proposedWidth, rect.width));
+      setSidebarWidth(clampSidebarWidth(proposedWidth, containerWidth));
     };
 
-    const onMouseUp = () => {
-      window.removeEventListener("mousemove", onMouseMove);
-      window.removeEventListener("mouseup", onMouseUp);
+    const teardown = () => {
+      window.removeEventListener("pointermove", onPointerMove);
+      window.removeEventListener("pointerup", teardown);
+      window.removeEventListener("pointercancel", teardown);
+      try {
+        handle.releasePointerCapture(pointerId);
+      } catch {
+        // Capture may already be released.
+      }
+      splitResizeTeardownRef.current = null;
     };
 
-    window.addEventListener("mousemove", onMouseMove);
-    window.addEventListener("mouseup", onMouseUp);
+    splitResizeTeardownRef.current = teardown;
+    window.addEventListener("pointermove", onPointerMove);
+    window.addEventListener("pointerup", teardown);
+    window.addEventListener("pointercancel", teardown);
   }, [isMobile]);
+
+  // FNXC:ListView 2026-06-22-18:00: Tear down any in-flight resize drag on unmount so window pointer listeners never leak.
+  useEffect(() => () => splitResizeTeardownRef.current?.(), []);
 
   const handleSplitResizeKeyDown = useCallback((event: React.KeyboardEvent<HTMLDivElement>) => {
     if (isMobile) return;
@@ -1779,6 +1810,28 @@ export function ListView({
     </div>
   );
 
+  const renderPrimaryActionCluster = () => (
+    <div className="list-action-cluster" data-testid="list-primary-action-cluster">
+      <button className="btn btn-sm" onClick={toggleBulkEdit} aria-pressed={bulkEditEnabled}>
+        {bulkEditEnabled ? t("listView.doneEditing", "Done Editing") : t("listView.bulkEdit", "Bulk Edit")}
+      </button>
+      <button
+        className="btn btn-sm list-view-options-toggle"
+        onClick={() => setViewOptionsOpen((prev) => !prev)}
+        aria-expanded={viewOptionsOpen}
+        aria-controls={isMobile ? "list-view-options-panel-mobile" : "list-view-options-panel"}
+      >
+        <Columns3 size={14} />
+        {t("listView.viewOptions", "View")}
+      </button>
+      {onNewTask ? (
+        <button className="btn btn-task-create btn-sm list-new-task-action" onClick={onNewTask}>
+          {t("listView.newTask", "+ New Task")}
+        </button>
+      ) : null}
+    </div>
+  );
+
   const renderBulkEditToolbars = () => (
     <>
       <div className="bulk-edit-toolbar">
@@ -1873,29 +1926,8 @@ export function ListView({
       {isMobile && (
         <>
           <div className="list-toolbar">
-            <button className="btn btn-sm" onClick={toggleBulkEdit} aria-pressed={bulkEditEnabled}>
-              {bulkEditEnabled ? t("listView.doneEditing", "Done Editing") : t("listView.bulkEdit", "Bulk Edit")}
-            </button>
             {renderWorkflowSelector()}
-            <button
-              className="btn btn-sm list-view-options-toggle"
-              onClick={() => setViewOptionsOpen((prev) => !prev)}
-              aria-expanded={viewOptionsOpen}
-              aria-controls="list-view-options-panel-mobile"
-            >
-              <Columns3 size={14} />
-              {t("listView.viewOptions", "View options")}
-            </button>
-            {onNewTask ? (
-              <button className="btn btn-task-create btn-sm list-new-task-action" onClick={onNewTask}>
-                {t("listView.newTask", "+ New Task")}
-              </button>
-            ) : null}
-            <div className="list-stats">
-              {selectedColumn
-                ? t("listView.statsInColumn", "{{count}} of {{total}} tasks in {{column}}", { count: filteredCount, total: tasks.length, column: getListColumnLabel(selectedColumn) })
-                : t("listView.stats", "{{count}} of {{total}} tasks", { count: filteredCount, total: tasks.length })}
-            </div>
+            {renderPrimaryActionCluster()}
           </div>
           {viewOptionsOpen ? (
             <div className="list-toolbar-mobile-options">{renderViewOptionsPanel("list-view-options-panel-mobile")}</div>
@@ -1925,25 +1957,14 @@ export function ListView({
           >
             {!isMobile && (
               <aside className="list-sidebar-controls" aria-label={t("listView.listControlsLabel", "List controls")}>
+                {/*
+                FNXC:ListView 2026-06-23-23:42:
+                The List view top controls should not show the aggregate task count. Keep only action groups and state chips near quick-add; section/drop-zone counts remain lower in the list where they are contextual.
+                */}
                 <div className="list-sidebar-controls__header">
-                  <p className="list-stats">
-                    {selectedColumn
-                      ? t("listView.statsInColumn", "{{count}} of {{total}} tasks in {{column}}", { count: filteredCount, total: tasks.length, column: getListColumnLabel(selectedColumn) })
-                      : t("listView.stats", "{{count}} of {{total}} tasks", { count: filteredCount, total: tasks.length })}
-                    {hiddenCompletedCount > 0 && !selectedColumn && (
-                      <span className="list-stats-hidden"> ({t("listView.hidden", "{{count}} hidden", { count: hiddenCompletedCount })})</span>
-                    )}
-                  </p>
-                  <div className="list-sidebar-controls__actions">
-                    {renderWorkflowSelector()}
-                    <button className="btn btn-sm" onClick={toggleBulkEdit} aria-pressed={bulkEditEnabled}>
-                      {bulkEditEnabled ? t("listView.doneEditing", "Done Editing") : t("listView.bulkEdit", "Bulk Edit")}
-                    </button>
-                    {onNewTask ? (
-                      <button className="btn btn-task-create btn-sm list-new-task-action" onClick={onNewTask}>
-                        {t("listView.newTask", "+ New Task")}
-                      </button>
-                    ) : null}
+                  {renderWorkflowSelector()}
+                  <div className="list-sidebar-controls__toolbar">
+                    {renderPrimaryActionCluster()}
                   </div>
                   <div className="list-sidebar-summary-chips">
                     {selectedColumn ? (
@@ -1964,15 +1985,6 @@ export function ListView({
                     ) : null}
                   </div>
                 </div>
-                <button
-                  className="btn btn-sm list-view-options-toggle"
-                  onClick={() => setViewOptionsOpen((prev) => !prev)}
-                  aria-expanded={viewOptionsOpen}
-                  aria-controls="list-view-options-panel"
-                >
-                  <Columns3 size={14} />
-                  {t("listView.viewOptions", "View options")}
-                </button>
                 {viewOptionsOpen && renderViewOptionsPanel("list-view-options-panel")}
                 {bulkEditEnabled && selectedTaskIds.size > 0 ? renderBulkEditToolbars() : null}
               </aside>
@@ -1987,6 +1999,8 @@ export function ListView({
                 onSubtaskBreakdown={onSubtaskBreakdown}
                 projectId={projectId}
                 autoExpand={false}
+                defaultExpanded={false}
+                singleLine /* FNXC:QuickEntry 2026-06-22-19:25: List view uses the compact single-line quick-add so the box stays one line tall. */
                 favoriteProviders={favoriteProviders}
                 favoriteModels={favoriteModels}
                 onToggleFavorite={onToggleFavorite}
@@ -2393,7 +2407,7 @@ export function ListView({
               <div
                 className="list-split-resize-handle"
                 data-testid="list-split-resize-handle"
-                onMouseDown={handleSplitResizeStart}
+                onPointerDown={handleSplitResizeStart}
                 onKeyDown={handleSplitResizeKeyDown}
                 role="separator"
                 tabIndex={0}
@@ -2427,6 +2441,7 @@ export function ListView({
                       onRetryTask={onRetryTask}
                       onResetTask={onResetTask}
                       onDuplicateTask={onDuplicateTask}
+                      onPopOut={onPopOut ? () => onPopOut(selectedTaskSnapshot) : undefined}
                       onTaskUpdated={(updatedTask) => {
                         setSelectedTaskSnapshot((previous) => {
                           if (!previous || previous.id !== updatedTask.id) return previous;

@@ -26,7 +26,7 @@ interface DropdownPosition {
   maxHeight: number;
 }
 
-const ZERO_COUNTS: WorkflowStatusCounts = { todo: 0, inProgress: 0, done: 0 };
+const ZERO_COUNTS: WorkflowStatusCounts = { todo: 0, inProgress: 0, done: 0, merging: 0 };
 const DEFAULT_MENU_HORIZONTAL_PADDING = 16;
 const DEFAULT_MENU_MIN_WIDTH = 240;
 
@@ -85,6 +85,7 @@ export function WorkflowSwitcher({ workflows, value, onChange, counts, onOpen, l
   const todoLabel = t("workflowSwitcher.todo", "Todo");
   const inProgressLabel = t("workflowSwitcher.inProgress", "In Progress");
   const doneLabel = t("workflowSwitcher.done", "Done");
+  const mergingLabel = t("workflowSwitcher.merging", "Merging");
   const editWorkflowLabel = t("workflowSwitcher.editWorkflow", "Edit workflow");
   const newWorkflowLabel = t("workflowSwitcher.newWorkflow", "New workflow");
   const listboxId = useId();
@@ -270,6 +271,12 @@ export function WorkflowSwitcher({ workflows, value, onChange, counts, onOpen, l
 
   const renderCountBadges = (workflowCounts: WorkflowStatusCounts, variant: "trigger" | "option") => (
     <span className={`workflow-switcher-counts workflow-switcher-counts--${variant}`} aria-hidden="true">
+      {workflowCounts.merging > 0 ? (
+        <span
+          className="workflow-switcher-merging-indicator"
+          title={t("workflowSwitcher.mergingTitle", "{{count}} merging", { count: workflowCounts.merging })}
+        />
+      ) : null}
       <span className="workflow-switcher-count workflow-switcher-count--todo" title={`${todoLabel}: ${workflowCounts.todo}`}>{workflowCounts.todo}</span>
       <span className="workflow-switcher-count-separator">·</span>
       <span className="workflow-switcher-count workflow-switcher-count--in-progress" title={`${inProgressLabel}: ${workflowCounts.inProgress}`}>{workflowCounts.inProgress}</span>
@@ -280,13 +287,14 @@ export function WorkflowSwitcher({ workflows, value, onChange, counts, onOpen, l
 
   const renderAccessibleCounts = (workflowCounts: WorkflowStatusCounts) => (
     <span className="visually-hidden">
-      {t("workflowSwitcher.countsAria", "{{todoLabel}}: {{todo}}, {{inProgressLabel}}: {{inProgress}}, {{doneLabel}}: {{done}}", {
+      {t("workflowSwitcher.countsAria", "{{todoLabel}}: {{todo}}, {{inProgressLabel}}: {{inProgress}}, {{doneLabel}}: {{done}}{{mergingSuffix}}", {
         todoLabel,
         todo: workflowCounts.todo,
         inProgressLabel,
         inProgress: workflowCounts.inProgress,
         doneLabel,
         done: workflowCounts.done,
+        mergingSuffix: workflowCounts.merging > 0 ? `, ${mergingLabel}: ${workflowCounts.merging}` : "",
       })}
     </span>
   );
@@ -387,7 +395,7 @@ export function WorkflowSwitcher({ workflows, value, onChange, counts, onOpen, l
           {isOpen ? renderCountBadges(selectedCounts, "trigger") : null}
           {isOpen ? renderAccessibleCounts(selectedCounts) : null}
         </span>
-        <ChevronDown className="workflow-switcher-chevron" aria-hidden="true" />
+        <ChevronDown size={14} className="workflow-switcher-chevron" aria-hidden="true" />
       </button>
       {dropdown}
     </div>

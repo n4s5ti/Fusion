@@ -1,11 +1,12 @@
 import { EventEmitter } from "node:events";
 import { randomUUID } from "node:crypto";
-import { mkdir, readdir, readFile, stat, writeFile, rename, unlink } from "node:fs/promises";
+import { mkdir, readdir, readFile, stat, writeFile, rename, unlink, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { existsSync, watch, type Dirent, type FSWatcher } from "node:fs";
-import type { Task, TaskDetail, TaskCreateInput, TaskAttachment, AgentLogEntry, BoardConfig, Column, ColumnId, CheckoutClaimPrecondition, MergeResult, Settings, GlobalSettings, ProjectSettings, ActivityLogEntry, ActivityEventType, TaskDocument, TaskDocumentRevision, TaskDocumentCreateInput, TaskDocumentWithTask, Artifact, ArtifactCreateInput, ArtifactType, ArtifactWithTask, InboxTask, TaskLogEntry, RunMutationContext, RunAuditEvent, RunAuditEventInput, RunAuditEventFilter, ArchivedTaskEntry, ArchiveAgentLogMode, TaskPriority, SourceType, WorkflowStepTemplate, Agent, AutostashOrphanRecord, TaskCommitAssociation, TaskCommitAssociationMatchSource, TaskCommitAssociationConfidence, GithubIssueAction, MergeQueueEntry, MergeQueueEnqueueOptions, MergeQueueAcquireOptions, MergeQueueReleaseOutcome, HandoffToReviewOptions, GoalCitation, GoalCitationFilter, GoalCitationInput, GoalCitationSurface, BranchGroup, BranchGroupCreateInput, BranchGroupUpdate, TaskBranchAssignmentMode, MergeRequestRecord, MergeRequestState, MergeRequestWorkflowProjectionOptions, CompletionHandoffMarker, WorkflowWorkItem, WorkflowWorkItemDueFilter, WorkflowWorkItemKind, WorkflowWorkItemState, WorkflowWorkItemTransitionPatch, WorkflowWorkItemUpsertInput, PrEntity, PrEntityCreateInput, PrEntityUpdate, PrEntityState, PrThreadState, PrThreadOutcome, PrConflictState, PrChecksRollup, PrReviewDecision, PluginActivation, PluginActivationInput } from "./types.js";
+import { detectWorkspaceRepos, saveWorkspaceConfig, loadWorkspaceConfig } from "./git-repository.js";
+import type { Task, TaskDetail, TaskCreateInput, TaskAttachment, AgentLogEntry, BoardConfig, Column, ColumnId, CheckoutClaimPrecondition, MergeResult, Settings, GlobalSettings, ProjectSettings, ActivityLogEntry, ActivityEventType, TaskDocument, TaskDocumentRevision, TaskDocumentCreateInput, TaskDocumentWithTask, Artifact, ArtifactCreateInput, ArtifactType, ArtifactWithTask, InboxTask, TaskLogEntry, RunMutationContext, RunAuditEvent, RunAuditEventInput, RunAuditEventFilter, ArchivedTaskEntry, ArchiveAgentLogMode, TaskPriority, SourceType, WorkflowStepTemplate, Agent, AutostashOrphanRecord, TaskCommitAssociation, TaskCommitAssociationMatchSource, TaskCommitAssociationConfidence, CommitAssociationDiffBackfillReport, GithubIssueAction, MergeQueueEntry, MergeQueueEnqueueOptions, MergeQueueAcquireOptions, MergeQueueReleaseOutcome, HandoffToReviewOptions, GoalCitation, GoalCitationFilter, GoalCitationInput, GoalCitationSurface, BranchGroup, BranchGroupCreateInput, BranchGroupUpdate, TaskBranchAssignmentMode, MergeRequestRecord, MergeRequestState, MergeRequestWorkflowProjectionOptions, CompletionHandoffMarker, WorkflowWorkItem, WorkflowWorkItemDueFilter, WorkflowWorkItemKind, WorkflowWorkItemState, WorkflowWorkItemTransitionPatch, WorkflowWorkItemUpsertInput, PrEntity, PrEntityCreateInput, PrEntityUpdate, PrEntityState, PrThreadState, PrThreadOutcome, PrConflictState, PrChecksRollup, PrReviewDecision, PluginActivation, PluginActivationInput } from "./types.js";
 import { createActivityLogSnapshot, createRunAuditSnapshot, createTaskMetadataSnapshot, toTaskMetadataRecord, validateSnapshotEnvelope, type ActivityLogSnapshot, type RunAuditSnapshot, type TaskMetadataSnapshot } from "./shared-mesh-state.js";
-import { VALID_TRANSITIONS, COLUMNS, DEFAULT_SETTINGS, isColumn, isGlobalOnlySettingsKey, WORKFLOW_STEP_TEMPLATES, validateDocumentKey } from "./types.js";
+import { VALID_TRANSITIONS, COLUMNS, DEFAULT_SETTINGS, isColumn, isGlobalOnlySettingsKey, WORKFLOW_STEP_TEMPLATES, validateDocumentKey, assertNotWorkspaceTaskMerge } from "./types.js";
 import { DEFAULT_PROJECT_SETTINGS } from "./settings-schema.js";
 import {
   MOVED_SETTINGS_KEYS,
@@ -16,8 +17,15 @@ import {
 } from "./moved-settings.js";
 import { parseWorkflowIr, serializeWorkflowIr, downgradeIrToV1IfPure } from "./workflow-ir.js";
 import { stepsToWorkflowIr, stepToFragmentIr, layoutForIr } from "./workflow-steps-to-ir.js";
-import { isWorkflowColumnsEnabled } from "./workflow-columns-settings.js";
 import { resolveAllowedColumns, workflowHasColumn } from "./workflow-transitions.js";
+
+function isWorkflowColumnsCompatibilityFlagEnabled(settings: Pick<Settings, "experimentalFeatures"> | undefined): boolean {
+  /*
+  FNXC:WorkflowColumns 2026-06-22-00:00:
+  TaskStore still needs the raw compatibility flag for legacy movement characterization, v1 workflow-IR rollback persistence, and ON→OFF custom-column evacuation tests. This is narrower than the public runtime helper, which treats stale false values as enabled after workflow-column cutover.
+  */
+  return settings?.experimentalFeatures?.workflowColumns === true;
+}
 import {
   type PluginGateVerdict,
   findWorkflowColumn,
@@ -79,6 +87,7 @@ import type {
   WorkflowNodeLayout,
 } from "./workflow-definition-types.js";
 import { compileWorkflowToSteps, isInterpreterDeferredWorkflowCompileError } from "./workflow-compiler.js";
+import { resolveDefaultOnOptionalGroupIds, resolveAllOptionalGroupIds } from "./workflow-optional-steps.js";
 import {
   BUILTIN_WORKFLOWS,
   getBuiltinWorkflow,
@@ -268,6 +277,13 @@ interface TaskRow {
   sourceIssueUrl: string | null;
   sourceIssueClosedAt: string | null;
   mergeDetails: string | null;
+  // FNXC:Workspace 2026-06-24-15:30 (FN-multiworkspace persistence): the per-sub-repo worktree
+  // map MUST have its own SQLite column. Before this it was a Task field with NO column/rowToTask
+  // mapping, so updateTask set it only in-memory and applyTaskPatch wrote the DB-round-tripped
+  // task (without it) back to task.json — the map was silently dropped on every persist. That made
+  // fn_task_done's scope verifier always read `{}` ("acquired no sub-repo worktrees") and broke
+  // every isWorkspaceTask() consumer. Stored as JSON text, same shape as mergeDetails.
+  workspaceWorktrees: string | null;
   breakIntoSubtasks: number | null;
   noCommitsExpected: number | null;
   enabledWorkflowSteps: string | null;
@@ -420,6 +436,10 @@ const TASK_COLUMN_DESCRIPTORS: TaskColumnDescriptor[] = [
   defineTaskColumn("sourceIssueUrl", (task) => task.sourceIssue?.url ?? null),
   defineTaskColumn("sourceIssueClosedAt", (task) => task.sourceIssue?.closedAt ?? null),
   defineTaskColumn("mergeDetails", (task) => toJsonNullable(task.mergeDetails)),
+  // FNXC:Workspace 2026-06-24-15:30: persist the per-sub-repo worktree map so fn_acquire_repo_worktree's
+  // write survives the SQLite round-trip getChangedTaskColumns/rowToTask use. Without this descriptor the
+  // column diff never sees a change and the field never reaches the DB.
+  defineTaskColumn("workspaceWorktrees", (task) => toJsonNullable(task.workspaceWorktrees)),
   defineTaskColumn("breakIntoSubtasks", (task) => task.breakIntoSubtasks ? 1 : 0),
   defineTaskColumn("noCommitsExpected", (task) => task.noCommitsExpected ? 1 : 0),
   defineTaskColumn("enabledWorkflowSteps", (task) => toJson(task.enabledWorkflowSteps || [])),
@@ -567,6 +587,11 @@ interface TaskCommitAssociationRow {
   deletions: number | null;
   createdAt: string;
   updatedAt: string;
+}
+
+interface CommitAssociationDiffBackfillCandidateRow {
+  commitSha: string;
+  rowCount: number;
 }
 
 interface TaskDocumentRow {
@@ -1962,7 +1987,7 @@ export class TaskStore extends EventEmitter<TaskStoreEvents> {
     // no-op for the common case). Idempotent; non-fatal — never blocks startup.
     try {
       const settings = await this.getSettingsFast();
-      if (isWorkflowColumnsEnabled(settings)) {
+      if (isWorkflowColumnsCompatibilityFlagEnabled(settings)) {
         await this.runWorkflowColumnsIntegrityPass();
         // #1401: recover any transitionPending markers stranded by a crash
         // between the in-txn write and the post-commit clear (they otherwise
@@ -2136,6 +2161,13 @@ export class TaskStore extends EventEmitter<TaskStoreEvents> {
         };
       })(),
       mergeDetails: fromJson<import("./types.js").MergeDetails>(row.mergeDetails),
+      // FNXC:Workspace 2026-06-24-15:30: deserialize the per-sub-repo worktree map. An empty/null map
+      // normalizes to undefined so isWorkspaceTask() (keys-length>0) and the scope verifier behave the
+      // same as a task that never acquired a sub-repo.
+      workspaceWorktrees: (() => {
+        const w = fromJson<import("./types.js").Task["workspaceWorktrees"]>(row.workspaceWorktrees);
+        return w && Object.keys(w).length > 0 ? w : undefined;
+      })(),
       breakIntoSubtasks: row.breakIntoSubtasks ? true : undefined,
       noCommitsExpected: row.noCommitsExpected ? true : undefined,
       enabledWorkflowSteps: (() => { const e = fromJson<string[]>(row.enabledWorkflowSteps); return e && e.length > 0 ? e : undefined; })(),
@@ -2575,7 +2607,7 @@ export class TaskStore extends EventEmitter<TaskStoreEvents> {
       "tokenUsageInputTokens", "tokenUsageOutputTokens", "tokenUsageCachedTokens", "tokenUsageCacheWriteTokens", "tokenUsageTotalTokens", "tokenUsageFirstUsedAt", "tokenUsageLastUsedAt", "tokenUsageModelProvider", "tokenUsageModelId", "tokenUsagePerModel", "tokenBudgetSoftAlertedAt", "tokenBudgetHardAlertedAt", "tokenBudgetOverride",
       "createdAt", "updatedAt", "columnMovedAt", "firstExecutionAt", "cumulativeActiveMs", "executionStartedAt", "executionCompletedAt",
       "dependencies", "steps", "customFields", "comments", "review", "reviewState", "workflowStepResults", "steeringComments",
-      "attachments", "prInfo", "prInfos", "issueInfo", "githubTracking", "sourceIssueProvider", "sourceIssueRepository", "sourceIssueExternalIssueId", "sourceIssueNumber", "sourceIssueUrl", "sourceIssueClosedAt", "mergeDetails",
+      "attachments", "prInfo", "prInfos", "issueInfo", "githubTracking", "sourceIssueProvider", "sourceIssueRepository", "sourceIssueExternalIssueId", "sourceIssueNumber", "sourceIssueUrl", "sourceIssueClosedAt", "mergeDetails", "workspaceWorktrees",
       "breakIntoSubtasks", "noCommitsExpected", "enabledWorkflowSteps", "modifiedFiles",
       "missionId", "sliceId", "scopeOverride", "scopeOverrideReason", "scopeAutoWiden", "assignedAgentId", "pausedByAgentId", "assigneeUserId", "nodeId", "effectiveNodeId", "effectiveNodeSource",
       "sourceType", "sourceAgentId", "sourceRunId", "sourceSessionId", "sourceMessageId", "sourceParentTaskId", "sourceMetadata",
@@ -2624,7 +2656,7 @@ export class TaskStore extends EventEmitter<TaskStoreEvents> {
       "tokenUsageInputTokens", "tokenUsageOutputTokens", "tokenUsageCachedTokens", "tokenUsageCacheWriteTokens", "tokenUsageTotalTokens", "tokenUsageFirstUsedAt", "tokenUsageLastUsedAt", "tokenUsageModelProvider", "tokenUsageModelId", "tokenUsagePerModel", "tokenBudgetSoftAlertedAt", "tokenBudgetHardAlertedAt", "tokenBudgetOverride",
       "createdAt", "updatedAt", "columnMovedAt", "firstExecutionAt", "cumulativeActiveMs", "executionStartedAt", "executionCompletedAt",
       "dependencies", "steps", "customFields", "attachments", "steeringComments",
-      "comments", "review", "reviewState", "workflowStepResults", "prInfo", "prInfos", "issueInfo", "githubTracking", "sourceIssueProvider", "sourceIssueRepository", "sourceIssueExternalIssueId", "sourceIssueNumber", "sourceIssueUrl", "sourceIssueClosedAt", "mergeDetails",
+      "comments", "review", "reviewState", "workflowStepResults", "prInfo", "prInfos", "issueInfo", "githubTracking", "sourceIssueProvider", "sourceIssueRepository", "sourceIssueExternalIssueId", "sourceIssueNumber", "sourceIssueUrl", "sourceIssueClosedAt", "mergeDetails", "workspaceWorktrees",
       "breakIntoSubtasks", "noCommitsExpected", "enabledWorkflowSteps", "modifiedFiles",
       "missionId", "sliceId", "scopeOverride", "scopeOverrideReason", "scopeAutoWiden", "assignedAgentId", "pausedByAgentId", "assigneeUserId", "nodeId", "effectiveNodeId", "effectiveNodeSource",
       "sourceType", "sourceAgentId", "sourceRunId", "sourceSessionId", "sourceMessageId", "sourceParentTaskId", "sourceMetadata",
@@ -3840,7 +3872,7 @@ ${TASK_UPSERT_SQL_ASSIGNMENTS}
       // #1409: if this update flipped workflowColumns ON→OFF, evacuate any card
       // stranded in a custom (non-legacy) column back to a legacy column so the
       // board stays listable / movable on the legacy path.
-      if (isWorkflowColumnsEnabled(previousMerged) && !isWorkflowColumnsEnabled(updatedMerged)) {
+      if (isWorkflowColumnsCompatibilityFlagEnabled(previousMerged) && !isWorkflowColumnsCompatibilityFlagEnabled(updatedMerged)) {
         try {
           await this.evacuateCustomColumnsToLegacy("flag-toggled-off");
         } catch (err) {
@@ -3860,6 +3892,40 @@ ${TASK_UPSERT_SQL_ASSIGNMENTS}
           // Non-fatal — memory bootstrap failure should not block settings update
           storeLog.warn("Project-memory bootstrap failed after memory toggle-on", {
             phase: "updateSettings:memory-toggle-on",
+            rootDir: this.rootDir,
+            error: err instanceof Error ? err.message : String(err),
+          });
+        }
+      }
+
+      /*
+      FNXC:Workspace 2026-06-24-16:00:
+      When workspaceMode is toggled on, detect sub-repos and persist workspace.json so the
+      executor and ensureGitRepositoryForProjectPath treat the root as workspace-mode. When
+      toggled off, remove workspace.json so the root falls back to single-repo behavior.
+      */
+      if (updatedMerged.workspaceMode === true && previousMerged.workspaceMode !== true) {
+        try {
+          const existing = await loadWorkspaceConfig(this.rootDir);
+          if (!existing) {
+            const repos = await detectWorkspaceRepos(this.rootDir);
+            if (repos.length > 0) {
+              await saveWorkspaceConfig(this.rootDir, { repos });
+            }
+          }
+        } catch (err) {
+          storeLog.warn("workspace.json sync failed after workspaceMode toggle-on", {
+            phase: "updateSettings:workspace-toggle-on",
+            rootDir: this.rootDir,
+            error: err instanceof Error ? err.message : String(err),
+          });
+        }
+      } else if (updatedMerged.workspaceMode === false && previousMerged.workspaceMode === true) {
+        try {
+          await rm(join(this.rootDir, ".fusion", "workspace.json"), { force: true });
+        } catch (err) {
+          storeLog.warn("workspace.json removal failed after workspaceMode toggle-off", {
+            phase: "updateSettings:workspace-toggle-off",
             rootDir: this.rootDir,
             error: err instanceof Error ? err.message : String(err),
           });
@@ -3960,7 +4026,7 @@ ${TASK_UPSERT_SQL_ASSIGNMENTS}
     // #1409: workflowColumns lives in experimentalFeatures (a global key), so the
     // ON→OFF toggle flows through here. Evacuate any card stranded in a custom
     // column when the flag flips off.
-    if (isWorkflowColumnsEnabled(previous) && !isWorkflowColumnsEnabled(merged)) {
+    if (isWorkflowColumnsCompatibilityFlagEnabled(previous) && !isWorkflowColumnsCompatibilityFlagEnabled(merged)) {
       try {
         await this.evacuateCustomColumnsToLegacy("flag-toggled-off");
       } catch (err) {
@@ -4103,7 +4169,7 @@ ${TASK_UPSERT_SQL_ASSIGNMENTS}
     },
   ): Promise<Task> {
     const settings = await this.getSettingsFast();
-    const prefix = (settings.taskPrefix || "KB").trim().toUpperCase();
+    const prefix = (settings.taskPrefix || "FN").trim().toUpperCase();
     const allocator = this.getDistributedTaskIdAllocator();
     const nodeId = await this.resolveLocalNodeIdForTaskAllocation();
     const reservation = await allocator.reserveDistributedTaskId({
@@ -4274,7 +4340,26 @@ ${TASK_UPSERT_SQL_ASSIGNMENTS}
     });
   }
 
-  private async resolveEnabledWorkflowSteps(stepIds?: string[]): Promise<string[] | undefined> {
+  /*
+  FNXC:WorkflowOptionalGroup 2026-06-21-16:30:
+  `optionalGroupIds` are the optional-group node ids of the task's workflow. They are executor toggle keys (matched by node id in `enabledWorkflowSteps`), NOT legacy `WorkflowStep` template ids. A built-in group id can deliberately collide with a `WORKFLOW_STEP_TEMPLATES` id (e.g. "browser-verification"); without this pass-through the colliding id is materialized into a step row whose id differs from the group node id, so the executor's `enabledWorkflowSteps.includes(node.id)` check fails and an enabled group is silently bypassed (P1 from code review). Editor-authored group ids never collide (they come from `newNodeId()`), so they already passed through; this guards the built-in collision.
+  */
+  /** Optional-group node ids for a workflow (its `enabledWorkflowSteps` toggle
+   *  keys). Falls back to the project default workflow when `workflowId` is
+   *  nullish; empty for missing/fragment workflows. Used to keep group ids out of
+   *  the legacy step-template materialization in {@link resolveEnabledWorkflowSteps}. */
+  private async optionalGroupIdSet(workflowId?: string | null): Promise<Set<string>> {
+    const wfId = workflowId ?? (await this.getDefaultWorkflowId());
+    if (!wfId) return new Set();
+    const def = await this.getWorkflowDefinition(wfId);
+    if (!def || def.kind === "fragment") return new Set();
+    return new Set(resolveAllOptionalGroupIds(def.ir));
+  }
+
+  private async resolveEnabledWorkflowSteps(
+    stepIds?: string[],
+    optionalGroupIds?: Set<string>,
+  ): Promise<string[] | undefined> {
     if (!stepIds?.length) return undefined;
 
     const resolved: string[] = [];
@@ -4292,7 +4377,10 @@ ${TASK_UPSERT_SQL_ASSIGNMENTS}
         continue;
       }
 
-      const template = this.getBuiltInWorkflowTemplate(stepId);
+      // Optional-group toggle ids pass through raw — never materialized as legacy step rows.
+      const template = optionalGroupIds?.has(stepId)
+        ? undefined
+        : this.getBuiltInWorkflowTemplate(stepId);
       const resolvedId = template
         ? (await this.ensureWorkflowStepForTemplate(stepId)).id
         : stepId;
@@ -4432,7 +4520,10 @@ ${TASK_UPSERT_SQL_ASSIGNMENTS}
 
     // Determine enabledWorkflowSteps: explicit input takes precedence, otherwise auto-apply default-on steps
     let resolvedWorkflowSteps: string[] | undefined = input.enabledWorkflowSteps?.length
-      ? await this.resolveEnabledWorkflowSteps(input.enabledWorkflowSteps)
+      ? await this.resolveEnabledWorkflowSteps(
+          input.enabledWorkflowSteps,
+          await this.optionalGroupIdSet(input.workflowId),
+        )
       : undefined;
 
     // When a project default workflow is configured, new tasks inherit it
@@ -4627,7 +4718,10 @@ ${TASK_UPSERT_SQL_ASSIGNMENTS}
 
     const title = input.title?.trim() || undefined;
     let resolvedWorkflowSteps: string[] | undefined = input.enabledWorkflowSteps?.length
-      ? await this.resolveEnabledWorkflowSteps(input.enabledWorkflowSteps)
+      ? await this.resolveEnabledWorkflowSteps(
+          input.enabledWorkflowSteps,
+          await this.optionalGroupIdSet(input.workflowId),
+        )
       : undefined;
 
     let pendingWorkflowSelection: { workflowId: string; stepIds: string[] } | undefined;
@@ -5771,11 +5865,11 @@ ${TASK_UPSERT_SQL_ASSIGNMENTS}
       const steps = await this.parseStepsFromPrompt(task.id);
       return steps.length > 0 ? { ...task, steps } : task;
     }));
-    const archivedTasks = includeArchived && (!columnFilter || columnFilter === "archived")
-      ? this.archiveDb.list().map((entry) => this.archiveEntryToTask(entry, slim))
-      : [];
-    const tasks = [...activeTasks, ...archivedTasks];
-
+    const archivedTasks = includeArchived && (!columnFilter || columnFilter === "archived") ? this.archiveDb.list().map((entry) => this.archiveEntryToTask(entry, slim)) : [];
+    // FNXC:BoardConsistency 2026-06-21-08:34: FN-6851's cache-sync fix is primary; listTasks still collapses duplicate storage sources so one task ID cannot render in two columns. Active SQLite rows are authoritative over archive snapshots.
+    const tasksById = new Map<string, Task>(activeTasks.map((task) => [task.id, task]));
+    for (const task of archivedTasks) if (!tasksById.has(task.id)) tasksById.set(task.id, task);
+    const tasks = [...tasksById.values()];
     // Sort by createdAt, then by numeric ID suffix for tie-breaking
     const sorted = tasks.sort((a, b) => {
       const cmp = a.createdAt.localeCompare(b.createdAt);
@@ -5788,10 +5882,7 @@ ${TASK_UPSERT_SQL_ASSIGNMENTS}
     const offset = Math.max(0, options?.offset ?? 0);
     const limit = options?.limit;
 
-    if (limit === undefined) {
-      return sorted.slice(offset);
-    }
-
+    if (limit === undefined) return sorted.slice(offset);
     return sorted.slice(offset, offset + Math.max(0, limit));
   }
 
@@ -6873,9 +6964,10 @@ ${TASK_UPSERT_SQL_ASSIGNMENTS}
     moveSource: NonNullable<MoveTaskOptions["moveSource"]>,
     options?: MoveTaskOptions,
   ): boolean {
+    void moveSource;
     return options?.recoveryRehome === true ||
       (options?.bypassGuards ??
-        (moveSource === "engine" || moveSource === "scheduler" || options?.skipMergeBlocker === true));
+        (options?.moveSource === "engine" || options?.moveSource === "scheduler" || options?.skipMergeBlocker === true));
   }
 
   private shouldSkipWorkflowMovePolicies(params: {
@@ -6899,7 +6991,7 @@ ${TASK_UPSERT_SQL_ASSIGNMENTS}
     const task = await this.readTaskForMove(id);
     const moveSource = options?.moveSource ?? "engine";
     const mergedSettingsForMove = await this.getSettingsFast();
-    if (!isWorkflowColumnsEnabled(mergedSettingsForMove)) return undefined;
+    if (!isWorkflowColumnsCompatibilityFlagEnabled(mergedSettingsForMove)) return undefined;
     if (task.column === toColumn) return undefined;
 
     const workflowIr = this.resolveTaskWorkflowIrSync(id);
@@ -6998,11 +7090,17 @@ ${TASK_UPSERT_SQL_ASSIGNMENTS}
   ): Promise<Task> {
     const dir = this.taskDir(id);
     const task = currentTask ?? await this.readTaskForMove(id);
+    /*
+    FNXC:TaskMovement 2026-06-22-18:20:
+    Public moveTask calls without an explicit source keep the legacy emitted source of "engine", but they do not inherit workflow guard bypass. Engine, scheduler, handoff, and recovery call sites opt into bypass semantics with an explicit moveSource or skipMergeBlocker.
+    */
     const moveSource = options?.moveSource ?? "engine";
 
     // ── U4: flag-gated workflow-resolved transition path (KTD-8) ─────────────
     // Flag OFF (default): the legacy `VALID_TRANSITIONS` / inline-side-effect
     // path below runs byte-identical (proven by the characterization suite).
+    // FNXC:WorkflowColumns 2026-06-22-18:22:
+    // The flag-OFF path is still an active compatibility contract for changed-test recovery: it must throw bare Error for invalid legacy moves, persist v1 workflow IR, and support ON→OFF evacuation. Do not route flag-OFF callers through typed workflow-column rejections until the legacy path is intentionally removed.
     // Flag ON: validate against the task's resolved workflow column graph, run
     // sync trait guards (unless bypassed), and route the legacy per-column side
     // effects through the default-workflow trait hooks.
@@ -7011,7 +7109,7 @@ ${TASK_UPSERT_SQL_ASSIGNMENTS}
     // project) via getSettingsFast(). This is an async read taken before the
     // lock-sensitive transaction; it does not touch the task lock.
     const mergedSettingsForMove = await this.getSettingsFast();
-    const useWorkflow = isWorkflowColumnsEnabled(mergedSettingsForMove);
+    const useWorkflow = isWorkflowColumnsCompatibilityFlagEnabled(mergedSettingsForMove);
     // bypassGuards (KTD-9): engine-sourced moves + the existing skipMergeBlocker
     // call sites map onto it. Capacity (KTD-10) is NEVER bypassed by this — the
     // capacity check is not a guard (U6 fills the enforcement; U4 leaves a
@@ -7763,7 +7861,6 @@ ${TASK_UPSERT_SQL_ASSIGNMENTS}
     }
   }
 
-
   async updateTaskDependencies(
     id: string,
     mutation: TaskDependencyMutation,
@@ -7922,6 +8019,8 @@ ${TASK_UPSERT_SQL_ASSIGNMENTS}
         },
       };
       await this.atomicWriteTaskJsonWithAudit(dir, task, auditEvent);
+      // FNXC:BoardConsistency 2026-06-21-08:31: updateTaskDependencies' todo→triage re-spec move can also carry title/blocker changes, and leaving taskCache on the pre-move row made watch/SSE/board consumers surface one task ID in two columns (FN-6851/FN-6812). Sync the cache after the authoritative write like sibling mutation paths.
+      if (this.isWatching) this.taskCache.set(id, { ...task });
       if (movedToTriage) {
         this.emit("task:moved", { task, from: "todo" as Column, to: "triage" as Column, source: "engine" });
       }
@@ -7932,7 +8031,7 @@ ${TASK_UPSERT_SQL_ASSIGNMENTS}
 
   async updateTask(
     id: string,
-    updates: { title?: string; description?: string; priority?: TaskPriority | null; prompt?: string; worktree?: string | null; status?: string | null; dependencies?: string[]; steps?: import("./types.js").TaskStep[]; customFields?: Record<string, unknown>; currentStep?: number; blockedBy?: string | null; overlapBlockedBy?: string | null; assignedAgentId?: string | null; pausedByAgentId?: string | null; pausedReason?: string | null; tokenBudgetSoftAlertedAt?: string | null; worktrunkFallbackAlertedAt?: string | null; worktrunkFailure?: import("./types.js").Task["worktrunkFailure"] | null; tokenBudgetHardAlertedAt?: string | null; tokenBudgetOverride?: import("./types.js").TaskTokenBudgetOverride | null; dispatchStormCount?: number | null; lastDispatchAt?: string | null; assigneeUserId?: string | null; scopeOverride?: boolean | null; scopeOverrideReason?: string | null; scopeAutoWiden?: string[] | null; nodeId?: string | null; effectiveNodeId?: string | null; effectiveNodeSource?: string | null; checkedOutBy?: string | null; checkedOutAt?: string | null; checkoutNodeId?: string | null; checkoutRunId?: string | null; checkoutLeaseRenewedAt?: string | null; checkoutLeaseEpoch?: number | null; paused?: boolean; baseBranch?: string | null; autoMerge?: boolean | null; branch?: string | null; executionStartBranch?: string | null; baseCommitSha?: string | null; size?: "S" | "M" | "L"; reviewLevel?: number; executionMode?: import("./types.js").ExecutionMode | null; mergeRetries?: number; workflowStepRetries?: number; stuckKillCount?: number | null; resumeLimboCount?: number | null; graphResumeRetryCount?: number | null; resumeLimboTipSha?: string | null; resumeLimboStepSignature?: string | null; postReviewFixCount?: number | null; recoveryRetryCount?: number | null; taskDoneRetryCount?: number | null; worktreeSessionRetryCount?: number | null; completionHandoffLimboRecoveryCount?: number | null; verificationFailureCount?: number | null; mergeConflictBounceCount?: number | null; mergeAuditBounceCount?: number | null; mergeTransientRetryCount?: number | null; branchConflictRecoveryCount?: number | null; reviewerContextRetryCount?: number | null; reviewerFallbackRetryCount?: number | null; nextRecoveryAt?: string | null; enabledWorkflowSteps?: string[]; noCommitsExpected?: boolean | null; modelProvider?: string | null; modelId?: string | null; validatorModelProvider?: string | null; validatorModelId?: string | null; planningModelProvider?: string | null; planningModelId?: string | null; thinkingLevel?: string | null; error?: string | null; summary?: string | null; sessionFile?: string | null; firstExecutionAt?: string | null; cumulativeActiveMs?: number | null; executionStartedAt?: string | null; executionCompletedAt?: string | null; review?: import("./types.js").TaskReview | null; reviewState?: import("./types.js").TaskReviewState | null; workflowStepResults?: import("./types.js").WorkflowStepResult[] | null; mergeDetails?: import("./types.js").MergeDetails | null; sourceIssue?: import("./types.js").TaskSourceIssue | null; sourceMetadataPatch?: Record<string, unknown> | null; githubTracking?: import("./types.js").TaskGithubTracking | null; tokenUsage?: import("./types.js").TaskTokenUsage | null; modifiedFiles?: string[] | null; missionId?: string | null; sliceId?: string | null },
+    updates: { title?: string; description?: string; priority?: TaskPriority | null; prompt?: string; worktree?: string | null; workspaceWorktrees?: import("./types.js").Task["workspaceWorktrees"]; status?: string | null; dependencies?: string[]; steps?: import("./types.js").TaskStep[]; customFields?: Record<string, unknown>; currentStep?: number; blockedBy?: string | null; overlapBlockedBy?: string | null; assignedAgentId?: string | null; pausedByAgentId?: string | null; pausedReason?: string | null; tokenBudgetSoftAlertedAt?: string | null; worktrunkFallbackAlertedAt?: string | null; worktrunkFailure?: import("./types.js").Task["worktrunkFailure"] | null; tokenBudgetHardAlertedAt?: string | null; tokenBudgetOverride?: import("./types.js").TaskTokenBudgetOverride | null; dispatchStormCount?: number | null; lastDispatchAt?: string | null; assigneeUserId?: string | null; scopeOverride?: boolean | null; scopeOverrideReason?: string | null; scopeAutoWiden?: string[] | null; nodeId?: string | null; effectiveNodeId?: string | null; effectiveNodeSource?: string | null; checkedOutBy?: string | null; checkedOutAt?: string | null; checkoutNodeId?: string | null; checkoutRunId?: string | null; checkoutLeaseRenewedAt?: string | null; checkoutLeaseEpoch?: number | null; paused?: boolean; baseBranch?: string | null; autoMerge?: boolean | null; branch?: string | null; executionStartBranch?: string | null; baseCommitSha?: string | null; size?: "S" | "M" | "L"; reviewLevel?: number; executionMode?: import("./types.js").ExecutionMode | null; mergeRetries?: number; workflowStepRetries?: number; stuckKillCount?: number | null; resumeLimboCount?: number | null; graphResumeRetryCount?: number | null; resumeLimboTipSha?: string | null; resumeLimboStepSignature?: string | null; postReviewFixCount?: number | null; recoveryRetryCount?: number | null; taskDoneRetryCount?: number | null; worktreeSessionRetryCount?: number | null; completionHandoffLimboRecoveryCount?: number | null; verificationFailureCount?: number | null; mergeConflictBounceCount?: number | null; mergeAuditBounceCount?: number | null; mergeTransientRetryCount?: number | null; branchConflictRecoveryCount?: number | null; reviewerContextRetryCount?: number | null; reviewerFallbackRetryCount?: number | null; nextRecoveryAt?: string | null; enabledWorkflowSteps?: string[]; noCommitsExpected?: boolean | null; modelProvider?: string | null; modelId?: string | null; validatorModelProvider?: string | null; validatorModelId?: string | null; planningModelProvider?: string | null; planningModelId?: string | null; thinkingLevel?: string | null; error?: string | null; summary?: string | null; sessionFile?: string | null; firstExecutionAt?: string | null; cumulativeActiveMs?: number | null; executionStartedAt?: string | null; executionCompletedAt?: string | null; review?: import("./types.js").TaskReview | null; reviewState?: import("./types.js").TaskReviewState | null; workflowStepResults?: import("./types.js").WorkflowStepResult[] | null; mergeDetails?: import("./types.js").MergeDetails | null; sourceIssue?: import("./types.js").TaskSourceIssue | null; sourceMetadataPatch?: Record<string, unknown> | null; githubTracking?: import("./types.js").TaskGithubTracking | null; tokenUsage?: import("./types.js").TaskTokenUsage | null; modifiedFiles?: string[] | null; missionId?: string | null; sliceId?: string | null },
     runContext?: RunMutationContext,
   ): Promise<Task> {
     return this.withTaskLock(id, () => this.updateTaskUnlocked(id, updates, runContext));
@@ -8348,6 +8447,9 @@ ${TASK_UPSERT_SQL_ASSIGNMENTS}
       } else if (updates.worktree !== undefined) {
         task.worktree = updates.worktree;
       }
+      if (updates.workspaceWorktrees !== undefined) {
+        task.workspaceWorktrees = updates.workspaceWorktrees;
+      }
       // Detect new dependencies being added to a todo task → auto-move to triage
       let movedToTriage = false;
       if (updates.dependencies !== undefined) {
@@ -8692,7 +8794,14 @@ ${TASK_UPSERT_SQL_ASSIGNMENTS}
         task.nextRecoveryAt = updates.nextRecoveryAt;
       }
       if (updates.enabledWorkflowSteps !== undefined) {
-        task.enabledWorkflowSteps = await this.resolveEnabledWorkflowSteps(updates.enabledWorkflowSteps);
+        // Pass the task's own workflow optional-group ids through untouched so a
+        // toggled built-in group id (e.g. "browser-verification") is not remapped
+        // to a materialized step row the executor never matches (code-review P1).
+        const taskWorkflowId = this.getTaskWorkflowSelection(task.id)?.workflowId;
+        task.enabledWorkflowSteps = await this.resolveEnabledWorkflowSteps(
+          updates.enabledWorkflowSteps,
+          await this.optionalGroupIdSet(taskWorkflowId),
+        );
       }
       if (updates.noCommitsExpected === null) {
         task.noCommitsExpected = undefined;
@@ -11231,6 +11340,12 @@ ${TASK_UPSERT_SQL_ASSIGNMENTS}
     return this.withTaskLock(id, async () => {
       const dir = this.taskDir(id);
       const task = await this.readTaskJson(dir);
+      // FNXC:Workspace 2026-06-21-19:05:
+      // R7 merge-boundary guard (master-plan U0). Reject workspace-mode tasks
+      // BEFORE any git checkout/squash — they need the per-repo merge loop that
+      // lands in master-plan U6, which removes this guard. See the predicate's
+      // FNXC:Workspace note in @fusion/core types.
+      assertNotWorkspaceTaskMerge(task);
       const branch = task.branch || `fusion/${id.toLowerCase()}`;
       // Branch is derived from the task id (already validated at create time),
       // but assert as defense-in-depth against future id-format changes.
@@ -11709,7 +11824,24 @@ ${TASK_UPSERT_SQL_ASSIGNMENTS}
         if (cachedTask.column !== "done") continue;
 
         const taskDir = this.taskDir(taskId);
-        const raw = await readFile(join(taskDir, "task.json"), "utf-8");
+        let raw: string;
+        try {
+          raw = await readFile(join(taskDir, "task.json"), "utf-8");
+        } catch (error) {
+          if ((error as NodeJS.ErrnoException)?.code === "ENOENT") {
+            /*
+             * FNXC:StartupRecovery 2026-06-23-05:02:
+             * A recovered or corrupt SQLite index can retain done-task rows whose legacy task.json mirror was already removed. Startup watch must not crash while running the one-time done-pause backfill; skip the missing mirror and keep the dashboard available so operators can inspect or repair the project.
+             */
+            storeLog.warn("Skipping done-task pause metadata backfill for missing task.json", {
+              phase: "watch:done-pause-backfill",
+              taskId,
+              taskJsonPath: join(taskDir, "task.json"),
+            });
+            continue;
+          }
+          throw error;
+        }
         const diskTask = JSON.parse(raw) as Task;
         if (!this.clearDoneTransientFields(diskTask)) continue;
 
@@ -12727,6 +12859,9 @@ ${TASK_UPSERT_SQL_ASSIGNMENTS}
   /**
    * FNXC:ArtifactRegistry 2026-06-19-22:04:
    * Cross-agent registry query path for filtering artifacts across tasks, authors, and media types. LEFT JOIN keeps task-less registry artifacts visible while excluding artifacts attached to soft-deleted tasks.
+   *
+   * FNXC:ArtifactRegistry 2026-06-23-12:48:
+   * Agent execution can list artifacts frequently while large generated outputs are stored inline. The registry list is metadata-only, so avoid selecting artifact content here and require callers to use getArtifact for the full payload.
    */
   async listArtifacts(options?: {
     type?: ArtifactType;
@@ -12740,7 +12875,24 @@ ${TASK_UPSERT_SQL_ASSIGNMENTS}
     const offset = Math.max(0, options?.offset ?? 0);
 
     let sql = `
-      SELECT a.*, t.title as taskTitle, t.description as taskDescription, t.column as taskColumn
+      SELECT
+        a.id,
+        a.type,
+        a.title,
+        a.description,
+        a.mimeType,
+        a.sizeBytes,
+        a.uri,
+        NULL as content,
+        a.authorId,
+        a.authorType,
+        a.taskId,
+        a.metadata,
+        a.createdAt,
+        a.updatedAt,
+        t.title as taskTitle,
+        t.description as taskDescription,
+        t.column as taskColumn
       FROM artifacts a
       LEFT JOIN tasks t ON a.taskId = t.id
       WHERE (a.taskId IS NULL OR t.${TaskStore.ACTIVE_TASKS_WHERE})
@@ -14959,9 +15111,9 @@ ${stepsSection}`;
   // (a recovery-class move, KTD-9) — never a raw column write — so capacity
   // (KTD-10) and the single transition authority (KTD-3) are honored.
 
-  /** True when the `workflowColumns` flag is ON (merged global + project). */
+  /** True when the raw `workflowColumns` compatibility flag is ON (merged global + project). */
   private async workflowColumnsFlagOn(): Promise<boolean> {
-    return isWorkflowColumnsEnabled(await this.getSettingsFast());
+    return isWorkflowColumnsCompatibilityFlagEnabled(await this.getSettingsFast());
   }
 
   /** The active (non-deleted) task ids currently selecting `workflowId`. A
@@ -15889,11 +16041,17 @@ ${stepsSection}`;
       if (isBuiltinWorkflowId(workflowId) && isInterpreterDeferredWorkflowCompileError(err)) return undefined;
       throw err;
     }
+    // FNXC:WorkflowOptionalGroup 2026-06-21-14:20: seed `enabledWorkflowSteps`
+    // with the ids of `optional-group` nodes whose `defaultOn` is true, mirroring
+    // the prior `optionalStep.defaultOn ?? false` precedence (U3, R3). These group
+    // ids are NOT WorkflowStep rows — they are toggle keys the executor reads at
+    // the optional-group seam — so they ride alongside the compiled step ids.
+    const defaultGroupIds = resolveDefaultOnOptionalGroupIds(def.ir);
     if (isBuiltinWorkflowId(workflowId) && inputs.length === 0) {
-      return { workflowId, stepIds: [] };
+      return { workflowId, stepIds: defaultGroupIds };
     }
     const stepIds = await this.materializeWorkflowSteps(workflowId, inputs);
-    return { workflowId, stepIds };
+    return { workflowId, stepIds: [...stepIds, ...defaultGroupIds] };
   }
 
   /** Resolve an EXPLICITLY requested workflow id (U6/R3/KTD-4) into materialized
@@ -15914,11 +16072,15 @@ ${stepsSection}`;
     try {
       inputs = compileWorkflowToSteps(def.ir);
     } catch (err) {
-      if (isBuiltinWorkflowId(workflowId) && isInterpreterDeferredWorkflowCompileError(err)) return { workflowId, stepIds: [] };
+      if (isBuiltinWorkflowId(workflowId) && isInterpreterDeferredWorkflowCompileError(err))
+        return { workflowId, stepIds: resolveDefaultOnOptionalGroupIds(def.ir) };
       throw err;
     }
+    // FNXC:WorkflowOptionalGroup 2026-06-21-14:20: same defaultOn-group seeding as
+    // the default-workflow path, for an explicitly requested create-time workflow.
+    const defaultGroupIds = resolveDefaultOnOptionalGroupIds(def.ir);
     const stepIds = await this.materializeWorkflowSteps(workflowId, inputs);
-    return { workflowId, stepIds };
+    return { workflowId, stepIds: [...stepIds, ...defaultGroupIds] };
   }
 
   /**
@@ -16847,6 +17009,75 @@ ${notificationsSection}`;
       additions: row.additions ?? undefined,
       deletions: row.deletions ?? undefined,
     }));
+  }
+
+  /**
+   * FNXC:CommandCenterLocBackfill 2026-06-19-12:30:
+   * Historical LOC backfill is an explicit operator action that fills only rows where both diff-stat columns are NULL. FN-6704 writes additions/deletions atomically, so candidate selection and updates guard on both columns to stay idempotent and avoid overwriting already-captured stats. Stored SHAs are untrusted; validate them before git interpolation. Unavailable commit objects remain NULL because NULL means "stats unknown" while 0 is a real zero-line stat. Dry-run reports the rows that would be updated without writing them.
+   */
+  async backfillCommitAssociationDiffStats(
+    options: { dryRun?: boolean } = {},
+  ): Promise<CommitAssociationDiffBackfillReport> {
+    const dryRun = options.dryRun === true;
+    const candidates = this.db.prepare(
+      `SELECT commitSha, COUNT(*) AS rowCount
+       FROM task_commit_associations
+       WHERE additions IS NULL AND deletions IS NULL
+       GROUP BY commitSha
+       ORDER BY commitSha`,
+    ).all() as CommitAssociationDiffBackfillCandidateRow[];
+
+    const report: CommitAssociationDiffBackfillReport = {
+      scannedRows: candidates.reduce((sum, row) => sum + row.rowCount, 0),
+      distinctCommits: candidates.length,
+      updatedRows: 0,
+      skippedUnavailableCommits: 0,
+      skippedInvalidShas: 0,
+      dryRun,
+    };
+
+    const validShaPattern = /^[0-9a-fA-F]{7,64}$/;
+    const updateStats = this.db.prepare(
+      `UPDATE task_commit_associations
+       SET additions = ?, deletions = ?, updatedAt = ?
+       WHERE commitSha = ? AND additions IS NULL AND deletions IS NULL`,
+    );
+
+    for (const candidate of candidates) {
+      const commitSha = candidate.commitSha;
+      if (!validShaPattern.test(commitSha)) {
+        report.skippedInvalidShas += 1;
+        continue;
+      }
+
+      const verify = await this.runGitCommand(`git cat-file -e ${commitSha}^{commit}`);
+      if (verify.exitCode !== 0) {
+        report.skippedUnavailableCommits += 1;
+        continue;
+      }
+
+      const statsResult = await this.runGitCommand(`git show --shortstat --format= ${commitSha}`);
+      if (statsResult.exitCode !== 0) {
+        report.skippedUnavailableCommits += 1;
+        continue;
+      }
+
+      const normalized = statsResult.stdout.trim().replace(/\n/g, " ");
+      const insertionsMatch = normalized.match(/(\d+) insertions?\(\+\)/);
+      const deletionsMatch = normalized.match(/(\d+) deletions?\(-\)/);
+      const additions = insertionsMatch ? Number.parseInt(insertionsMatch[1], 10) : 0;
+      const deletions = deletionsMatch ? Number.parseInt(deletionsMatch[1], 10) : 0;
+
+      if (dryRun) {
+        report.updatedRows += candidate.rowCount;
+        continue;
+      }
+
+      const result = updateStats.run(additions, deletions, new Date().toISOString(), commitSha);
+      report.updatedRows += Number(result.changes);
+    }
+
+    return report;
   }
 
   async replaceLegacyTaskCommitAssociations(

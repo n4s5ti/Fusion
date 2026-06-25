@@ -110,7 +110,32 @@ describe("fast mode workflow/runtime invariants", () => {
     );
   });
 
-  it("graph executor with builtin:coding selection skips the workflow-step seam in fast mode", async () => {
+  it("falls back to the runner task when prepareWorktree cannot trust the live row", async () => {
+    const store = createMockStore();
+    store.getTask.mockResolvedValue({ ...task({ id: "FN-OTHER", worktree: "/tmp/wrong" }) });
+    const executor = new TaskExecutor(store, "/tmp/test");
+
+    const result = await (executor as any)
+      .createAuthoritativeWorkflowPrimitives({ experimentalFeatures: { workflowGraphExecutor: true } })
+      .prepareWorktree(
+        { run: { taskId: "FN-6226" }, node: { node: { id: "execute" }, context: {} } },
+        task({ id: "FN-6226", worktree: "/tmp/right", branch: "fusion/fn-6226" }),
+      );
+
+    expect(result).toMatchObject({
+      outcome: "success",
+      data: {
+        worktreePath: "/tmp/right",
+        branchName: "fusion/fn-6226",
+      },
+    });
+  });
+
+  // U6: the coding built-in's pre-merge browser-verification optional-group is
+  // default-OFF (the task sets no enabledWorkflowSteps), so it is bypassed — its
+  // group node is visited but its body never runs and runWorkflowSteps is not
+  // called. Fast mode is irrelevant to a bypassed group; the seam is simply gone.
+  it("graph executor with builtin:coding selection bypasses the disabled browser-verification group", async () => {
     const { executor } = makeExecutorForTask(task({ executionMode: "fast", worktree: "/tmp/wt" }));
     const runWorkflowSteps = vi.spyOn(executor as any, "runWorkflowSteps").mockResolvedValue(workflowResult());
     const seams = {
@@ -133,7 +158,9 @@ describe("fast mode workflow/runtime invariants", () => {
     const result = await runner.run(task({ id: "FN-6226", executionMode: "fast" }), { experimentalFeatures: { workflowGraphExecutor: true } });
 
     expect(result.disposition).toBe("completed");
-    expect(result.visitedNodeIds).toContain("workflow-step");
+    expect(result.visitedNodeIds).toContain("browser-verification");
+    expect(result.visitedNodeIds).not.toContain("browser-verification::browser-verification-step");
+    expect(result.visitedNodeIds).not.toContain("workflow-step");
     expect(runWorkflowSteps).not.toHaveBeenCalled();
     expect(seams.review).toHaveBeenCalledTimes(1);
     expect(seams.merge).toHaveBeenCalledTimes(1);

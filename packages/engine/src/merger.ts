@@ -4,6 +4,7 @@ import * as childProcess from "node:child_process";
 import { promisify } from "node:util";
 import { IDENTITY_GUARD_BYPASS_ENV } from "./worktree-hooks.js";
 import { mergeEffectiveSettings } from "./effective-settings.js";
+import { buildUserCommentsPromptSection, selectUserCommentsForAgentContext } from "./agent-user-comments.js";
 
 // Internal git plumbing intentionally bypasses sandbox backends.
 const execAsync = promisify(exec);
@@ -73,6 +74,7 @@ import {
 import { isBranchAuthoritativeForTask } from "./branch-conflicts.js";
 import { hostname } from "node:os";
 import {
+  assertNotWorkspaceTaskMerge,
   buildTaskLineageTrailer,
   evaluateNoCommitsNoOpFinalize,
   getTaskMergeBlocker,
@@ -100,6 +102,7 @@ import {
   type PostMergeAuditMode,
   type TaskSourceIssue,
   type Task,
+  type TaskComment,
   type TaskDetail,
   type AutostashOrphanRecord,
   normalizeMergeAdvanceAutoSyncMode,
@@ -112,7 +115,7 @@ import { accumulateSessionTokenUsage } from "./session-token-usage.js";
 import { createResolvedAgentSession, extractRuntimeHint, resolveMergerSessionModel } from "./agent-session-helpers.js";
 import { createFallbackModelObserver } from "./fallback-model-observer.js";
 import { buildSessionSkillContext } from "./session-skill-context.js";
-import { classifyTaskWorktree, getRegisteredWorktreeBranches, RemovalReason, removeWorktree, type WorktreePool } from "./worktree-pool.js";
+import { classifyTaskWorktree, getRegisteredWorktreeBranches, isRepoRootPath, RemovalReason, removeWorktree, type WorktreePool } from "./worktree-pool.js";
 import { activeSessionRegistry } from "./active-session-registry.js";
 import { AgentLogger } from "./agent-logger.js";
 import { mergerLog } from "./logger.js";
@@ -370,6 +373,9 @@ const MERGE_COMMIT_LOG_MAX_CHARS = 5000;
 
 /** Maximum characters for diff stat in merge prompt — prevents context overflow on large diffs */
 const MERGE_DIFF_STAT_MAX_CHARS = 3000;
+
+/** Maximum characters for user comments in merge prompt — preserves steering context without crowding merge instructions. */
+const MERGE_USER_COMMENTS_MAX_CHARS = 4000;
 
 /**
  * @deprecated Use summarizeVerificationOutput from verification-utils.js instead
@@ -7637,6 +7643,17 @@ export async function syncGroupPrOnLanding(input: {
   }
 }
 
+/**
+ * @deprecated Soft-deprecated by master-plan U0 (2026-06-21). `runAiMerge`
+ * (`merger-ai.ts`, the FN-5633 clean-room AI merge path) is now the SOLE merge
+ * path; no production code calls `aiMergeTask`. The body is RETAINED for a later
+ * deletion pass and direct unit tests, but new callers must use `runAiMerge`.
+ * The `merger.mode === "deterministic"` setting that once routed here is inert.
+ *
+ * FNXC:MergerUnification 2026-06-21-19:05: legacy deterministic merge pipeline,
+ * superseded by runAiMerge. Helpers it shares with runAiMerge (e.g.
+ * captureSingleCommitLandedMetadata) are NOT deprecated.
+ */
 export async function aiMergeTask(
   store: TaskStore,
   rootDir: string,
@@ -7647,6 +7664,11 @@ export async function aiMergeTask(
 
   // 1. Validate task state
   const task = await store.getTask(taskId);
+  // FNXC:MergerUnification 2026-06-21-19:05: defense-in-depth R7 guard on the
+  // deprecated path — even though no production code calls aiMergeTask, its body is
+  // reachable via direct unit tests/importers, so enforce the workspace merge-boundary
+  // here too (throws the named WorkspaceTaskMergeError) before any git work.
+  assertNotWorkspaceTaskMerge(task);
   if (task.column === "done" || task.column === "archived") {
     const message = `merger: skipping squash for ${taskId} — task already finalized (column=${task.column})`;
     mergerLog.log(message);
@@ -7920,6 +7942,20 @@ export async function aiMergeTask(
     diagnostics: Record<string, unknown>,
   ): Promise<void> => {
     const priorWorktreePath = task.worktree ?? null;
+    if (priorWorktreePath && isRepoRootPath(projectRootDir, priorWorktreePath)) {
+      /*
+       * FNXC:WorkflowCutover 2026-06-23-04:45:
+       * Merge reuse handoff must reject a task worktree that equals the project root before acquisition fallback can clear the assignment. Executor resume may self-heal stale root assignments, but merge must not hide a handoff contract violation by creating a fresh task worktree.
+       */
+      throw new MergeHandoffRefusedError("reuse-misconfigured", "worktree-equals-project-root", {
+        taskId,
+        projectRoot: projectRootDir,
+        worktreePath: priorWorktreePath,
+        requestedMode: requestedIntegrationMode,
+        reason,
+        diagnostics,
+      });
+    }
 
     // FN-5345/FN-5377: consult existing registration of `fusion/<id>` before
     // creating a fresh worktree. If the branch is already registered at a
@@ -8309,6 +8345,12 @@ export async function aiMergeTask(
           gate: error.gate,
           reason: error.reason,
         });
+      } else if (isRepoRootPath(projectRootDir, reusableWorktreePath)) {
+        /*
+         * FNXC:WorkflowCutover 2026-06-23-04:45:
+         * Merge reuse handoff must reject a task worktree that equals the project root. Executor resume may self-heal stale root assignments, but merge must not turn this dangerous state into a fresh-worktree fallback because that hides a handoff contract violation.
+         */
+        throw error;
       } else {
         const classification = await classifyTaskWorktree(projectRootDir, reusableWorktreePath);
         if (!classification.ok) {
@@ -11909,6 +11951,8 @@ async function runAiAgentForCommit(params: AiAgentParams): Promise<{ success: bo
 
   try {
     // Build appropriate prompt
+    const latestTaskForMergePrompt = await store.getTask(taskId);
+    const userComments = selectUserCommentsForAgentContext(latestTaskForMergePrompt);
     const prompt = buildMergePrompt({
       taskId,
       branch,
@@ -11921,6 +11965,7 @@ async function runAiAgentForCommit(params: AiAgentParams): Promise<{ success: bo
       authorArg,
       sourceIssueRef,
       preMergeRebaseFallthrough,
+      userComments,
     });
 
     // Attempt prompting with fresh session (first attempt).
@@ -11952,6 +11997,8 @@ async function runAiAgentForCommit(params: AiAgentParams): Promise<{ success: bo
         // The fall-through preamble is preserved (it's the safety constraint,
         // not bulk context) so the AI's truncated retry still knows main's
         // deletions are authoritative.
+        const latestTaskForTruncatedMergePrompt = await store.getTask(taskId);
+        const truncatedUserComments = selectUserCommentsForAgentContext(latestTaskForTruncatedMergePrompt);
         const truncatedPrompt = buildMergePrompt({
           taskId,
           branch,
@@ -11964,6 +12011,7 @@ async function runAiAgentForCommit(params: AiAgentParams): Promise<{ success: bo
           authorArg,
           sourceIssueRef,
           preMergeRebaseFallthrough,
+          userComments: truncatedUserComments,
         });
 
         try {
@@ -12097,14 +12145,19 @@ interface MergePromptParams {
    *  gate; this preamble gives the AI a fighting chance to do the right
    *  thing on its first try. */
   preMergeRebaseFallthrough?: string;
+  userComments?: TaskComment[];
 }
 
 export function buildMergePrompt(params: MergePromptParams): string {
-  const { taskId, branch, commitLog, diffStat, hasConflicts, simplifiedContext, sourceIssueRef, testCommand, buildCommand, authorArg, preMergeRebaseFallthrough } = params;
+  const { taskId, branch, commitLog, diffStat, hasConflicts, simplifiedContext, sourceIssueRef, testCommand, buildCommand, authorArg, preMergeRebaseFallthrough, userComments } = params;
 
   // Apply truncation to prevent context overflow for large branches/diffs
   const truncatedCommitLog = truncateWithEllipsis(commitLog, MERGE_COMMIT_LOG_MAX_CHARS);
   const truncatedDiffStat = truncateWithEllipsis(diffStat, MERGE_DIFF_STAT_MAX_CHARS);
+  const userCommentsSection = truncateWithEllipsis(
+    buildUserCommentsPromptSection(userComments ?? []),
+    MERGE_USER_COMMENTS_MAX_CHARS,
+  );
 
   const parts: string[] = [];
 
@@ -12154,6 +12207,10 @@ export function buildMergePrompt(params: MergePromptParams): string {
       truncatedDiffStat,
       "```",
     );
+  }
+
+  if (userCommentsSection) {
+    parts.push("", userCommentsSection);
   }
 
   if (hasConflicts) {

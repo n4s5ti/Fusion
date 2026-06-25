@@ -38,6 +38,9 @@ Defaults from `DEFAULT_GLOBAL_SETTINGS`; key scope from `GLOBAL_SETTINGS_KEYS`.
 | `dashboardFontScalePct` | `number` | `100` | Dashboard font scale percentage used by Appearance settings. Valid range: `85` to `125`; applied pre-hydration via document root font-size so board typography (column headers/counts, task cards, and quick-entry text) scales with the setting from first paint. |
 | `defaultProvider` | `string` | `undefined` | Default AI provider. |
 | `defaultModelId` | `string` | `undefined` | Default AI model ID. |
+| `modelPricingOverrides` | `Record<string, ModelPricing>` | `undefined` | Optional global Command Center pricing overrides keyed by lowercased `provider:model` or bare `:model`. Values store USD per 1M input, output, cache-read, and cache-write tokens plus optional `source`; they override the built-in pricing table for cost estimates only and are editable in Settings → Global Models. |
+| `modelPricingFetchedAt` | `string` | `undefined` | ISO timestamp for the last successful one-click pricing refresh from the Settings → Global Models pricing editor. |
+| `modelPricingSource` | `string` | `undefined` | Source label/URL for the current pricing override set, currently the LiteLLM model pricing JSON when fetched through the dashboard. |
 | `fallbackProvider` | `string` | `undefined` | Fallback provider when the primary default model hits transient provider failures or model-compatibility/auth-tier rejections. |
 | `fallbackModelId` | `string` | `undefined` | Fallback model ID (must pair with `fallbackProvider`). |
 | `defaultThinkingLevel` | `"off" \| "minimal" \| "low" \| "medium" \| "high" \| "xhigh"` | `undefined` | Default reasoning effort for AI sessions. `xhigh` requests maximum reasoning effort; Claude CLI adapters map it to `high` for non-Opus models and `max` for Opus models. If a provider/runtime rejects simultaneous `thinking` and `reasoning_effort` parameters, Fusion retries without the explicit thinking override instead of failing the run. |
@@ -95,7 +98,7 @@ Fusion automatically falls back to ntfy's JSON publish format when a notificatio
 
 > Mesh lifecycle note: settings sync is executed by the process-level `PeerExchangeService` started by `fn serve`/`fn dashboard`. `InProcessRuntime` does not instantiate settings-sync mesh services per project.
 | `dashboardCurrentProjectIdByNode` | `Record<string, string>` | `undefined` | Map of node ID to last-selected project ID. Use key `"local"` for the local node. Persists project context across browser restarts and PWA sessions. |
-| `persistAgentToolOutput` | `boolean` | `true` | Controls whether detailed `detail` payloads are persisted for `tool`, `tool_result`, and `tool_error` agent log entries. When disabled, tool timeline rows are still recorded, but verbose payloads are omitted. |
+| `persistAgentToolOutput` | `boolean` | `false` | Controls whether detailed `detail` payloads are persisted for `tool`, `tool_result`, and `tool_error` agent log entries. Tool timeline rows are still recorded by default; verbose tool arguments/results require opting in with `persistAgentToolOutput: true`. |
 | `persistAgentThinkingLogPermanent` | `boolean` | `false` | Controls whether `thinking`/reasoning rows are persisted for permanent (non-ephemeral) agents. |
 | `persistAgentThinkingLogEphemeral` | `boolean` | `false` | Controls whether `thinking`/reasoning rows are persisted for ephemeral/task-worker/spawned agents. |
 | `persistAgentThinkingLog` *(deprecated)* | `boolean` | `false` | Legacy fallback alias for thinking-row persistence. When set and a granular key above is still undefined, this legacy value is used for that agent kind. Leaving both granular keys off preserves default-off behavior; assistant text and tool rows are unchanged. |
@@ -253,6 +256,11 @@ These groups moved out of project settings and into workflow settings (built-in
 
 ### Workflow-native triage policy settings
 
+<!--
+FNXC:WorkflowRouting 2026-06-22-12:00:
+Triage workflow defaults are policy inputs, not permission to reroute tasks autonomously. Prompt guidance allows workflow selection only for explicit user requests or tasks the agent created.
+-->
+
 The built-in workflows also declare triage/spec policy settings that were **not** moved from project settings. They are workflow-native declarations: they never lived in `DEFAULT_PROJECT_SETTINGS`, are not `MOVED_SETTINGS_KEYS`, and resolve only through the workflow effective-settings path.
 
 | Setting | Default | Purpose |
@@ -267,8 +275,8 @@ The built-in workflows also declare triage/spec policy settings that were **not*
 | `triageSubtaskFileScopeThreshold` | `20` | File Scope entry count that signals broad work. |
 | `triageSubtaskRemediationBatchThreshold` | `30` | Large remediation batch threshold. |
 | `triageNoCommitsDecisionVerbs` | all seven built-ins | Decision-only verbs: Decide, Evaluate, Verify, Confirm, Audit, Review whether, Investigate and report. |
-| `triageDecisionOnlyWorkflowId` | `builtin:quick-fix` | Preferred workflow for decision-only/no-commit tasks. |
-| `triageDefaultWorkflowId` | `builtin:coding` | Default workflow for standard coding tasks. |
+| `triageDecisionOnlyWorkflowId` | `builtin:quick-fix` | Preferred workflow for decision-only/no-commit tasks when the user explicitly requests that routing or the agent is creating the task. |
+| `triageDefaultWorkflowId` | `builtin:coding` | Default workflow for standard coding tasks and for existing tasks without an explicit user-requested or creator-owned workflow selection. |
 | `leanPlanning` | `false` | Workflow-native fast-mode policy: select the lean `planning-fast` prompt variant instead of the full triage spec prompt. |
 | `autoApproveSpec` | `false` | Workflow-native fast-mode policy: auto-approve generated specs and skip the independent spec reviewer. |
 

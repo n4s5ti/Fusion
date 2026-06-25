@@ -700,26 +700,11 @@ export function InlineCreateCard({
     } else {
       onPlanningMode?.(trimmed);
     }
-    // Clear the input after triggering planning mode
-    setDescription("");
-    setSelectedWorkflowId(null);
-    setDependencies([]);
-    setExecutorProvider(undefined);
-    setExecutorModelId(undefined);
-    setValidatorProvider(undefined);
-    setValidatorModelId(undefined);
-    setPlanningProvider(undefined);
-    setPlanningModelId(undefined);
-    setEnabledOptionalStepIds([]);
-    setSelectedPresetId(undefined);
-    setSelectedAgentId(null);
-    setNodeId(undefined);
-    setShowDeps(false);
-    setShowAgentPicker(false);
-    setIsModelModalOpen(false);
-    setShowPresets(false);
-    setIsExpanded(false);
-  }, [description, onPlanningMode, selectedWorkflowId, addToast]);
+    /*
+    FNXC:QuickAddPlanningPreserve 2026-06-22-00:00:
+    Opening planning mode must keep the inline-create description and scoped draft available when the user exits without creating tasks. Planning completion owns the eventual draft clear.
+    */
+  }, [description, onPlanningMode, selectedWorkflowId, addToast, t]);
 
   const handleSubtaskClick = useCallback(() => {
     const trimmed = description.trim();

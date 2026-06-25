@@ -167,11 +167,14 @@ describe("Header", () => {
       expect(screen.queryByTitle("List view")).toBeNull();
     });
 
-    it("does not render the workflow portal slot on mobile sidebar nav", () => {
-      renderHeader({ onChangeView: noop, leftSidebarNavActive: true }, "mobile");
-      expect(screen.queryByTestId("header-workflow-slot")).toBeNull();
-      expect(screen.queryByTitle("Board view")).not.toBeNull();
-      expect(screen.queryByTitle("List view")).not.toBeNull();
+    it("renders the workflow portal slot in the mobile top header when mobile nav owns view switching", () => {
+      renderHeader({ onChangeView: noop, leftSidebarNavActive: true, mobileNavEnabled: true }, "mobile");
+      const workflowSlot = screen.getByTestId("header-workflow-slot");
+      expect(workflowSlot).toBeInTheDocument();
+      expect(workflowSlot).toHaveClass("header-workflow-slot--mobile");
+      expect(workflowSlot.closest(".header-left")).toBeInTheDocument();
+      expect(screen.getByTestId("mobile-view-toggle-board")).toBeInTheDocument();
+      expect(screen.getByTestId("mobile-view-toggle-list")).toBeInTheDocument();
     });
 
     it("shows board view as active by default", () => {
@@ -580,10 +583,24 @@ describe("Header", () => {
       expect(screen.queryByTitle("View usage")).toBeNull();
     });
 
-    it("does not render usage button inline on desktop when onOpenUsage is provided", () => {
-      renderHeader({ onOpenUsage: vi.fn() }, "desktop");
-      expect(screen.queryByTitle("View usage")).toBeNull();
+    it("renders the header usage button to the left of the right-dock toggle on desktop when onOpenUsage is provided", () => {
+      renderHeader({ onOpenUsage: vi.fn(), rightDockAvailable: true, onToggleRightDock: noop }, "desktop");
+      const usageBtn = screen.getByTestId("header-usage-btn");
+      expect(usageBtn.getAttribute("title")).toBe("View usage");
+      // Retired legacy toolbar testid stays gone.
       expect(screen.queryByTestId("desktop-header-usage-btn")).toBeNull();
+      // Sits immediately to the left of the right-dock toggle.
+      expect(usageBtn.nextElementSibling).toBe(screen.getByTestId("header-right-dock-toggle"));
+    });
+
+    it("fires onOpenUsage with button bounds from the desktop header usage button", () => {
+      const onOpenUsage = vi.fn();
+      renderHeader({ onOpenUsage }, "desktop");
+      const usageBtn = screen.getByTestId("header-usage-btn") as HTMLButtonElement;
+      const mockRect = { top: 0, bottom: 0, left: 0, right: 0, width: 0, height: 0, x: 0, y: 0, toJSON: () => ({}) } as DOMRect;
+      usageBtn.getBoundingClientRect = vi.fn(() => mockRect);
+      fireEvent.click(usageBtn);
+      expect(onOpenUsage).toHaveBeenCalledWith(mockRect);
     });
 
     it("does not render usage button inline on mobile when onOpenUsage is provided", () => {
@@ -1120,11 +1137,11 @@ describe("Header", () => {
     });
 
     it("can open mobile search when mobileNavEnabled is true", () => {
-      renderHeader({ view: "board", searchQuery: "", onSearchChange: vi.fn(), onChangeView: noop }, "mobile");
+      renderHeader({ view: "board", searchQuery: "", onSearchChange: vi.fn(), onChangeView: noop, mobileNavEnabled: true }, "mobile");
       // Should show the trigger button
       const mobileSearchTrigger = screen.getByTestId("mobile-header-search-btn");
       expect(mobileSearchTrigger).toBeDefined();
-      expect(screen.queryByTestId("header-workflow-slot")).toBeNull();
+      expect(screen.getByTestId("header-workflow-slot")).toBeInTheDocument();
       expect(screen.queryByTestId("desktop-header-search-btn")).toBeNull();
       // Expanded search should not be visible initially, then opens from the unchanged mobile trigger.
       expect(screen.queryByPlaceholderText("Search tasks...")).toBeNull();
@@ -1399,7 +1416,11 @@ describe("Header", () => {
   });
 
   describe("action ordering", () => {
-    it("Settings is the last inline action on desktop after engine controls moved to the footer", () => {
+    it("places only the Usage button after Settings on desktop after engine controls moved to the footer", () => {
+      /*
+      FNXC:Navigation 2026-06-22-12:00:
+      Usage moved back to the top header (left of the right-dock toggle), so it now renders after Settings in the inline header actions. Settings is the last inline action ONLY among the primary controls; the trailing Usage button (and the right-dock toggle when available) intentionally follow it.
+      */
       const { container } = renderHeader({
         onOpenUsage: noop,
         onOpenActivityLog: noop,
@@ -1424,7 +1445,8 @@ describe("Header", () => {
       expect(settingsIdx).toBeGreaterThanOrEqual(0);
 
       const itemsAfterSettings = inlineItems.slice(settingsIdx + 1);
-      expect(itemsAfterSettings).toHaveLength(0);
+      // Only the relocated Usage button trails Settings (no right-dock toggle without rightDockAvailable).
+      expect(itemsAfterSettings.map((el) => el.getAttribute("data-testid"))).toEqual(["header-usage-btn"]);
     });
 
     it("Settings is the last item in the mobile overflow menu", () => {

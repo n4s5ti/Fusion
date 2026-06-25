@@ -64,13 +64,20 @@ type ProjectSettingsSchema = Omit<ProjectSettings, MovedProjectSettingsKey>;
 /** Default values for global (user-level) settings. */
 export const DEFAULT_GLOBAL_SETTINGS = {
   themeMode: "dark",
-  colorTheme: "default",
+  /*
+  FNXC:DashboardTheming 2026-06-22-18:36:
+  New users and unset installs should start on Ocean. Existing users who explicitly stored colorTheme "default" must remain on that legacy theme, so the id stays valid and only the absence/default seed changes to "ocean".
+  */
+  colorTheme: "ocean",
   shadcnCustomColors: undefined,
   dashboardFontScalePct: 100,
   language: undefined,
   defaultProvider: undefined,
   defaultModelId: undefined,
   testMode: undefined,
+  modelPricingOverrides: undefined,
+  modelPricingFetchedAt: undefined,
+  modelPricingSource: undefined,
   modelRouterEnabled: undefined,
   modelRouterCheapProvider: undefined,
   modelRouterCheapModelId: undefined,
@@ -152,7 +159,11 @@ export const DEFAULT_GLOBAL_SETTINGS = {
   vitestAutoKillEnabled: true,
   vitestKillThresholdPct: 90,
   // Agent log persistence controls
-  persistAgentToolOutput: true,
+  /*
+  FNXC:AgentLogs 2026-06-23-00:00:
+  Verbose tool arguments and results are default-off to reduce persisted log volume and payload exposure. Operators who need saved tool details can explicitly opt in with persistAgentToolOutput: true; tool timeline rows remain logged either way.
+  */
+  persistAgentToolOutput: false,
   persistAgentThinkingLogPermanent: false,
   persistAgentThinkingLogEphemeral: false,
   persistAgentThinkingLog: false,
@@ -230,7 +241,16 @@ export const DEFAULT_GLOBAL_SETTINGS = {
     onFailure: "fail",
   },
   owningNodeHandoffPolicy: "reassign-to-local",
-  experimentalFeatures: {},
+  /*
+  FNXC:WorkflowSettings 2026-06-22-18:05:
+  New installs default dual-observe parity diagnostics explicitly off unless an operator opts in outside the normal Settings UI.
+
+  FNXC:WorkflowSettings 2026-06-22-18:00:
+  workflowGraphExecutor and workflowColumns are no longer experimental settings. The workflow graph engine and workflow-defined columns are the default runtime paths; stale persisted values are tolerated but no default flags are emitted.
+  */
+  experimentalFeatures: {
+    workflowInterpreterDualObserve: false,
+  },
   cliAgents: {},
 } satisfies CompleteSettings<GlobalSettings>;
 
@@ -287,7 +307,7 @@ export const DEFAULT_PROJECT_SETTINGS = {
     onFailure: "fail",
   },
   worktreesDir: undefined,
-  taskPrefix: "FN",
+  taskPrefix: undefined,
   taskAttributionTrailerNames: ["Fusion-Task-Id"],
   commitMsgHookEnabled: true,
   includeTaskIdInCommit: true,
@@ -469,6 +489,7 @@ export const DEFAULT_PROJECT_SETTINGS = {
   reflectionIntervalMs: 3_600_000,
   reflectionAfterTask: true,
   // reviewHandoffPolicy MOVED to workflow settings (U4) — see MOVED_SETTINGS_KEYS.
+  quickChatButtonMode: "off",
   showQuickChatFAB: false,
   chatAutoCleanupDays: 0,
   mailAutoCleanupDays: 0,
@@ -517,6 +538,7 @@ export const DEFAULT_PROJECT_SETTINGS = {
   researchDefaultTimeout: 300000,
   researchMaxSourcesPerRun: 20,
   researchMaxSynthesisRounds: 2,
+  workspaceMode: undefined,
 } satisfies CompleteSettings<ProjectSettingsSchema>;
 
 /**

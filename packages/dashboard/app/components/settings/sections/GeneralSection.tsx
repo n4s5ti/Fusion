@@ -15,8 +15,9 @@ export interface GeneralSectionProps extends SectionBaseProps {
     projectTrackingRepoOptions: TrackingRepoOption[];
     projectTrackingRepoLoading: boolean;
     projectTrackingRepoError: string | null;
+    onQuickChatButtonModeChange?: (mode: "floating" | "footer" | "off") => void;
 }
-export function GeneralSection({ scopeBanner, form, setForm, projectId, addToast, prefixError, setPrefixError, projectTrackingRepoOptions, projectTrackingRepoLoading, projectTrackingRepoError, }: GeneralSectionProps) {
+export function GeneralSection({ scopeBanner, form, setForm, projectId, addToast, prefixError, setPrefixError, projectTrackingRepoOptions, projectTrackingRepoLoading, projectTrackingRepoError, onQuickChatButtonModeChange, }: GeneralSectionProps) {
     const { t } = useTranslation("app");
     const [builtinWorkflows, setBuiltinWorkflows] = useState<WorkflowDefinition[]>([]);
     useEffect(() => {
@@ -64,8 +65,8 @@ export function GeneralSection({ scopeBanner, form, setForm, projectId, addToast
         <input id="taskPrefix" type="text" placeholder={t("settings.general.fN", "FN")} value={form.taskPrefix || ""} onChange={(e) => {
             const val = e.target.value;
             setForm((f) => ({ ...f, taskPrefix: val || undefined }));
-            if (val && !/^[A-Z]{1,10}$/.test(val)) {
-                setPrefixError(t("settings.general.prefixMustBe110UppercaseLetters", "Prefix must be 1–10 uppercase letters"));
+            if (val && !/^[A-Z]{1,5}$/.test(val)) {
+                setPrefixError(t("settings.general.prefixMustBe15UppercaseLetters", "Prefix must be 1–5 uppercase letters"));
             }
             else {
                 setPrefixError(null);
@@ -93,6 +94,18 @@ export function GeneralSection({ scopeBanner, form, setForm, projectId, addToast
           <input id="ephemeralAgentsEnabled" type="checkbox" checked={form.ephemeralAgentsEnabled !== false} onChange={(e) => setForm((f) => ({ ...f, ephemeralAgentsEnabled: e.target.checked }))}/>{t("settings.general.useEphemeralTaskWorkerAgents", " Use ephemeral task-worker agents ")}</label>
         <small>{t("settings.general.whenEnabledDefaultFusionSpawnsShortLived", " When enabled (default), Fusion spawns short-lived ")}<code>executor-FN-XXXX</code>{t("settings.general.agentsToRunEachTaskWhenDisabledOnly", " agents to run each task. When disabled, only permanent agents execute tasks and the scheduler auto-assigns work using the agent reporting chain. Tasks with no eligible permanent agent stay queued. ")}</small>
       </div>
+      {/*
+        FNXC:Workspace 2026-06-24-16:00:
+        Workspace mode toggle: when enabled, the project root is treated as a workspace parent
+        containing multiple git sub-repos instead of a single git repo. The executor runs tasks
+        per-sub-repo, and git init is skipped at the root. Toggling on triggers detectWorkspaceRepos
+        and persists .fusion/workspace.json; toggling off removes it.
+      */}
+      <div className="form-group">
+        <label htmlFor="workspaceMode" className="checkbox-label">
+          <input id="workspaceMode" type="checkbox" checked={form.workspaceMode === true} onChange={(e) => setForm((f) => ({ ...f, workspaceMode: e.target.checked }))}/>{t("settings.general.workspaceMode", " Workspace mode (multi-repo) ")}</label>
+        <small>{t("settings.general.workspaceModeHint", "When enabled, the project root is treated as a workspace containing multiple git sub-repos. Tasks run per-sub-repo and no git repo is created at the root. Disable for single-repo projects.")}</small>
+      </div>
       <div className="form-group">
         <label htmlFor="completionDocumentationMode">{t("settings.general.completionDocumentationAutomation", "Completion Documentation Automation")}</label>
         <select id="completionDocumentationMode" value={form.completionDocumentationMode || "off"} onChange={(e) => setForm((f) => ({
@@ -106,9 +119,17 @@ export function GeneralSection({ scopeBanner, form, setForm, projectId, addToast
         <small>{t("settings.general.controlsHowFutureTaskSpecsHandleReleaseNote", " Controls how future task specs handle release-note artifacts at completion. Use changeset mode for repositories that follow ")}<code>.changeset</code>{t("settings.general.workflowsOrChangelogModeWhenContributorsShouldUpdate", " workflows, or changelog mode when contributors should update an existing changelog file. ")}</small>
       </div>
       <div className="form-group">
-        <label htmlFor="showQuickChatFAB" className="checkbox-label">
-          <input id="showQuickChatFAB" type="checkbox" checked={form.showQuickChatFAB === true} onChange={(e) => setForm((f) => ({ ...f, showQuickChatFAB: e.target.checked }))}/>{t("settings.general.showQuickChatButton", " Show quick chat button ")}</label>
-        <small>{t("settings.general.showTheFloatingChatButtonInTheDashboard", "Show the floating chat button in the dashboard. Chat is still accessible from the Chat tab in the mobile navigation.")}</small>
+        <label htmlFor="quickChatButtonMode">{t("settings.general.quickChatLauncher", "Quick Chat launcher")}</label>
+        <select id="quickChatButtonMode" className="select" value={form.quickChatButtonMode ?? (form.showQuickChatFAB ? "floating" : "off")} onChange={(e) => setForm((f) => {
+            const mode = e.target.value as "floating" | "footer" | "off";
+            onQuickChatButtonModeChange?.(mode);
+            return { ...f, quickChatButtonMode: mode, showQuickChatFAB: mode === "floating" };
+        })}>
+          <option value="floating">{t("settings.general.quickChatLauncherFloating", "Floating button")}</option>
+          <option value="footer">{t("settings.general.quickChatLauncherFooter", "Footer button")}</option>
+          <option value="off">{t("settings.general.off", "Off")}</option>
+        </select>
+        <small>{t("settings.general.quickChatLauncherHint", "Choose whether Quick Chat opens from the draggable floating button, a footer button beside Terminal, or stays hidden.")}</small>
       </div>
       <h4 className="settings-section-heading settings-section-heading--spaced">{t("settings.general.chatHistory", "Chat history")}</h4>
       <div className="form-group">
@@ -190,7 +211,15 @@ export function GeneralSection({ scopeBanner, form, setForm, projectId, addToast
           <option value="new-tasks">{t("settings.general.onForNewTasks", "On for new tasks")}</option>
         </select>
         <small>{t("settings.general.controlsWhetherNewlyCreatedTasksHaveGitHubIssue", " Controls whether newly created tasks have GitHub issue tracking enabled by default. Individual tasks can still override this from the task detail modal. ")}</small>
-        <small>{t("settings.general.trackingIssuesUseThisTaskAposSTitle", " Tracking issues use this task&apos;s title. If a task has no title yet, Fusion can summarize its description using the title summarization model in Project Models. ")}{!form.autoSummarizeTitles && !form.useAiMergeCommitSummary && !form.githubTrackingEnabledByDefault
+        {/*
+          FNXC:SettingsGeneral 2026-06-22-03:20:
+          Tracking-issue helper copy. The FN-6771 JSX→t() extraction left a raw HTML
+          entity ("&apos;") in this default string. As a t() argument the string is a
+          plain JS value (not JSX-decoded), so the entity rendered verbatim as the
+          literal "&apos;" instead of an apostrophe. Use a real apostrophe so the copy
+          reads correctly in both modal and embedded presentations.
+        */}
+        <small>{t("settings.general.trackingIssuesUseThisTaskAposSTitle", " Tracking issues use this task's title. If a task has no title yet, Fusion can summarize its description using the title summarization model in Project Models. ")}{!form.autoSummarizeTitles && !form.useAiMergeCommitSummary && !form.githubTrackingEnabledByDefault
             ? t("settings.general.enableSummarizationInProjectModelsToConfigureThatModel", " Enable summarization in Project Models to configure that model.")
             : ""}
         </small>

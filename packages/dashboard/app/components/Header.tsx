@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback, useMemo, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
-import { Settings, LayoutGrid, List, Search, X, Activity, MoreHorizontal, Clock, Folder, History, GitBranch, Monitor, Workflow, Bot, Target, Grid3X3, Mail, MessageSquare, Check, Zap, Sparkles, FileText, Brain, CheckSquare, Lock, Gauge, ChevronDown, ChevronRight } from "lucide-react";
+import { Settings, LayoutGrid, List, Search, X, Activity, MoreHorizontal, Clock, Folder, History, GitBranch, Monitor, Workflow, Bot, Target, Grid3X3, Mail, MessageSquare, Check, Zap, Sparkles, FileText, Brain, CheckSquare, Lock, Gauge, ChevronDown, ChevronRight, PanelRight } from "lucide-react";
 import "./Header.css";
 // ProjectSelector styles used by the imported standalone component.
 import "./ProjectSelector.css";
@@ -96,6 +96,16 @@ export interface HeaderProps {
   mobileNavEnabled?: boolean;
   /** When true on non-mobile screens, persistent left sidebar owns primary view navigation. */
   leftSidebarNavActive?: boolean;
+  /*
+  FNXC:Navigation 2026-06-22-00:00:
+  The right dock is no longer a persistent rail. On non-mobile surfaces the Header owns a single show/hide toggle (replacing the tablet three-dots overflow) that opens/closes the right sidebar; mobile keeps its existing overflow menu untouched.
+  */
+  /** Whether the right dock is available on this surface (non-mobile + enabled). */
+  rightDockAvailable?: boolean;
+  /** Current open state of the right dock. */
+  rightDockOpen?: boolean;
+  /** Toggle the right dock open/closed. */
+  onToggleRightDock?: () => void;
   /** Available nodes for the node selector */
   availableNodes?: NodeConfig[];
   /** Currently selected node (null for local) */
@@ -145,6 +155,9 @@ export function Header({
   shellHost = { kind: "browser" },
   mobileNavEnabled,
   leftSidebarNavActive = false,
+  rightDockAvailable = false,
+  rightDockOpen = false,
+  onToggleRightDock,
   availableNodes = [],
   currentNode,
   onSelectNode,
@@ -165,6 +178,9 @@ export function Header({
 
   FNXC:WorkflowControls 2026-06-20-00:00:
   The hidden Header view-toggle location becomes the workflow-control portal slot only when left sidebar navigation is active on tablet/desktop. Mobile and flag-off paths keep workflow controls inline so the board/list chrome remains byte-identical.
+
+  FNXC:WorkflowControls 2026-06-22-18:00:
+  Mobile also renders the workflow portal in the top header next to the logo/project switch. The board/list workflow selector stays single-sourced through this slot, while CSS hides the "Workflow" label and compacts the trigger so it fits the mobile header.
   */
   const hideHeaderViewNav = leftSidebarNavActive && !isMobile;
   /*
@@ -447,6 +463,14 @@ export function Header({
           </div>
         )}
 
+        {hideFullNav && (
+          <div
+            id="header-workflow-slot"
+            className="header-workflow-slot header-workflow-slot--mobile"
+            data-testid="header-workflow-slot"
+          />
+        )}
+
         {/* Project Selector - Back button when project selected, dropdown when 2+ projects (tablet + desktop) */}
         {!isMobile && projects.length >= 1 && onViewAllProjects && (
           <StandaloneProjectSelector
@@ -651,8 +675,8 @@ export function Header({
             <button
               className={`view-toggle-btn${view === "command-center" ? " active" : ""}`}
               onClick={() => onChangeView("command-center")}
-              title={t("header.commandCenterView", "Command Center")}
-              aria-label={t("header.commandCenterView", "Command Center")}
+              title={t("header.commandCenterView", "Dashboard")}
+              aria-label={t("header.commandCenterView", "Dashboard")}
               aria-pressed={view === "command-center"}
               data-testid="view-toggle-command-center"
             >
@@ -932,8 +956,11 @@ export function Header({
         FN-6886 removes the header Lightbulb affordances because Planning Mode is now a primary left-sidebar destination after Command Center and a single canonical MobileNavBar More item on compact breakpoints.
         */}
 
-        {/* Workflows - desktop only (moved to overflow on mobile/tablet) */}
-        {!isCompact && onOpenWorkflowEditor && (
+        {/*
+        FNXC:Navigation 2026-06-22-00:00:
+        When the left sidebar is active it owns Workflows as a main-content destination, so the Header drops its duplicate desktop Workflow button. The flag-off desktop layout keeps the Header button; mobile/tablet keep the overflow entry.
+        */}
+        {!isCompact && !leftSidebarNavActive && onOpenWorkflowEditor && (
           <button
             className="btn-icon"
             onClick={onOpenWorkflowEditor}
@@ -950,7 +977,8 @@ export function Header({
         Left sidebar navigation owns desktop Settings when active, so Header hides its duplicate icon to preserve a single titled Settings control for users and navigation-history tests.
         */}
         {!isCompact && !leftSidebarNavActive && (
-          <button className="btn-icon" onClick={onOpenSettings} title={t("header.settings", "Settings")}>
+          // FNXC:Navigation 2026-06-22-12:00: Wrap so React's MouseEvent is not forwarded as onOpenSettings' settingsInitialSection arg.
+          <button className="btn-icon" onClick={() => onOpenSettings?.()} title={t("header.settings", "Settings")}>
             <Settings size={16} />
           </button>
         )}
@@ -958,8 +986,42 @@ export function Header({
         {/* Plugin UI slot for header actions */}
         <PluginSlot slotId="header-action" projectId={projectId} />
 
-        {/* Compact overflow menu trigger (mobile + tablet) */}
-        {isCompact && !hideFullNav && (
+        {/*
+        FNXC:Navigation 2026-06-22-00:50:
+        Usage (Activity) lives in the top header to the left of the right-sidebar toggle and opens the UsageIndicator as a header-anchored modal (not inline in the dock). Non-mobile only; mobile keeps its own usage button in the bottom-nav layout.
+        */}
+        {!isMobile && onOpenUsage && (
+          <button
+            className="btn-icon"
+            onClick={(event) => onOpenUsage(event.currentTarget.getBoundingClientRect())}
+            title={t("header.viewUsage", "View usage")}
+            aria-label={t("header.viewUsage", "View usage")}
+            data-testid="header-usage-btn"
+          >
+            <Activity size={16} />
+          </button>
+        )}
+
+        {/*
+        FNXC:Navigation 2026-06-22-00:00:
+        Non-mobile surfaces (desktop + tablet) get a single right-sidebar show/hide toggle that owns the right dock visibility. It replaces the tablet three-dots overflow; the dock is fully hidden when closed and reopened from here. Mobile is intentionally excluded — it keeps its existing overflow menu untouched and has no right dock.
+        */}
+        {!isMobile && rightDockAvailable && onToggleRightDock && (
+          <button
+            className={`btn-icon${rightDockOpen ? " btn-icon--active" : ""}`}
+            onClick={onToggleRightDock}
+            title={rightDockOpen ? t("header.hideRightSidebar", "Hide right sidebar") : t("header.showRightSidebar", "Show right sidebar")}
+            aria-label={rightDockOpen ? t("header.hideRightSidebar", "Hide right sidebar") : t("header.showRightSidebar", "Show right sidebar")}
+            aria-expanded={rightDockOpen}
+            aria-pressed={rightDockOpen}
+            data-testid="header-right-dock-toggle"
+          >
+            <PanelRight size={16} />
+          </button>
+        )}
+
+        {/* Compact overflow menu trigger (mobile only — tablet uses the right-sidebar toggle above) */}
+        {isMobile && !hideFullNav && (
           <button
             ref={overflowButtonRef}
             className="btn-icon compact-overflow-trigger"
@@ -973,8 +1035,8 @@ export function Header({
           </button>
         )}
 
-        {/* Compact overflow menu (mobile + tablet) */}
-        {isCompact && !hideFullNav && isOverflowMenuOpen && (
+        {/* Compact overflow menu (mobile only) */}
+        {isMobile && !hideFullNav && isOverflowMenuOpen && (
           <div
             ref={overflowMenuRef}
             className="mobile-overflow-menu"

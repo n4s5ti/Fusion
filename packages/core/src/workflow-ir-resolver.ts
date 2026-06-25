@@ -87,7 +87,17 @@ export async function resolveWorkflowIrById(
   workflowId: string,
   irCache?: Map<string, WorkflowIr>,
 ): Promise<WorkflowIr> {
-  const projectId = store.getWorkflowSettingsProjectId?.();
+  let projectId: string | undefined;
+  try {
+    projectId = store.getWorkflowSettingsProjectId?.();
+  } catch {
+    /*
+     * FNXC:CustomWorkflows 2026-06-22-23:27:
+     * Workflow IR resolution is an engine-entry fallback path, so project identity failures must behave like no scoped project is available.
+     * Keep built-in/default IRs usable and skip project-scoped prompt overrides instead of propagating identity lookup errors.
+     */
+    projectId = undefined;
+  }
   const cacheKey = projectId ? `${workflowId}\u0000${projectId}` : workflowId;
   const cached = irCache?.get(cacheKey);
   if (cached) return cached;

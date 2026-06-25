@@ -16,6 +16,9 @@ import {
   isValidSqliteDatabaseFile,
   readProjectIdentity,
   writeProjectIdentity,
+  detectWorkspaceRepos,
+  saveWorkspaceConfig,
+  suggestTaskPrefix,
   type RegisteredProject,
   type TaskStore,
 } from "@fusion/core";
@@ -625,6 +628,50 @@ export async function registerProjectInteractive(
 
   // Check for .fusion/ directory
   if (!isKbProject(absPath)) {
+    // Check if this is a non-git directory containing sub-repos (workspace mode)
+    const { spawnSync } = await import("node:child_process");
+    const gitCheck = spawnSync("git", ["-C", absPath, "rev-parse", "--is-inside-work-tree"], { encoding: "utf8" });
+    const isGitRepo = gitCheck.status === 0 && gitCheck.stdout.trim() === "true";
+
+    /*
+    FNXC:Workspace 2026-06-22-00:00:
+    Workspace detection only reports candidate sub-repos here; persistence is deferred until
+    after the user confirms init AND TaskStore.init() succeeds. Writing .fusion/workspace.json
+    before confirmation would leave a partial .fusion/ dir when the user declines or runs
+    non-interactively, polluting a plain non-git directory with stray Fusion state.
+    */
+    let detectedSubRepos: string[] | null = null;
+    if (!isGitRepo) {
+      const subRepos = await detectWorkspaceRepos(absPath);
+      if (subRepos.length > 0) {
+        console.log(`\n  Found ${subRepos.length} git repositories in ${absPath}:`);
+        subRepos.forEach((r: string) => console.log(`    • ${r}`));
+
+        if (interactive) {
+          /*
+          FNXC:Workspace 2026-06-24-16:00:
+          Ask the user to confirm workspace mode instead of auto-applying it. A directory with
+          nested git repos might be a monorepo with submodules or an existing project that
+          happens to have git-tracked dependencies — the user must explicitly opt in.
+          */
+          const useWorkspace = await promptConfirm(
+            `\n  Use workspace mode? (tasks run per sub-repo, no git at the root)`,
+            true,
+          );
+          if (useWorkspace) {
+            detectedSubRepos = subRepos;
+          } else {
+            console.log(`  ⚠ Skipping workspace mode. A git repo will be initialized at the root.`);
+          }
+        } else {
+          // Non-interactive: auto-apply (dashboard registration or scripted flow)
+          detectedSubRepos = subRepos;
+        }
+        // workspace.json is written below, only after a confirmed store.init() succeeds.
+      }
+      // else: fall through to existing error path
+    }
+
     if (interactive) {
       console.log(`\n  No .fusion/ directory found in ${absPath}`);
       const shouldInit = await promptConfirm("Initialize fn here first?", true);
@@ -633,8 +680,17 @@ export async function registerProjectInteractive(
         // Initialize the project (create .fusion/)
         const { TaskStore } = await import("@fusion/core");
         const store = new TaskStore(absPath);
-        await store.init();
-        console.log(`  ✓ Initialized fn at ${absPath}`);
+        try {
+          await store.init();
+          if (detectedSubRepos) {
+            await saveWorkspaceConfig(absPath, { repos: detectedSubRepos });
+            // Persist workspaceMode in config.json so it's visible/toggleable in the dashboard
+            await store.updateSettings({ workspaceMode: true });
+          }
+          console.log(`  ✓ Initialized fn at ${absPath}`);
+        } finally {
+          await store.close();
+        }
       } else {
         throw new ProjectResolutionError(
           "Cannot register project without .fusion/ directory. Run `fn init` first.",
@@ -690,6 +746,36 @@ export async function registerProjectInteractive(
     });
   } catch {
     // Best-effort stamp only.
+  }
+
+  /*
+  FNXC:Onboarding 2026-06-24-18:00:
+  After registration, set a task prefix and default workflow. The prefix defaults to
+  the first 2-4 chars of the project name so each project gets recognizable task IDs
+  (e.g., "MYPR" for "my-project"). The workflow defaults to coding. Both are persisted
+  to config.json via the TaskStore.
+  */
+  {
+    const { TaskStore } = await import("@fusion/core");
+    const store = new TaskStore(absPath);
+    try {
+      await store.init();
+      let prefix = suggestTaskPrefix(name);
+      if (interactive) {
+        const rl = createInterface({ input: process.stdin, output: process.stdout });
+        const prefixInput = await rl.question(`\n  Task prefix [${prefix}]: `);
+        rl.close();
+        const rawPrefix = prefixInput.trim().toUpperCase().replace(/[^A-Z]/g, "");
+        if (rawPrefix.length >= 1 && rawPrefix.length <= 5) prefix = rawPrefix;
+      }
+      await store.updateSettings({
+        taskPrefix: prefix,
+        defaultWorkflowId: "builtin:coding",
+      });
+      console.log(`  ✓ Task prefix set to "${prefix}", default workflow: coding`);
+    } finally {
+      await store.close();
+    }
   }
 
   return createResolvedProject(project);

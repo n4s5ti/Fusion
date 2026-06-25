@@ -70,6 +70,13 @@ function task(id: string, column: string): Task {
   } as Task;
 }
 
+function taskWithStatus(id: string, column: string, status: string): Task {
+  return {
+    ...task(id, column),
+    status,
+  } as Task;
+}
+
 function builtinWorkflowColumns(id: string): BoardWorkflowColumn[] {
   const workflow = getBuiltinWorkflow(id);
   if (!workflow) throw new Error(`Missing built-in workflow fixture: ${id}`);
@@ -106,9 +113,9 @@ describe("computeWorkflowStatusCounts", () => {
   it("initializes every workflow with zero counts for empty and duplicate/populated states", () => {
     const counts = computeWorkflowStatusCounts([], boardWorkflows);
 
-    expect(counts.get("default")).toEqual({ todo: 0, inProgress: 0, done: 0 });
-    expect(counts.get("design")).toEqual({ todo: 0, inProgress: 0, done: 0 });
-    expect(counts.get("empty")).toEqual({ todo: 0, inProgress: 0, done: 0 });
+    expect(counts.get("default")).toEqual({ todo: 0, inProgress: 0, done: 0, merging: 0 });
+    expect(counts.get("design")).toEqual({ todo: 0, inProgress: 0, done: 0, merging: 0 });
+    expect(counts.get("empty")).toEqual({ todo: 0, inProgress: 0, done: 0, merging: 0 });
   });
 
   it("classifies todo, in-progress, and done buckets from workflow column flags", () => {
@@ -123,7 +130,7 @@ describe("computeWorkflowStatusCounts", () => {
       boardWorkflows
     );
 
-    expect(counts.get("default")).toEqual({ todo: 2, inProgress: 2, done: 1 });
+    expect(counts.get("default")).toEqual({ todo: 2, inProgress: 2, done: 1, merging: 0 });
   });
 
   it("keeps flag-based classification authoritative over canonical lifecycle ids", () => {
@@ -156,6 +163,7 @@ describe("computeWorkflowStatusCounts", () => {
       todo: 0,
       inProgress: 1,
       done: 1,
+      merging: 0,
     });
   });
 
@@ -165,7 +173,7 @@ describe("computeWorkflowStatusCounts", () => {
       boardWorkflows
     );
 
-    expect(counts.get("default")).toEqual({ todo: 0, inProgress: 0, done: 1 });
+    expect(counts.get("default")).toEqual({ todo: 0, inProgress: 0, done: 1, merging: 0 });
   });
 
   it("counts tasks independently for their assigned workflow", () => {
@@ -185,8 +193,28 @@ describe("computeWorkflowStatusCounts", () => {
       }
     );
 
-    expect(counts.get("design")).toEqual({ todo: 1, inProgress: 1, done: 1 });
-    expect(counts.get("default")).toEqual({ todo: 0, inProgress: 0, done: 0 });
+    expect(counts.get("design")).toEqual({ todo: 1, inProgress: 1, done: 1, merging: 0 });
+    expect(counts.get("default")).toEqual({ todo: 0, inProgress: 0, done: 0, merging: 0 });
+  });
+
+  it("tracks actively merging tasks per workflow separately from bucket counts", () => {
+    const counts = computeWorkflowStatusCounts(
+      [
+        taskWithStatus("FN-default-merging", "review", "merging"),
+        taskWithStatus("FN-design-merging-fix", "design-active", "merging-fix"),
+        taskWithStatus("FN-design-normal", "design-active", "executing"),
+      ],
+      {
+        ...boardWorkflows,
+        taskWorkflowIds: {
+          "FN-design-merging-fix": "design",
+          "FN-design-normal": "design",
+        },
+      }
+    );
+
+    expect(counts.get("default")).toEqual({ todo: 0, inProgress: 1, done: 0, merging: 1 });
+    expect(counts.get("design")).toEqual({ todo: 0, inProgress: 2, done: 0, merging: 1 });
   });
 
   it("excludes archived-column tasks and ignores unknown workflows or columns", () => {
@@ -204,7 +232,7 @@ describe("computeWorkflowStatusCounts", () => {
       }
     );
 
-    expect(counts.get("default")).toEqual({ todo: 0, inProgress: 0, done: 0 });
+    expect(counts.get("default")).toEqual({ todo: 0, inProgress: 0, done: 0, merging: 0 });
   });
 
   it("uses real quick-fix empty-trait columns to count the reported two done and zero in-progress state", () => {
@@ -222,6 +250,7 @@ describe("computeWorkflowStatusCounts", () => {
       todo: 0,
       inProgress: 0,
       done: 2,
+      merging: 0,
     });
   });
 
@@ -252,6 +281,7 @@ describe("computeWorkflowStatusCounts", () => {
         todo: 3,
         inProgress: 1,
         done: 1,
+        merging: 0,
       });
     }
   });
@@ -262,7 +292,7 @@ describe("computeWorkflowStatusCounts", () => {
 
     expect(
       computeWorkflowStatusCounts([], payload).get("builtin:quick-fix")
-    ).toEqual({ todo: 0, inProgress: 0, done: 0 });
+    ).toEqual({ todo: 0, inProgress: 0, done: 0, merging: 0 });
 
     const counts = computeWorkflowStatusCounts(
       [
@@ -279,6 +309,7 @@ describe("computeWorkflowStatusCounts", () => {
       todo: 2,
       inProgress: 1,
       done: 2,
+      merging: 0,
     });
   });
 
@@ -300,6 +331,7 @@ describe("computeWorkflowStatusCounts", () => {
       todo: 1,
       inProgress: 1,
       done: 1,
+      merging: 0,
     });
   });
 });

@@ -104,7 +104,7 @@ describe("useTheme", () => {
     const { result } = renderHook(() => useTheme());
 
     expect(result.current.themeMode).toBe("dark");
-    expect(result.current.colorTheme).toBe("default");
+    expect(result.current.colorTheme).toBe("ocean");
   });
 
   it("initializes from localStorage", () => {
@@ -115,6 +115,14 @@ describe("useTheme", () => {
 
     expect(result.current.themeMode).toBe("light");
     expect(result.current.colorTheme).toBe("ocean");
+  });
+
+  it("preserves explicit legacy default color theme from localStorage", () => {
+    localStorageMock[COLOR_THEME_STORAGE_KEY] = "default";
+
+    const { result } = renderHook(() => useTheme());
+
+    expect(result.current.colorTheme).toBe("default");
   });
 
   it("hydrates themeMode from backend on mount", async () => {
@@ -131,16 +139,16 @@ describe("useTheme", () => {
   });
 
   it("hydrates colorTheme from backend on mount", async () => {
-    mockFetchGlobalSettings.mockResolvedValue({ colorTheme: "ocean" });
+    mockFetchGlobalSettings.mockResolvedValue({ colorTheme: "forest" });
 
     const { result } = renderHook(() => useTheme());
 
-    expect(result.current.colorTheme).toBe("default");
+    expect(result.current.colorTheme).toBe("ocean");
 
     await waitFor(() => {
-      expect(result.current.colorTheme).toBe("ocean");
+      expect(result.current.colorTheme).toBe("forest");
     });
-    expect(localStorageMock[COLOR_THEME_STORAGE_KEY]).toBe("ocean");
+    expect(localStorageMock[COLOR_THEME_STORAGE_KEY]).toBe("forest");
   });
 
   it("hydrates dashboard font scale from backend on mount", async () => {
@@ -761,7 +769,7 @@ describe("useTheme", () => {
 
     const { result } = renderHook(() => useTheme());
 
-    expect(result.current.colorTheme).toBe("default");
+    expect(result.current.colorTheme).toBe("ocean");
   });
 
   it("clamps invalid dashboard font scale values from localStorage", () => {
@@ -789,7 +797,7 @@ describe("useTheme", () => {
     const { result } = renderHook(() => useTheme());
 
     expect(result.current.themeMode).toBe("dark");
-    expect(result.current.colorTheme).toBe("default");
+    expect(result.current.colorTheme).toBe("ocean");
   });
 
   describe("dynamic theme-data.css loading", () => {
@@ -873,7 +881,7 @@ describe("getThemeInitScript", () => {
     });
     expect(script).toContain("validThemes");
     expect(script).toContain("if (colorTheme === 'shadcn-mono') colorTheme = 'shadcn-mono-red';");
-    expect(script).toContain("colorTheme = 'default'");
+    expect(script).toContain("colorTheme = 'ocean'");
   });
 
   it("keeps index.html inline theme validation in sync with supported themes", () => {

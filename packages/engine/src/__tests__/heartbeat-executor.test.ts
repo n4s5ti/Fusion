@@ -190,6 +190,8 @@ describe("executeHeartbeat", () => {
       setLastBlockedState: vi.fn().mockResolvedValue(undefined),
       clearLastBlockedState: vi.fn().mockResolvedValue(undefined),
       appendRunLog: vi.fn().mockResolvedValue(undefined),
+      getActiveHeartbeatRun: vi.fn().mockResolvedValue(null),
+      syncExecutionTaskLink: vi.fn().mockResolvedValue(undefined),
       getAgentsByReportsTo: vi.fn().mockResolvedValue([]),
     } as unknown as AgentStore;
   }
@@ -234,6 +236,72 @@ describe("executeHeartbeat", () => {
       expect(section).toContain("agent-3");
       expect(section).toContain("| Name | State | Task | Last Heartbeat | Health |");
       expect(section).toContain("healthy");
+    });
+
+    it("FN-6954: buildReportsHealthSection suppresses running state for parked task with no live proof", async () => {
+      const now = new Date().toISOString();
+      const store = createStoreWithAgentForExec();
+      vi.mocked(store.getAgentsByReportsTo).mockResolvedValue([
+        { id: "agent-backend", name: "Backend Engineer", state: "running", taskId: "FN-6709", lastHeartbeatAt: now, updatedAt: now } as Agent,
+      ]);
+      vi.mocked(store.getActiveHeartbeatRun).mockResolvedValue(null);
+      mockTaskStore = createMockTaskStore({
+        getTask: vi.fn(async (taskId: string) => ({
+          id: taskId,
+          column: "todo",
+          status: "queued",
+          overlapBlockedBy: "FN-6827",
+          blockedBy: null,
+          dependencies: [],
+          log: [],
+          steps: [],
+          attachments: [],
+          createdAt: now,
+          updatedAt: now,
+        }) as unknown as TaskDetail),
+      });
+      const monitor = new HeartbeatMonitor({ store, taskStore: mockTaskStore, rootDir: "/tmp" });
+
+      const section = await (monitor as any).buildReportsHealthSection("agent-001", store);
+
+      expect(section).toContain("| Backend Engineer | active | FN-6709 (queued/no live run) |");
+      expect(section).toContain("**stale** assignment");
+      expect(section).not.toContain("| Backend Engineer | running | FN-6709 |");
+    });
+
+    it("FN-6954: buildReportsHealthSection preserves running state for parked task with fresh active run", async () => {
+      const now = new Date().toISOString();
+      const store = createStoreWithAgentForExec();
+      vi.mocked(store.getAgentsByReportsTo).mockResolvedValue([
+        { id: "agent-backend", name: "Backend Engineer", state: "running", taskId: "FN-6709", lastHeartbeatAt: now, updatedAt: now } as Agent,
+      ]);
+      vi.mocked(store.getActiveHeartbeatRun).mockResolvedValue({
+        id: "run-live",
+        agentId: "agent-backend",
+        startedAt: now,
+        status: "active",
+      } as AgentHeartbeatRun);
+      mockTaskStore = createMockTaskStore({
+        getTask: vi.fn(async (taskId: string) => ({
+          id: taskId,
+          column: "todo",
+          status: "queued",
+          overlapBlockedBy: "FN-6827",
+          dependencies: [],
+          log: [],
+          steps: [],
+          attachments: [],
+          createdAt: now,
+          updatedAt: now,
+        }) as unknown as TaskDetail),
+      });
+      const monitor = new HeartbeatMonitor({ store, taskStore: mockTaskStore, rootDir: "/tmp" });
+
+      const section = await (monitor as any).buildReportsHealthSection("agent-001", store);
+
+      expect(section).toContain("| Backend Engineer | running | FN-6709 |");
+      expect(section).not.toContain("queued/no live run");
+      expect(section).not.toContain("**stale** assignment");
     });
 
     it("buildReportsHealthSection classifies stuck agents", async () => {
@@ -2961,29 +3029,33 @@ describe("executeHeartbeat", () => {
       expect(callArgs.systemPrompt).toContain("fn_task_log");
       expect(callArgs.systemPrompt).toContain("fn_task_document_write");
       expect(callArgs.tools).toBe("coding");
-      // fn_get_agent_config, fn_update_agent_config, fn_agent_create, fn_agent_delete, fn_goal_list, fn_goal_show,
-      // fn_read_evaluations, fn_update_identity, fn_web_fetch, fn_memory_search, fn_memory_get, fn_memory_append, fn_heartbeat_done
-      expect(callArgs.customTools).toHaveLength(19);
+      // fn_artifact_register, fn_artifact_list, fn_artifact_view, fn_get_agent_config, fn_update_agent_config,
+      // fn_agent_create, fn_agent_delete, fn_goal_list, fn_goal_show, fn_read_evaluations, fn_update_identity,
+      // fn_web_fetch, fn_memory_search, fn_memory_get, fn_memory_append, fn_heartbeat_done
+      expect(callArgs.customTools).toHaveLength(22);
       expect(callArgs.customTools![0]!.name).toBe("fn_task_create");
       expect(callArgs.customTools![1]!.name).toBe("fn_task_log");
       expect(callArgs.customTools![2]!.name).toBe("fn_task_document_write");
       expect(callArgs.customTools![3]!.name).toBe("fn_task_document_read");
-      expect(callArgs.customTools![4]!.name).toBe("fn_list_agents");
-      expect(callArgs.customTools![5]!.name).toBe("fn_delegate_task");
-      expect(callArgs.customTools![6]!.name).toBe("fn_get_agent_config");
-      expect(callArgs.customTools![7]!.name).toBe("fn_update_agent_config");
-      expect(callArgs.customTools![8]!.name).toBe("fn_agent_create");
-      expect(callArgs.customTools![9]!.name).toBe("fn_agent_delete");
-      expect(callArgs.customTools![10]!.name).toBe("fn_goal_list");
-      expect(callArgs.customTools![11]!.name).toBe("fn_goal_show");
-      expect(callArgs.customTools![12]!.name).toBe("fn_read_evaluations");
-      expect(callArgs.customTools![13]!.name).toBe("fn_update_identity");
-      expect(callArgs.customTools![14]!.name).toBe("fn_web_fetch");
-      expect(callArgs.customTools![15]!.name).toBe("fn_memory_search");
-      expect(callArgs.customTools![16]!.name).toBe("fn_memory_get");
-      expect(callArgs.customTools![17]!.name).toBe("fn_memory_append");
+      expect(callArgs.customTools![4]!.name).toBe("fn_artifact_register");
+      expect(callArgs.customTools![5]!.name).toBe("fn_artifact_list");
+      expect(callArgs.customTools![6]!.name).toBe("fn_artifact_view");
+      expect(callArgs.customTools![7]!.name).toBe("fn_list_agents");
+      expect(callArgs.customTools![8]!.name).toBe("fn_delegate_task");
+      expect(callArgs.customTools![9]!.name).toBe("fn_get_agent_config");
+      expect(callArgs.customTools![10]!.name).toBe("fn_update_agent_config");
+      expect(callArgs.customTools![11]!.name).toBe("fn_agent_create");
+      expect(callArgs.customTools![12]!.name).toBe("fn_agent_delete");
+      expect(callArgs.customTools![13]!.name).toBe("fn_goal_list");
+      expect(callArgs.customTools![14]!.name).toBe("fn_goal_show");
+      expect(callArgs.customTools![15]!.name).toBe("fn_read_evaluations");
+      expect(callArgs.customTools![16]!.name).toBe("fn_update_identity");
+      expect(callArgs.customTools![17]!.name).toBe("fn_web_fetch");
+      expect(callArgs.customTools![18]!.name).toBe("fn_memory_search");
+      expect(callArgs.customTools![19]!.name).toBe("fn_memory_get");
+      expect(callArgs.customTools![20]!.name).toBe("fn_memory_append");
       // fn_heartbeat_done is last (terminal tool)
-      expect(callArgs.customTools![18]!.name).toBe("fn_heartbeat_done");
+      expect(callArgs.customTools![21]!.name).toBe("fn_heartbeat_done");
     });
 
     it("loads workspace memory into system prompt and identity snapshot when inline memory is empty", async () => {
@@ -3456,8 +3528,8 @@ describe("executeHeartbeat", () => {
       const result = await monitor.executeHeartbeat({ agentId: "agent-001", source: "on_demand" });
 
       expect(appendAgentLog).toHaveBeenCalledWith("FN-001", "Heartbeat produced visible output", "text", undefined, "executor");
-      expect(appendAgentLog).toHaveBeenCalledWith("FN-001", "read", "tool", "README.md", "executor");
-      expect(appendAgentLog).toHaveBeenCalledWith("FN-001", "read", "tool_result", "done", "executor");
+      expect(appendAgentLog).toHaveBeenCalledWith("FN-001", "read", "tool", undefined, "executor");
+      expect(appendAgentLog).toHaveBeenCalledWith("FN-001", "read", "tool_result", undefined, "executor");
       expect(result.contextSnapshot?.taskId).toBe("FN-001");
       expect(result.stdoutExcerpt).toContain("Heartbeat produced visible output");
     });

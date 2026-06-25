@@ -10,6 +10,7 @@ import { useModalResizePersist } from "../hooks/useModalResizePersist";
 import { useOverlayDismiss } from "../hooks/useOverlayDismiss";
 import { useMobileKeyboard } from "../hooks/useMobileKeyboard";
 import { useMobileScrollLock } from "../hooks/useMobileScrollLock";
+import { useEmbeddedPresentation, type ModalPresentation } from "../hooks/useEmbeddedPresentation";
 import { useViewportMode } from "../hooks/useViewportMode";
 import type {
   GitStatus,
@@ -57,6 +58,7 @@ import {
   fetchAheadCommits,
   fetchRemoteCommits,
   fetchBranchCommits,
+  fetchWorkspaceRepos,
 } from "../api";
 import { StashRecoveryView } from "./StashRecoveryView";
 import {
@@ -199,15 +201,25 @@ interface GitManagerModalProps {
   tasks: Task[];
   addToast: (message: string, type?: ToastType) => void;
   projectId?: string;
+  /*
+  FNXC:RightDockEmbedding 2026-06-22-00:00:
+  Right-dock redesign renders dock items inline inside the dock container rather than as fixed popup modals.
+  `presentation="embedded"` switches GitManager from a fixed `.modal-overlay` overlay to an inline view that fills its container.
+  Default stays "modal" so all existing overlay call sites keep byte-identical behavior.
+  Embedded mode must disable modal-only behaviors (scroll lock, resize persistence, Escape-to-close, overlay click dismiss) since they break the host page.
+  */
+  presentation?: ModalPresentation;
 }
 
 // ── Main Component ────────────────────────────────────────────────
 
-export function GitManagerModal({ isOpen, onClose, tasks: _tasks, addToast, projectId }: GitManagerModalProps) {
+export function GitManagerModal({ isOpen, onClose, tasks: _tasks, addToast, projectId, presentation = "modal" }: GitManagerModalProps) {
   const { t } = useTranslation("app");
   const confirmContext = useConfirm();
   const viewportMode = useViewportMode();
-  useMobileScrollLock(isOpen);
+  // FNXC:RightDockEmbedding 2026-06-22-00:00: embedded mode gates modal-only behaviors below (shared hook).
+  const { isEmbedded, scrollLockEnabled, resizePersistEnabled, escapeEnabled } = useEmbeddedPresentation(presentation);
+  useMobileScrollLock(isOpen && scrollLockEnabled);
   const { keyboardOverlap, viewportHeight, viewportOffsetTop, keyboardOpen } = useMobileKeyboard({
     enabled: viewportMode === "mobile",
   });
@@ -235,7 +247,8 @@ export function GitManagerModal({ isOpen, onClose, tasks: _tasks, addToast, proj
   const [loading, setLoading] = useState(false);
   const [sectionError, setSectionError] = useState<string | null>(null);
   const modalRef = useRef<HTMLDivElement>(null);
-  useModalResizePersist(modalRef, isOpen, "fusion:git-modal-size");
+  // FNXC:RightDockEmbedding 2026-06-22-00:00: skip modal resize persist/restore when embedded inline.
+  useModalResizePersist(modalRef, isOpen && resizePersistEnabled, "fusion:git-modal-size");
   const overlayDismissProps = useOverlayDismiss(handleClose);
   const copyToClipboard = useCopyToClipboard(addToast);
 
@@ -243,6 +256,45 @@ export function GitManagerModal({ isOpen, onClose, tasks: _tasks, addToast, proj
   const [status, setStatus] = useState<GitStatus | null>(null);
 
   const [rootDir, setRootDir] = useState<string | null>(null);
+
+  // ── Workspace repo selector state
+  /*
+  FNXC:Workspace 2026-06-24-21:00:
+  In workspace mode (multi-repo), the git manager shows a repo selector so the
+  user can pick which sub-repo to inspect. selectedRepo is the relative path
+  (e.g. "openvide"); gitRepoPath is passed as repoPath to all git API calls.
+  */
+  const [workspaceRepos, setWorkspaceRepos] = useState<string[]>([]);
+  const [selectedRepo, setSelectedRepo] = useState<string | null>(null);
+  const gitRepoPath = selectedRepo ?? undefined;
+  /*
+  FNXC:Workspace 2026-06-25-00:10:
+  In a workspace the project root is a non-git browse-only directory. On modal open the section fetch
+  fires immediately with no repoPath (selectedRepo not yet resolved), so a git status against the root
+  returns "Not a git repository" and toasts a spurious error on every open — even though the repo
+  dropdown renders correctly. fetchWorkspaceRepos resolves a tick later and re-fetches against a real
+  sub-repo. We track detection status in a REF (read inside the async fetch catch without a stale
+  closure or extra render dep) so we can SUPPRESS that one benign root-race error: a "Not a git
+  repository" with no repoPath while detection is unresolved OR has detected a workspace. A genuine
+  broken non-workspace project (resolved, repos empty) still surfaces the error normally.
+  */
+  const workspaceDetectionRef = useRef<{ resolved: boolean; isWorkspace: boolean }>({ resolved: false, isWorkspace: false });
+  // Tracks whether the most recent fetch suppressed a root-race error, and a state tick that flips
+  // when detection resolves — together they let a genuinely-broken NON-workspace project re-surface
+  // the error (a single re-fetch) after detection settles, without adding a redundant fetch to the
+  // common non-workspace-OK path (where the first fetch already succeeded).
+  const suppressedRootRaceRef = useRef(false);
+  const [detectionResolved, setDetectionResolved] = useState(false);
+  /*
+  FNXC:Workspace 2026-06-25-09:40 (detection generation guard):
+  A rapid projectId switch (or close→reopen) can leave a previous project's fetchWorkspaceRepos
+  promise in flight. When it resolves it must NOT overwrite the CURRENT project's detection verdict —
+  doing so could suppress a real error for the new project or mis-fire the re-surface effect. Each
+  detection run is stamped with a monotonically increasing generation; only the latest run is allowed
+  to mutate detection state, and the effect cleanup bumps the generation so a superseded/unmounted run
+  is abandoned.
+  */
+  const detectionGenerationRef = useRef(0);
 
   // ── Changes state
   const [fileChanges, setFileChanges] = useState<GitFileChange[]>([]);
@@ -298,15 +350,16 @@ export function GitManagerModal({ isOpen, onClose, tasks: _tasks, addToast, proj
     if (!isOpen) return;
     setLoading(true);
     setSectionError(null);
+    suppressedRootRaceRef.current = false;
     try {
       switch (activeSection) {
         case "status": {
-          const statusData = await fetchGitStatus(projectId, { extended: true });
+          const statusData = await fetchGitStatus(projectId, { extended: true }, gitRepoPath);
           setStatus(statusData);
           break;
         }
         case "changes": {
-          const [statusData, changes] = await Promise.all([fetchGitStatus(projectId, { extended: true }), fetchFileChanges(projectId)]);
+          const [statusData, changes] = await Promise.all([fetchGitStatus(projectId, { extended: true }, gitRepoPath), fetchFileChanges(projectId, gitRepoPath)]);
           setStatus(statusData);
           setFileChanges(changes);
           setSelectedFiles(new Set());
@@ -316,23 +369,23 @@ export function GitManagerModal({ isOpen, onClose, tasks: _tasks, addToast, proj
           break;
         }
         case "commits": {
-          const commitsData = await fetchGitCommits(commitsLimit, projectId);
+          const commitsData = await fetchGitCommits(commitsLimit, projectId, gitRepoPath);
           setCommits(commitsData);
           break;
         }
         case "branches": {
-          const [branchesData, statusForBranch] = await Promise.all([fetchGitBranches(projectId), fetchGitStatus(projectId, { extended: true })]);
+          const [branchesData, statusForBranch] = await Promise.all([fetchGitBranches(projectId, gitRepoPath), fetchGitStatus(projectId, { extended: true }, gitRepoPath)]);
           setBranches(branchesData);
           setStatus(statusForBranch);
           break;
         }
         case "worktrees": {
-          const worktreesData = await fetchGitWorktrees(projectId);
+          const worktreesData = await fetchGitWorktrees(projectId, gitRepoPath);
           setWorktrees(worktreesData);
           break;
         }
         case "stashes": {
-          const stashesData = await fetchGitStashList(projectId);
+          const stashesData = await fetchGitStashList(projectId, gitRepoPath);
           setStashes(stashesData);
           setExpandedStashIndex(null);
           setStashDiff(null);
@@ -345,18 +398,40 @@ export function GitManagerModal({ isOpen, onClose, tasks: _tasks, addToast, proj
           break;
         }
         case "remotes": {
-          const remoteStatus = await fetchGitStatus(projectId, { extended: true });
+          const remoteStatus = await fetchGitStatus(projectId, { extended: true }, gitRepoPath);
           setStatus(remoteStatus);
           break;
         }
       }
     } catch (err) {
-      setSectionError(getErrorMessage(err) || t("git.failedToFetchData", "Failed to fetch git data"));
-      addToast(getErrorMessage(err) || t("git.failedToFetchData", "Failed to fetch git data"), "error");
+      const message = getErrorMessage(err) || t("git.failedToFetchData", "Failed to fetch git data");
+      /*
+      FNXC:Workspace 2026-06-25-00:10:
+      Suppress the benign workspace-root race: on open, the first fetch fires before selectedRepo
+      resolves (no repoPath → the non-git browse root), which fails "Not a git repository". A workspace
+      re-fetches against a real sub-repo a tick later. Only swallow this when there is NO repoPath AND
+      detection is still pending OR has confirmed a workspace; a resolved non-workspace project surfaces
+      a genuine "Not a git repository" normally.
+      */
+      const detection = workspaceDetectionRef.current;
+      const isWorkspaceRootRace =
+        gitRepoPath === undefined &&
+        /not a git repository/i.test(message) &&
+        (!detection.resolved || detection.isWorkspace);
+      if (isWorkspaceRootRace) {
+        // Benign: defer reporting. A workspace re-fetches against its sub-repo (selectedRepo change);
+        // a non-workspace re-fetches once via the detection-resolved effect below, surfacing any real
+        // error then.
+        suppressedRootRaceRef.current = true;
+        setSectionError(null);
+      } else {
+        setSectionError(message);
+        addToast(message, "error");
+      }
     } finally {
       setLoading(false);
     }
-  }, [activeSection, isOpen, commitsLimit, addToast, projectId]);
+  }, [activeSection, isOpen, commitsLimit, addToast, projectId, gitRepoPath]);
 
   useEffect(() => {
     if (isOpen) {
@@ -367,7 +442,8 @@ export function GitManagerModal({ isOpen, onClose, tasks: _tasks, addToast, proj
   // ── Keyboard Navigation ─────────────────────────────────────────
 
   useEffect(() => {
-    if (!isOpen) return;
+    // FNXC:RightDockEmbedding 2026-06-22-00:00: embedded mode has no overlay to dismiss; a global Escape listener would hijack page keys.
+    if (!isOpen || !escapeEnabled) return;
     const handleKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
         handleClose();
@@ -386,15 +462,15 @@ export function GitManagerModal({ isOpen, onClose, tasks: _tasks, addToast, proj
     };
     document.addEventListener("keydown", handleKey);
     return () => document.removeEventListener("keydown", handleKey);
-  }, [isOpen, handleClose, activeSection]);
+  }, [isOpen, escapeEnabled, handleClose, activeSection]);
 
   // ── Changes Handlers ────────────────────────────────────────────
 
   const handleStageFiles = useCallback(async (files: string[]) => {
     try {
-      await stageFiles(files, projectId);
+      await stageFiles(files, projectId, gitRepoPath);
       addToast(t("git.stagedFiles", "Staged {{count}} file(s)", { count: files.length }), "success");
-      const changes = await fetchFileChanges(projectId);
+      const changes = await fetchFileChanges(projectId, gitRepoPath);
       setFileChanges(changes);
       setSelectedFiles(new Set());
       setSelectedDiffTarget(null);
@@ -407,9 +483,9 @@ export function GitManagerModal({ isOpen, onClose, tasks: _tasks, addToast, proj
 
   const handleUnstageFiles = useCallback(async (files: string[]) => {
     try {
-      await unstageFiles(files, projectId);
+      await unstageFiles(files, projectId, gitRepoPath);
       addToast(t("git.unstagedFiles", "Unstaged {{count}} file(s)", { count: files.length }), "success");
-      const changes = await fetchFileChanges(projectId);
+      const changes = await fetchFileChanges(projectId, gitRepoPath);
       setFileChanges(changes);
       setSelectedFiles(new Set());
       setSelectedDiffTarget(null);
@@ -428,9 +504,9 @@ export function GitManagerModal({ isOpen, onClose, tasks: _tasks, addToast, proj
     });
     if (!shouldDiscard) return;
     try {
-      await discardChanges(files, projectId);
+      await discardChanges(files, projectId, gitRepoPath);
       addToast(t("git.discardedFiles", "Discarded changes to {{count}} file(s)", { count: files.length }), "success");
-      const [changes, statusData] = await Promise.all([fetchFileChanges(projectId), fetchGitStatus(projectId, { extended: true })]);
+      const [changes, statusData] = await Promise.all([fetchFileChanges(projectId, gitRepoPath), fetchGitStatus(projectId, { extended: true }, gitRepoPath)]);
       setFileChanges(changes);
       setStatus(statusData);
       setSelectedFiles(new Set());
@@ -447,11 +523,11 @@ export function GitManagerModal({ isOpen, onClose, tasks: _tasks, addToast, proj
     if (!commitMessage.trim()) return;
     setCommitting(true);
     try {
-      const result = await createCommit(commitMessage.trim(), projectId);
+      const result = await createCommit(commitMessage.trim(), projectId, gitRepoPath);
       addToast(t("git.committedHash", "Committed: {{hash}}", { hash: result.hash }), "success");
       setCommitMessage("");
       // Refresh changes and status
-      const [changes, statusData] = await Promise.all([fetchFileChanges(projectId), fetchGitStatus(projectId, { extended: true })]);
+      const [changes, statusData] = await Promise.all([fetchFileChanges(projectId, gitRepoPath), fetchGitStatus(projectId, { extended: true }, gitRepoPath)]);
       setFileChanges(changes);
       setStatus(statusData);
       setSelectedDiffTarget(null);
@@ -470,12 +546,12 @@ export function GitManagerModal({ isOpen, onClose, tasks: _tasks, addToast, proj
     try {
       const unstaged = fileChanges.filter((f) => !f.staged).map((f) => f.file);
       if (unstaged.length > 0) {
-        await stageFiles(unstaged, projectId);
+        await stageFiles(unstaged, projectId, gitRepoPath);
       }
-      const result = await createCommit(commitMessage.trim(), projectId);
+      const result = await createCommit(commitMessage.trim(), projectId, gitRepoPath);
       addToast(t("git.committedHash", "Committed: {{hash}}", { hash: result.hash }), "success");
       setCommitMessage("");
-      const [changes, statusData] = await Promise.all([fetchFileChanges(projectId), fetchGitStatus(projectId, { extended: true })]);
+      const [changes, statusData] = await Promise.all([fetchFileChanges(projectId, gitRepoPath), fetchGitStatus(projectId, { extended: true }, gitRepoPath)]);
       setFileChanges(changes);
       setStatus(statusData);
       setSelectedDiffTarget(null);
@@ -496,7 +572,7 @@ export function GitManagerModal({ isOpen, onClose, tasks: _tasks, addToast, proj
     changeDiffRequestIdRef.current = requestId;
 
     try {
-      const diff = await fetchGitFileDiff(file, staged, projectId);
+      const diff = await fetchGitFileDiff(file, staged, projectId, gitRepoPath);
       if (changeDiffRequestIdRef.current !== requestId) {
         return;
       }
@@ -539,7 +615,7 @@ export function GitManagerModal({ isOpen, onClose, tasks: _tasks, addToast, proj
     setSelectedCommit(hash);
     setLoadingDiff(true);
     try {
-      const diff = await fetchCommitDiff(hash, projectId);
+      const diff = await fetchCommitDiff(hash, projectId, gitRepoPath);
       setCommitDiff(diff);
     } catch (err) {
       addToast(getErrorMessage(err) || t("git.failedToLoadDiff", "Failed to load diff"), "error");
@@ -571,11 +647,11 @@ export function GitManagerModal({ isOpen, onClose, tasks: _tasks, addToast, proj
     if (!newBranchName.trim()) return;
     setLoading(true);
     try {
-      await createBranch(newBranchName.trim(), branchBase.trim() || undefined, projectId);
+      await createBranch(newBranchName.trim(), branchBase.trim() || undefined, projectId, gitRepoPath);
       addToast(t("git.createdBranch", "Created branch {{name}}", { name: newBranchName }), "success");
       setNewBranchName("");
       setBranchBase("");
-      const branchesData = await fetchGitBranches(projectId);
+      const branchesData = await fetchGitBranches(projectId, gitRepoPath);
       setBranches(branchesData);
     } catch (err) {
       addToast(getErrorMessage(err) || t("git.failedToCreateBranch", "Failed to create branch"), "error");
@@ -587,9 +663,9 @@ export function GitManagerModal({ isOpen, onClose, tasks: _tasks, addToast, proj
   const handleCheckoutBranch = useCallback(async (name: string) => {
     setLoading(true);
     try {
-      await checkoutBranch(name, projectId);
+      await checkoutBranch(name, projectId, gitRepoPath);
       addToast(t("git.switchedToBranch", "Switched to {{name}}", { name }), "success");
-      const [statusData, branchesData] = await Promise.all([fetchGitStatus(projectId, { extended: true }), fetchGitBranches(projectId)]);
+      const [statusData, branchesData] = await Promise.all([fetchGitStatus(projectId, { extended: true }, gitRepoPath), fetchGitBranches(projectId, gitRepoPath)]);
       setStatus(statusData);
       setBranches(branchesData);
     } catch (err) {
@@ -608,9 +684,9 @@ export function GitManagerModal({ isOpen, onClose, tasks: _tasks, addToast, proj
     if (!shouldDelete) return;
     setLoading(true);
     try {
-      await deleteBranch(name, undefined, projectId);
+      await deleteBranch(name, undefined, projectId, gitRepoPath);
       addToast(t("git.deletedBranch", "Deleted branch {{name}}", { name }), "success");
-      const branchesData = await fetchGitBranches(projectId);
+      const branchesData = await fetchGitBranches(projectId, gitRepoPath);
       setBranches(branchesData);
     } catch (err) {
       if (getErrorMessage(err).includes("not fully merged")) {
@@ -621,9 +697,9 @@ export function GitManagerModal({ isOpen, onClose, tasks: _tasks, addToast, proj
         });
         if (shouldForceDelete) {
           try {
-            await deleteBranch(name, true, projectId);
+            await deleteBranch(name, true, projectId, gitRepoPath);
             addToast(t("git.forceDeletedBranch", "Force deleted branch {{name}}", { name }), "success");
-            const branchesData = await fetchGitBranches(projectId);
+            const branchesData = await fetchGitBranches(projectId, gitRepoPath);
             setBranches(branchesData);
           } catch (forceErr) {
             addToast(getErrorMessage(forceErr) || t("git.failedToDeleteBranch", "Failed to delete branch"), "error");
@@ -661,7 +737,7 @@ export function GitManagerModal({ isOpen, onClose, tasks: _tasks, addToast, proj
     setBranchCommitDiff(null);
     setLoadingBranchCommits(true);
     try {
-      const data = await fetchBranchCommits(name, 10, projectId);
+      const data = await fetchBranchCommits(name, 10, projectId, gitRepoPath);
       setBranchCommits(data);
     } catch {
       setBranchCommits([]);
@@ -681,7 +757,7 @@ export function GitManagerModal({ isOpen, onClose, tasks: _tasks, addToast, proj
     setBranchCommitDiff(null);
     setLoadingBranchCommitDiff(true);
     try {
-      const diff = await fetchCommitDiff(hash, projectId);
+      const diff = await fetchCommitDiff(hash, projectId, gitRepoPath);
       setBranchCommitDiff(diff);
     } catch {
       setBranchCommitDiff(null);
@@ -713,10 +789,10 @@ export function GitManagerModal({ isOpen, onClose, tasks: _tasks, addToast, proj
     setStashLoading("create");
     resetStashDiffState();
     try {
-      await createStash(stashMessage.trim() || undefined, projectId);
+      await createStash(stashMessage.trim() || undefined, projectId, gitRepoPath);
       addToast(t("git.changesStashed", "Changes stashed"), "success");
       setStashMessage("");
-      const stashesData = await fetchGitStashList(projectId);
+      const stashesData = await fetchGitStashList(projectId, gitRepoPath);
       setStashes(stashesData);
     } catch (err) {
       addToast(getErrorMessage(err) || t("git.failedToStashChanges", "Failed to stash changes"), "error");
@@ -729,9 +805,9 @@ export function GitManagerModal({ isOpen, onClose, tasks: _tasks, addToast, proj
     setStashLoading(`apply-${index}`);
     resetStashDiffState();
     try {
-      await applyStash(index, drop, projectId);
+      await applyStash(index, drop, projectId, gitRepoPath);
       addToast(drop ? t("git.stashPopped", "Stash popped") : t("git.stashApplied", "Stash applied"), "success");
-      const stashesData = await fetchGitStashList(projectId);
+      const stashesData = await fetchGitStashList(projectId, gitRepoPath);
       setStashes(stashesData);
     } catch (err) {
       addToast(getErrorMessage(err) || t("git.failedToApplyStash", "Failed to apply stash"), "error");
@@ -750,9 +826,9 @@ export function GitManagerModal({ isOpen, onClose, tasks: _tasks, addToast, proj
     setStashLoading(`drop-${index}`);
     resetStashDiffState();
     try {
-      await dropStash(index, projectId);
+      await dropStash(index, projectId, gitRepoPath);
       addToast(t("git.stashDropped", "Stash dropped"), "success");
-      const stashesData = await fetchGitStashList(projectId);
+      const stashesData = await fetchGitStashList(projectId, gitRepoPath);
       setStashes(stashesData);
     } catch (err) {
       addToast(getErrorMessage(err) || t("git.failedToDropStash", "Failed to drop stash"), "error");
@@ -774,7 +850,7 @@ export function GitManagerModal({ isOpen, onClose, tasks: _tasks, addToast, proj
     setStashDiffError(null);
     setLoadingStashDiff(true);
     try {
-      const diff = await fetchStashDiff(index, projectId);
+      const diff = await fetchStashDiff(index, projectId, gitRepoPath);
       if (stashDiffRequestIdRef.current !== requestId) {
         return;
       }
@@ -797,10 +873,10 @@ export function GitManagerModal({ isOpen, onClose, tasks: _tasks, addToast, proj
   const handleFetch = useCallback(async () => {
     setRemoteLoading("fetch");
     try {
-      const result = await fetchRemote(undefined, projectId);
+      const result = await fetchRemote(undefined, projectId, gitRepoPath);
       setLastRemoteResult(result);
       addToast(result.message || t("git.fetchCompleted", "Fetch completed"), result.fetched ? "success" : "info");
-      const statusData = await fetchGitStatus(projectId, { extended: true });
+      const statusData = await fetchGitStatus(projectId, { extended: true }, gitRepoPath);
       setStatus(statusData);
     } catch (err) {
       addToast(getErrorMessage(err) || t("git.fetchFailed", "Fetch failed"), "error");
@@ -812,7 +888,7 @@ export function GitManagerModal({ isOpen, onClose, tasks: _tasks, addToast, proj
   const handlePull = useCallback(async (options?: { rebase?: boolean }) => {
     setRemoteLoading("pull");
     try {
-      const result = await pullBranch(options, projectId);
+      const result = await pullBranch(options, projectId, gitRepoPath);
       setLastRemoteResult(result);
       if (result.conflict) {
         addToast(t("git.mergeConflictDetected", "Merge conflict detected. Resolve manually."), "error");
@@ -820,7 +896,7 @@ export function GitManagerModal({ isOpen, onClose, tasks: _tasks, addToast, proj
         const fallbackMessage = options?.rebase ? t("git.pullRebaseCompleted", "Pull --rebase completed") : t("git.pullCompleted", "Pull completed");
         addToast(result.message || fallbackMessage, "success");
       }
-      const statusData = await fetchGitStatus(projectId, { extended: true });
+      const statusData = await fetchGitStatus(projectId, { extended: true }, gitRepoPath);
       setStatus(statusData);
     } catch (err) {
       addToast(getErrorMessage(err) || t("git.pullFailed", "Pull failed"), "error");
@@ -832,10 +908,10 @@ export function GitManagerModal({ isOpen, onClose, tasks: _tasks, addToast, proj
   const handlePush = useCallback(async () => {
     setRemoteLoading("push");
     try {
-      const result = await pushBranch(projectId);
+      const result = await pushBranch(projectId, gitRepoPath);
       setLastRemoteResult(result);
       addToast(result.message || t("git.pushCompleted", "Push completed"), "success");
-      const statusData = await fetchGitStatus(projectId, { extended: true });
+      const statusData = await fetchGitStatus(projectId, { extended: true }, gitRepoPath);
       setStatus(statusData);
     } catch (err) {
       addToast(getErrorMessage(err) || t("git.pushFailed", "Push failed"), "error");
@@ -847,17 +923,17 @@ export function GitManagerModal({ isOpen, onClose, tasks: _tasks, addToast, proj
   const handleSyncWithOrigin = useCallback(async () => {
     setRemoteLoading("sync");
     try {
-      const pullResult = await pullBranch({ rebase: true }, projectId);
+      const pullResult = await pullBranch({ rebase: true }, projectId, gitRepoPath);
       setLastRemoteResult(pullResult);
       if (pullResult.conflict) {
         addToast(t("git.mergeConflictDetected", "Merge conflict detected. Resolve manually."), "error");
         return;
       }
 
-      const pushResult = await pushBranch(projectId);
+      const pushResult = await pushBranch(projectId, gitRepoPath);
       setLastRemoteResult(pushResult);
       addToast(t("git.syncedWithOrigin", "Synced with origin (pull --rebase + push)"), "success");
-      const statusData = await fetchGitStatus(projectId, { extended: true });
+      const statusData = await fetchGitStatus(projectId, { extended: true }, gitRepoPath);
       setStatus(statusData);
     } catch (err) {
       addToast(getErrorMessage(err) || t("git.syncWithOriginFailed", "Sync with origin failed"), "error");
@@ -871,6 +947,58 @@ export function GitManagerModal({ isOpen, onClose, tasks: _tasks, addToast, proj
   useEffect(() => {
     fetchConfig(projectId).then((cfg) => setRootDir(cfg.rootDir)).catch(() => setRootDir(null));
   }, [projectId]);
+
+  // Fetch workspace repos on mount to determine if this is a multi-repo project.
+  /*
+  FNXC:Workspace 2026-06-24-21:30:
+  Revalidate selectedRepo against the freshly fetched repo list. When projectId
+  changes (or a project has no workspace repos), a stale selection from the prior
+  project would otherwise persist and keep sending a stale repoPath to git
+  endpoints. Keep the current selection only if it still exists in the new list;
+  otherwise fall back to repos[0], or clear to null when the list is empty (and on
+  fetch error). The functional updater lets us revalidate without depending on
+  selectedRepo in the effect deps, preserving the projectId-keyed intent.
+  */
+  useEffect(() => {
+    // Reset detection on project switch so a stale verdict can't suppress a real error. The
+    // generation guard (see ref note above) makes a superseded in-flight resolution a no-op.
+    const gen = ++detectionGenerationRef.current;
+    workspaceDetectionRef.current = { resolved: false, isWorkspace: false };
+    suppressedRootRaceRef.current = false;
+    setDetectionResolved(false);
+    fetchWorkspaceRepos(projectId)
+      .then((result) => {
+        if (gen !== detectionGenerationRef.current) return;
+        const repos = result.repos;
+        workspaceDetectionRef.current = { resolved: true, isWorkspace: repos.length > 0 };
+        setWorkspaceRepos(repos);
+        setSelectedRepo((current) =>
+          current && repos.includes(current) ? current : (repos[0] ?? null),
+        );
+      })
+      .catch(() => {
+        if (gen !== detectionGenerationRef.current) return;
+        workspaceDetectionRef.current = { resolved: true, isWorkspace: false };
+        setWorkspaceRepos([]);
+        setSelectedRepo(null);
+      })
+      .finally(() => {
+        if (gen !== detectionGenerationRef.current) return;
+        setDetectionResolved(true);
+      });
+    // Bump the generation on cleanup so an unmounted/superseded run's late resolution is abandoned.
+    return () => { detectionGenerationRef.current++; };
+  }, [projectId]); // keyed on projectId; selectedRepo is revalidated via the functional updater
+
+  // FNXC:Workspace 2026-06-25-00:10: once detection settles, re-surface a suppressed root-race error
+  // for a NON-workspace project (a genuinely broken/non-git repo). A workspace already re-fetches via
+  // the selectedRepo change, so we skip it here to avoid a redundant second fetch.
+  useEffect(() => {
+    if (isOpen && detectionResolved && suppressedRootRaceRef.current && !workspaceDetectionRef.current.isWorkspace) {
+      suppressedRootRaceRef.current = false;
+      void fetchSectionData();
+    }
+  }, [isOpen, detectionResolved, fetchSectionData]);
 
   const handleSyncIntegrationTip = useCallback(async () => {
     if (!status?.integrationBranch || status.isOnIntegrationBranch === false) return;
@@ -896,7 +1024,7 @@ export function GitManagerModal({ isOpen, onClose, tasks: _tasks, addToast, proj
         }),
       });
       addToast(t("git.syncedWorktreeToIntegrationTip", "Synced worktree to local integration tip"), "success");
-      const statusData = await fetchGitStatus(projectId, { extended: true });
+      const statusData = await fetchGitStatus(projectId, { extended: true }, gitRepoPath);
       setStatus(statusData);
     } catch (err) {
       addToast(getErrorMessage(err) || t("git.syncFailed", "Sync failed"), "error");
@@ -914,6 +1042,246 @@ export function GitManagerModal({ isOpen, onClose, tasks: _tasks, addToast, proj
 
   if (!isOpen) return null;
 
+  // FNXC:RightDockEmbedding 2026-06-22-00:00: shared git body reused by both the embedded inline view and the modal overlay below; kept identical between presentations.
+  const gitBody = (
+    <>
+              {/* Sidebar Navigation */}
+              <nav className="gm-sidebar" role="tablist" aria-label={t("git.sidebarAriaLabel", "Git Manager Sections")}>
+                {/*
+                FNXC:Workspace 2026-06-24-21:00:
+                Repo selector for workspace-mode (multi-repo) projects. Placed at the top
+                of the sidebar so it's visible in both modal and embedded presentations.
+                */}
+                {workspaceRepos.length > 0 && (
+                  <div className="gm-repo-selector-wrap">
+                    <FolderGit2 size={14} />
+                    <select
+                      className="gm-repo-selector"
+                      value={selectedRepo ?? ""}
+                      onChange={(e) => {
+                        setSelectedRepo(e.target.value || null);
+                      }}
+                      title={t("git.selectRepo", "Select repository")}
+                      aria-label={t("git.selectRepo", "Select repository")}
+                    >
+                      {workspaceRepos.map((repo) => (
+                        <option key={repo} value={repo}>{repo}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+                {SECTIONS.map((section) => {
+                  const Icon = section.icon;
+                  const sectionLabel = {
+                    status: t("git.sectionStatus", "Status"),
+                    changes: t("git.sectionChanges", "Changes"),
+                    commits: t("git.sectionCommits", "Commits"),
+                    branches: t("git.sectionBranches", "Branches"),
+                    worktrees: t("git.sectionWorktrees", "Worktrees"),
+                    stashes: t("git.sectionStashes", "Stashes"),
+                    recovery: t("git.sectionRecovery", "Recovery"),
+                    remotes: t("git.sectionRemotes", "Remotes"),
+                  }[section.id] ?? section.label;
+                  return (
+                    <button
+                      key={section.id}
+                      role="tab"
+                      aria-selected={activeSection === section.id}
+                      aria-label={sectionLabel}
+                      title={sectionLabel}
+                      className={`gm-nav-item${activeSection === section.id ? " active" : ""}`}
+                      onClick={() => setActiveSection(section.id)}
+                    >
+                      <Icon size={16} />
+                      <span className="gm-nav-label">{sectionLabel}</span>
+                    </button>
+                  );
+                })}
+                {/*
+                FNXC:GitManager 2026-06-22-19:00:
+                Refresh relocated from the (now-removed) internal gray .modal-header into the section nav strip so it is reachable on every section ("each page") in BOTH the right-dock embedded view (wrapping tab strip) and the popped-out modal. The dock tab strip and RightDockExpandModal already supply a header, so the internal title+refresh row was a duplicate header and is removed. Same fetchSectionData + loading spinner state as before.
+                */}
+                <button
+                  type="button"
+                  className="gm-nav-refresh"
+                  onClick={fetchSectionData}
+                  disabled={loading}
+                  title={t("git.refresh", "Refresh")}
+                  aria-label={t("git.refresh", "Refresh")}
+                >
+                  <RefreshCw size={16} className={loading ? "spin" : ""} />
+                  <span className="gm-nav-label">{t("git.refresh", "Refresh")}</span>
+                </button>
+              </nav>
+
+              {/* Content Area */}
+              <div className="gm-content" role="tabpanel">
+                {/* Loading overlay */}
+                {loading && (
+                  <div className="gm-loading">
+                    <Loader2 size={24} className="spin" />
+                    <span>{t("git.loading", "Loading...")}</span>
+                  </div>
+                )}
+
+                {/* Error state */}
+                {sectionError && !loading && (
+                  <div className="gm-error">
+                    <AlertCircle size={18} />
+                    <span>{sectionError}</span>
+                    <button className="btn btn-sm" onClick={fetchSectionData}>
+                      {t("git.retry", "Retry")}
+                    </button>
+                  </div>
+                )}
+
+                {/* ── Status Panel ── */}
+                {activeSection === "status" && !loading && status && (
+                  <StatusPanel
+                    status={status}
+                    copyToClipboard={copyToClipboard}
+                    onSyncWorkingTree={handleSyncIntegrationTip}
+                    syncing={remoteLoading === "sync-integration"}
+                  />
+                )}
+
+                {/* ── Changes Panel ── */}
+                {activeSection === "changes" && !loading && (
+                  <ChangesPanel
+                    status={status}
+                    stagedFiles={stagedFiles}
+                    unstagedFiles={unstagedFiles}
+                    selectedFiles={selectedFiles}
+                    toggleFileSelection={toggleFileSelection}
+                    onStageFiles={handleStageFiles}
+                    onUnstageFiles={handleUnstageFiles}
+                    onDiscardChanges={handleDiscardChanges}
+                    onSelectDiffFile={handleSelectDiffFile}
+                    selectedDiffTarget={selectedDiffTarget}
+                    changeDiff={changeDiff}
+                    loadingChangeDiff={loadingChangeDiff}
+                    changeDiffError={changeDiffError}
+                    commitMessage={commitMessage}
+                    setCommitMessage={setCommitMessage}
+                    onCommit={handleCommit}
+                    onStageAllAndCommit={handleStageAllAndCommit}
+                    committing={committing}
+                  />
+                )}
+
+                {/* ── Commits Panel ── */}
+                {activeSection === "commits" && !loading && (
+                  <CommitsPanel
+                    commits={filteredCommits}
+                    commitSearch={commitSearch}
+                    setCommitSearch={setCommitSearch}
+                    selectedCommit={selectedCommit}
+                    commitDiff={commitDiff}
+                    loadingDiff={loadingDiff}
+                    onCommitClick={handleCommitClick}
+                    onLoadMore={handleLoadMoreCommits}
+                    canLoadMore={commits.length >= commitsLimit && commitsLimit < 100}
+                    copyToClipboard={copyToClipboard}
+                  />
+                )}
+
+                {/* ── Branches Panel ── */}
+                {activeSection === "branches" && !loading && (
+                  <BranchesPanel
+                    branches={filteredBranches}
+                    branchSearch={branchSearch}
+                    setBranchSearch={setBranchSearch}
+                    newBranchName={newBranchName}
+                    setNewBranchName={setNewBranchName}
+                    branchBase={branchBase}
+                    setBranchBase={setBranchBase}
+                    onCreateBranch={handleCreateBranch}
+                    onCheckoutBranch={handleCheckoutBranch}
+                    onDeleteBranch={handleDeleteBranch}
+                    loading={loading}
+                    allBranches={branches}
+                    selectedBranch={selectedBranch}
+                    branchCommits={branchCommits}
+                    loadingBranchCommits={loadingBranchCommits}
+                    expandedBranchCommit={expandedBranchCommit}
+                    branchCommitDiff={branchCommitDiff}
+                    loadingBranchCommitDiff={loadingBranchCommitDiff}
+                    onSelectBranch={handleSelectBranch}
+                    onBranchCommitClick={handleBranchCommitClick}
+                    onCloseBranchDetails={handleCloseBranchDetails}
+                  />
+                )}
+
+                {/* ── Worktrees Panel ── */}
+                {activeSection === "worktrees" && !loading && (
+                  <WorktreesPanel worktrees={worktrees} />
+                )}
+
+                {/* ── Stashes Panel ── */}
+                {activeSection === "stashes" && !loading && (
+                  <StashesPanel
+                    stashes={stashes}
+                    stashMessage={stashMessage}
+                    setStashMessage={setStashMessage}
+                    onCreateStash={handleCreateStash}
+                    onApplyStash={handleApplyStash}
+                    onDropStash={handleDropStash}
+                    onToggleStashDiff={handleToggleStashDiff}
+                    stashLoading={stashLoading}
+                    expandedStashIndex={expandedStashIndex}
+                    stashDiff={stashDiff}
+                    loadingStashDiff={loadingStashDiff}
+                    stashDiffError={stashDiffError}
+                  />
+                )}
+
+                {/* ── Recovery Panel ── */}
+                {activeSection === "recovery" && !loading && (
+                  <StashRecoveryView />
+                )}
+
+                {/* ── Remotes Panel ── */}
+                {activeSection === "remotes" && !loading && (
+                  <RemotesPanel
+                    status={status}
+                    remoteLoading={remoteLoading}
+                    lastRemoteResult={lastRemoteResult}
+                    onFetch={handleFetch}
+                    onPull={handlePull}
+                    onPush={handlePush}
+                    onSync={handleSyncWithOrigin}
+                    onSyncIntegrationTip={handleSyncIntegrationTip}
+                    syncIntegrationDisabled={
+                      !status?.integrationBranch ||
+                      status?.isOnIntegrationBranch === false ||
+                      remoteLoading !== null
+                    }
+                    addToast={addToast}
+                    projectId={projectId}
+                    copyToClipboard={copyToClipboard}
+                  />
+                )}
+              </div>
+    </>
+  );
+
+  /*
+  FNXC:RightDockEmbedding 2026-06-22-00:00:
+  Embedded mode renders the same git content inline (fills the right-dock container) with no fixed overlay, no resize handle, and no close button.
+  Modal mode (default) keeps the exact original overlay markup byte-identical.
+  */
+  if (isEmbedded) {
+    return (
+      <div className="git-manager-embedded right-dock-embedded-view">
+        <div className="gm-modal gm-modal--embedded" ref={modalRef} style={keyboardStyle}>
+          <div className="gm-layout">
+            {gitBody}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="modal-overlay open git-manager-modal-overlay" {...overlayDismissProps} role="dialog" aria-modal="true">
       <div className="modal gm-modal" ref={modalRef} style={keyboardStyle}>
@@ -923,14 +1291,6 @@ export function GitManagerModal({ isOpen, onClose, tasks: _tasks, addToast, proj
             {t("git.modalTitle", "Git Manager")}
           </h3>
           <div className="gm-header-actions">
-            <button
-              className="btn btn-sm"
-              onClick={fetchSectionData}
-              disabled={loading}
-              title={t("git.refresh", "Refresh")}
-            >
-              <RefreshCw size={14} className={loading ? "spin" : ""} />
-            </button>
             <button className="modal-close" onClick={handleClose} aria-label={t("git.close", "Close")}>
               <X size={18} />
             </button>
@@ -938,183 +1298,7 @@ export function GitManagerModal({ isOpen, onClose, tasks: _tasks, addToast, proj
         </div>
 
         <div className="gm-layout">
-          {/* Sidebar Navigation */}
-          <nav className="gm-sidebar" role="tablist" aria-label={t("git.sidebarAriaLabel", "Git Manager Sections")}>
-            {SECTIONS.map((section) => {
-              const Icon = section.icon;
-              const sectionLabel = {
-                status: t("git.sectionStatus", "Status"),
-                changes: t("git.sectionChanges", "Changes"),
-                commits: t("git.sectionCommits", "Commits"),
-                branches: t("git.sectionBranches", "Branches"),
-                worktrees: t("git.sectionWorktrees", "Worktrees"),
-                stashes: t("git.sectionStashes", "Stashes"),
-                recovery: t("git.sectionRecovery", "Recovery"),
-                remotes: t("git.sectionRemotes", "Remotes"),
-              }[section.id] ?? section.label;
-              return (
-                <button
-                  key={section.id}
-                  role="tab"
-                  aria-selected={activeSection === section.id}
-                  className={`gm-nav-item${activeSection === section.id ? " active" : ""}`}
-                  onClick={() => setActiveSection(section.id)}
-                >
-                  <Icon size={16} />
-                  <span className="gm-nav-label">{sectionLabel}</span>
-                </button>
-              );
-            })}
-          </nav>
-
-          {/* Content Area */}
-          <div className="gm-content" role="tabpanel">
-            {/* Loading overlay */}
-            {loading && (
-              <div className="gm-loading">
-                <Loader2 size={24} className="spin" />
-                <span>{t("git.loading", "Loading...")}</span>
-              </div>
-            )}
-
-            {/* Error state */}
-            {sectionError && !loading && (
-              <div className="gm-error">
-                <AlertCircle size={18} />
-                <span>{sectionError}</span>
-                <button className="btn btn-sm" onClick={fetchSectionData}>
-                  {t("git.retry", "Retry")}
-                </button>
-              </div>
-            )}
-
-            {/* ── Status Panel ── */}
-            {activeSection === "status" && !loading && status && (
-              <StatusPanel
-                status={status}
-                copyToClipboard={copyToClipboard}
-                onSyncWorkingTree={handleSyncIntegrationTip}
-                syncing={remoteLoading === "sync-integration"}
-              />
-            )}
-
-            {/* ── Changes Panel ── */}
-            {activeSection === "changes" && !loading && (
-              <ChangesPanel
-                status={status}
-                stagedFiles={stagedFiles}
-                unstagedFiles={unstagedFiles}
-                selectedFiles={selectedFiles}
-                toggleFileSelection={toggleFileSelection}
-                onStageFiles={handleStageFiles}
-                onUnstageFiles={handleUnstageFiles}
-                onDiscardChanges={handleDiscardChanges}
-                onSelectDiffFile={handleSelectDiffFile}
-                selectedDiffTarget={selectedDiffTarget}
-                changeDiff={changeDiff}
-                loadingChangeDiff={loadingChangeDiff}
-                changeDiffError={changeDiffError}
-                commitMessage={commitMessage}
-                setCommitMessage={setCommitMessage}
-                onCommit={handleCommit}
-                onStageAllAndCommit={handleStageAllAndCommit}
-                committing={committing}
-              />
-            )}
-
-            {/* ── Commits Panel ── */}
-            {activeSection === "commits" && !loading && (
-              <CommitsPanel
-                commits={filteredCommits}
-                commitSearch={commitSearch}
-                setCommitSearch={setCommitSearch}
-                selectedCommit={selectedCommit}
-                commitDiff={commitDiff}
-                loadingDiff={loadingDiff}
-                onCommitClick={handleCommitClick}
-                onLoadMore={handleLoadMoreCommits}
-                canLoadMore={commits.length >= commitsLimit && commitsLimit < 100}
-                copyToClipboard={copyToClipboard}
-              />
-            )}
-
-            {/* ── Branches Panel ── */}
-            {activeSection === "branches" && !loading && (
-              <BranchesPanel
-                branches={filteredBranches}
-                branchSearch={branchSearch}
-                setBranchSearch={setBranchSearch}
-                newBranchName={newBranchName}
-                setNewBranchName={setNewBranchName}
-                branchBase={branchBase}
-                setBranchBase={setBranchBase}
-                onCreateBranch={handleCreateBranch}
-                onCheckoutBranch={handleCheckoutBranch}
-                onDeleteBranch={handleDeleteBranch}
-                loading={loading}
-                allBranches={branches}
-                selectedBranch={selectedBranch}
-                branchCommits={branchCommits}
-                loadingBranchCommits={loadingBranchCommits}
-                expandedBranchCommit={expandedBranchCommit}
-                branchCommitDiff={branchCommitDiff}
-                loadingBranchCommitDiff={loadingBranchCommitDiff}
-                onSelectBranch={handleSelectBranch}
-                onBranchCommitClick={handleBranchCommitClick}
-                onCloseBranchDetails={handleCloseBranchDetails}
-              />
-            )}
-
-            {/* ── Worktrees Panel ── */}
-            {activeSection === "worktrees" && !loading && (
-              <WorktreesPanel worktrees={worktrees} />
-            )}
-
-            {/* ── Stashes Panel ── */}
-            {activeSection === "stashes" && !loading && (
-              <StashesPanel
-                stashes={stashes}
-                stashMessage={stashMessage}
-                setStashMessage={setStashMessage}
-                onCreateStash={handleCreateStash}
-                onApplyStash={handleApplyStash}
-                onDropStash={handleDropStash}
-                onToggleStashDiff={handleToggleStashDiff}
-                stashLoading={stashLoading}
-                expandedStashIndex={expandedStashIndex}
-                stashDiff={stashDiff}
-                loadingStashDiff={loadingStashDiff}
-                stashDiffError={stashDiffError}
-              />
-            )}
-
-            {/* ── Recovery Panel ── */}
-            {activeSection === "recovery" && !loading && (
-              <StashRecoveryView />
-            )}
-
-            {/* ── Remotes Panel ── */}
-            {activeSection === "remotes" && !loading && (
-              <RemotesPanel
-                status={status}
-                remoteLoading={remoteLoading}
-                lastRemoteResult={lastRemoteResult}
-                onFetch={handleFetch}
-                onPull={handlePull}
-                onPush={handlePush}
-                onSync={handleSyncWithOrigin}
-                onSyncIntegrationTip={handleSyncIntegrationTip}
-                syncIntegrationDisabled={
-                  !status?.integrationBranch ||
-                  status?.isOnIntegrationBranch === false ||
-                  remoteLoading !== null
-                }
-                addToast={addToast}
-                projectId={projectId}
-                copyToClipboard={copyToClipboard}
-              />
-            )}
-          </div>
+        {gitBody}
         </div>
       </div>
     </div>

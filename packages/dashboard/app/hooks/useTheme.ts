@@ -16,6 +16,7 @@ const DEFAULT_FONT_SCALE_PCT = 100;
 const MIN_FONT_SCALE_PCT = 85;
 const MAX_FONT_SCALE_PCT = 125;
 const VALID_COLOR_THEMES = [...COLOR_THEMES] satisfies ColorTheme[];
+const DEFAULT_COLOR_THEME: ColorTheme = "ocean";
 const THEME_DATA_ID = "theme-data";
 const THEME_DATA_FILENAME = "theme-data.css";
 
@@ -83,7 +84,7 @@ function readCachedThemeMode(): ThemeMode {
 }
 
 function readCachedColorTheme(): ColorTheme {
-  if (!isBrowser) return "default";
+  if (!isBrowser) return DEFAULT_COLOR_THEME;
   try {
     let colorTheme = localStorage.getItem(COLOR_THEME_STORAGE_KEY);
     // FNXC:DashboardTheming 2026-06-20-00:00: FN-6813 keeps existing shadcn-mono users on the renamed red mono variant before the validity guard would otherwise fall back to default.
@@ -94,7 +95,11 @@ function readCachedColorTheme(): ColorTheme {
   } catch {
     // localStorage not available, use default
   }
-  return "default";
+  /*
+  FNXC:DashboardTheming 2026-06-22-18:36:
+  Missing/invalid cached theme resolves to Ocean for new installs, but an explicit cached "default" remains valid above and stays on Fusion Legacy.
+  */
+  return DEFAULT_COLOR_THEME;
 }
 
 function writeCachedThemeMode(mode: ThemeMode): void {
@@ -460,12 +465,13 @@ export function getThemeInitScript(): string {
     (function() {
       try {
         var mode = localStorage.getItem('${THEME_MODE_STORAGE_KEY}') || 'dark';
-        var colorTheme = localStorage.getItem('${COLOR_THEME_STORAGE_KEY}') || 'default';
+        var colorTheme = localStorage.getItem('${COLOR_THEME_STORAGE_KEY}') || '${DEFAULT_COLOR_THEME}';
         var validThemes = ${JSON.stringify(VALID_COLOR_THEMES)};
+        // FNXC:DashboardTheming 2026-06-22-18:36: Unset startup theme is Ocean; an explicit stored "default" remains the Fusion Legacy theme and must not be migrated.
         // FNXC:DashboardTheming 2026-06-20-00:00: FN-6813 remaps the legacy mono id before bootstrap validation so persisted users keep the red mono accent.
         if (colorTheme === 'shadcn-mono') colorTheme = 'shadcn-mono-red';
         if (!validThemes.includes(colorTheme)) {
-          colorTheme = 'default';
+          colorTheme = '${DEFAULT_COLOR_THEME}';
         }
         var fontScale = Number(localStorage.getItem('${FONT_SCALE_STORAGE_KEY}') || '${DEFAULT_FONT_SCALE_PCT}');
         if (!Number.isFinite(fontScale)) {
@@ -521,7 +527,7 @@ export function getThemeInitScript(): string {
         }
       } catch (e) {
         document.documentElement.setAttribute('data-theme', 'dark');
-        document.documentElement.setAttribute('data-color-theme', 'default');
+        document.documentElement.setAttribute('data-color-theme', '${DEFAULT_COLOR_THEME}');
         document.documentElement.style.fontSize = '${DEFAULT_FONT_SCALE_PCT}%';
       }
     })();

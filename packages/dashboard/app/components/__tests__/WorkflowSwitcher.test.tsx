@@ -68,7 +68,7 @@ describe("WorkflowSwitcher", () => {
         workflows={workflows}
         value="coding"
         onChange={vi.fn()}
-        counts={countMap([["coding", { todo: 3, inProgress: 1, done: 5 }]])}
+        counts={countMap([["coding", { todo: 3, inProgress: 1, done: 5, merging: 0 }]])}
       />,
     );
 
@@ -130,6 +130,52 @@ describe("WorkflowSwitcher", () => {
     expect(currentNameRule).toMatch(/text-overflow:\s*ellipsis/);
     const switcherCss = readFileSync("app/components/WorkflowSwitcher.css", "utf8");
     expect(switcherCss).toMatch(/@media\s*\(max-width:\s*768px\)[\s\S]*max-width:\s*calc\(100vw - var\(--space-xl\)\);/);
+  });
+
+  it("matches the ProjectSelector trigger and menu chrome without reverting to the old styling", () => {
+    /* Surface Enumeration: CSS parity covers the shared Board/ListView WorkflowSwitcher render seam, the header portal slot, desktop menu chrome, mobile max-width safety, selected/highlighted rows, count-badge preservation, and light-theme selected tint without changing behavior. */
+    const css = loadAllAppCssBaseOnly();
+
+    const triggerRule = cssRuleFor(css, ".workflow-switcher-trigger");
+    expect(triggerRule).toMatch(/background:\s*transparent/);
+    expect(triggerRule).toMatch(/border:\s*1px solid var\(--border\)/);
+    expect(triggerRule).toMatch(/border-radius:\s*var\(--radius-md\)/);
+    expect(triggerRule).toMatch(/padding:\s*calc\(var\(--space-xs\) \+ var\(--space-xs\) \/ 2\)/);
+    expect(triggerRule).toMatch(/color:\s*var\(--text-muted\)/);
+    expect(triggerRule).toMatch(/transition:\s*background var\(--transition-fast\), color var\(--transition-fast\), border-color var\(--transition-fast\)/);
+    expect(triggerRule).not.toMatch(/background:\s*var\(--bg-secondary\)/);
+    expect(triggerRule).not.toMatch(/border-radius:\s*var\(--radius-sm\)/);
+
+    const triggerHoverRule = cssRuleFor(css, ".workflow-switcher-trigger:hover");
+    expect(triggerHoverRule).toMatch(/background:\s*var\(--card-hover\)/);
+    expect(triggerHoverRule).toMatch(/color:\s*var\(--text\)/);
+    expect(triggerHoverRule).toMatch(/border-color:\s*var\(--text-dim\)/);
+
+    const triggerOpenRule = cssRuleFor(css, ".workflow-switcher-trigger[aria-expanded=\"true\"]");
+    expect(triggerOpenRule).toMatch(/color:\s*var\(--text\)/);
+    expect(triggerOpenRule).toMatch(/border-color:\s*var\(--text-dim\)/);
+    expect(triggerOpenRule).not.toMatch(/background:\s*var\(--bg-tertiary\)/);
+
+    const menuRule = cssRuleFor(css, ".workflow-switcher-menu");
+    expect(menuRule).toMatch(/padding:\s*var\(--space-sm\)/);
+    expect(menuRule).toMatch(/border-radius:\s*var\(--radius-lg\)/);
+    expect(menuRule).toMatch(/box-shadow:\s*var\(--shadow-lg\)/);
+    expect(menuRule).not.toMatch(/border-radius:\s*var\(--radius\)/);
+    expect(menuRule).not.toMatch(/box-shadow:\s*var\(--shadow\)/);
+
+    const optionsRule = cssRuleFor(css, ".workflow-switcher-options");
+    expect(optionsRule).toMatch(/scrollbar-width:\s*thin/);
+    expect(optionsRule).toMatch(/scrollbar-color:\s*var\(--text-dim\) transparent/);
+    expect(cssRuleFor(css, ".workflow-switcher-options::-webkit-scrollbar-thumb")).toMatch(/background-color:\s*var\(--text-dim\)/);
+
+    const optionRowRule = cssRuleFor(css, ".workflow-switcher-option-row");
+    expect(optionRowRule).toMatch(/border-radius:\s*var\(--radius-md\)/);
+    const optionRule = cssRuleFor(css, ".workflow-switcher-option");
+    expect(optionRule).toMatch(/border-radius:\s*var\(--radius-md\)/);
+    expect(optionRule).toMatch(/padding:\s*var\(--space-sm\) calc\(var\(--space-sm\) \+ var\(--space-xs\)\)/);
+
+    const selectedRule = cssRuleFor(css, ".workflow-switcher-option-row--selected");
+    expect(selectedRule).toMatch(/background:\s*color-mix\(in srgb, var\(--todo\) 15%, transparent\)/);
   });
 
   it("fires onOpen only on click-driven closed-to-open transitions", () => {
@@ -303,7 +349,7 @@ describe("WorkflowSwitcher", () => {
         workflows={workflows}
         value="coding"
         onChange={vi.fn()}
-        counts={countMap([["coding", { todo: 3, inProgress: 1, done: 5 }]])}
+        counts={countMap([["coding", { todo: 3, inProgress: 1, done: 5, merging: 0 }]])}
       />,
     );
 
@@ -327,6 +373,29 @@ describe("WorkflowSwitcher", () => {
     expect(within(designOption).getByText("0", { selector: ".workflow-switcher-count--done" })).toBeInTheDocument();
   });
 
+  it("shows a merging indicator only for workflows with merging tasks", () => {
+    render(
+      <WorkflowSwitcher
+        workflows={workflows}
+        value="coding"
+        onChange={vi.fn()}
+        counts={countMap([
+          ["coding", { todo: 3, inProgress: 1, done: 5, merging: 1 }],
+          ["design", { todo: 0, inProgress: 2, done: 0, merging: 0 }],
+        ])}
+      />,
+    );
+
+    const trigger = screen.getByTestId("workflow-switcher");
+    expect(trigger.querySelector(".workflow-switcher-merging-indicator")).toBeNull();
+
+    fireEvent.click(trigger);
+
+    expect(trigger.querySelector(".workflow-switcher-merging-indicator")).toBeInTheDocument();
+    expect(screen.getByTestId("workflow-switcher-option-coding").querySelector(".workflow-switcher-merging-indicator")).toBeInTheDocument();
+    expect(screen.getByTestId("workflow-switcher-option-design").querySelector(".workflow-switcher-merging-indicator")).toBeNull();
+  });
+
   it("colors status counts with board column color tokens", () => {
     const css = loadAllAppCssBaseOnly();
     const badgeRules = [
@@ -341,5 +410,16 @@ describe("WorkflowSwitcher", () => {
       expect(rule).not.toMatch(/var\(--(?:text-muted|color-warning|color-success)\)/);
       expect(rule).not.toMatch(/#[0-9a-fA-F]{3,8}|rgba?\(/);
     }
+  });
+
+  it("styles the merging indicator with a flashing animation and reduced-motion fallback", () => {
+    const css = loadAllAppCssBaseOnly();
+    const switcherCss = readFileSync("app/components/WorkflowSwitcher.css", "utf8");
+    const indicatorRule = cssRuleFor(css, ".workflow-switcher-merging-indicator");
+
+    expect(indicatorRule).toContain("background: var(--color-warning);");
+    expect(indicatorRule).toContain("animation: workflow-switcher-merging-pulse");
+    expect(switcherCss).toContain("@keyframes workflow-switcher-merging-pulse");
+    expect(switcherCss).toMatch(/@media\s*\(prefers-reduced-motion:\s*reduce\)[\s\S]*?\.workflow-switcher-merging-indicator\s*\{[^}]*animation:\s*none;/);
   });
 });
