@@ -332,6 +332,16 @@ const qualityApiTests = [
 // backfill automatically; it can never silently fall through again.
 const backfillAppExclude = [
   ...qualityAppTests,
+  /*
+  FNXC:DashboardTests 2026-06-25-10:40:
+  The SettingsModal split removed the bare "SettingsModal" entry from
+  qualityAppComponentTests, which is what previously excluded the curated
+  settings file from the broad app backfill (via qualityAppTests). The 4 split
+  files live only in qualityAppSettingsOnlyTests, so spread them here too —
+  otherwise the backfill `app/**` glob re-collects them and they run in BOTH the
+  settings project and backfill, doubling their wall-time instead of halving it.
+  */
+  ...qualityAppSettingsOnlyTests,
   ...skipListDashboardGlobs.filter((file) => file.startsWith("app/")),
   "app/__tests__/build-output.test.ts",
 ];
