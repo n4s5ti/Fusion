@@ -1378,6 +1378,41 @@ describe("ChatView", () => {
     expect(within(messageBubble).getByText("run-42")).toBeInTheDocument();
   });
 
+  it("renders assistant, user, streaming, and failure bubbles with the width-targeting classes", async () => {
+    setupMockChat({
+      activeSession: activeSessionFixture,
+      messages: [
+        { id: "msg-user", sessionId: "session-001", role: "user", content: "Question", createdAt: "2026-04-08T00:00:00.000Z" },
+        { id: "msg-assistant", sessionId: "session-001", role: "assistant", content: "Answer", createdAt: "2026-04-08T00:00:01.000Z" },
+        {
+          id: "msg-failure",
+          sessionId: "session-001",
+          role: "assistant",
+          content: "Failed answer",
+          failureInfo: { summary: "Failed answer", detail: "Provider failed" },
+          createdAt: "2026-04-08T00:00:02.000Z",
+        },
+      ],
+      isStreaming: true,
+      streamingText: "Live answer",
+    });
+
+    await renderWithAct(<ChatView projectId="proj-123" addToast={vi.fn()} />);
+
+    expect(screen.getByTestId("chat-message-msg-user")).toHaveClass("chat-message", "chat-message--user");
+    expect(screen.getByTestId("chat-message-msg-assistant")).toHaveClass("chat-message", "chat-message--assistant");
+    expect(screen.getByTestId("chat-message-msg-failure")).toHaveClass(
+      "chat-message",
+      "chat-message--assistant",
+      "chat-message--failure",
+    );
+    expect(document.querySelector(".chat-message--streaming")).toHaveClass(
+      "chat-message",
+      "chat-message--assistant",
+      "chat-message--streaming",
+    );
+  });
+
   it("shows streaming copy action for provider chats", async () => {
     setupMockChat({
       activeSession: {
@@ -3191,6 +3226,27 @@ describe("ChatView CSS — failure bubble contracts", () => {
     expect(badgeMatch?.[1]).toContain("background: var(--status-error-bg-deep)");
     expect(detailsMatch?.[1]).toContain("background: var(--status-error-bg-deep)");
     expect(linkMatch?.[1]).toContain("background: var(--status-error-bg-deep)");
+  });
+});
+
+describe("ChatView CSS — tablet assistant bubble width", () => {
+  const css = loadAllAppCss();
+
+  it("widens assistant, streaming, and failure bubbles on tablet containers while preserving user and mobile caps", async () => {
+    const baseMessageRule = css.match(/\.chat-message\s*\{([^}]*)\}/);
+    const userRule = css.match(/\.chat-message--user\s*\{([^}]*)\}/);
+    const tabletRule = css.match(
+      /@container\s+chat-view\s+\(min-width:\s*48\.0625rem\)\s+and\s+\(max-width:\s*64rem\)\s*\{([\s\S]*?)\n\}/,
+    );
+
+    expect(baseMessageRule?.[1]).toContain("max-width: 75%");
+    expect(userRule?.[1]).toContain("align-self: flex-end");
+    expect(userRule?.[1]).not.toContain("max-width");
+    expect(tabletRule?.[1]).toMatch(
+      /\.chat-message--assistant,\s*\.chat-message--streaming,\s*\.chat-message--failure\s*\{[^}]*max-width:\s*88%/,
+    );
+    expect(tabletRule?.[1]).not.toMatch(/\.chat-message--user\s*\{[^}]*max-width/);
+    expect(css).toMatch(/@media\s*\(max-width:\s*768px\)[\s\S]*?\.chat-message\s*\{[^}]*max-width:\s*90%/);
   });
 });
 
