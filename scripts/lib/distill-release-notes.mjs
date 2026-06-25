@@ -1,45 +1,108 @@
 /*
  * FNXC:Changelog 2026-06-24-15:30:
- * Release-notes distiller. Takes parsed changeset entries and produces
- * grouped, end-user-facing release notes organized by category. The
- * deterministic mode renders a clean category-grouped bullet list from
- * structured summaries. The AI mode (optional, added in U4) calls
- * createFnAgent for polished prose. When the AI call fails or is
- * unavailable, the deterministic output is the fallback so a model
- * outage never blocks a release.
+ * Release-notes distillation module. Transforms parsed changeset entries
+ * into grouped, end-user-facing release notes. The deterministic fallback
+ * builds a category-grouped bullet list directly from the structured
+ * `summary` fields — no model call. When a model is available, the prompt
+ * and system prompt defined here can be used to produce curated, polished
+ * notes via `createFnAgent`.
+ *
+ * Audience is Fusion operators: behavior, fixes, what changed — minimal
+ * internals. The `dev` field is preserved in per-package CHANGELOGs but
+ * excluded from distilled release notes by default.
  */
 
 import { CATEGORIES, CATEGORY_HEADINGS } from "./changeset-schema.mjs";
 
 /**
- * Deterministic distillation: groups parsed changeset entries by category
- * and renders clean markdown release notes.
+ * System prompt for AI distillation via `createFnAgent`.
+ * Instructs the model to produce grouped markdown release notes for a
+ * Fusion operator audience, using only the `summary` fields as input.
+ */
+export const DISTILLATION_SYSTEM_PROMPT = [
+  "You are a release-notes writer for Fusion, a model-agnostic AI agent orchestration product.",
+  "Your audience is Fusion operators — developers using the product, not its internals.",
+  "Produce clean, grouped markdown release notes from the provided changeset entries.",
+  "Group under these headings (omit empty sections):",
+  "  ### New (features)",
+  "  ### Fixed (bug fixes)",
+  "  ### Breaking (breaking changes)",
+  "  ### Security (security fixes)",
+  "  ### Performance (performance improvements)",
+  "  ### Internal (internal-only changes)",
+  "Rules:",
+  "- Use the `summary` text verbatim or lightly edited for clarity and grouping.",
+  "- Do NOT include internal class names, file paths, or implementation detail.",
+  "- Do NOT include the `dev` field content unless it is user-relevant migration guidance.",
+  "- Write one bullet per entry, prefixed with `- `.",
+  "- Omit empty sections entirely.",
+  "- Do NOT add a title or version heading — only the grouped sections.",
+  "- Respond with markdown only, no preamble or explanation.",
+].join("\n");
+
+/**
+ * Build the user-facing prompt for AI distillation.
+ * Lists each entry as `[N] category: X / summary: Y / dev: Z`.
  *
- * Categories are rendered in display order (feature → fix → breaking →
- * security → performance → internal). Empty categories are omitted.
- * The `internal` category is included only when it carries entries, since
- * operators generally don't need internal-only changes surfaced — but it
- * is not suppressed entirely because some releases are internal-only.
+ * @param {Array<{summary: string, category: string, dev?: string, legacy?: boolean}>} entries
+ * @returns {string}
+ */
+export function buildDistillationPrompt(entries) {
+  const lines = ["Produce release notes from these changeset entries:\n"];
+  entries.forEach((entry, i) => {
+    const num = i + 1;
+    lines.push(`[${num}]`);
+    lines.push(`  category: ${entry.category}`);
+    lines.push(`  summary: ${entry.summary}`);
+    if (entry.dev) {
+      lines.push(`  dev: ${entry.dev}`);
+    }
+    lines.push("");
+  });
+  return lines.join("\n");
+}
+
+/**
+ * Deterministic fallback: build category-grouped release notes directly
+ * from the structured `summary` fields — no model call.
  *
- * @param {Array<{summary: string, category: string, dev?: string, legacy: boolean}>} entries
- * @param {string} version
+ * Used when:
+ * - The model call fails, times out, or returns unparseable output
+ * - No model is configured (CI without model secret)
+ * - As a pre-model preview in dry-runs
+ *
+ * @param {Array<{summary: string, category: string, legacy?: boolean}>} entries
+ * @param {string} version - Target version string (e.g. "0.47.0")
  * @returns {{notes: string, source: "deterministic"}}
  */
 export function distillDeterministic(entries, version) {
   if (!entries || entries.length === 0) {
-    return { notes: `No changes in v${version}.`, source: "deterministic" };
+    return {
+      notes: `No changes in v${version}.`,
+      source: "deterministic",
+    };
   }
 
-  const grouped = groupByCategory(entries);
+  // Group entries by category, preserving entry order within each group.
+  const groups = new Map();
+  for (const cat of CATEGORIES) {
+    groups.set(cat, []);
+  }
+
+  for (const entry of entries) {
+    const cat = groups.has(entry.category) ? entry.category : "internal";
+    groups.get(cat).push(entry.summary);
+  }
+
+  // Build sections in display order, omitting empty categories.
   const sections = [];
+  for (const cat of CATEGORIES) {
+    const summaries = groups.get(cat);
+    if (summaries.length === 0) continue;
 
-  for (const category of CATEGORIES) {
-    const items = grouped.get(category);
-    if (!items || items.length === 0) continue;
-
-    const heading = CATEGORY_HEADINGS[category];
-    const bullets = items.map((entry) => `- ${entry.summary}`);
-    sections.push(`### ${heading}\n\n${bullets.join("\n")}`);
+    const heading = CATEGORY_HEADINGS[cat];
+    const bullets = summaries.map((s) => `- ${s}`).join("\n");
+    sections.push(`### ${heading}\n\n${bullets}`);
   }
 
   return {
@@ -47,50 +110,3 @@ export function distillDeterministic(entries, version) {
     source: "deterministic",
   };
 }
-
-/**
- * Group entries by category, preserving input order within each group.
- */
-function groupByCategory(entries) {
-  const grouped = new Map();
-  for (const category of CATEGORIES) {
-    grouped.set(category, []);
-  }
-  for (const entry of entries) {
-    const cat = CATEGORIES.includes(entry.category) ? entry.category : "internal";
-    grouped.get(cat)?.push(entry);
-  }
-  return grouped;
-}
-
-/**
- * Build the context prompt for AI distillation. This is used by the AI
- * mode (U4) when calling createFnAgent. Exported separately so the prompt
- * can be tested without a model call.
- *
- * @param {Array<{summary: string, category: string, dev?: string, legacy: boolean}>} entries
- * @returns {string}
- */
-export function buildDistillationPrompt(entries) {
-  const lines = entries.map((entry, i) => {
-    const parts = [`[${i + 1}] category: ${entry.category}`, `summary: ${entry.summary}`];
-    if (entry.dev) {
-      parts.push(`dev: ${entry.dev}`);
-    }
-    return parts.join("\n");
-  });
-  return lines.join("\n\n");
-}
-
-/**
- * System prompt for AI distillation. Exported for testing and tuning.
- */
-export const DISTILLATION_SYSTEM_PROMPT = [
-  "You are a release notes writer for Fusion, an AI agent orchestration tool.",
-  "Your audience is Fusion operators (developers using the tool), not internal engineers.",
-  "Given structured changeset entries, produce grouped markdown release notes.",
-  "Group under these headings: ### New, ### Fixed, ### Breaking, ### Performance, ### Security.",
-  "Omit empty sections. Use bullet points.",
-  "Write clear, concise, user-facing summaries. No internal class names or implementation detail.",
-  "Output only the markdown release notes, no preamble or explanation.",
-].join("\n");
