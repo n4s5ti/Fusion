@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { mkdtempSync, rmSync, statSync } from "node:fs";
+import { mkdtempSync, rmSync, statSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { CentralDatabase, createCentralDatabase, toJson, fromJson } from "../central-db.js";
@@ -42,32 +42,35 @@ describe("CentralDatabase", () => {
       expect(db.getSchemaVersion()).toBe(13);
     });
 
-    it("should enable WAL mode and busy_timeout", () => {
+    it("should use DELETE (rollback-journal) mode and busy_timeout, not WAL", () => {
       db.init();
 
       const journalMode = db.prepare("PRAGMA journal_mode").get() as { journal_mode: string };
       const busyTimeout = db.prepare("PRAGMA busy_timeout").get() as Record<string, number>;
 
-      expect(journalMode.journal_mode).toBe("wal");
+      // Regression: the central DB must NOT run in WAL mode. WAL coordinates the
+      // many concurrent fusion processes through a memory-mapped `-shm` wal-index,
+      // which on macOS/APFS SIGBUSes a reader (walIndexReadHdr / `cluster_pagein
+      // past EOF`) when another process resizes it mid-checkpoint — observed 3×
+      // in 3 days (Jun 22–24 2026). DELETE mode removes the `-shm` mmap surface.
+      expect(journalMode.journal_mode).toBe("delete");
       expect(Object.values(busyTimeout)[0]).toBe(5000);
     });
 
-    it("should bound WAL growth and durability like the per-project DB", () => {
+    it("should never create a `-shm` wal-index file (the SIGBUS surface)", () => {
       db.init();
+      // Drive real write traffic; under WAL this materializes `-shm` + `-wal`.
+      db.bumpLastModified();
+      db.prepare("SELECT * FROM globalConcurrency WHERE id = 1").get();
+
+      const dbPath = db.getPath();
+      // The wal-index shared-memory file is the exact thing that was memmap'd
+      // and faulted. Its absence proves the crashing surface is gone.
+      expect(existsSync(`${dbPath}-shm`)).toBe(false);
+      expect(existsSync(`${dbPath}-wal`)).toBe(false);
 
       const synchronous = db.prepare("PRAGMA synchronous").get() as { synchronous: number };
-      const autoCheckpoint = db
-        .prepare("PRAGMA wal_autocheckpoint")
-        .get() as { wal_autocheckpoint: number };
-      const journalSizeLimit = db
-        .prepare("PRAGMA journal_size_limit")
-        .get() as { journal_size_limit: number };
-
-      expect(synchronous.synchronous).toBe(2); // FULL
-      expect(autoCheckpoint.wal_autocheckpoint).toBe(1000);
-      // Previously unset (-1 / unbounded), which let the central WAL bloat and
-      // slow every reader. Now capped at 4 MB to match db.ts.
-      expect(journalSizeLimit.journal_size_limit).toBe(4_194_304);
+      expect(synchronous.synchronous).toBe(2); // FULL — durability posture preserved
     });
 
     it("should seed lastModified on init", () => {

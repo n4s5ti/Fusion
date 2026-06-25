@@ -564,24 +564,27 @@ export class CentralDatabase implements CentralClaimStore {
     // Wait up to the configured timeout for locks to clear before returning SQLITE_BUSY.
     // Set this before other PRAGMAs so they also benefit.
     this.db.exec(`PRAGMA busy_timeout = ${this.busyTimeoutMs}`);
-    // Enable WAL mode for concurrent reader/writer access
-    this.db.exec("PRAGMA journal_mode = WAL");
-    // FNXC:Database 2026-06-20-12:30:
-    // Mirror the per-project DB durability/maintenance PRAGMAs (see db.ts). The
-    // central DB is shared across every project and cluster node, so it sees the
-    // most cross-process read/write traffic.
-    //   - synchronous=FULL and wal_autocheckpoint=1000 are already SQLite's
-    //     compiled-in defaults (FULL stays in effect under WAL — NORMAL is a
-    //     common WAL *recommendation* but not the default). Set explicitly so the
-    //     durability posture is intentional and visible, and so a future change to
-    //     synchronous=NORMAL is a deliberate edit, not an accidental drift.
-    //   - journal_size_limit is the load-bearing one: it defaults to -1
-    //     (unbounded), so without it the central WAL never truncates back down
-    //     after a checkpoint and every reader pays an ever-growing WAL-index scan
-    //     — a direct read-contention source. Cap it at 4 MB like the per-project DB.
+    // FNXC:Database 2026-06-24-22:30:
+    // The central DB runs in DELETE (rollback-journal) mode, NOT WAL. It is the
+    // one DB opened concurrently by every fusion process on the host (multiple
+    // dashboards/CLIs across worktrees all attach ~/.fusion/fusion-central.db).
+    // WAL coordinates those connections through a memory-mapped `-shm` wal-index;
+    // on macOS/APFS, when one process resizes/rebuilds `-shm` during a checkpoint
+    // while another has it mmap'd, the reader takes a SIGBUS (`FS pagein error` /
+    // `cluster_pagein past EOF`) inside walIndexReadHdr → the whole node process
+    // dies with no JS stack and no log. Observed 3× in 3 days (Jun 22–24 2026).
+    // node:sqlite cannot catch a hardware memory fault, so the only durable fix
+    // is to remove the `-shm` mmap surface. Rollback-journal mode uses no `-shm`
+    // and coordinates cross-process access via plain POSIX byte-range locks
+    // instead; busy_timeout above absorbs the writer-serialization contention
+    // that DELETE mode trades for WAL's reader/writer concurrency.
+    this.db.exec("PRAGMA journal_mode = DELETE");
+    // synchronous=FULL is SQLite's compiled-in default; set explicitly so the
+    // durability posture is intentional and visible, and so a future change to
+    // synchronous=NORMAL is a deliberate edit, not an accidental drift. The WAL-only
+    // PRAGMAs (wal_autocheckpoint, journal_size_limit) were dropped with WAL — they
+    // are no-ops under DELETE mode, where the journal file is removed after each commit.
     this.db.exec("PRAGMA synchronous = FULL");
-    this.db.exec("PRAGMA wal_autocheckpoint = 1000");
-    this.db.exec("PRAGMA journal_size_limit = 4194304");
     // Enable foreign key enforcement
     this.db.exec("PRAGMA foreign_keys = ON");
   }
