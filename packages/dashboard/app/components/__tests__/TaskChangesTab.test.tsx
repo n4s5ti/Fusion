@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
-import { loadAllAppCss } from "../../test/cssFixture";
+import { loadAllAppCss, loadAllAppCssBaseOnly } from "../../test/cssFixture";
 import { TaskChangesTab } from "../TaskChangesTab";
 import type { MergeDetails, Column } from "@fusion/core";
 
@@ -1115,6 +1115,102 @@ describe("TaskChangesTab — expand button", () => {
 });
 
 describe("TaskChangesTab — compact spacing class", () => {
+  it("reproduces the mobile inline diff surface inside a phone-width detail body", async () => {
+    const longPath = "packages/dashboard/app/components/task-detail/mobile/VeryLongInlineDiffPanelRegressionFile.tsx";
+    mockFetchTaskDiff.mockResolvedValue({
+      files: [
+        {
+          path: longPath,
+          status: "modified",
+          additions: 47,
+          deletions: 5,
+          patch: [
+            "diff --git a/packages/dashboard/app/components/task-detail/mobile/VeryLongInlineDiffPanelRegressionFile.tsx b/packages/dashboard/app/components/task-detail/mobile/VeryLongInlineDiffPanelRegressionFile.tsx",
+            "@@ -1,3 +1,6 @@",
+            "-const cramped = true;",
+            "+const inlineChangesPanelReclaimsTaskDetailPaddingWithoutPageOverflow = true;",
+            "+export const androidChromeWidthRepresentativeLine = inlineChangesPanelReclaimsTaskDetailPaddingWithoutPageOverflow;",
+          ].join("\n"),
+        },
+        {
+          path: "packages/dashboard/app/components/TaskChangesTab.css",
+          status: "modified",
+          additions: 3,
+          deletions: 0,
+          patch: "@@ -1 +1,3 @@\n+.task-changes-tab {}",
+        },
+      ],
+      stats: { filesChanged: 2, additions: 50, deletions: 5 },
+    });
+
+    const { container } = render(
+      <div className="detail-body" data-testid="mobile-detail-body" style={{ maxInlineSize: "430px", overflowX: "hidden" }}>
+        <TaskChangesTab
+          taskId="FN-6997"
+          worktree="/path/to/worktree"
+          column="in-progress"
+        />
+      </div>,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText(longPath)).toBeTruthy();
+    });
+
+    const mobileDetailBody = screen.getByTestId("mobile-detail-body");
+    const taskTab = container.querySelector(".detail-body > .task-changes-tab");
+    const fileList = taskTab?.querySelector(".changes-file-list.task-changes-file-list--compact");
+    const diffPatch = fileList?.querySelector(".changes-diff-patch.changes-diff-patch--wrap");
+
+    expect(mobileDetailBody.style.maxInlineSize).toBe("430px");
+    expect(mobileDetailBody.style.overflowX).toBe("hidden");
+    expect(taskTab).toBeTruthy();
+    expect(fileList).toBeTruthy();
+    expect(diffPatch).toBeTruthy();
+    expect(diffPatch?.textContent).toContain("inlineChangesPanelReclaimsTaskDetailPaddingWithoutPageOverflow");
+    expect(fileList?.getAttribute("style")).toBeNull();
+    expect(diffPatch?.getAttribute("style")).toBeNull();
+  });
+
+  it("widens the desktop inline file list by reclaiming detail-body padding without inline styles", () => {
+    const css = loadAllAppCssBaseOnly();
+    const ruleMatch = css.match(/\.task-changes-tab\s+\.changes-file-list\.task-changes-file-list--compact\s*\{([^}]*)\}/);
+
+    expect(ruleMatch).toBeTruthy();
+    const rule = ruleMatch![1];
+    expect(rule).toContain("margin-left: calc(-1 * calc(var(--space-lg) + var(--space-xs)));");
+    expect(rule).toContain("margin-right: calc(-1 * calc(var(--space-lg) + var(--space-xs)));");
+    expect(rule).toContain("max-width: calc(100% + (calc(var(--space-lg) + var(--space-xs)) * 2));");
+  });
+
+  it("uses a 768px mobile breakpoint to reclaim the narrower mobile detail-body padding safely", () => {
+    const css = loadAllAppCss();
+    const mobileRuleMatch = css.match(/@media\s*\(max-width:\s*768px\)\s*\{\s*\.task-changes-tab\s+\.changes-file-list\.task-changes-file-list--compact\s*\{([\s\S]*?)\}/);
+
+    expect(mobileRuleMatch).toBeTruthy();
+    const rule = mobileRuleMatch![1];
+    expect(rule).toContain("margin-left: calc(-1 * calc(var(--space-md) + var(--space-xs) / 2));");
+    expect(rule).toContain("margin-right: calc(-1 * calc(var(--space-md) + var(--space-xs) / 2));");
+    expect(rule).toContain("max-width: calc(100% + (calc(var(--space-md) + var(--space-xs) / 2) * 2));");
+  });
+
+  it("keeps mobile widening equal and opposite to detail-body padding while preserving overflow containment", () => {
+    const css = loadAllAppCss();
+    const detailBodyMobileRuleMatch = css.match(/\.detail-body\s*\{\s*padding:\s*calc\(var\(--space-md\) \+ var\(--space-xs\) \/ 2\);([\s\S]*?)\}/);
+    const compactListMobileRuleMatch = css.match(/@media\s*\(max-width:\s*768px\)\s*\{\s*\.task-changes-tab\s+\.changes-file-list\.task-changes-file-list--compact\s*\{([\s\S]*?)\}/);
+
+    expect(detailBodyMobileRuleMatch).toBeTruthy();
+    expect(compactListMobileRuleMatch).toBeTruthy();
+
+    const mobilePadding = "calc(var(--space-md) + var(--space-xs) / 2)";
+    expect(css).toContain("@media (max-width: 768px)");
+    expect(detailBodyMobileRuleMatch![0]).toContain(`padding: ${mobilePadding};`);
+    expect(detailBodyMobileRuleMatch![1]).toContain("overflow-x: hidden;");
+    expect(compactListMobileRuleMatch![1]).toContain(`margin-left: calc(-1 * ${mobilePadding});`);
+    expect(compactListMobileRuleMatch![1]).toContain(`margin-right: calc(-1 * ${mobilePadding});`);
+    expect(compactListMobileRuleMatch![1]).toContain(`max-width: calc(100% + (${mobilePadding} * 2));`);
+  });
+
   it("renders the file list with the compact modifier class", async () => {
     mockFetchTaskDiff.mockResolvedValue(DONE_TASK_DIFF);
 
