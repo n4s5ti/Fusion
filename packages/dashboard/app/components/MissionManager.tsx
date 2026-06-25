@@ -2476,22 +2476,37 @@ export function MissionManager({ isOpen, isInline = false, onClose, addToast, pr
     t,
   );
 
-  const previousSelectedMissionIdRef = useRef<string | null>(selectedMission?.id ?? null);
+  const previousMobileDetailVisibleRef = useRef(false);
 
   useEffect(() => {
-    const previousSelectedMissionId = previousSelectedMissionIdRef.current;
-    const currentSelectedMissionId = selectedMission?.id ?? null;
-    previousSelectedMissionIdRef.current = currentSelectedMissionId;
+    if (!isActive) {
+      previousMobileDetailVisibleRef.current = false;
+    }
+  }, [isActive]);
 
-    if (!isActive || !isMobile || !currentSelectedMissionId || previousSelectedMissionId === currentSelectedMissionId) {
+  useEffect(() => {
+    const isMobileDetailVisible = isActive && isMobile && Boolean(selectedMission);
+
+    if (!isMobile) {
+      // Keep the mobile detail flag untouched on desktop so split-pane refreshes do not consume or create mobile nav entries.
       return;
     }
 
-    // MissionManager may already sit behind an App-level modal nav entry.
-    // On mobile, selecting a mission stacks a view entry on top so back goes
-    // detail → list → modal close instead of skipping the in-modal list.
-    pushNav({ type: "view", revert: handleBackToList });
-  }, [handleBackToList, isActive, isMobile, pushNav, selectedMission?.id]);
+    if (!isMobileDetailVisible) {
+      previousMobileDetailVisibleRef.current = false;
+      return;
+    }
+
+    /*
+    FNXC:MissionNavigation 2026-06-24-23:48:
+    Mobile Missions treats Structure and Activity as tabs inside one detail view. Push one view entry when detail becomes visible so browser/Android Back exits to the Missions list before any outer modal or app navigation, and do not push again for tab switches, SSE refreshes, or cached mission rehydration.
+    */
+    if (!previousMobileDetailVisibleRef.current) {
+      pushNav({ type: "view", revert: handleBackToList });
+    }
+
+    previousMobileDetailVisibleRef.current = true;
+  }, [handleBackToList, isActive, isMobile, pushNav, selectedMission]);
 
   const selectedMilestoneTelemetry = useMemo(() => {
     if (!validationTelemetry || !selectedMilestoneId || !isMilestoneValidationTelemetry(validationTelemetry)) {
