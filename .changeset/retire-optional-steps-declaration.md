@@ -1,5 +1,5 @@
 ---
-"@runfusion/fusion": major
+"@runfusion/fusion": minor
 ---
 
 **Breaking:** the `WorkflowOptionalStep` type, previously exported from `@runfusion/fusion`, is removed — any consumer importing it must migrate to `optional-group` nodes / `ResolvedWorkflowOptionalStep`.
