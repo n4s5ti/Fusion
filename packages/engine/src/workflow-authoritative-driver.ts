@@ -12,7 +12,6 @@ import {
 
 import type { TaskExecutor } from "./executor.js";
 import { executorLog } from "./logger.js";
-import { WORKFLOW_INTERPRETER_DUAL_OBSERVE_FLAG } from "./workflow-parity-observer.js";
 import { WorkflowGraphTaskRunner, type WorkflowGraphTaskRunResult } from "./workflow-graph-task-runner.js";
 import type { StepReviewSeamResult, WorkflowLegacySeams } from "./workflow-node-handlers.js";
 import type { PreparedWorktree, WorkflowRuntimePrimitives } from "./runtime-primitives.js";
@@ -148,13 +147,12 @@ export class WorkflowAuthoritativeDriver {
       settings,
       WORKFLOW_INTERPRETER_AUTHORITATIVE_FLAG,
     );
-    const dualObserveEnabled = isExperimentalFeatureEnabled(
-      settings,
-      WORKFLOW_INTERPRETER_DUAL_OBSERVE_FLAG,
-    );
+    /*
+    FNXC:WorkflowInterpreterCutover 2026-06-23-21:59:
+    The retired workflowInterpreterDualObserve flag must remain inert in the authoritative driver. Historical/current parity summaries from the store are the readiness evidence source; do not probe or re-enable the hidden shadow observer here.
+    */
     const readiness = evaluateInterpreterCutoverReadiness({
       authoritativeFlagEnabled,
-      dualObserveEnabled,
       paritySummary,
       minimumObservedRuns: this.deps.minimumObservedRuns,
     });

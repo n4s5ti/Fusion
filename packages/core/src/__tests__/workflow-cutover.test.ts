@@ -3,10 +3,9 @@ import { describe, expect, it } from "vitest";
 import { evaluateInterpreterCutoverReadiness } from "../workflow-cutover.js";
 
 describe("workflow interpreter authoritative cutover readiness", () => {
-  it("is ready when the cutover flag, dual-observe, and clean parity evidence are present", () => {
+  it("is ready when the cutover flag and clean parity evidence are present", () => {
     const result = evaluateInterpreterCutoverReadiness({
       authoritativeFlagEnabled: true,
-      dualObserveEnabled: true,
       paritySummary: { observed: 5, drift: 0, recentDrift: [] },
       minimumObservedRuns: 3,
     });
@@ -14,25 +13,32 @@ describe("workflow interpreter authoritative cutover readiness", () => {
     expect(result).toEqual({ ready: true, reasons: [] });
   });
 
-  it("enumerates every failed criterion deterministically", () => {
+  it("enumerates every failed active criterion deterministically", () => {
     const result = evaluateInterpreterCutoverReadiness({
       authoritativeFlagEnabled: false,
-      dualObserveEnabled: false,
       paritySummary: null,
     });
 
     expect(result.ready).toBe(false);
     expect(result.reasons).toEqual([
       "experimentalFeatures.workflowInterpreterAuthoritative is disabled",
-      "experimentalFeatures.workflowInterpreterDualObserve is disabled",
       "workflow parity summary unavailable",
     ]);
+  });
+
+  it("does not require the retired dual-observe flag when clean parity evidence exists", () => {
+    const result = evaluateInterpreterCutoverReadiness({
+      authoritativeFlagEnabled: true,
+      paritySummary: { observed: 3, drift: 0, recentDrift: [] },
+      minimumObservedRuns: 3,
+    });
+
+    expect(result).toEqual({ ready: true, reasons: [] });
   });
 
   it("blocks when parity drift is present in the summary or unresolved drift reports", () => {
     const result = evaluateInterpreterCutoverReadiness({
       authoritativeFlagEnabled: true,
-      dualObserveEnabled: true,
       paritySummary: {
         observed: 8,
         drift: 2,
@@ -55,7 +61,6 @@ describe("workflow interpreter authoritative cutover readiness", () => {
   it("normalizes minimum observed runs to at least one", () => {
     const result = evaluateInterpreterCutoverReadiness({
       authoritativeFlagEnabled: true,
-      dualObserveEnabled: true,
       paritySummary: { observed: 0, drift: 0, recentDrift: [] },
       minimumObservedRuns: 0,
     });

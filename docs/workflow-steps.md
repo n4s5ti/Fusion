@@ -501,23 +501,22 @@ For pre-merge workflow hard failures, executor behavior is (gate-mode steps):
 
 Tasks are not parked in `in-review` for this remediable path unless additional terminal failures occur.
 
-## Workflow Interpreter Dual-Observe (parity instrumentation)
+## Workflow Interpreter Dual-Observe (retired parity instrumentation)
 
-Fusion now enables the workflow interpreter parity seam by default as part of the workflow rollout.
+The workflow interpreter dual-observe seam is retired. `experimentalFeatures.workflowInterpreterDualObserve` is now inert: runtime feature helpers force it OFF even when stale persisted settings contain `true`, and Fusion must not invisibly re-enable shadow interpreter observation.
 
-- **Flag:** `experimentalFeatures.workflowInterpreterDualObserve` (default ON)
-- **Mode:** observe-only shadow run; legacy executor/reviewer/merger/scheduler path remains authoritative unless the authoritative cutover guard passes
-- **Behavior when OFF:** strict no-op (no shadow run, no parity audit records)
-- **Behavior when ON (default):** compare legacy and interpreter observations plus comparable run-audit slices
+- **Flag:** `experimentalFeatures.workflowInterpreterDualObserve` (retired; forced OFF)
+- **Mode:** strict no-op (no shadow run, no parity audit records)
+- **Historical behavior:** earlier rollout builds compared legacy and interpreter observations plus comparable run-audit slices and emitted the parity audit records below
 
-Run-audit events emitted in `database` domain:
+Historical run-audit events in the `database` domain:
 
-- `workflow:parity-observed` — always emitted for an enabled parity check with `metadata.agree`
-- `workflow:parity-drift` — emitted when parity differs (or shadow execution fails), carrying `metadata.diffs`
+- `workflow:parity-observed` — emitted for an enabled parity check with `metadata.agree`
+- `workflow:parity-drift` — emitted when parity differed (or shadow execution failed), carrying `metadata.diffs`
 
 The parity contract is exported from `@fusion/core` (`compareWorkflowRunObservations`, `compareWorkflowRunAudits`) and produces deterministic drift reports shaped as `{ agree, diffs[] }`, where each diff includes field name, legacy/interpreter values, category, and severity.
 
-Dual-observe remains the rollout evidence path for the later authoritative cutover: the interpreter may only become authoritative when the separate `experimentalFeatures.workflowInterpreterAuthoritative` flag is ON **and** the cutover-readiness guard reports zero unresolved parity drift.
+Authoritative cutover now depends on existing/current parity summary evidence, not on re-enabling dual-observe. The interpreter may become authoritative only when the separate `experimentalFeatures.workflowInterpreterAuthoritative` flag is ON and the cutover-readiness guard sees a populated parity summary with enough observed runs, zero summary drift, and zero unresolved parity reports.
 
 #### Self-healing recovery for parked review tasks
 

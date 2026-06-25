@@ -513,10 +513,12 @@ describe("stepwise workflow parity (U7 / KTD-9)", () => {
 
   // ── Flag posture (R10) ─────────────────────────────────────────────────────
 
-  it("flag pinned-at-dispatch: flag OFF → graph executor is a strict no-op (legacy path owns the run)", async () => {
-    // With the flag OFF at dispatch, the graph executor does not run at all — the
-    // legacy step-session path owns the task. Toggling the flag mid-run cannot
-    // switch paths because the run never entered the graph.
+  it("graduated graph executor ignores stale false experimental flag", async () => {
+    /*
+    FNXC:WorkflowSettings 2026-06-23-22:28:
+    workflowGraphExecutor graduated from Experimental; stale persisted false values are ignored so the graph attempts authoritative execution rather than silently rolling back to the legacy path.
+    This fixture still lacks parse-step dependencies, so the graph fails before step execution.
+    */
     const task = taskWithSteps(2);
     let stepExecuteCalls = 0;
     const seams: WorkflowLegacySeams = {
@@ -533,24 +535,23 @@ describe("stepwise workflow parity (U7 / KTD-9)", () => {
     const executor = new WorkflowGraphExecutor({ seams });
     const result = await executor.run(task, settingsOff(), BUILTIN_STEPWISE_CODING_WORKFLOW_IR);
 
-    expect(result.executed).toBe(false);
+    expect(result.executed).toBe(true);
     expect(result.outcome).toBe("failure");
     expect(stepExecuteCalls).toBe(0);
   });
 
-  it("OFF-rollback: a stepwise run with the flag OFF leaves steps[] (git-reconcilable) as surviving truth", async () => {
-    // KTD-8 OFF-rollback: instance rows are swept and steps[] — always
-    // git-reconcilable — is the surviving truth that legacy resume reconciles
-    // from. With the flag OFF the graph never writes, so the pre-existing steps[]
-    // projection (legacy's truth) is untouched; legacy resume then completes.
+  it("graduated graph executor preserves steps[] truth while running with stale false flag", async () => {
+    /*
+    FNXC:WorkflowSettings 2026-06-23-22:28:
+    Stale workflowGraphExecutor=false no longer disables the graph. If required graph dependencies are absent, rollback safety means the existing git-reconcilable steps[] projection remains the surviving truth.
+    */
     const task = taskWithSteps(2);
     // Simulate a partially-progressed legacy projection (step 0 done by legacy).
     (task.steps as TaskStep[])[0] = { name: "Step 1", status: "done" };
     const executor = new WorkflowGraphExecutor({ seams: undefined });
     const result = await executor.run(task, settingsOff(), BUILTIN_STEPWISE_CODING_WORKFLOW_IR);
 
-    expect(result.executed).toBe(false);
-    // steps[] is untouched by the (no-op) graph — legacy's projection survives.
+    expect(result.executed).toBe(true);
     expect((task.steps as TaskStep[])[0].status).toBe("done");
     expect((task.steps as TaskStep[])[1].status).toBe("pending");
   });

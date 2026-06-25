@@ -1306,8 +1306,8 @@ Common built-in dashboard/runtime flags include:
 - `researchView`
 - `evalsView` (gates Evals dashboard view, Settings → Scheduled Evals section, and scheduled-eval cron execution)
 - `workflowGraphExecutor` (enables the workflow-IR interpreter path)
-- `workflowInterpreterDualObserve` (observe-only parity instrumentation for interpreter rollout)
-- `workflowInterpreterAuthoritative` (readiness-gated authoritative interpreter lifecycle cutover; legacy remains default/fallback when OFF)
+- `workflowInterpreterDualObserve` (retired/inert; stale persisted `true` values are forced OFF and must not reactivate hidden shadow observation)
+- `workflowInterpreterAuthoritative` (readiness-gated authoritative interpreter lifecycle cutover; requires clean populated parity summary evidence and legacy remains default/fallback when OFF)
 - `remoteAccess`
 - `agentOnboarding` (enables the **AI Interview** option inside the New Agent dialog)
 

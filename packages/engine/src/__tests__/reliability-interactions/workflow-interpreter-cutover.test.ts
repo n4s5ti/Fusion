@@ -1,12 +1,18 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
-import { DEFAULT_SETTINGS, type Settings, type TaskDetail } from "@fusion/core";
+import {
+  DEFAULT_SETTINGS,
+  isExperimentalFeatureEnabled,
+  type Settings,
+  type TaskDetail,
+} from "@fusion/core";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { assertSquashOverlapsFileScope, FileScopeViolationError } from "../../merger.js";
 import type { WorkflowLegacySeams } from "../../workflow-node-handlers.js";
 import { WorkflowAuthoritativeDriver } from "../../workflow-authoritative-driver.js";
+import { observeWorkflowParity } from "../../workflow-parity-observer.js";
 import { git, hasGit, makeReliabilityFixture } from "./_helpers.js";
 
 const readyParity = {
@@ -41,13 +47,15 @@ function createStore(options: {
   settings?: Settings;
   selection?: { workflowId: string; stepIds: string[] } | undefined;
   task?: TaskDetail;
-  paritySummary?: typeof readyParity | undefined;
+  paritySummary?: typeof readyParity | null;
 } = {}) {
   return {
-    getSettings: vi.fn(async () => options.settings ?? settingsWith({ workflowInterpreterAuthoritative: true, workflowInterpreterDualObserve: true })),
+    getSettings: vi.fn(async () => options.settings ?? settingsWith({ workflowInterpreterAuthoritative: true })),
     getTask: vi.fn(async () => options.task ?? baseTask),
     getTaskWorkflowSelection: vi.fn(() => options.selection),
-    getWorkflowParitySummary: vi.fn(() => options.paritySummary ?? readyParity),
+    getWorkflowParitySummary: vi.fn(() => (
+      options.paritySummary === null ? undefined : options.paritySummary ?? readyParity
+    )),
   };
 }
 
@@ -60,7 +68,7 @@ function createExecutor(seams: WorkflowLegacySeams) {
 describe("workflow interpreter authoritative cutover", () => {
   it("is a strict no-op when the cutover flag is off", async () => {
     const store = createStore({
-      settings: settingsWith({ workflowInterpreterAuthoritative: false, workflowInterpreterDualObserve: true }),
+      settings: settingsWith({ workflowInterpreterAuthoritative: false }),
     });
     const executor = createExecutor({
       planning: vi.fn(async () => ({ outcome: "success" as const })),
@@ -74,6 +82,25 @@ describe("workflow interpreter authoritative cutover", () => {
 
     expect(result.handled).toBe(false);
     expect(result.disposition).toBe("fell-back");
+    expect(executor.createAuthoritativeWorkflowSeams).not.toHaveBeenCalled();
+  });
+
+  it("falls back when parity summary is missing even if the cutover flag is on", async () => {
+    const store = createStore({
+      paritySummary: null,
+    });
+    const executor = createExecutor({
+      planning: vi.fn(async () => ({ outcome: "success" as const })),
+      execute: vi.fn(async () => ({ outcome: "success" as const })),
+      review: vi.fn(async () => ({ outcome: "success" as const })),
+      merge: vi.fn(async () => ({ outcome: "success" as const })),
+      schedule: vi.fn(async () => ({ outcome: "success" as const })),
+    });
+
+    const result = await new WorkflowAuthoritativeDriver({ store, executor }).maybeRun(baseTask as any);
+
+    expect(result.handled).toBe(false);
+    expect(result.reason).toContain("workflow parity summary unavailable");
     expect(executor.createAuthoritativeWorkflowSeams).not.toHaveBeenCalled();
   });
 
@@ -122,6 +149,46 @@ describe("workflow interpreter authoritative cutover", () => {
     expect(calls).toEqual(["execute", "review", "merge"]);
   });
 
+  it("keeps stale dual-observe settings inert while clean parity authorizes seams", async () => {
+    const runShadow = vi.fn(async () => ({ observation: {} as any, auditEvents: [] }));
+    await observeWorkflowParity({
+      settings: settingsWith({ workflowInterpreterDualObserve: true }),
+      store: { recordRunAuditEvent: vi.fn() },
+      agentId: "agent-test",
+      legacy: { taskId: baseTask.id, observation: {} as any, auditEvents: [] },
+      runShadow,
+    });
+    expect(
+      isExperimentalFeatureEnabled(
+        settingsWith({ workflowInterpreterDualObserve: true }),
+        "workflowInterpreterDualObserve",
+      ),
+    ).toBe(false);
+    expect(runShadow).not.toHaveBeenCalled();
+
+    const execute = vi.fn(async () => ({ outcome: "success" as const }));
+    const executor = createExecutor({
+      planning: async () => ({ outcome: "success" as const }),
+      execute,
+      review: async () => ({ outcome: "success" as const }),
+      merge: async () => ({ outcome: "success" as const }),
+      schedule: async () => ({ outcome: "success" as const }),
+    });
+
+    const result = await new WorkflowAuthoritativeDriver({
+      store: createStore({
+        settings: settingsWith({
+          workflowInterpreterAuthoritative: true,
+          workflowInterpreterDualObserve: true,
+        }),
+      }),
+      executor,
+    }).maybeRun(baseTask as any);
+
+    expect(result.handled).toBe(true);
+    expect(execute).toHaveBeenCalledTimes(1);
+  });
+
   it("keeps autoMerge:false tasks terminal in review by stopping before merge", async () => {
     const merge = vi.fn(async () => ({ outcome: "success" as const }));
     const executor = createExecutor({
@@ -133,7 +200,9 @@ describe("workflow interpreter authoritative cutover", () => {
     });
 
     const result = await new WorkflowAuthoritativeDriver({
-      store: createStore({ settings: settingsWith({ workflowInterpreterAuthoritative: true, workflowInterpreterDualObserve: true }, { autoMerge: false }) }),
+      store: createStore({
+        settings: settingsWith({ workflowInterpreterAuthoritative: true }, { autoMerge: false }),
+      }),
       executor,
     }).maybeRun(baseTask as any);
 
@@ -186,7 +255,7 @@ describe("workflow interpreter authoritative cutover", () => {
   });
 
   it("immediately rolls back to legacy when the cutover flag is flipped back off", async () => {
-    let settings = settingsWith({ workflowInterpreterAuthoritative: true, workflowInterpreterDualObserve: true });
+    let settings = settingsWith({ workflowInterpreterAuthoritative: true });
     const store = createStore();
     store.getSettings.mockImplementation(async () => settings);
     const executor = createExecutor({
@@ -199,7 +268,7 @@ describe("workflow interpreter authoritative cutover", () => {
     const driver = new WorkflowAuthoritativeDriver({ store, executor });
 
     const first = await driver.maybeRun(baseTask as any);
-    settings = settingsWith({ workflowInterpreterAuthoritative: false, workflowInterpreterDualObserve: true });
+    settings = settingsWith({ workflowInterpreterAuthoritative: false });
     const second = await driver.maybeRun(baseTask as any);
 
     expect(first.handled).toBe(true);
@@ -251,7 +320,7 @@ describeIfGit("workflow interpreter authoritative cutover + file-scope invariant
 
     const driver = new WorkflowAuthoritativeDriver({
       store: {
-        getSettings: async () => settingsWith({ workflowInterpreterAuthoritative: true, workflowInterpreterDualObserve: true }),
+        getSettings: async () => settingsWith({ workflowInterpreterAuthoritative: true }),
         getTask: (taskId) => fx.store.getTask(taskId) as Promise<TaskDetail>,
         getTaskWorkflowSelection: () => undefined,
         getWorkflowParitySummary: () => readyParity,

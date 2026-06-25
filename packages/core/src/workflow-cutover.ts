@@ -10,8 +10,6 @@ export const WORKFLOW_INTERPRETER_AUTHORITATIVE_FLAG = "workflowInterpreterAutho
 export interface InterpreterCutoverReadinessInput {
   /** Explicit operator opt-in; default runtime remains legacy when false. */
   authoritativeFlagEnabled: boolean;
-  /** The dual-observe rollout must stay enabled/proven before cutover. */
-  dualObserveEnabled: boolean;
   /** Aggregated parity signal from the audit trail (for example `store.getWorkflowParitySummary()`). */
   paritySummary?: Pick<WorkflowParitySummary, "observed" | "drift" | "recentDrift"> | null;
   /** Optional unresolved drift reports surfaced directly by the caller. */
@@ -40,6 +38,9 @@ function countUnresolvedDriftReports(
 /**
  * Pure rollout-readiness guard for the interpreter-authoritative cutover.
  * Callers supply explicit parity evidence; this function performs no I/O.
+ *
+ * FNXC:WorkflowInterpreterCutover 2026-06-23-21:58:
+ * workflowInterpreterDualObserve is retired and inert. Authoritative cutover must use the explicit authoritative flag plus clean populated parity summaries as evidence, without reactivating hidden shadow observation.
  */
 export function evaluateInterpreterCutoverReadiness(
   input: InterpreterCutoverReadinessInput,
@@ -49,10 +50,6 @@ export function evaluateInterpreterCutoverReadiness(
 
   if (!input.authoritativeFlagEnabled) {
     reasons.push("experimentalFeatures.workflowInterpreterAuthoritative is disabled");
-  }
-
-  if (!input.dualObserveEnabled) {
-    reasons.push("experimentalFeatures.workflowInterpreterDualObserve is disabled");
   }
 
   const paritySummary = input.paritySummary;

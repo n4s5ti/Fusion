@@ -40,8 +40,9 @@ describe("FN-5768 workflow interpreter dual-observe", () => {
     expect(recordRunAuditEvent).not.toHaveBeenCalled();
   });
 
-  it("records parity-observed agree=true when observations match", async () => {
+  it("keeps retired persisted true values inert instead of shadow-observing", async () => {
     const recordRunAuditEvent = vi.fn().mockResolvedValue(undefined);
+    const runShadow = vi.fn(async () => ({ observation: baseObservation, auditEvents: [] }));
 
     await observeWorkflowParity({
       settings: { experimentalFeatures: { [WORKFLOW_INTERPRETER_DUAL_OBSERVE_FLAG]: true } },
@@ -52,21 +53,23 @@ describe("FN-5768 workflow interpreter dual-observe", () => {
         observation: baseObservation,
         auditEvents: [],
       },
-      runShadow: async () => ({ observation: baseObservation, auditEvents: [] }),
+      runShadow,
     });
 
-    expect(recordRunAuditEvent).toHaveBeenCalledTimes(1);
-    expect(recordRunAuditEvent).toHaveBeenCalledWith(
-      expect.objectContaining({
-        mutationType: "workflow:parity-observed",
-        metadata: expect.objectContaining({ agree: true }),
-      }),
-    );
+    expect(runShadow).not.toHaveBeenCalled();
+    expect(recordRunAuditEvent).not.toHaveBeenCalled();
   });
 
-  it("records parity drift and keeps authoritative result unchanged", async () => {
+  it("does not run a drift shadow when the retired flag is stale true", async () => {
     const recordRunAuditEvent = vi.fn().mockResolvedValue(undefined);
     const legacyResult = { authoritative: true };
+    const runShadow = vi.fn(async () => ({
+      observation: {
+        ...baseObservation,
+        terminalColumn: "in-review",
+      },
+      auditEvents: [],
+    }));
 
     await observeWorkflowParity({
       settings: { experimentalFeatures: { [WORKFLOW_INTERPRETER_DUAL_OBSERVE_FLAG]: true } },
@@ -77,35 +80,19 @@ describe("FN-5768 workflow interpreter dual-observe", () => {
         observation: baseObservation,
         auditEvents: [],
       },
-      runShadow: async () => ({
-        observation: {
-          ...baseObservation,
-          terminalColumn: "in-review",
-        },
-        auditEvents: [],
-      }),
+      runShadow,
     });
 
     expect(legacyResult).toEqual({ authoritative: true });
-    expect(recordRunAuditEvent).toHaveBeenCalledTimes(2);
-    expect(recordRunAuditEvent).toHaveBeenNthCalledWith(
-      1,
-      expect.objectContaining({ mutationType: "workflow:parity-observed" }),
-    );
-    expect(recordRunAuditEvent).toHaveBeenNthCalledWith(
-      2,
-      expect.objectContaining({
-        mutationType: "workflow:parity-drift",
-        metadata: expect.objectContaining({
-          agree: false,
-          diffs: expect.arrayContaining([expect.objectContaining({ field: "terminalColumn" })]),
-        }),
-      }),
-    );
+    expect(runShadow).not.toHaveBeenCalled();
+    expect(recordRunAuditEvent).not.toHaveBeenCalled();
   });
 
-  it("captures shadow errors fail-soft without rethrow", async () => {
+  it("does not execute stale shadow callbacks that would fail", async () => {
     const recordRunAuditEvent = vi.fn().mockResolvedValue(undefined);
+    const runShadow = vi.fn(async () => {
+      throw new Error("shadow exploded");
+    });
 
     await expect(
       observeWorkflowParity({
@@ -117,28 +104,11 @@ describe("FN-5768 workflow interpreter dual-observe", () => {
           observation: baseObservation,
           auditEvents: [],
         },
-        runShadow: async () => {
-          throw new Error("shadow exploded");
-        },
+        runShadow,
       }),
     ).resolves.toBeUndefined();
 
-    expect(recordRunAuditEvent).toHaveBeenCalledTimes(2);
-    expect(recordRunAuditEvent).toHaveBeenNthCalledWith(
-      1,
-      expect.objectContaining({
-        mutationType: "workflow:parity-observed",
-        metadata: expect.objectContaining({ agree: false }),
-      }),
-    );
-    expect(recordRunAuditEvent).toHaveBeenNthCalledWith(
-      2,
-      expect.objectContaining({
-        mutationType: "workflow:parity-drift",
-        metadata: expect.objectContaining({
-          diffs: expect.arrayContaining([expect.objectContaining({ field: "shadow.error" })]),
-        }),
-      }),
-    );
+    expect(runShadow).not.toHaveBeenCalled();
+    expect(recordRunAuditEvent).not.toHaveBeenCalled();
   });
 });
