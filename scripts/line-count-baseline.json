@@ -34,7 +34,6 @@
   "packages/dashboard/app/components/TaskDetailModal.tsx": 4636,
   "packages/dashboard/app/components/TerminalModal.tsx": 2313,
   "packages/dashboard/app/components/WorkflowNodeEditor.tsx": 4868,
-  "packages/dashboard/app/components/__tests__/AgentLogViewer.test.tsx": 2010,
   "packages/dashboard/app/components/__tests__/AgentsView.test.tsx": 2817,
   "packages/dashboard/app/components/__tests__/App.test.tsx": 4437,
   "packages/dashboard/app/components/__tests__/ChatView.test.tsx": 5822,
