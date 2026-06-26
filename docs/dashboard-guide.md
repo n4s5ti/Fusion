@@ -1501,6 +1501,20 @@ Breakpoints: 768px (primary mobile), 1024px (tablet `min-width: 769px and max-wi
 
 Manage project and global secrets directly inside **Settings → Project → Secrets**. This section embeds the existing Secrets UI in the settings content panel so you no longer need a footer "Manage secrets" link to leave the modal.
 
+### MCP server management in Settings
+
+Manage Model Context Protocol servers from the existing Settings modal; no new top-level dashboard view is introduced.
+
+- **Settings → Global → MCP Servers** stores global MCP defaults shared by projects.
+- **Settings → Project → MCP Servers** stores project-level MCP settings. Project entries override global servers by matching `name`, and a same-named disabled project entry suppresses the inherited global server. The project list marks inherited, overridden, project-local, and disabled-global states so operators can see which scope owns the effective entry.
+- Supported transports are `stdio`, `sse`, and `streamable-http`. The editor shows the transport-specific command, URL, args, env, and header fields.
+- Sensitive MCP values are secret references only. Environment values, HTTP/SSE header values, and tokens must be selected from or created in Fusion secrets; plaintext values are never persisted into the settings blob.
+- Each server row has a **Test** control that calls the MCP validation API and renders pending, valid, unreachable, or error status inline using the standard status-dot convention and semantic status colors.
+- The import panel accepts Claude Desktop-style `{ "mcpServers": { ... } }` JSON by paste or upload. Imported plaintext sensitive values are converted into Fusion secret references before the settings draft is saved.
+- The export panel produces Fusion MCP JSON for the active scope and offers copy/download actions.
+
+The MCP sections reuse Settings form/card primitives and include mobile layouts for `(max-width: 768px)` so validate, override, disable, import, and export controls remain usable in the Settings sheet.
+
 ### Lazy-Loaded Heavy Views
 
 These 20 views are lazy-loaded via `React.lazy()` with `<Suspense fallback={null}>`. `prefetchLazyViews()` warms App-level chunks once on mount via `requestIdleCallback`; AppModals lazy modal imports (`SettingsModal`, `WorkflowNodeEditor`, `SetupWizardModal`) are part of the same inventory. **Do not make these eager.** The user-facing **Artifacts** section is still implemented by the `DocumentsView` component name.

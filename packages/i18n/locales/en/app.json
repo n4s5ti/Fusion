@@ -6128,7 +6128,9 @@
       "tooltip": {
         "global": "Shared across all projects",
         "project": "Specific to this project"
-      }
+      },
+      "globalMcp": "MCP Servers",
+      "mcp": "MCP Servers"
     },
     "nodeRouting": {
       "blockExecution": "Block execution",
@@ -6508,6 +6510,12 @@
     "fileBrowser": {
       "currentDirectory": "Current directory:",
       "projectRoot": "(project root)"
+    },
+    "mcp": {
+      "globalTitle": "Global MCP servers",
+      "projectTitle": "Project MCP servers",
+      "globalDescription": "Configure MCP servers shared by all projects. Project settings may override or disable these servers by name.",
+      "projectDescription": "Configure project-specific MCP servers, overrides, and disabled inherited servers."
     }
   },
   "setup": {

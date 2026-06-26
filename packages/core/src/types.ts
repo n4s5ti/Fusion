@@ -13,6 +13,10 @@ export {
 } from "./capacity.js";
 export type { CapacityRiskSignal } from "./capacity.js";
 
+// FNXC:McpConfig 2026-06-26-02:10: The dashboard Vite build aliases @fusion/core to this browser-safe module, so the pure MCP config helpers are re-exported here for Settings UI import/export, validation, and project-over-global resolution without pulling Node-only stores into the client bundle.
+export { exportMcpServersJson, importMcpServersJson, resolveEffectiveMcpServers } from "./mcp-config.js";
+export { validateMcpServerDefinitionDetailed, validateMcpServerDefinitionsDetailed } from "./settings-validation.js";
+
 /**
  * Valid thinking effort levels for AI agent sessions, controlling the cost/quality tradeoff of reasoning.
  * Includes extra-high for maximum-effort requests on reasoning-capable models.
