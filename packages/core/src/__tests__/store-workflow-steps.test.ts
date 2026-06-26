@@ -318,9 +318,13 @@ describe("TaskStore Workflow Steps", () => {
         },
       ]);
 
+      // frontend-ux-design is a built-in WORKFLOW_STEP_TEMPLATE that is NOT a
+      // builtin:coding optional-group node, so it still materializes into a WS row.
+      // (browser-verification can no longer be used here — it is a builtin:coding
+      // optional-group id that now passes through untouched; see FN-7039 regression.)
       const task = await store.createTask({
         description: "Task with mixed workflow steps",
-        enabledWorkflowSteps: ["plugin:my-plugin:my-step", "browser-verification"],
+        enabledWorkflowSteps: ["plugin:my-plugin:my-step", "frontend-ux-design"],
       });
 
       expect(task.enabledWorkflowSteps).toEqual(["plugin:my-plugin:my-step", "WS-001"]);
@@ -488,9 +492,11 @@ describe("TaskStore Workflow Steps", () => {
     });
 
     it("should materialize built-in workflow templates when creating a task", async () => {
+      // frontend-ux-design is a plain built-in template (not a builtin:coding
+      // optional-group), so it materializes into a WS row.
       const task = await store.createTask({
-        description: "Task with browser verification",
-        enabledWorkflowSteps: ["browser-verification"],
+        description: "Task with frontend ux design",
+        enabledWorkflowSteps: ["frontend-ux-design"],
       });
 
       expect(task.enabledWorkflowSteps).toEqual(["WS-001"]);
@@ -498,27 +504,59 @@ describe("TaskStore Workflow Steps", () => {
       const step = await store.getWorkflowStep("WS-001");
       expect(step).toMatchObject({
         id: "WS-001",
-        templateId: "browser-verification",
-        name: "Browser Verification",
-        toolMode: "coding",
+        templateId: "frontend-ux-design",
+        name: "Frontend UX Design",
       });
+    });
+
+    /*
+    FNXC:WorkflowOptionalGroup 2026-06-26-04:30:
+    FN-7039 regression. A built-in optional-group id that collides with a
+    WORKFLOW_STEP_TEMPLATE id (browser-verification) must pass through
+    `enabledWorkflowSteps` UNTOUCHED even when the task has no explicit workflow and
+    the project has no default workflow — the executor resolves such tasks to
+    builtin:coding, whose optional-group node id is "browser-verification", and gates
+    on `enabledWorkflowSteps.includes(node.id)`. Materializing it into a WS-NNN row
+    (the prior bug) left the executor unable to match the node, so the toggled
+    optional step silently never ran and never appeared in the unified step progress
+    bar. It must therefore NOT create a materialized step row.
+    */
+    it("passes a builtin:coding optional-group id (browser-verification) through untouched without materializing (FN-7039)", async () => {
+      const task = await store.createTask({
+        description: "Task with browser verification optional step",
+        enabledWorkflowSteps: ["browser-verification"],
+      });
+
+      expect(task.enabledWorkflowSteps).toEqual(["browser-verification"]);
+
+      const steps = await store.listWorkflowSteps();
+      expect(steps.filter((step) => step.templateId === "browser-verification")).toHaveLength(0);
+    });
+
+    it("passes the code-review optional-group id through untouched (FN-7039)", async () => {
+      const task = await store.createTask({
+        description: "Task with code review optional step",
+        enabledWorkflowSteps: ["code-review"],
+      });
+
+      expect(task.enabledWorkflowSteps).toEqual(["code-review"]);
     });
 
     it("should reuse an existing materialized built-in workflow step", async () => {
       const first = await store.createTask({
-        description: "First browser verification task",
-        enabledWorkflowSteps: ["browser-verification"],
+        description: "First frontend ux design task",
+        enabledWorkflowSteps: ["frontend-ux-design"],
       });
       const second = await store.createTask({
-        description: "Second browser verification task",
-        enabledWorkflowSteps: ["browser-verification"],
+        description: "Second frontend ux design task",
+        enabledWorkflowSteps: ["frontend-ux-design"],
       });
 
       expect(first.enabledWorkflowSteps).toEqual(["WS-001"]);
       expect(second.enabledWorkflowSteps).toEqual(["WS-001"]);
 
       const steps = await store.listWorkflowSteps();
-      expect(steps.filter((step) => step.templateId === "browser-verification")).toHaveLength(1);
+      expect(steps.filter((step) => step.templateId === "frontend-ux-design")).toHaveLength(1);
     });
 
     it("should materialize frontend-ux-design built-in template when creating a task", async () => {
@@ -799,13 +837,32 @@ describe("TaskStore Workflow Steps", () => {
       const task = await store.createTask({ description: "Editable task" });
 
       const updated = await store.updateTask(task.id, {
-        enabledWorkflowSteps: ["browser-verification"],
+        enabledWorkflowSteps: ["frontend-ux-design"],
       });
 
       expect(updated.enabledWorkflowSteps).toEqual(["WS-001"]);
 
       const persisted = await store.getTask(task.id);
       expect(persisted.enabledWorkflowSteps).toEqual(["WS-001"]);
+    });
+
+    // FNXC:WorkflowOptionalGroup 2026-06-26-04:30: FN-7039 update-path surface — a
+    // builtin:coding optional-group id must also pass through updateTask untouched
+    // (not materialized) so toggling it on after creation still runs in the executor.
+    it("passes a builtin:coding optional-group id through updateTask untouched (FN-7039)", async () => {
+      const task = await store.createTask({ description: "Editable task" });
+
+      const updated = await store.updateTask(task.id, {
+        enabledWorkflowSteps: ["browser-verification"],
+      });
+
+      expect(updated.enabledWorkflowSteps).toEqual(["browser-verification"]);
+
+      const persisted = await store.getTask(task.id);
+      expect(persisted.enabledWorkflowSteps).toEqual(["browser-verification"]);
+
+      const steps = await store.listWorkflowSteps();
+      expect(steps.filter((step) => step.templateId === "browser-verification")).toHaveLength(0);
     });
 
     it("should resolve built-in workflow templates from getWorkflowStep", async () => {

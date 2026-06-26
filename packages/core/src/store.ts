@@ -4351,13 +4351,17 @@ ${TASK_UPSERT_SQL_ASSIGNMENTS}
   FNXC:WorkflowOptionalGroup 2026-06-21-16:30:
   `optionalGroupIds` are the optional-group node ids of the task's workflow. They are executor toggle keys (matched by node id in `enabledWorkflowSteps`), NOT legacy `WorkflowStep` template ids. A built-in group id can deliberately collide with a `WORKFLOW_STEP_TEMPLATES` id (e.g. "browser-verification"); without this pass-through the colliding id is materialized into a step row whose id differs from the group node id, so the executor's `enabledWorkflowSteps.includes(node.id)` check fails and an enabled group is silently bypassed (P1 from code review). Editor-authored group ids never collide (they come from `newNodeId()`), so they already passed through; this guards the built-in collision.
   */
+  /*
+  FNXC:WorkflowOptionalGroup 2026-06-26-04:30:
+  Resolution order MUST mirror the executor's workflow resolution for the namespaces to line up: explicit `workflowId` → project default → `builtin:coding`. An unselected task with NO project default still runs `builtin:coding` (its optional-group nodes are `browser-verification` + `code-review`), so the toggle-key set must resolve there too. The earlier `?? getDefaultWorkflowId()` with an empty-set bail-out left this group-id set EMPTY for that common case, so a toggled `browser-verification` (which collides with a `WORKFLOW_STEP_TEMPLATES` id) got materialized into a `WS-NNN` step row the executor never matches against `enabledWorkflowSteps.includes(node.id)` — the optional step silently never ran and never appeared in the unified step progress bar (FN-7039 repro). Falling back to `builtin:coding` keeps the stored id equal to the group node id, so the executor runs it and the UI renders it.
+  */
   /** Optional-group node ids for a workflow (its `enabledWorkflowSteps` toggle
-   *  keys). Falls back to the project default workflow when `workflowId` is
-   *  nullish; empty for missing/fragment workflows. Used to keep group ids out of
-   *  the legacy step-template materialization in {@link resolveEnabledWorkflowSteps}. */
+   *  keys). Resolves explicit `workflowId` → project default → `builtin:coding`,
+   *  matching the executor's unselected-task resolution; empty for missing/fragment
+   *  workflows. Used to keep group ids out of the legacy step-template
+   *  materialization in {@link resolveEnabledWorkflowSteps}. */
   private async optionalGroupIdSet(workflowId?: string | null): Promise<Set<string>> {
-    const wfId = workflowId ?? (await this.getDefaultWorkflowId());
-    if (!wfId) return new Set();
+    const wfId = workflowId ?? (await this.getDefaultWorkflowId()) ?? "builtin:coding";
     const def = await this.getWorkflowDefinition(wfId);
     if (!def || def.kind === "fragment") return new Set();
     return new Set(resolveAllOptionalGroupIds(def.ir));

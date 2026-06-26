@@ -259,11 +259,14 @@ export function QuickEntryBox({ onCreate, addToast, tasks = [], availableModels,
   /*
   FNXC:WorkflowOptionalSteps 2026-06-25-00:00:
   Quick-add creation needs the active workflow's optional steps in the immediate action row, seeded from each step's `defaultOn`, and forwarded through `enabledWorkflowSteps`. `null` workflow is an explicit no-workflow opt-out, while `undefined` inherits the project default so Board and List quick-add match TaskForm's create-time resolution.
+
+  FNXC:WorkflowOptionalSteps 2026-06-26-05:10:
+  Resolution MUST mirror the executor/store (explicit workflowId → project default → `builtin:coding`). The earlier `?? null` tail hid `builtin:coding`'s optional steps (browser-verification, code-review) whenever no project default workflow was configured, so operators never saw the toggles even though the unselected task runs `builtin:coding` (FN-7039). Fall back to `builtin:coding` once settings have loaded; stay `null` while settings are still loading so we don't fetch the wrong workflow then refetch.
   */
   const effectiveOptionalWorkflowId =
     workflowId === null
       ? null
-      : (workflowId ?? settings?.defaultWorkflowId ?? null);
+      : (workflowId ?? settings?.defaultWorkflowId ?? (settings ? "builtin:coding" : null));
 
   useEffect(() => {
     let cancelled = false;
