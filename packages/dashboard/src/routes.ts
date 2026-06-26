@@ -5166,6 +5166,10 @@ async function executeSingleCommand(
   }
 }
 
+export async function resolveManualAiPromptMcpServers(taskStore: TaskStore) {
+  return (await resolveMcpServersForStore(taskStore)).servers;
+}
+
 async function executeAiPromptStep(
   step: import("@fusion/core").AutomationStep,
   timeoutMs: number,
@@ -5208,6 +5212,11 @@ async function executeAiPromptStep(
   const modelProvider = step.modelProvider?.trim() || defaultModel.provider;
   const modelId = step.modelId?.trim() || defaultModel.modelId;
   let responseText = "";
+  /*
+   * FNXC:McpConfig 2026-06-26-00:00:
+   * Manual AI-prompt workflow runs are operator-triggered coding-agent sessions, so they must receive the task-store resolved MCP set just like task executor lanes. Do not log resolved MCP payloads because env/header values may contain materialized secrets.
+   */
+  const mcpServers = await resolveManualAiPromptMcpServers(taskStore);
 
   const { session } = await createFnAgent({
     cwd: process.cwd(),
@@ -5216,6 +5225,7 @@ async function executeAiPromptStep(
     toolsAllowlist: step.allowedTools,
     defaultProvider: modelProvider,
     defaultModelId: modelId,
+    mcpServers,
     onText: (delta: string) => {
       responseText += delta;
       liveCallbacks?.onText?.(delta);

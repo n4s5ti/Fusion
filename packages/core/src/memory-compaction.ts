@@ -104,6 +104,10 @@ export async function compactMemoryWithAi(
   }
 
   if (DEBUG) console.log("[memory-compaction] Creating agent session...");
+  /*
+   * FNXC:McpConfig 2026-06-26-00:00:
+   * Memory compaction lives in @fusion/core and cannot import engine MCP resolution without introducing a core→engine cycle. This readonly session intentionally runs without configured MCP servers until a neutral store/secrets seam exists in core.
+   */
   const agentResult = await createFnAgent(agentOptions);
 
   if (!agentResult?.session) {

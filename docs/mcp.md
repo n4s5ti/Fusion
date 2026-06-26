@@ -58,6 +58,9 @@ Fusion materializes MCP secret references only at the use seam:
 - when running a bounded validation/reachability probe;
 - when importing plaintext Claude Desktop env/header values and immediately creating Fusion secrets.
 
+<!-- FNXC:McpConfig 2026-06-26-00:00: FN-7077 completed the agent-work surface audit. Configured MCP servers must be injected into MCP-capable Chat, Tools, and Tasks lanes, including heartbeat, manual AI-prompt workflow steps, PR-response/PR-conflict merger helpers, cron automation, and mission/milestone interview sessions. Terminal sessions and DB-row chat session creation remain non-agent-runtime surfaces and intentionally receive no MCP payload. -->
+MCP-capable AI sessions include Chat, planning, executor/Tasks, heartbeat runs, reviewer/validator/merger lanes, PR-response and PR-conflict merger helpers, manual AI-prompt workflow steps, workflow model nodes, evaluator, cron/automation, mission execution, mission and milestone/slice interviews, and agent reflection. Non-agent runtime surfaces such as terminal sessions and `chatStore.createSession` database row creation do not receive MCP servers.
+
 Expected outcome: API responses, CLI output, settings JSON, exports, and structured logs show secret references or counts/status metadata only; they do not include decrypted env/header values.
 
 ## Validation and reachability

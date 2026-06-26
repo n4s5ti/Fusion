@@ -211,6 +211,67 @@ describe("CronRunner", () => {
       expect(capturedOptions.toolsAllowlist).toBeUndefined();
     });
 
+    it("forwards store-resolved MCP servers to scheduled AI prompt sessions", async () => {
+      let capturedOptions: any;
+      piModuleMocks.createFnAgent.mockImplementation(async (options: any) => {
+        capturedOptions = options;
+        return { session: { dispose: vi.fn() } };
+      });
+      const store = {
+        async getSettingsByScope() {
+          return {
+            global: { mcpServers: { enabled: true, servers: [] } },
+            project: {
+              mcpServers: {
+                enabled: true,
+                servers: [
+                  {
+                    name: "cron-tools",
+                    transport: "stdio",
+                    command: "node",
+                    env: { MCP_TOKEN: { secretRef: "cron-token", scope: "project" } },
+                  },
+                ],
+              },
+            },
+          };
+        },
+        async getSecretsStore() {
+          return {
+            async revealSecret(id: string) {
+              expect(id).toBe("cron-token");
+              return { key: id, plaintextValue: "materialized-cron-secret" };
+            },
+          };
+        },
+      } as unknown as TaskStore;
+
+      const executor = await createAiPromptExecutor("/test/project", store);
+      await executor("Summarize this");
+
+      expect(capturedOptions.mcpServers).toEqual([
+        {
+          name: "cron-tools",
+          transport: "stdio",
+          command: "node",
+          env: { MCP_TOKEN: "materialized-cron-secret" },
+        },
+      ]);
+    });
+
+    it("keeps scheduled AI prompt sessions working without a store", async () => {
+      let capturedOptions: any;
+      piModuleMocks.createFnAgent.mockImplementation(async (options: any) => {
+        capturedOptions = options;
+        return { session: { dispose: vi.fn() } };
+      });
+
+      const executor = await createAiPromptExecutor("/test/project");
+      await executor("Summarize this");
+
+      expect(capturedOptions.mcpServers).toBeUndefined();
+    });
+
     it("returns response text even when session disposal throws", async () => {
       piModuleMocks.createFnAgent.mockImplementation(async (options: { onText?: (delta: string) => void }) => {
         options.onText?.("hello ");

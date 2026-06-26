@@ -241,7 +241,7 @@ export function buildRespondCallback(
 
     const taskId = ops.getTaskId(entity);
     const cwd = ops.getCwd(entity);
-    const runAgent = makePrResponseAgentRunner(settings, taskId, cwd);
+    const runAgent = makePrResponseAgentRunner(settings, taskId, cwd, fullStore);
 
     const result = await runPrResponseRun({
       entity,

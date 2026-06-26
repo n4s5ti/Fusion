@@ -20,6 +20,7 @@ import { defaultShell } from "./shell-utils.js";
 import { createFnAgent, promptWithFallback } from "./pi.js";
 import { HybridEvaluatorService } from "./evaluator.js";
 import { buildSessionSkillContextSync } from "./session-skill-context.js";
+import { resolveMcpServersForStore } from "./mcp-resolution.js";
 
 const log = createLogger("cron-runner");
 
@@ -1007,9 +1008,10 @@ const AI_AUTOMATION_SYSTEM_PROMPT = [
  * text response, and disposes the session.
  *
  * @param cwd — Project root directory (file access scope for the agent).
+ * @param store — Optional task store used to resolve configured MCP servers for scheduled agent work.
  * @returns An AiPromptExecutor function suitable for CronRunnerOptions.
  */
-export async function createAiPromptExecutor(cwd: string): Promise<AiPromptExecutor> {
+export async function createAiPromptExecutor(cwd: string, store?: TaskStore): Promise<AiPromptExecutor> {
   const disposeLog = createLogger("cron-runner");
 
   return async (prompt: string, modelProvider?: string, modelId?: string, allowedTools?: string[], liveCallbacks?: AiPromptLiveCallbacks): Promise<string> => {
@@ -1019,7 +1021,11 @@ export async function createAiPromptExecutor(cwd: string): Promise<AiPromptExecu
     /*
     FNXC:CronAutomationSkills 2026-06-17-19:33:
     Scheduled AI automation is an agent-acting lane; even without a plugin runner in this seam, it must request executor fallback skills and tolerate the degraded no-plugin path.
+
+    FNXC:McpConfig 2026-06-26-00:00:
+    Scheduled AI automations are coding-agent work surfaces. ProjectEngine passes the TaskStore so configured MCP servers are forwarded; lightweight in-process runtime callers may omit the store and keep the pre-existing empty-MCP behavior.
     */
+    const mcpServers = store ? (await resolveMcpServersForStore(store)).servers : undefined;
     const { session } = await createFnAgent({
       cwd,
       systemPrompt: AI_AUTOMATION_SYSTEM_PROMPT,
@@ -1028,6 +1034,7 @@ export async function createAiPromptExecutor(cwd: string): Promise<AiPromptExecu
       ...(skillContext.skillSelectionContext ? { skillSelection: skillContext.skillSelectionContext } : {}),
       defaultProvider: modelProvider,
       defaultModelId: modelId,
+      mcpServers,
       onText: (delta: string) => {
         responseText += delta;
         liveCallbacks?.onText?.(delta);

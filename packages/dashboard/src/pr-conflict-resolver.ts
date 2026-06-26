@@ -1,7 +1,7 @@
 import { access, mkdir, readFile, rm } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import type { Settings, TaskStore } from "@fusion/core";
-import { createResolvedAgentSession } from "@fusion/engine";
+import { createResolvedAgentSession, resolveMcpServersForStore } from "@fusion/engine";
 import { runGitCommand } from "./routes/resolve-diff-base.js";
 
 const GIT_TIMEOUT_MS = 60_000;
@@ -143,9 +143,15 @@ async function runResolutionAgent(params: {
   taskId: string;
   conflictedFiles: string[];
   settings: Settings;
+  store: TaskStore;
 }): Promise<void> {
-  const { cwd, taskId, conflictedFiles, settings } = params;
+  const { cwd, taskId, conflictedFiles, settings, store } = params;
   const sessionModel = getDefaultSessionModel(settings);
+  /*
+   * FNXC:McpConfig 2026-06-26-00:00:
+   * Create-PR conflict resolution is a merger-purpose coding-agent lane; forward configured MCP servers from the scoped task store so PR conflict work sees the same operator-approved tools as other merger surfaces.
+   */
+  const mcpServers = (await resolveMcpServersForStore(store)).servers;
   const { session } = await createResolvedAgentSession({
     cwd,
     systemPrompt: SESSION_PROMPT,
@@ -156,6 +162,7 @@ async function runResolutionAgent(params: {
     fallbackProvider: settings.fallbackProvider,
     fallbackModelId: settings.fallbackModelId,
     settings,
+    mcpServers,
   });
 
   try {
@@ -213,6 +220,7 @@ export async function resolvePrConflicts(input: ResolvePrConflictsInput): Promis
           taskId,
           conflictedFiles,
           settings: input.settings,
+          store,
         });
 
         const unresolvedFiles = await findFilesWithConflictMarkers(cwd, conflictedFiles);

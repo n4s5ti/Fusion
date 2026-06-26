@@ -52,6 +52,10 @@ export class LLMSynthesisProvider implements ResearchProvider {
       const cappedSources = this.applySourceBudget(request.sources, modelSelection);
       const prompt = buildSynthesisPrompt(request, cappedSources);
 
+      /*
+       * FNXC:McpConfig 2026-06-26-00:00:
+       * Research synthesis is a readonly provider constructed with projectRoot/model options only; it has no TaskStore or secrets reader at this seam, so configured MCP servers are intentionally not resolved here.
+       */
       const { session } = await createFnAgent({
         cwd: this.options.projectRoot,
         tools: "readonly",

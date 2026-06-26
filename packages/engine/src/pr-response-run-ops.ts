@@ -9,9 +9,10 @@
 
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import type { PrEntity, Settings } from "@fusion/core";
+import type { PrEntity, Settings, TaskStore } from "@fusion/core";
 import { resolveAgentPrompt } from "@fusion/core";
 import { createResolvedAgentSession, resolveMergerSessionModel } from "./agent-session-helpers.js";
+import { resolveMcpServersForStore } from "./mcp-resolution.js";
 import { promptWithFallback } from "./pi.js";
 import { withRateLimitRetry } from "./rate-limit-retry.js";
 import { checkSessionError } from "./usage-limit-detector.js";
@@ -86,6 +87,7 @@ export function makePrResponseAgentRunner(
   settings: Settings,
   taskId: string,
   cwd: string,
+  store?: TaskStore,
 ): (input: {
   prompt: string;
   systemPrompt: string;
@@ -95,6 +97,11 @@ export function makePrResponseAgentRunner(
   return async ({ prompt, systemPrompt, signal, threads }) => {
     const model = resolveMergerSessionModel(settings);
     let captured = "";
+    /*
+     * FNXC:McpConfig 2026-06-26-00:00:
+     * PR-response review threads are resolved by a merger-purpose coding agent, so this helper must forward the same store-resolved MCP set as the primary merger lane. Only counts/errors may be logged by callers; the server payload can contain materialized secrets.
+     */
+    const mcpServers = store ? (await resolveMcpServersForStore(store)).servers : undefined;
     // Append the strict verdict-output contract to the (untrusted-declaring)
     // system prompt so the agent emits parseable per-thread decisions.
     const fullSystem = [
@@ -121,6 +128,7 @@ export function makePrResponseAgentRunner(
       defaultThinkingLevel: settings.defaultThinkingLevel,
       settings,
       taskId,
+      mcpServers,
     });
     try {
       await withRateLimitRetry(async () => {

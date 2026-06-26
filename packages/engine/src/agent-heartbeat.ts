@@ -38,6 +38,7 @@ import { acquireTaskWorktree } from "./worktree-acquisition.js";
 import { createRunAuditor, generateSyntheticRunId, type DatabaseMutationType, type EngineRunContext } from "./run-audit.js";
 import { promptWithFallback } from "./pi.js";
 import { createResolvedAgentSession, extractRuntimeHint, resolveHeartbeatSessionModels } from "./agent-session-helpers.js";
+import { resolveMcpServersForStore } from "./mcp-resolution.js";
 import type { AgentActionGateContext } from "./agent-action-gate.js";
 import { buildSessionSkillContextSync } from "./session-skill-context.js";
 import type { AgentReflectionService } from "./agent-reflection.js";
@@ -62,6 +63,14 @@ interface SelfImproveServiceLike {
   shouldRunSelfImprove(agentId: string): Promise<boolean>;
   getSelfImprovePrompt(agentId: string): Promise<string>;
   recordSelfImprove(agentId: string): Promise<void>;
+}
+
+export async function resolveHeartbeatMcpForAgent(
+  taskStore: TaskStore | undefined,
+  agentId: string,
+) {
+  if (!taskStore) return { servers: [], errors: [] };
+  return resolveMcpServersForStore(taskStore, { agentId });
 }
 
 /** Resolved per-agent heartbeat config after validation and fallback */
@@ -2661,6 +2670,14 @@ export class HeartbeatMonitor {
         }
 
         const heartbeatSessionModels = resolveHeartbeatSessionModels(heartbeatModelSettings, agent.runtimeConfig);
+        /*
+         * FNXC:McpConfig 2026-06-26-00:00:
+         * Heartbeat runs are coding-capable agent-work sessions, so configured MCP servers must be resolved with the waking agent identity and forwarded like executor/chat lanes. Log only server counts and resolution error counts; resolved env/header contents may contain materialized secrets.
+         */
+        const heartbeatMcp = await resolveHeartbeatMcpForAgent(taskStore, agentId);
+        if (heartbeatMcp.errors.length > 0) {
+          heartbeatLog.warn(`Heartbeat MCP resolution for ${agentId} produced ${heartbeatMcp.errors.length} error(s); forwarding ${heartbeatMcp.servers.length} server(s)`);
+        }
 
         // Create agent session
         const { session } = await createResolvedAgentSession({
@@ -2678,6 +2695,7 @@ export class HeartbeatMonitor {
           fallbackModelId: heartbeatSessionModels.fallbackModelId,
           runAuditor: audit,
           settings: heartbeatModelSettings,
+          mcpServers: heartbeatMcp.servers,
           onText: (delta) => {
             outputLength += delta.length;
             appendStdoutExcerpt(delta);

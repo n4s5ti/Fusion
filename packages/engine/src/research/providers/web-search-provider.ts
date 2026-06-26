@@ -92,6 +92,10 @@ export class WebSearchProvider implements ResearchProvider {
     }
 
     try {
+      /*
+       * FNXC:McpConfig 2026-06-26-00:00:
+       * Built-in research web search is a readonly provider with projectRoot/model options but no TaskStore or secrets reader, so it intentionally skips user-configured MCP resolution at this seam.
+       */
       const { session } = await createFnAgent({
         cwd: this.options.projectRoot,
         tools: "readonly",

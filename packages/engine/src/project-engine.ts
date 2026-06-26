@@ -666,7 +666,7 @@ export class ProjectEngine {
       this.automationStore = new AutomationStore(cwd);
       await this.automationStore.init();
 
-      const aiPromptExecutor = await createAiPromptExecutor(cwd);
+      const aiPromptExecutor = await createAiPromptExecutor(cwd, store);
       this.cronRunner = new CronRunner(store, this.automationStore, {
         aiPromptExecutor,
         onScheduleRunProcessed: this.buildInsightRunHandler(cwd),

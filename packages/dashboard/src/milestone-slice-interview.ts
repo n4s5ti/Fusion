@@ -96,7 +96,7 @@ function parseTargetInterviewResponseImpl(text: string): TargetInterviewResponse
 // Export the parse function for tests
 export { parseTargetInterviewResponseImpl as parseTargetInterviewResponse };
 
-import { buildSessionSkillContextSync, createFnAgent as engineCreateFnAgent } from "@fusion/engine";
+import { buildSessionSkillContextSync, createFnAgent as engineCreateFnAgent, resolveMcpServersForStore } from "@fusion/engine";
 import { createPlanningBoardTools } from "./planning-board-tools.js";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -727,7 +727,7 @@ function getSystemPrompt(targetType: TargetType): string {
   return targetType === "milestone" ? MILESTONE_INTERVIEW_SYSTEM_PROMPT : SLICE_INTERVIEW_SYSTEM_PROMPT;
 }
 
-async function createTargetInterviewAgent(
+export async function createTargetInterviewAgent(
   session: TargetInterviewSession,
   rootDir: string,
   store: TaskStore,
@@ -736,10 +736,17 @@ async function createTargetInterviewAgent(
   await ensureEngineReady();
   const skillContext = buildSessionSkillContextSync(null, "executor", rootDir, pluginRunner);
 
+  /*
+  FNXC:McpConfig 2026-06-26-00:00:
+  Milestone and slice interviews already receive a TaskStore for planning-board tools; forward configured MCP servers so this readonly agent-work surface matches mission/planning coverage without logging resolved secrets.
+  */
+  const mcpServers = (await resolveMcpServersForStore(store)).servers;
+
   return createFnAgent({
     cwd: rootDir,
     systemPrompt: getSystemPrompt(session.targetType),
     tools: "readonly",
+    mcpServers,
     customTools: [...createPlanningBoardTools(store)],
     /*
     FNXC:InterviewSkills 2026-06-17-21:42:

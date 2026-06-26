@@ -1461,10 +1461,9 @@ describe("runServe — Semaphore boundary (task lanes only)", () => {
     await runServe(4040, {});
 
     expect(createAiPromptExecutor).toHaveBeenCalledTimes(1);
-    // createAiPromptExecutor takes only cwd parameter
+    // In-process runtime intentionally calls createAiPromptExecutor with cwd only; no TaskStore is available at this seam.
     expect(createAiPromptExecutor).toHaveBeenCalledWith(expect.any(String));
     const calledWith = createAiPromptExecutor.mock.calls[0];
-    // Should be called with exactly one argument (cwd)
     expect(calledWith.length).toBe(1);
 
     await triggerSignal("SIGINT");

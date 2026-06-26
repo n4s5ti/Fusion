@@ -29,7 +29,7 @@ import {
 } from "./ai-session-diagnostics.js";
 import { GenerationGuard, isAbortError } from "./ai-session-timeout.js";
 
-import { buildSessionSkillContextSync, createFnAgent as engineCreateFnAgent } from "@fusion/engine";
+import { buildSessionSkillContextSync, createFnAgent as engineCreateFnAgent, resolveMcpServersForStore } from "@fusion/engine";
 import { createPlanningBoardTools } from "./planning-board-tools.js";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -840,7 +840,7 @@ async function initializeAgent(
   }
 }
 
-async function createMissionInterviewAgent(
+export async function createMissionInterviewAgent(
   session: MissionInterviewSession,
   rootDir: string,
   store: TaskStore,
@@ -855,11 +855,16 @@ async function createMissionInterviewAgent(
   /*
   FNXC:MissionInterviewSkills 2026-06-17-19:33:
   Mission interview sessions are agent-acting planning lanes, so they request executor role fallback skills plus enabled plugin skills to keep ce-debug-style skills available outside task execution.
+
+  FNXC:McpConfig 2026-06-26-00:00:
+  Mission interviews have a TaskStore for planning-board tools and are agent-work sessions, so forward the store-resolved MCP set while keeping resolved secret values out of logs and persisted session state.
   */
+  const mcpServers = (await resolveMcpServersForStore(store)).servers;
   return createFnAgent({
     cwd: rootDir,
     systemPrompt: effectivePrompt,
     tools: "readonly",
+    mcpServers,
     ...(skillContext.skillSelectionContext ? { skillSelection: skillContext.skillSelectionContext } : {}),
     builtinToolsAllowlist: [...MISSION_INTERVIEW_BUILTIN_WEB_TOOLS],
     customTools: [...createPlanningBoardTools(store)],

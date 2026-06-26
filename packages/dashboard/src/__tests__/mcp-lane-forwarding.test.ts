@@ -57,6 +57,9 @@ vi.mock("../planning-board-tools.js", () => ({
 }));
 
 import { __resetPlanningState, createSession } from "../planning.js";
+import { resolveManualAiPromptMcpServers } from "../routes.js";
+import { createMissionInterviewAgent } from "../mission-interview.js";
+import { createTargetInterviewAgent } from "../milestone-slice-interview.js";
 
 describe("dashboard MCP lane forwarding", () => {
   beforeEach(() => {
@@ -75,5 +78,64 @@ describe("dashboard MCP lane forwarding", () => {
       cwd: "/tmp/fusion-dashboard-test",
       mcpServers: [expect.objectContaining({ name: "docs", env: { TOKEN: "materialized-secret" } })],
     }));
+  });
+
+  it("resolves materialized MCP servers for manual AI-prompt workflow steps", async () => {
+    const store = {} as never;
+
+    await expect(resolveManualAiPromptMcpServers(store)).resolves.toEqual([
+      expect.objectContaining({ name: "docs", env: { TOKEN: "materialized-secret" } }),
+    ]);
+    expect(resolveMcpServersForStoreMock).toHaveBeenCalledWith(store);
+  });
+
+  it("preserves empty MCP results for manual AI-prompt workflow steps", async () => {
+    resolveMcpServersForStoreMock.mockResolvedValueOnce({ servers: [], errors: [] });
+
+    await expect(resolveManualAiPromptMcpServers({} as never)).resolves.toEqual([]);
+  });
+
+  it("forwards materialized MCP servers to mission interview agents", async () => {
+    const store = {} as never;
+    const session = { id: "mission-session", thinkingOutput: "" } as never;
+
+    await createMissionInterviewAgent(session, "/tmp/fusion-dashboard-test", store);
+
+    expect(resolveMcpServersForStoreMock).toHaveBeenCalledWith(store);
+    expect(createFnAgentMock).toHaveBeenCalledWith(expect.objectContaining({
+      cwd: "/tmp/fusion-dashboard-test",
+      tools: "readonly",
+      mcpServers: [expect.objectContaining({ name: "docs", env: { TOKEN: "materialized-secret" } })],
+    }));
+  });
+
+  it("forwards empty MCP results to mission interview agents", async () => {
+    resolveMcpServersForStoreMock.mockResolvedValueOnce({ servers: [], errors: [] });
+
+    await createMissionInterviewAgent({ id: "mission-empty", thinkingOutput: "" } as never, "/tmp/fusion-dashboard-test", {} as never);
+
+    expect(createFnAgentMock).toHaveBeenCalledWith(expect.objectContaining({ mcpServers: [] }));
+  });
+
+  it("forwards materialized MCP servers to milestone and slice interview agents", async () => {
+    const store = {} as never;
+    const session = { id: "target-session", targetType: "milestone", thinkingOutput: "" } as never;
+
+    await createTargetInterviewAgent(session, "/tmp/fusion-dashboard-test", store);
+
+    expect(resolveMcpServersForStoreMock).toHaveBeenCalledWith(store);
+    expect(createFnAgentMock).toHaveBeenCalledWith(expect.objectContaining({
+      cwd: "/tmp/fusion-dashboard-test",
+      tools: "readonly",
+      mcpServers: [expect.objectContaining({ name: "docs", env: { TOKEN: "materialized-secret" } })],
+    }));
+  });
+
+  it("forwards empty MCP results to milestone and slice interview agents", async () => {
+    resolveMcpServersForStoreMock.mockResolvedValueOnce({ servers: [], errors: [] });
+
+    await createTargetInterviewAgent({ id: "target-empty", targetType: "slice", thinkingOutput: "" } as never, "/tmp/fusion-dashboard-test", {} as never);
+
+    expect(createFnAgentMock).toHaveBeenCalledWith(expect.objectContaining({ mcpServers: [] }));
   });
 });

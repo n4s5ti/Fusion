@@ -28,7 +28,7 @@ const mcpServers: ResolvedMcpServerDefinition[] = [
   },
 ];
 
-async function createLaneSession(sessionPurpose: "executor" | "reviewer" | "validation" | "merger") {
+async function createLaneSession(sessionPurpose: "executor" | "reviewer" | "validation" | "merger" | "heartbeat") {
   return createResolvedAgentSession({
     sessionPurpose,
     cwd: "/tmp/fusion-test-worktree",
@@ -50,6 +50,7 @@ describe("MCP lane forwarding", () => {
     ["reviewer"],
     ["validation"],
     ["merger"],
+    ["heartbeat"],
   ] as const)("forwards materialized MCP servers through the shared %s lane runtime seam", async (sessionPurpose) => {
     await createLaneSession(sessionPurpose);
 

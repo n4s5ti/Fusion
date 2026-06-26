@@ -56,6 +56,10 @@ export async function askAcpOnce(runtime: AgentRuntime, opts: AskAcpOnceOptions)
   let text = "";
   let session: AgentSession | undefined;
   try {
+    /*
+     * FNXC:McpConfig 2026-06-26-00:00:
+     * `askAcpOnce` is a direct Route-B runtime helper that receives an already-resolved runtime plus readonly prompt options, not a TaskStore or secrets reader. MCP-capable callers must resolve MCP before this seam if they need it.
+     */
     const created = await runtime.createSession({
       cwd: opts.cwd,
       systemPrompt: opts.systemPrompt ?? "",

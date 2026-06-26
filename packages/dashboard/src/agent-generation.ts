@@ -497,6 +497,10 @@ async function generateSpecWithAI(
   // Resolve the system prompt using prompt overrides (with fallback to default)
   const effectiveSystemPrompt = resolvePrompt("agent-generation-system", promptOverrides) || AGENT_GENERATION_SYSTEM_PROMPT;
 
+  /*
+   * FNXC:McpConfig 2026-06-26-00:00:
+   * Agent generation is a tools:none dashboard helper built from an in-memory session and rootDir only. No TaskStore/secrets reader is available here, so configured MCP servers are intentionally not injected.
+   */
   const agent = await createFnAgent({
     cwd: rootDir,
     systemPrompt: effectiveSystemPrompt,

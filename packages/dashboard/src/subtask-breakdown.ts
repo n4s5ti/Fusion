@@ -407,6 +407,10 @@ export async function decomposeForTriage(
     return generateFallbackSubtasks(description);
   }
 
+  /*
+   * FNXC:McpConfig 2026-06-26-00:00:
+   * Triage subtask decomposition receives only description/rootDir/prompt overrides. With no TaskStore or secrets reader at this one-shot seam, configured MCP servers are intentionally skipped.
+   */
   const agent: SubtaskAgent = await createFnAgent({ cwd, systemPrompt, tools: "readonly" });
   try {
     await agent.session.prompt(description);
@@ -527,6 +531,10 @@ async function generateSubtasks(
         /*
         FNXC:SubtaskBreakdown 2026-06-16-20:15:
         FN-6511 requires the full subtask generation lifecycle to be timeout-bounded, including createFnAgent construction before prompt() starts. Keep construction and prompt inside one GenerationGuard entry so a model-registry or extension-discovery stall cannot pin the SSE session in generating forever.
+        */
+        /*
+        FNXC:McpConfig 2026-06-26-00:00:
+        Streaming subtask generation currently does not thread the optional TaskStore into the async generation worker, so this readonly planning surface intentionally skips MCP until that larger session-state refactor is performed.
         */
         const agentPromise = createFnAgent({
           cwd,
