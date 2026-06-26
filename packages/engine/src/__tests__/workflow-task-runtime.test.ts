@@ -298,7 +298,15 @@ describe("WorkflowTaskRuntime", () => {
     // U6: no `workflow-step` seam; the bypassed browser-verification group node
     // sits between execute and review in the visited sequence.
     expect(calls).toEqual(["planning", "prepare-worktree", "execute", "review", "merge"]);
-    expect(result.visitedNodeIds).toEqual(["start", "planning", "execute", "browser-verification", "review", "merge"]);
+    expect(result.visitedNodeIds).toEqual([
+      "start",
+      "planning",
+      "execute",
+      "browser-verification",
+      "code-review",
+      "review",
+      "merge",
+    ]);
   });
 
   it("runs the pre-merge browser-verification optional-group once when enabled, before review", async () => {
@@ -338,6 +346,7 @@ describe("WorkflowTaskRuntime", () => {
       // The group container node, then its inner template step (run once).
       "browser-verification",
       "browser-verification::browser-verification-step",
+      "code-review",
       "review",
       "merge",
     ]);
