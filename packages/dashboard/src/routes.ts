@@ -13,7 +13,7 @@ import * as nodeFs from "node:fs";
 import os from "node:os";
 import v8 from "node:v8";
 
-import type { TaskStore, ScheduleType, ActivityEventType, ModelPreset, RoutineTriggerType, WorkflowStepTemplate, McpServerDefinition } from "@fusion/core";
+import type { TaskStore, ScheduleType, ActivityEventType, ModelPreset, RoutineTriggerType, McpServerDefinition } from "@fusion/core";
 import {
   type Task,
   type PiExtensionEntry,
@@ -30,7 +30,6 @@ import {
   isWebhookTrigger,
   listAgentMemoryFiles,
   readAgentMemoryFile,
-  resolvePlanningSettingsModel,
   resolvePluginEntryPath,
   resolveExecutionSettingsModel,
   resolveTitleSummarizerSettingsModel,
