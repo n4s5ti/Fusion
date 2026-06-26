@@ -66,7 +66,15 @@ describe("WorkflowGraphExecutor merge-region collapse", () => {
     expect(result.outcome).toBe("success");
     expect(merge).toHaveBeenCalledOnce();
     expect(calls).toEqual(["merge"]);
-    expect(result.visitedNodeIds).toEqual(["start", "planning", "execute", "browser-verification", "review", "merge"]);
+    expect(result.visitedNodeIds).toEqual([
+      "start",
+      "planning",
+      "execute",
+      "browser-verification",
+      "code-review",
+      "review",
+      "merge",
+    ]);
     expect(result.context["node:merge:outcome"]).toBe("success");
     expectNoRawMergeRegionVisits(result.visitedNodeIds);
   });
@@ -79,7 +87,15 @@ describe("WorkflowGraphExecutor merge-region collapse", () => {
 
     expect(result.outcome).toBe("failure");
     expect(merge).toHaveBeenCalledOnce();
-    expect(result.visitedNodeIds).toEqual(["start", "planning", "execute", "browser-verification", "review", "merge"]);
+    expect(result.visitedNodeIds).toEqual([
+      "start",
+      "planning",
+      "execute",
+      "browser-verification",
+      "code-review",
+      "review",
+      "merge",
+    ]);
     expect(result.context["node:merge:outcome"]).toBe("failure");
     expect(result.context["node:merge:value"]).toBe("FileScopeViolationError");
     expectNoRawMergeRegionVisits(result.visitedNodeIds);
@@ -98,7 +114,14 @@ describe("WorkflowGraphExecutor merge-region collapse", () => {
 
     expect(result.outcome).toBe("failure");
     expect(merge).not.toHaveBeenCalled();
-    expect(result.visitedNodeIds).toEqual(["start", "planning", "execute", "browser-verification", "review"]);
+    expect(result.visitedNodeIds).toEqual([
+      "start",
+      "planning",
+      "execute",
+      "browser-verification",
+      "code-review",
+      "review",
+    ]);
     expect(result.visitedNodeIds).not.toContain("merge");
     expectNoRawMergeRegionVisits(result.visitedNodeIds);
   });
@@ -113,7 +136,15 @@ describe("WorkflowGraphExecutor merge-region collapse", () => {
 
       expect(result.outcome).toBe("success");
       expect(merge).toHaveBeenCalledOnce();
-      expect(result.visitedNodeIds).toEqual(["start", "planning", "execute", "browser-verification", "review", "merge"]);
+      expect(result.visitedNodeIds).toEqual([
+        "start",
+        "planning",
+        "execute",
+        "browser-verification",
+        "code-review",
+        "review",
+        "merge",
+      ]);
       expectNoRawMergeRegionVisits(result.visitedNodeIds);
     },
   );

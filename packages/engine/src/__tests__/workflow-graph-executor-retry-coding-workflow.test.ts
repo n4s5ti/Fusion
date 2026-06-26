@@ -102,7 +102,14 @@ describe("WorkflowGraphExecutor built-in coding workflow retries", () => {
     expect(result.outcome).toBe("failure");
     // U6: with browser-verification disabled (bypassed), the group node sits
     // between execute and review where the workflow-step seam used to.
-    expect(result.visitedNodeIds).toEqual(["start", "planning", "execute", "browser-verification", "review"]);
+    expect(result.visitedNodeIds).toEqual([
+      "start",
+      "planning",
+      "execute",
+      "browser-verification",
+      "code-review",
+      "review",
+    ]);
   });
 
   it("respects a per-node maxRetries override", async () => {

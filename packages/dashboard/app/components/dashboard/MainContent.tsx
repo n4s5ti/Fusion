@@ -68,7 +68,6 @@ export function MainContent({
   subscribePluginEvents,
   openDetailTask,
   openFileInBrowser,
-  workflowStepNameLookup,
   prAuthAvailable,
   autoMerge,
   settingsLoaded,
@@ -290,7 +289,6 @@ export function MainContent({
                 projectId={currentProject?.id}
                 onOpenDetail={openPluginTaskDetail}
                 addToast={addToast}
-                workflowStepNameLookup={workflowStepNameLookup}
                 disableDrag={true}
                 prAuthAvailable={prAuthAvailable}
                 autoMergeEnabled={autoMerge}

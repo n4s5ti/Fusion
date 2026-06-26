@@ -7,8 +7,9 @@ import type {
   WorkflowIrNode,
   WorkflowIrNodeKind,
   WorkflowNodeExtensionResult,
+  WorkflowStepResult,
 } from "@fusion/core";
-import { BUILTIN_CODING_WORKFLOW_IR, WorkflowIrError, getWorkflowExtensionRegistry, resolveMaxReworkCycles } from "@fusion/core";
+import { BUILTIN_CODING_WORKFLOW_IR, WorkflowIrError, getWorkflowExtensionRegistry, resolveMaxReworkCycles, isExperimentalFeatureEnabled, GRAPH_NATIVE_POST_MERGE_FLAG } from "@fusion/core";
 
 import {
   createDefaultNodeHandlers,
@@ -153,6 +154,18 @@ export interface WorkflowGraphExecutorDeps {
   resumeReconcile?: ForeachEnvironment["resumeReconcile"];
   /** FIX 4 (context gap): task-level log sink for integration-conflict rework. */
   logTaskEntry?: ForeachEnvironment["logTaskEntry"];
+  /*
+   * FNXC:WorkflowStepResults 2026-06-25-12:00:
+   * Fail-soft persistence sink for an ENABLED optional-group node's outcome
+   * (plan U2, KTD-1/KTD-2). The graph upserts each enabled group's result into the
+   * EXISTING `task.workflowStepResults` field keyed by `node.id` so the unified
+   * progress bar (`getUnifiedTaskProgress`) reflects graph-run steps. Optional: when
+   * absent the executor records NOTHING (keeps in-memory tests byte-inert), so a
+   * disabled group and an unwired store both record nothing. The upsert-by-id +
+   * `store.updateTask({workflowStepResults})` wiring lives in the executor adapter;
+   * this seam only forwards the terminal/pending entry.
+   */
+  recordWorkflowStepResult?: (taskId: string, result: WorkflowStepResult) => void | Promise<void>;
   /** Project node-published task metadata onto the task row for dispatcher/UI. */
   publishTaskProjection?: (taskId: string, patch: WorkflowTaskProjection, source: { nodeId: string; nodeKind: WorkflowIrNode["kind"] }) => void | Promise<void>;
   /** @deprecated use publishTaskProjection. Kept for older callers. */
@@ -290,6 +303,44 @@ export class WorkflowGraphExecutor {
       [WORKFLOW_RUN_ID_CONTEXT_KEY]: runId,
       [WORKFLOW_ID_CONTEXT_KEY]: ir.name || "unknown",
     };
+    /*
+     * FNXC:WorkflowPostMerge 2026-06-26-15:30:
+     * Graph-native post-merge steps, gated by the DEFAULT-ON `graphNativePostMerge`
+     * experimental flag (in DEFAULT_ON_EXPERIMENTAL_FEATURES; an explicit `false`
+     * opts out). The merge-policy region is collapsed into ONE legacy merge
+     * seam (see `runLegacyMergeSeam` + the `isMergeRegionKind` branch in
+     * `traverseChildren`), so a node wired off `merge-attempt` success is normally
+     * never traversed. With the flag ON (the default) we let traversal continue past a
+     * SUCCESSFUL merge to those post-merge entry nodes; an explicit opt-out (`false`)
+     * leaves the set empty and skips the post-merge hop.
+     *
+     * `postMergeEntryNodeIds` = the (deterministic, id-sorted) set of edge targets `t`
+     * such that an edge leaves a merge-region node to `t`, where `t` is itself NOT a
+     * merge-region node and NOT `end`, the edge is not a rework back-edge, and the edge
+     * routes on success (no condition or `condition: "success"`). For `builtin:coding`
+     * this set is EMPTY (every merge-region exit goes to another merge-region node or
+     * `end`), so flag-ON is byte-identical to flag-OFF there — the parity oracle holds.
+     * When the flag is OFF the set is left empty and the post-merge hop is never taken,
+     * so existing merge routing (transient→retry, manual hold, branch-group
+     * integration/promotion, recovery-router, failure paths) is wholly unchanged.
+     */
+    const postMergeEnabled = isExperimentalFeatureEnabled(settings, GRAPH_NATIVE_POST_MERGE_FLAG);
+    const postMergeEntryNodeIds: string[] = (() => {
+      if (!postMergeEnabled) return [];
+      const ids = new Set<string>();
+      for (const [from, edges] of outgoingMap) {
+        const fromNode = nodeMap.get(from);
+        if (!fromNode || !isMergeRegionKind(fromNode.kind)) continue;
+        for (const edge of edges) {
+          if (edge.kind === "rework") continue;
+          if (edge.condition && edge.condition !== "success") continue;
+          const target = nodeMap.get(edge.to);
+          if (!target || target.kind === "end" || isMergeRegionKind(target.kind)) continue;
+          ids.add(edge.to);
+        }
+      }
+      return [...ids].sort();
+    })();
     const visitedNodeIds: string[] = [];
     const inStack = new Set<string>();
     const syntheticMergeNode: WorkflowIrNode = {
@@ -502,6 +553,45 @@ export class WorkflowGraphExecutor {
             // invariant. (Code review: CodeRabbit.)
             return await traverseChildren(node, { outcome: "success" });
           }
+          /*
+           * FNXC:WorkflowStepResults 2026-06-25-12:00:
+           * Record an enabled optional-group's outcome into the EXISTING
+           * `task.workflowStepResults` field keyed by `node.id` (plan U2,
+           * KTD-1/KTD-2/KTD-3) + emit `[pre-merge]` logs at parity with the legacy
+           * `runWorkflowSteps`. A `pending` entry (with `startedAt`) is written when
+           * the enabled group STARTS so the dashboard can show live status; after
+           * `runOptionalGroup` returns, the entry is UPSERT-replaced by the terminal
+           * record (same `startedAt`, plus `completedAt`). Disabled groups take the
+           * bypass branch above and record NOTHING (byte-inert). Recording is
+           * fail-soft via the optional `recordWorkflowStepResult` dep — absent → no
+           * record (in-memory tests unchanged).
+           */
+          const groupName = typeof node.config?.name === "string" && node.config.name.trim()
+            ? node.config.name.trim()
+            : node.id;
+          /*
+           * FNXC:WorkflowPostMerge 2026-06-26-09:00:
+           * Phase is read from the optional-group node's `config.phase` (defaults to
+           * "pre-merge", so every existing group is byte-identical). A
+           * `postMergeOptionalGroupNode` carries `phase: "post-merge"`; recorded
+           * `WorkflowStepResult.phase` + the `[pre-merge]`/`[post-merge]` log prefix
+           * both follow it. Post-merge groups only become reachable via the
+           * flag-gated post-merge hop below; the recording/log shape is otherwise
+           * identical to the pre-merge path.
+           */
+          const stepPhase: WorkflowStepResult["phase"] =
+            node.config?.phase === "post-merge" ? "post-merge" : "pre-merge";
+          const logPrefix = stepPhase === "post-merge" ? "[post-merge]" : "[pre-merge]";
+          const stepStartedAt = new Date().toISOString();
+          await this.recordOptionalGroupStepResult(task.id, {
+            workflowStepId: node.id,
+            workflowStepName: groupName,
+            phase: stepPhase,
+            status: "pending",
+            startedAt: stepStartedAt,
+          });
+          this.deps.logTaskEntry?.(`${logPrefix} Starting workflow step: ${groupName}`);
+
           const groupResult = await runOptionalGroup(node, {
             context,
             runTemplateNode: (tNode, sig, contextOverride) =>
@@ -509,6 +599,49 @@ export class WorkflowGraphExecutor {
             shouldTraverseEdge: (edge, src) => this.shouldTraverseEdge(edge, src),
             signal: this.deps.signal,
           });
+          // Map the group outcome → a WorkflowStepResult status (mirrors
+          // `mapWorkflowStatus` in taskProgress.ts): a `failure` outcome (gate REVISE
+          // or hard failure) → "failed"; an advisory REVISE (success outcome, REVISE
+          // verdict) → "advisory_failure" (non-blocking); otherwise → "passed".
+          const exitResult = groupResult.exitStepRecord;
+          const verdictRaw = typeof (exitResult?.value ?? groupResult.value) === "string"
+            ? (exitResult?.value ?? groupResult.value) as string
+            : undefined;
+          const verdict =
+            verdictRaw === "APPROVE" || verdictRaw === "APPROVE_WITH_NOTES" || verdictRaw === "REVISE"
+              ? verdictRaw
+              : undefined;
+          let stepStatus: WorkflowStepResult["status"];
+          if (groupResult.outcome === "failure") stepStatus = "failed";
+          else if (verdict === "REVISE") stepStatus = "advisory_failure";
+          else stepStatus = "passed";
+          const exitContextPatch = exitResult?.contextPatch;
+          const stepOutput = typeof exitContextPatch?.output === "string" ? exitContextPatch.output : undefined;
+          const stepNotes = typeof exitContextPatch?.notes === "string" ? exitContextPatch.notes : undefined;
+          await this.recordOptionalGroupStepResult(task.id, {
+            workflowStepId: node.id,
+            workflowStepName: groupName,
+            phase: stepPhase,
+            status: stepStatus,
+            ...(verdict ? { verdict } : {}),
+            ...(stepOutput !== undefined ? { output: stepOutput } : {}),
+            ...(stepNotes !== undefined ? { notes: stepNotes } : {}),
+            startedAt: stepStartedAt,
+            completedAt: new Date().toISOString(),
+          });
+          // `[pre-merge]`/`[post-merge]` terminal logs at parity with the legacy path
+          // (executor.ts runWorkflowSteps: "completed" / "requested revision" /
+          // "failed" + the advisory variant).
+          if (stepStatus === "passed") {
+            this.deps.logTaskEntry?.(`${logPrefix} Workflow step completed: ${groupName}`);
+          } else if (stepStatus === "advisory_failure") {
+            this.deps.logTaskEntry?.(`${logPrefix} Workflow step requested revision: ${groupName}`, stepOutput);
+            this.deps.logTaskEntry?.(`${logPrefix} Advisory workflow step failed: ${groupName}`);
+          } else if (verdict === "REVISE") {
+            this.deps.logTaskEntry?.(`${logPrefix} Workflow step requested revision: ${groupName}`, stepOutput);
+          } else {
+            this.deps.logTaskEntry?.(`${logPrefix} Workflow step failed: ${groupName}`, stepOutput);
+          }
           visitedNodeIds.push(...groupResult.visitedNodeIds);
           const result: WorkflowNodeResult = {
             outcome: groupResult.outcome,
@@ -626,6 +759,40 @@ export class WorkflowGraphExecutor {
         if (target && isMergeRegionKind(target.kind)) {
           aggregate = await runLegacyMergeSeam();
           if (aggregate.outcome === "failure") break;
+          /*
+           * FNXC:WorkflowPostMerge 2026-06-26-09:00:
+           * Flag-gated post-merge hop. The merge already finished (the seam awaited the
+           * merge Promise), so this runs strictly AFTER a successful merge. Walk each
+           * post-merge entry node via the normal `walk` path (optional-group recording
+           * with phase:"post-merge"). Post-merge failures are NON-BLOCKING — they record
+           * a result but DO NOT mutate `aggregate`, so the merged task still completes
+           * with the merge-success outcome (matching legacy post-merge semantics). When
+           * the flag is OFF, `postMergeEntryNodeIds` is empty and this loop is inert, so
+           * the merge region stays exactly as collapsed before.
+           */
+          for (const entryId of postMergeEntryNodeIds) {
+            /*
+             * FNXC:WorkflowPostMerge 2026-06-26-15:30:
+             * Post-merge traversal must NEVER fail an already-merged run (non-blocking
+             * contract). A malformed post-merge IR or any traversal throw is caught,
+             * logged via the task log sink, and we CONTINUE to the next entry — the
+             * merged task still completes with the merge-success `aggregate`. Without
+             * this guard a throw would propagate out of the executor and flip a merged
+             * task into an executor failure.
+             */
+            try {
+              const postMerge = await walk(entryId);
+              // A post-merge entry node is never an enclosing rework head, so a
+              // ReworkSignal here would be malformed IR; ignore it rather than bubble a
+              // rework loop out of the merge boundary. Result is intentionally discarded
+              // (non-blocking).
+              void postMerge;
+            } catch (err) {
+              this.deps.logTaskEntry?.(
+                `[post-merge] traversal error: ${err instanceof Error ? err.message : String(err)}`,
+              );
+            }
+          }
           continue;
         }
         const child = await walk(edge.to);
@@ -686,6 +853,21 @@ export class WorkflowGraphExecutor {
       await this.deps.stepInstancePersistence?.clearStaleInstanceStates?.(taskId, keepRunId);
     } catch {
       // Pruning is additive bookkeeping — a failure must not affect the run.
+    }
+  }
+
+  /*
+   * FNXC:WorkflowStepResults 2026-06-25-12:00:
+   * Fail-soft forward to the `recordWorkflowStepResult` persistence sink (plan U2).
+   * Recording is additive visibility bookkeeping — a sink failure (or absent sink)
+   * must NEVER affect graph execution, so swallow errors and no-op when unwired.
+   */
+  private async recordOptionalGroupStepResult(taskId: string, result: WorkflowStepResult): Promise<void> {
+    if (!this.deps.recordWorkflowStepResult) return;
+    try {
+      await this.deps.recordWorkflowStepResult(taskId, result);
+    } catch {
+      // Result recording is additive — a failure must not affect the run.
     }
   }
 

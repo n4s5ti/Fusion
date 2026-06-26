@@ -323,10 +323,14 @@ export function TaskForm({
   // create mode and lifts the enabled set to NewTaskModal for the create payload.
   // Optional workflow steps for the currently-selected workflow (create mode only).
   // `null` selection ("No workflow") → no steps; `undefined` → project default.
+  // FNXC:WorkflowOptionalSteps 2026-06-26-05:10:
+  // Mirror the executor/store resolution (selection → project default → `builtin:coding`)
+  // so `builtin:coding`'s optional steps appear when no project default is configured
+  // (FN-7039). Stay `null` until settings load to avoid fetching the wrong workflow first.
   const effectiveOptionalWorkflowId =
     selectedWorkflowId === null
       ? null
-      : (selectedWorkflowId ?? settings?.defaultWorkflowId ?? null);
+      : (selectedWorkflowId ?? settings?.defaultWorkflowId ?? (settings ? "builtin:coding" : null));
   useEffect(() => {
     if (!onWorkflowIdChange) return; // edit mode: optional steps are managed in the Workflow tab.
     let cancelled = false;

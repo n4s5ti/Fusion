@@ -2,7 +2,23 @@ import { readFileSync } from "node:fs";
 import { useState } from "react";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, waitFor, cleanup, within } from "@testing-library/react";
-import { parseWorkflowIr, WORKFLOW_STEP_TEMPLATES, type WorkflowDefinition, type Settings } from "@fusion/core";
+import { parseWorkflowIr, type WorkflowDefinition, type Settings } from "@fusion/core";
+
+// FNXC:WorkflowStepTemplate 2026-06-25-00:00: U6 deleted the built-in
+// WORKFLOW_STEP_TEMPLATES catalog. These palette tests only need an arbitrary set of
+// step templates returned by `fetchWorkflowStepTemplates` to verify palette rendering +
+// insertion; this local fixture replaces the deleted catalog (the editor is
+// template-agnostic — it renders whatever the API returns). `WorkflowStepTemplate` is
+// imported below (type-only imports hoist).
+const STEP_TEMPLATE_FIXTURES: WorkflowStepTemplate[] = [
+  { id: "documentation-review", name: "Documentation Review", description: "doc review", prompt: "You review docs.", category: "Quality", toolMode: "readonly" },
+  { id: "qa-check", name: "QA Check", description: "qa", prompt: "You run QA.", category: "Quality", toolMode: "coding" },
+  { id: "security-audit", name: "Security Audit", description: "sec", prompt: "You audit security.", category: "Security", toolMode: "readonly" },
+  { id: "performance-review", name: "Performance Review", description: "perf", prompt: "You review perf.", category: "Quality", toolMode: "readonly" },
+  { id: "accessibility-check", name: "Accessibility Check", description: "a11y", prompt: "You check a11y.", category: "Quality", toolMode: "readonly" },
+  { id: "browser-verification", name: "Browser Verification", description: "browser", prompt: "You verify in a browser.", category: "Quality", toolMode: "coding" },
+  { id: "frontend-ux-design", name: "Frontend UX Design", description: "ux", prompt: "You review UX.", category: "Quality", toolMode: "readonly" },
+];
 import type { Agent, BoardWorkflowDefinition } from "../../api";
 import {
   irToFlow,
@@ -36,7 +52,6 @@ vi.mock("../../api", () => ({
       this.status = status;
     }
   },
-  migrateLegacyWorkflowSteps: vi.fn(),
   fetchTraits: vi.fn(),
   fetchStepParsers: vi.fn(),
   fetchModels: vi.fn(),
@@ -69,7 +84,6 @@ import {
   createWorkflow,
   deleteWorkflow,
   fetchModels,
-  migrateLegacyWorkflowSteps,
   exportWorkflow,
   importWorkflow,
   designWorkflow,
@@ -391,8 +405,10 @@ describe("workflow-flow-mapping", () => {
     const { edges } = edgeRenderableAssertion(builtinDef());
     const failuresToEnd = edges.filter((edge) => edge.target === "end" && edge.data?.condition === "failure");
     // FNXC:WorkflowOptionalGroup 2026-06-21-15:30: the coding built-in's pre-merge `workflow-step` seam was migrated to a `browser-verification` optional-group (U6), which now carries the failure->end edge in its place.
+    // FNXC:CodeReviewStep 2026-06-25-00:00: the default-on `code-review` optional-group is also on the pre-merge success path with its own failure->end edge (see builtin-code-review-group.test.ts), so it is an expected failure->end source too. This corrected a stale assertion that predated the code-review group's addition.
     expect(failuresToEnd.map((edge) => edge.source).sort()).toEqual([
       "browser-verification",
+      "code-review",
       "execute",
       "merge-attempt",
       "planning",
@@ -2788,54 +2804,8 @@ describe("WorkflowNodeEditor — U6 empty/onboarding states", () => {
   });
 });
 
-describe("WorkflowNodeEditor — U2 legacy-step migration notice", () => {
-  beforeEach(() => {
-    vi.mocked(fetchWorkflows).mockResolvedValue([]);
-    vi.mocked(fetchTraits).mockResolvedValue(TRAIT_CATALOG);
-    vi.mocked(fetchStepParsers).mockResolvedValue(["step-headings", "json-steps"]);
-    localStorage.clear();
-  });
-
-  afterEach(() => {
-    cleanup();
-    localStorage.clear();
-    vi.clearAllMocks();
-  });
-
-  it("shows the one-time notice when migration converted steps", async () => {
-    vi.mocked(migrateLegacyWorkflowSteps).mockResolvedValue({ migrated: 2, skipped: 0, combinedWorkflowId: "WF-010" });
-    render(<WorkflowNodeEditor isOpen onClose={() => {}} addToast={() => {}} projectId="p1" />);
-    expect(await screen.findByTestId("wf-migration-notice")).toBeInTheDocument();
-    expect(migrateLegacyWorkflowSteps).toHaveBeenCalledWith("p1");
-  });
-
-  it("dismisses the notice, persisting the dismissal so it stays hidden on re-open", async () => {
-    vi.mocked(migrateLegacyWorkflowSteps).mockResolvedValue({ migrated: 2, skipped: 0, combinedWorkflowId: "WF-010" });
-    const { unmount } = render(
-      <WorkflowNodeEditor isOpen onClose={() => {}} addToast={() => {}} projectId="p1" />,
-    );
-    const notice = await screen.findByTestId("wf-migration-notice");
-    expect(notice).toBeInTheDocument();
-
-    fireEvent.click(screen.getByTestId("wf-migration-notice-dismiss"));
-    await waitFor(() => expect(screen.queryByTestId("wf-migration-notice")).not.toBeInTheDocument());
-    expect(localStorage.getItem("fusion:wf-migration-notice-dismissed:p1")).toBe("1");
-
-    // Re-open the editor: the persisted dismissal keeps the notice hidden even
-    // though migration still reports migrated > 0.
-    unmount();
-    render(<WorkflowNodeEditor isOpen onClose={() => {}} addToast={() => {}} projectId="p1" />);
-    await screen.findByTestId("wf-new-workflow");
-    expect(screen.queryByTestId("wf-migration-notice")).not.toBeInTheDocument();
-  });
-
-  it("does not show the notice when migration converted nothing", async () => {
-    vi.mocked(migrateLegacyWorkflowSteps).mockResolvedValue({ migrated: 0, skipped: 3 });
-    render(<WorkflowNodeEditor isOpen onClose={() => {}} addToast={() => {}} projectId="p1" />);
-    await screen.findByTestId("wf-new-workflow");
-    expect(screen.queryByTestId("wf-migration-notice")).not.toBeInTheDocument();
-  });
-});
+// FNXC:WorkflowStepCRUD 2026-06-26-14:00: U7c removed the "U2 legacy-step migration
+// notice" describe block along with the on-open migration trigger and its notice UI.
 
 // ── U5: import/export ───────────────────────────────────────────────────────
 
@@ -2844,7 +2814,6 @@ describe("WorkflowNodeEditor — U5 import/export", () => {
     vi.mocked(fetchTraits).mockResolvedValue(TRAIT_CATALOG);
     vi.mocked(fetchStepParsers).mockResolvedValue(["step-headings", "json-steps"]);
     vi.mocked(fetchModels).mockResolvedValue({ models: [] });
-    vi.mocked(migrateLegacyWorkflowSteps).mockResolvedValue({ migrated: 0, skipped: 0 });
   });
   afterEach(() => {
     cleanup();
@@ -3039,7 +3008,6 @@ describe("WorkflowNodeEditor — U9 palette Templates section", () => {
     vi.mocked(fetchTraits).mockResolvedValue(TRAIT_CATALOG);
     vi.mocked(fetchStepParsers).mockResolvedValue(["step-headings", "json-steps"]);
     vi.mocked(fetchModels).mockResolvedValue({ models: [] });
-    vi.mocked(migrateLegacyWorkflowSteps).mockResolvedValue({ migrated: 0, skipped: 0 });
     vi.mocked(fetchWorkflowStepTemplates).mockResolvedValue({ templates: [] });
     vi.mocked(fetchPluginWorkflowStepTemplates).mockResolvedValue({ templates: [] });
     try {
@@ -3239,7 +3207,7 @@ describe("WorkflowNodeEditor — U9 palette Templates section", () => {
   it("surfaces all seven built-in add-ons in the palette", async () => {
     vi.mocked(fetchWorkflows).mockResolvedValue([def()]);
     vi.mocked(fetchWorkflowStepTemplates).mockResolvedValue({
-      templates: WORKFLOW_STEP_TEMPLATES,
+      templates: STEP_TEMPLATE_FIXTURES,
     });
 
     render(<WorkflowNodeEditor isOpen onClose={() => {}} addToast={() => {}} />);
@@ -3247,13 +3215,13 @@ describe("WorkflowNodeEditor — U9 palette Templates section", () => {
 
     // Every add-on id is present as a primary "insert as node" button AND offers
     // the "as optional group" sibling variant.
-    for (const tpl of WORKFLOW_STEP_TEMPLATES) {
+    for (const tpl of STEP_TEMPLATE_FIXTURES) {
       expect(screen.getByTestId(`wf-tpl-step-${tpl.id}`)).toBeInTheDocument();
       expect(
         screen.getByTestId(`wf-tpl-step-${tpl.id}-optional-group`),
       ).toBeInTheDocument();
     }
-    expect(WORKFLOW_STEP_TEMPLATES).toHaveLength(7);
+    expect(STEP_TEMPLATE_FIXTURES).toHaveLength(7);
   });
 
   it("inserts an add-on as a single node carrying its template config", async () => {
@@ -3261,7 +3229,7 @@ describe("WorkflowNodeEditor — U9 palette Templates section", () => {
     vi.mocked(updateWorkflow).mockImplementation(async (_id, updates) => ({ ...def(), ...(updates as object) }));
     vi.mocked(compileWorkflow).mockResolvedValue({ steps: [] });
     vi.mocked(fetchWorkflowStepTemplates).mockResolvedValue({
-      templates: WORKFLOW_STEP_TEMPLATES,
+      templates: STEP_TEMPLATE_FIXTURES,
     });
 
     render(<WorkflowNodeEditor isOpen onClose={() => {}} addToast={() => {}} />);
@@ -3279,7 +3247,7 @@ describe("WorkflowNodeEditor — U9 palette Templates section", () => {
     await waitFor(() => expect(updateWorkflow).toHaveBeenCalled());
     const [, updates] = vi.mocked(updateWorkflow).mock.calls[0];
     const ir = (updates as { ir: { nodes: { kind: string; config?: Record<string, unknown> }[] } }).ir;
-    const docTpl = WORKFLOW_STEP_TEMPLATES.find((tpl) => tpl.id === "documentation-review")!;
+    const docTpl = STEP_TEMPLATE_FIXTURES.find((tpl) => tpl.id === "documentation-review")!;
     const inserted = ir.nodes.find((n) => n.config?.name === docTpl.name);
     expect(inserted).toBeTruthy();
     expect(inserted!.kind).toBe(docTpl.mode === "script" ? "script" : "prompt");
@@ -3290,7 +3258,7 @@ describe("WorkflowNodeEditor — U9 palette Templates section", () => {
     vi.mocked(updateWorkflow).mockImplementation(async (_id, updates) => ({ ...def(), ...(updates as object) }));
     vi.mocked(compileWorkflow).mockResolvedValue({ steps: [] });
     vi.mocked(fetchWorkflowStepTemplates).mockResolvedValue({
-      templates: WORKFLOW_STEP_TEMPLATES,
+      templates: STEP_TEMPLATE_FIXTURES,
     });
 
     render(<WorkflowNodeEditor isOpen onClose={() => {}} addToast={() => {}} />);
@@ -3308,7 +3276,7 @@ describe("WorkflowNodeEditor — U9 palette Templates section", () => {
     await waitFor(() => expect(updateWorkflow).toHaveBeenCalled());
     const [, updates] = vi.mocked(updateWorkflow).mock.calls[0];
     const ir = (updates as { ir: { nodes: { kind: string; config?: Record<string, unknown> }[] } }).ir;
-    const secTpl = WORKFLOW_STEP_TEMPLATES.find((tpl) => tpl.id === "security-audit")!;
+    const secTpl = STEP_TEMPLATE_FIXTURES.find((tpl) => tpl.id === "security-audit")!;
     const group = ir.nodes.find((n) => n.kind === "optional-group");
     expect(group).toBeTruthy();
     expect(group!.config!.defaultOn).toBe(secTpl.defaultOn ?? false);
@@ -3322,7 +3290,7 @@ describe("WorkflowNodeEditor — U9 palette Templates section", () => {
     vi.mocked(updateWorkflow).mockImplementation(async (_id, updates) => ({ ...def(), ...(updates as object) }));
     vi.mocked(compileWorkflow).mockResolvedValue({ steps: [] });
     vi.mocked(fetchWorkflowStepTemplates).mockResolvedValue({
-      templates: WORKFLOW_STEP_TEMPLATES,
+      templates: STEP_TEMPLATE_FIXTURES,
     });
 
     render(<WorkflowNodeEditor isOpen onClose={() => {}} addToast={() => {}} />);
@@ -3381,7 +3349,6 @@ describe("WorkflowNodeEditor — U10 design-with-AI", () => {
     vi.mocked(fetchTraits).mockResolvedValue(TRAIT_CATALOG);
     vi.mocked(fetchStepParsers).mockResolvedValue(["step-headings", "json-steps"]);
     vi.mocked(fetchModels).mockResolvedValue({ models: [] });
-    vi.mocked(migrateLegacyWorkflowSteps).mockResolvedValue({ migrated: 0, skipped: 0 });
   });
   afterEach(() => {
     cleanup();
