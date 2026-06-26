@@ -296,6 +296,11 @@ function renderQuickEntryBox(props = {}, { startExpanded = false } = {}) {
   return { ...result, props: { ...defaultProps, ...props } };
 }
 
+function expectQuickEntryHintAbsent(container: HTMLElement) {
+  expect(container.querySelector(".quick-entry-hint")).toBeNull();
+  expect(screen.queryByText("Enter to create · Esc to cancel")).toBeNull();
+}
+
 // Helper to ensure the QuickEntryBox is expanded by clicking the toggle only when needed.
 function expandQuickEntry() {
   const toggleButton = screen.getByTestId("quick-entry-toggle");
@@ -465,6 +470,19 @@ describe("QuickEntryBox", () => {
     const textarea = screen.getByTestId("quick-entry-input");
     expect(textarea).toBeTruthy();
     expect((textarea as HTMLTextAreaElement).rows).toBe(2);
+  });
+
+  /* FNXC:QuickEntry 2026-06-25-00:00: FN-7047 requires the retired quick-entry keyboard hint to be absent across board and list surfaces, with no empty `.quick-entry-hint` shell left behind. */
+  it("does not render the retired keyboard hint in desktop expanded or collapsed list modes", () => {
+    mockDesktopViewport();
+    const desktop = renderQuickEntryBox({ singleLine: false });
+    expectQuickEntryHintAbsent(desktop.container);
+    desktop.unmount();
+
+    mockMobileViewport();
+    const list = renderQuickEntryBox({ singleLine: true, defaultExpanded: false });
+    expect(screen.getByTestId("quick-entry-box").className).toContain("quick-entry-box--collapsed");
+    expectQuickEntryHintAbsent(list.container);
   });
 
   // FNXC:QuickEntry 2026-06-22-19:25: List view passes singleLine so quick-add is a compact one-line input (not the tall 80px auto-grow variant).

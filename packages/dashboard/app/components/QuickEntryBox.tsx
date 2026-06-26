@@ -2229,9 +2229,7 @@ export function QuickEntryBox({ onCreate, addToast, tasks = [], availableModels,
           }}
           data-testid="quick-entry-file-input"
         />
-        <div className="quick-entry-hint">
-          {t("tasks.quickEntryHint", "Enter to create · Esc to cancel")}
-        </div>
+        {/* FNXC:QuickEntry 2026-06-25-00:00: FN-7047 removes the persistent "Enter to create · Esc to cancel" hint so quick entry has no leftover affordance shell after the help text was retired. */}
       </div>
       {duplicateMatches && (
         <DuplicateWarningModal
