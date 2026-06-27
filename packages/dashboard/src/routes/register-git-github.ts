@@ -5132,6 +5132,7 @@ export function registerGitGitHubRoutes(ctx: ApiRoutesContext): void {
         task,
         repoRoot: scopedStore.getRootDir(),
         settings,
+        store: scopedStore,
         signal: controller.signal,
         timeoutMs: PR_METADATA_ROUTE_TIMEOUT_MS,
       });

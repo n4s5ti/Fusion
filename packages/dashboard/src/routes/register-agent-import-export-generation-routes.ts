@@ -923,6 +923,7 @@ export function registerAgentGenerationRoutes(ctx: ApiRoutesContext): void {
         planningModelId,
         settings.promptOverrides,
         options?.pluginRunner as Parameters<typeof import("@fusion/engine").buildSessionSkillContextSync>[3],
+        scopedStore,
       );
 
       res.status(201).json({ sessionId });
@@ -1014,8 +1015,9 @@ export function registerAgentGenerationRoutes(ctx: ApiRoutesContext): void {
   router.post("/agents/onboarding/:sessionId/retry", async (req, res) => {
     try {
       const { sessionId } = req.params;
+      const { store: scopedStore } = await getProjectContext(req);
       const { retryAgentOnboardingSession } = await import("../agent-onboarding.js");
-      await retryAgentOnboardingSession(sessionId);
+      await retryAgentOnboardingSession(sessionId, scopedStore);
       res.json({ success: true, sessionId });
     } catch (err: unknown) {
       if (err instanceof ApiError) throw err;
@@ -1111,7 +1113,7 @@ export function registerAgentGenerationRoutes(ctx: ApiRoutesContext): void {
       const rootDir = scopedStore.getRootDir();
       const settings = await scopedStore.getSettings();
 
-      const spec = await generateAgentSpec(sessionId, rootDir, settings.promptOverrides);
+      const spec = await generateAgentSpec(sessionId, rootDir, settings.promptOverrides, scopedStore);
       res.json({ spec });
     } catch (err: unknown) {
       if (err instanceof ApiError) {

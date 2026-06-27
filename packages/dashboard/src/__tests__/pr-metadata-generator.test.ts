@@ -20,6 +20,7 @@ vi.mock("node:child_process", async (importOriginal) => {
 
 vi.mock("@fusion/engine", () => ({
   listCliAdapterDescriptors: () => [],
+  resolveMcpServersForStore: vi.fn().mockResolvedValue({ servers: [], errors: [] }),
   createFnAgent: vi.fn(async () => ({
     session: {
       prompt: promptMock,

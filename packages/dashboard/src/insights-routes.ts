@@ -41,7 +41,7 @@ import {
   startInsightRunSweeper,
   sweepStaleInsightRuns,
 } from "./insight-run-sweeper.js";
-import { createFnAgent, promptWithFallback } from "@fusion/engine";
+import { createFnAgent, promptWithFallback, resolveMcpServersForStore } from "@fusion/engine";
 
 /**
  * Re-throws an error as an ApiError, converting unknown errors to internal errors.
@@ -129,6 +129,7 @@ async function executeInsightAttempt(params: {
   runId: string;
   signal: AbortSignal;
   insightStore: InsightStore;
+  taskStore?: TaskStore;
   settings: Settings;
   modelProvider?: string;
   modelId?: string;
@@ -158,9 +159,15 @@ async function executeInsightAttempt(params: {
   const fallbackModelId = hasCustomModel ? settingsModelId : undefined;
 
   const existingInsights = await readInsightsMemory(params.rootDir);
+  const mcpServers = (await resolveMcpServersForStore(params.taskStore ?? {})).servers;
   let responseText = "";
   const { session } = await createFnAgent({
     cwd: params.rootDir,
+    /*
+     * FNXC:McpConfig 2026-06-26-16:58:
+     * Insight extraction runs as a readonly dashboard helper under AsyncLocalStorage request scope. Resolve configured MCP servers from that scoped TaskStore at session creation; lightweight/no-store attempts get an empty set and diagnostics must never include materialized secret values.
+     */
+    mcpServers,
     defaultProvider: finalProvider,
     defaultModelId: finalModelId,
     fallbackProvider,
@@ -279,23 +286,22 @@ export function createInsightsRouter(store: TaskStore): Router {
    * Uses projectId from query/body to get the scoped store if provided,
    * otherwise falls back to the default store.
    */
-  router.use((req: Request, res: Response, next: NextFunction) => {
-    const projectId = getProjectId(req);
-    if (projectId) {
-      // Import here to avoid circular dependency issues
-      import("./project-store-resolver.js").then(({ getOrCreateProjectStore }) => {
-        getOrCreateProjectStore(projectId).then((scopedStore) => {
-          requestContext.run(scopedStore, () => {
-            next();
-          });
-        }).catch((err) => {
-          rethrowAsApiError(err, "Failed to get project store");
-        });
-      });
-    } else {
-      requestContext.run(store, () => {
+  router.use(async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const projectId = getProjectId(req);
+      const scopedStore = projectId
+        // Import here to avoid circular dependency issues
+        ? await import("./project-store-resolver.js").then(({ getOrCreateProjectStore }) => getOrCreateProjectStore(projectId))
+        : store;
+      requestContext.run(scopedStore, () => {
         next();
       });
+    } catch (err) {
+      try {
+        rethrowAsApiError(err, "Failed to get project store");
+      } catch (apiError) {
+        next(apiError);
+      }
     }
   });
 
@@ -424,6 +430,7 @@ export function createInsightsRouter(store: TaskStore): Router {
             runId: run.id,
             signal,
             insightStore,
+            taskStore,
             settings,
             modelProvider,
             modelId,
@@ -629,6 +636,7 @@ export function createInsightsRouter(store: TaskStore): Router {
             runId: run.id,
             signal,
             insightStore: store,
+            taskStore,
             settings,
             modelProvider: retryModelProvider,
             modelId: retryModelId,

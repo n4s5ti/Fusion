@@ -128,6 +128,7 @@ describe("agent-generation module", () => {
       });
 
       vi.doMock("@fusion/engine", () => ({
+        resolveMcpServersForStore: vi.fn().mockResolvedValue({ servers: [], errors: [] }),
         createFnAgent: vi.fn(async () => {
           const messages: Array<{ role: string; content: string }> = [];
           return {
@@ -187,6 +188,7 @@ describe("agent-generation module", () => {
 
       const generationFailure = new Error("engine failed to generate spec");
       vi.doMock("@fusion/engine", () => ({
+        resolveMcpServersForStore: vi.fn().mockResolvedValue({ servers: [], errors: [] }),
         createFnAgent: vi.fn(async () => {
           throw generationFailure;
         }),
@@ -495,6 +497,7 @@ describe("agent-generation module", () => {
       capturedSystemPrompt = undefined;
       // Mock createFnAgent before tests run
       vi.doMock("@fusion/engine", () => ({
+        resolveMcpServersForStore: vi.fn().mockResolvedValue({ servers: [], errors: [] }),
         createFnAgent: vi.fn(async (options: { cwd: string; systemPrompt: string; tools: string }) => {
           capturedSystemPrompt = options.systemPrompt;
           const messages: Array<{ role: string; content: string }> = [];

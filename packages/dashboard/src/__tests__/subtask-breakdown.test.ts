@@ -4,13 +4,15 @@ import { EventEmitter } from "node:events";
 import ts from "typescript";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
-const { mockCreateFnAgent } = vi.hoisted(() => ({
+const { mockCreateFnAgent, mockResolveMcpServersForStore } = vi.hoisted(() => ({
   mockCreateFnAgent: vi.fn(),
+  mockResolveMcpServersForStore: vi.fn().mockResolvedValue({ servers: [], errors: [] }),
 }));
 
 vi.mock("@fusion/engine", () => ({
   listCliAdapterDescriptors: () => [],
   createFnAgent: mockCreateFnAgent,
+  resolveMcpServersForStore: mockResolveMcpServersForStore,
 }));
 
 import type { AiSessionRow } from "../ai-session-store.js";
@@ -26,6 +28,7 @@ import {
   cancelSubtaskSession,
   cleanupSubtaskSession,
   createSubtaskSession,
+  decomposeForTriage,
   retrySubtaskSession,
   getSubtaskSession,
   rehydrateFromStore,
@@ -240,9 +243,40 @@ beforeAll(async () => {
   internalFns = await loadInternalSubtaskFunctions();
 });
 
+const resolvedMcpServers = [
+  { name: "docs", transport: "stdio", command: "node", args: ["server.js"], env: { MCP_TOKEN: "materialized-secret-value" } },
+];
+
+function createMcpEnabledStore(): object {
+  return {
+    mcpEnabledForTest: true,
+    getSettingsByScope: vi.fn().mockResolvedValue({
+      global: { mcpServers: { enabled: true, servers: [{ name: "docs" }] } },
+      project: {},
+    }),
+    getSecretsStore: vi.fn().mockResolvedValue({ revealSecret: vi.fn().mockResolvedValue("materialized-secret-value") }),
+  };
+}
+
+function createMcpDisabledStore(): object {
+  return {
+    getSettingsByScope: vi.fn().mockResolvedValue({
+      global: { mcpServers: { enabled: false, servers: [] } },
+      project: {},
+    }),
+    getSecretsStore: vi.fn().mockResolvedValue({ revealSecret: vi.fn() }),
+  };
+}
+
 beforeEach(() => {
   mockCreateFnAgent.mockReset();
   mockCreateFnAgent.mockImplementation(async () => createMockSubtaskAgent());
+  mockResolveMcpServersForStore.mockReset();
+  mockResolveMcpServersForStore.mockImplementation(async (store: { mcpEnabledForTest?: boolean }) => (
+    store?.mcpEnabledForTest
+      ? { servers: resolvedMcpServers, errors: [] }
+      : { servers: [], errors: [] }
+  ));
 });
 
 afterEach(() => {
@@ -625,6 +659,69 @@ describe("subtask session lifecycle", () => {
     expect(callArg?.systemPrompt).toContain("task decomposition assistant");
   });
 
+  it("forwards resolved MCP servers for streaming subtask generation", async () => {
+    const store = createMcpEnabledStore();
+    const created = await createSubtaskSession("Break down MCP-aware work", store as never, "/tmp/project");
+
+    await vi.waitFor(() => {
+      const session = getSubtaskSession(created.sessionId);
+      return session?.status === "complete";
+    }, { timeout: 5000 });
+
+    expect(mockResolveMcpServersForStore).toHaveBeenCalledWith(store);
+    expect(mockCreateFnAgent).toHaveBeenCalledWith(expect.objectContaining({ mcpServers: resolvedMcpServers }));
+  });
+
+  it("keeps streaming subtask generation MCP-empty when MCP is disabled", async () => {
+    const store = createMcpDisabledStore();
+    const created = await createSubtaskSession("Break down disabled MCP work", store as never, "/tmp/project");
+
+    await vi.waitFor(() => {
+      const session = getSubtaskSession(created.sessionId);
+      return session?.status === "complete";
+    }, { timeout: 5000 });
+
+    expect(mockResolveMcpServersForStore).toHaveBeenCalledWith(store);
+    expect(mockCreateFnAgent).toHaveBeenCalledWith(expect.objectContaining({ mcpServers: [] }));
+  });
+
+  it("keeps streaming subtask generation MCP-empty for no-store callers", async () => {
+    const created = await createSubtaskSession("Break down no-store work", undefined, "/tmp/project");
+
+    await vi.waitFor(() => {
+      const session = getSubtaskSession(created.sessionId);
+      return session?.status === "complete";
+    }, { timeout: 5000 });
+
+    expect(mockResolveMcpServersForStore).toHaveBeenCalledWith({});
+    expect(mockCreateFnAgent).toHaveBeenCalledWith(expect.objectContaining({ mcpServers: [] }));
+  });
+
+  it("forwards resolved MCP servers for triage one-shot subtask decomposition", async () => {
+    const store = createMcpEnabledStore();
+
+    await decomposeForTriage("Break down triage work", "/tmp/project", undefined, store as never);
+
+    expect(mockResolveMcpServersForStore).toHaveBeenCalledWith(store);
+    expect(mockCreateFnAgent).toHaveBeenCalledWith(expect.objectContaining({ mcpServers: resolvedMcpServers }));
+  });
+
+  it("keeps triage one-shot subtask decomposition MCP-empty when MCP is disabled", async () => {
+    const store = createMcpDisabledStore();
+
+    await decomposeForTriage("Break down triage work", "/tmp/project", undefined, store as never);
+
+    expect(mockResolveMcpServersForStore).toHaveBeenCalledWith(store);
+    expect(mockCreateFnAgent).toHaveBeenCalledWith(expect.objectContaining({ mcpServers: [] }));
+  });
+
+  it("keeps triage one-shot subtask decomposition MCP-empty without a store", async () => {
+    await decomposeForTriage("Break down triage work", "/tmp/project");
+
+    expect(mockResolveMcpServersForStore).toHaveBeenCalledWith({});
+    expect(mockCreateFnAgent).toHaveBeenCalledWith(expect.objectContaining({ mcpServers: [] }));
+  });
+
   it("retrySubtaskSession retries errored sessions restored from SQLite", async () => {
     const store = new MockAiSessionStore();
     const row = buildSubtaskRow({
@@ -644,6 +741,44 @@ describe("subtask session lifecycle", () => {
     expect(session?.subtasks.length).toBeGreaterThan(0);
     expect(store.get(row.id)?.status).toBe("complete");
     expect(store.get(row.id)?.error).toBeNull();
+  });
+
+  it("forwards resolved MCP servers for retry subtask generation", async () => {
+    const sessionStore = new MockAiSessionStore();
+    const row = buildSubtaskRow({ id: "subtask-retry-mcp", status: "error", error: "Transient failure", result: null });
+    sessionStore.rows.set(row.id, row);
+    setAiSessionStore(sessionStore as any);
+    const store = createMcpEnabledStore();
+
+    await retrySubtaskSession(row.id, "/tmp/project", undefined, store as never);
+
+    expect(mockResolveMcpServersForStore).toHaveBeenCalledWith(store);
+    expect(mockCreateFnAgent).toHaveBeenCalledWith(expect.objectContaining({ mcpServers: resolvedMcpServers }));
+  });
+
+  it("keeps retry subtask generation MCP-empty when MCP is disabled", async () => {
+    const sessionStore = new MockAiSessionStore();
+    const row = buildSubtaskRow({ id: "subtask-retry-disabled-mcp", status: "error", error: "Transient failure", result: null });
+    sessionStore.rows.set(row.id, row);
+    setAiSessionStore(sessionStore as any);
+    const store = createMcpDisabledStore();
+
+    await retrySubtaskSession(row.id, "/tmp/project", undefined, store as never);
+
+    expect(mockResolveMcpServersForStore).toHaveBeenCalledWith(store);
+    expect(mockCreateFnAgent).toHaveBeenCalledWith(expect.objectContaining({ mcpServers: [] }));
+  });
+
+  it("keeps retry subtask generation MCP-empty without a store", async () => {
+    const sessionStore = new MockAiSessionStore();
+    const row = buildSubtaskRow({ id: "subtask-retry-no-store-mcp", status: "error", error: "Transient failure", result: null });
+    sessionStore.rows.set(row.id, row);
+    setAiSessionStore(sessionStore as any);
+
+    await retrySubtaskSession(row.id, "/tmp/project");
+
+    expect(mockResolveMcpServersForStore).toHaveBeenCalledWith({});
+    expect(mockCreateFnAgent).toHaveBeenCalledWith(expect.objectContaining({ mcpServers: [] }));
   });
 
   it("retrySubtaskSession rejects non-error sessions", async () => {

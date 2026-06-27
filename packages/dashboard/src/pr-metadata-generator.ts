@@ -2,9 +2,9 @@ import { promisify } from "node:util";
 import { exec as execCb } from "node:child_process";
 import { access, readFile } from "node:fs/promises";
 import { join } from "node:path";
-import type { GlobalSettings, ProjectSettings, Settings, Task } from "@fusion/core";
+import type { GlobalSettings, ProjectSettings, Settings, Task, TaskStore } from "@fusion/core";
 import { resolveTitleSummarizerSettingsModel } from "@fusion/core";
-import { createFnAgent } from "@fusion/engine";
+import { createFnAgent, resolveMcpServersForStore } from "@fusion/engine";
 
 const execAsync = promisify(execCb);
 export const PR_METADATA_TIMEOUT_MS = 60_000;
@@ -224,10 +224,11 @@ export async function generatePrMetadata(input: {
   task: Task;
   repoRoot: string;
   settings: ProjectSettings & GlobalSettings;
+  store?: TaskStore;
   signal?: AbortSignal;
   timeoutMs?: number;
 }): Promise<GeneratedPrMetadata> {
-  const { task, repoRoot, settings, signal, timeoutMs = PR_METADATA_TIMEOUT_MS } = input;
+  const { task, repoRoot, settings, store, signal, timeoutMs = PR_METADATA_TIMEOUT_MS } = input;
   const fallback = buildFallbackPrMetadata(task);
   const controller = new AbortController();
   const abortFromCaller = () => controller.abort(signal?.reason instanceof Error ? signal.reason : createAbortError());
@@ -269,10 +270,16 @@ export async function generatePrMetadata(input: {
     const template = templateExists ? await raceWithAbort(readFile(templatePath, "utf8"), combinedSignal) : "";
 
     const model = resolveTitleSummarizerSettingsModel(settings as Partial<Settings>);
+    const mcpServers = (await raceWithAbort(resolveMcpServersForStore(store ?? {}), combinedSignal)).servers;
     let aiText = "";
     const { session } = await raceWithAbort(createFnAgent({
       cwd: repoRoot,
       tools: "readonly",
+      /*
+       * FNXC:McpConfig 2026-06-26-16:58:
+       * PR metadata generation is a readonly dashboard helper with a strict modal timeout. Resolve MCP through the request-scoped TaskStore inside the abort budget and forward only the materialized in-memory server set; no-store fallbacks stay empty and secret values must not be logged.
+       */
+      mcpServers,
       defaultProvider: model.provider,
       defaultModelId: model.modelId,
       systemPrompt: [

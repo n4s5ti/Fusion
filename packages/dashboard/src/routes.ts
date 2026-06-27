@@ -1946,6 +1946,7 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
         validated.type,
         rootDir,
         settings.promptOverrides,
+        scopedStore,
       );
       res.json({ refined });
     } catch (err: unknown) {
@@ -2005,7 +2006,7 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
         throw err;
       }
 
-      const description = await draftGoalDescription(validatedTitle, rootDir, settings.promptOverrides);
+      const description = await draftGoalDescription(validatedTitle, rootDir, settings.promptOverrides, scopedStore);
       res.json({ description });
     } catch (err: unknown) {
       if (err instanceof ApiError) {

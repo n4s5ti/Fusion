@@ -459,7 +459,7 @@ export function registerPlanningSubtaskRoutes(ctx: ApiRoutesContext, deps: Plann
       const { store: scopedStore } = await getProjectContext(req);
       const settings = await scopedStore.getSettings();
       const { retrySubtaskSession } = await import("../subtask-breakdown.js");
-      await retrySubtaskSession(sessionId, scopedStore.getRootDir(), settings.promptOverrides);
+      await retrySubtaskSession(sessionId, scopedStore.getRootDir(), settings.promptOverrides, scopedStore);
       res.json({ success: true, sessionId });
     } catch (err: unknown) {
       if (err instanceof ApiError) {

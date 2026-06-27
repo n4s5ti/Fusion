@@ -1,8 +1,8 @@
 import { randomUUID } from "node:crypto";
 import { EventEmitter } from "node:events";
-import type { AgentCapability, PlanningQuestion } from "@fusion/core";
+import type { AgentCapability, PlanningQuestion, TaskStore } from "@fusion/core";
 import { resolvePrompt, type PromptOverrideMap } from "@fusion/core";
-import { buildSessionSkillContextSync, createFnAgent as engineCreateFnAgent } from "@fusion/engine";
+import { buildSessionSkillContextSync, createFnAgent as engineCreateFnAgent, resolveMcpServersForStore } from "@fusion/engine";
 import { SessionEventBuffer, type SessionBufferedEvent } from "./sse-buffer.js";
 
 export interface AgentOnboardingSummary {
@@ -98,6 +98,11 @@ interface Session {
   history: Array<{ question: PlanningQuestion; response: Record<string, unknown> }>;
   thinkingOutput: string;
   agent?: OnboardingAgent;
+  rootDir: string;
+  modelProvider?: string;
+  modelId?: string;
+  promptOverrides?: PromptOverrideMap;
+  pluginRunner?: SkillSelectionPluginRunner;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -283,6 +288,7 @@ export async function startAgentOnboardingSession(
   modelId?: string,
   promptOverrides?: PromptOverrideMap,
   pluginRunner?: SkillSelectionPluginRunner,
+  store?: TaskStore,
 ): Promise<string> {
   const id = randomUUID();
   const mode: OnboardingMode = initialContext.mode ?? "create";
@@ -299,18 +305,39 @@ export async function startAgentOnboardingSession(
     }),
     history: [],
     thinkingOutput: "",
+    rootDir,
+    modelProvider,
+    modelId,
+    promptOverrides,
+    pluginRunner,
     createdAt: new Date(),
     updatedAt: new Date(),
   };
   sessions.set(id, session);
 
-  const systemPrompt = resolvePrompt("agent-onboarding-system", promptOverrides) || AGENT_ONBOARDING_SYSTEM_PROMPT;
-  const skillContext = buildSessionSkillContextSync(null, "executor", rootDir, pluginRunner);
-  session.agent = await createFnAgent({
-    cwd: rootDir,
+  session.agent = await createAgentOnboardingAgent(session, store);
+
+  void continueConversation(session, session.contextPrompt);
+  return id;
+}
+
+async function createAgentOnboardingAgent(session: Session, store?: TaskStore): Promise<OnboardingAgent> {
+  const systemPrompt = resolvePrompt("agent-onboarding-system", session.promptOverrides) || AGENT_ONBOARDING_SYSTEM_PROMPT;
+  const skillContext = buildSessionSkillContextSync(null, "executor", session.rootDir, session.pluginRunner);
+  const mcpServers = (await resolveMcpServersForStore(store ?? {})).servers;
+  /*
+   * FNXC:McpConfig 2026-06-26-17:26:
+   * Agent onboarding interviews are dashboard readonly planning helpers. Resolve MCP from the request-scoped TaskStore when routes can provide it; no-store callers stay empty and this seam must not log secret material.
+   *
+   * FNXC:McpConfig 2026-06-26-18:10:
+   * Retry can recover a session whose agent was not initialized, so the retry route must pass its scoped TaskStore into this same createFnAgent seam instead of continuing with secret-less defaults.
+   */
+  return createFnAgent({
+    cwd: session.rootDir,
     systemPrompt,
     tools: "readonly",
-    ...(modelProvider && modelId ? { defaultProvider: modelProvider, defaultModelId: modelId } : {}),
+    mcpServers,
+    ...(session.modelProvider && session.modelId ? { defaultProvider: session.modelProvider, defaultModelId: session.modelId } : {}),
     /*
     FNXC:InterviewSkills 2026-06-17-21:53:
     Agent onboarding is a model-only dashboard interview lane, so it must request executor role-fallback skills plus enabled plugin skills such as ce-debug like other agent-acting sessions.
@@ -325,9 +352,6 @@ export async function startAgentOnboardingSession(
       agentOnboardingStreamManager.broadcast(session.id, { type: "thinking", data: delta });
     },
   });
-
-  void continueConversation(session, session.contextPrompt);
-  return id;
 }
 
 async function runGenerationWithTimeout<T>(session: Session, operation: () => Promise<T>): Promise<T> {
@@ -392,11 +416,14 @@ export async function respondToAgentOnboarding(sessionId: string, responses: Rec
   await continueConversation(session, formatted);
 }
 
-export async function retryAgentOnboardingSession(sessionId: string): Promise<void> {
+export async function retryAgentOnboardingSession(sessionId: string, store?: TaskStore): Promise<void> {
   const session = sessions.get(sessionId);
   if (!session) throw new SessionNotFoundError(`Agent onboarding session ${sessionId} not found or expired`);
   if (!session.error) throw new InvalidSessionStateError("Session is not in an error state");
   session.error = undefined;
+  if (!session.agent) {
+    session.agent = await createAgentOnboardingAgent(session, store);
+  }
   const retryPrompt = session.currentQuestion
     ? `Please continue from the last question: ${session.currentQuestion.question}`
     : "Please continue and ask the next best onboarding question.";

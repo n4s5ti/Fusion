@@ -19,15 +19,46 @@ import {
 } from "../ai-refine.js";
 
 // Hoisted mock factory
-const { mockCreateFnAgent } = vi.hoisted(() => ({
+const { mockCreateFnAgent, mockResolveMcpServersForStore } = vi.hoisted(() => ({
   mockCreateFnAgent: vi.fn(),
+  mockResolveMcpServersForStore: vi.fn().mockResolvedValue({ servers: [], errors: [] }),
 }));
 
 // Mock the engine module to avoid dynamic import issues in tests
 vi.mock("@fusion/engine", () => ({
   listCliAdapterDescriptors: () => [],
   createFnAgent: mockCreateFnAgent,
+  resolveMcpServersForStore: mockResolveMcpServersForStore,
 }));
+
+const resolvedMcpServers = [
+  { name: "docs", transport: "stdio", command: "node", args: ["server.js"], env: { MCP_TOKEN: "materialized-secret-value" } },
+];
+
+function createMcpEnabledStore(): object {
+  return {
+    mcpEnabledForTest: true,
+    getSettingsByScope: vi.fn().mockResolvedValue({ global: { mcpServers: { enabled: true, servers: [{ name: "docs" }] } }, project: {} }),
+    getSecretsStore: vi.fn().mockResolvedValue({ revealSecret: vi.fn().mockResolvedValue("materialized-secret-value") }),
+  };
+}
+
+function createMcpDisabledStore(): object {
+  return {
+    getSettingsByScope: vi.fn().mockResolvedValue({ global: { mcpServers: { enabled: false, servers: [] } }, project: {} }),
+    getSecretsStore: vi.fn().mockResolvedValue({ revealSecret: vi.fn() }),
+  };
+}
+
+function mockAgentWithAssistantText(text: string): void {
+  mockCreateFnAgent.mockResolvedValue({
+    session: {
+      state: { messages: [{ role: "assistant", content: text }] },
+      prompt: vi.fn(),
+      dispose: vi.fn(),
+    },
+  });
+}
 
 describe("ai-refine module", () => {
   beforeEach(() => {
@@ -35,6 +66,11 @@ describe("ai-refine module", () => {
     __resetRefineState();
     vi.clearAllMocks();
     mockCreateFnAgent.mockResolvedValue(null);
+    mockResolveMcpServersForStore.mockImplementation(async (store: { mcpEnabledForTest?: boolean }) => (
+      store?.mcpEnabledForTest
+        ? { servers: resolvedMcpServers, errors: [] }
+        : { servers: [], errors: [] }
+    ));
   });
 
   afterEach(() => {
@@ -306,6 +342,35 @@ describe("ai-refine module", () => {
         "Failed to initialize AI agent"
       );
     });
+
+    it("forwards resolved MCP servers when a store with enabled MCP is provided", async () => {
+      const store = createMcpEnabledStore();
+      mockAgentWithAssistantText("Refined text");
+
+      await expect(refineText("some text", "clarify", "/tmp/project", undefined, store as never)).resolves.toBe("Refined text");
+
+      expect(mockResolveMcpServersForStore).toHaveBeenCalledWith(store);
+      expect(mockCreateFnAgent).toHaveBeenCalledWith(expect.objectContaining({ mcpServers: resolvedMcpServers }));
+    });
+
+    it("uses an empty MCP set when MCP is disabled for text refinement", async () => {
+      const store = createMcpDisabledStore();
+      mockAgentWithAssistantText("Refined text");
+
+      await expect(refineText("some text", "clarify", "/tmp/project", undefined, store as never)).resolves.toBe("Refined text");
+
+      expect(mockResolveMcpServersForStore).toHaveBeenCalledWith(store);
+      expect(mockCreateFnAgent).toHaveBeenCalledWith(expect.objectContaining({ mcpServers: [] }));
+    });
+
+    it("uses an empty MCP set when text refinement has no store", async () => {
+      mockAgentWithAssistantText("Refined text");
+
+      await expect(refineText("some text", "clarify", "/tmp/project")).resolves.toBe("Refined text");
+
+      expect(mockResolveMcpServersForStore).toHaveBeenCalledWith({});
+      expect(mockCreateFnAgent).toHaveBeenCalledWith(expect.objectContaining({ mcpServers: [] }));
+    });
   });
 
   describe("draftGoalDescription", () => {
@@ -349,6 +414,35 @@ describe("ai-refine module", () => {
         "AI returned empty response"
       );
       expect(mockAgent.session.dispose).toHaveBeenCalledTimes(1);
+    });
+
+    it("forwards resolved MCP servers when a store with enabled MCP is provided", async () => {
+      const store = createMcpEnabledStore();
+      mockCreateFnAgent.mockResolvedValueOnce(createDraftMockAgent("Drafted goal description"));
+
+      await expect(draftGoalDescription("Grow plugin ecosystem", "/tmp/project", undefined, store as never)).resolves.toBe("Drafted goal description");
+
+      expect(mockResolveMcpServersForStore).toHaveBeenCalledWith(store);
+      expect(mockCreateFnAgent).toHaveBeenCalledWith(expect.objectContaining({ mcpServers: resolvedMcpServers }));
+    });
+
+    it("uses an empty MCP set when MCP is disabled for goal drafting", async () => {
+      const store = createMcpDisabledStore();
+      mockCreateFnAgent.mockResolvedValueOnce(createDraftMockAgent("Drafted goal description"));
+
+      await expect(draftGoalDescription("Grow plugin ecosystem", "/tmp/project", undefined, store as never)).resolves.toBe("Drafted goal description");
+
+      expect(mockResolveMcpServersForStore).toHaveBeenCalledWith(store);
+      expect(mockCreateFnAgent).toHaveBeenCalledWith(expect.objectContaining({ mcpServers: [] }));
+    });
+
+    it("uses an empty MCP set when goal drafting has no store", async () => {
+      mockCreateFnAgent.mockResolvedValueOnce(createDraftMockAgent("Drafted goal description"));
+
+      await expect(draftGoalDescription("Grow plugin ecosystem", "/tmp/project")).resolves.toBe("Drafted goal description");
+
+      expect(mockResolveMcpServersForStore).toHaveBeenCalledWith({});
+      expect(mockCreateFnAgent).toHaveBeenCalledWith(expect.objectContaining({ mcpServers: [] }));
     });
   });
 

@@ -13,6 +13,7 @@
  */
 
 import { randomUUID } from "node:crypto";
+import type { TaskStore } from "@fusion/core";
 import { createSessionDiagnostics, nonfatal } from "./ai-session-diagnostics.js";
 import { registerBeforeExitCleanup } from "./process-lifecycle.js";
 
@@ -41,7 +42,7 @@ async function initPromptCatalog() {
 // Initialize prompt catalog (will be awaited in actual usage)
 const promptCatalogReadyPromise = initPromptCatalog();
 
-import { createFnAgent as engineCreateFnAgent } from "@fusion/engine";
+import { createFnAgent as engineCreateFnAgent, resolveMcpServersForStore } from "@fusion/engine";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const createFnAgent: any = engineCreateFnAgent;
@@ -459,7 +460,8 @@ export async function startAgentGeneration(
 export async function generateAgentSpec(
   sessionId: string,
   rootDir: string,
-  promptOverrides?: PromptOverrideMap
+  promptOverrides?: PromptOverrideMap,
+  store?: TaskStore,
 ): Promise<AgentGenerationSpec> {
   const session = sessions.get(sessionId);
   if (!session) {
@@ -469,7 +471,7 @@ export async function generateAgentSpec(
   try {
     await ensureEngineReady();
     await promptCatalogReadyPromise;
-    const spec = await generateSpecWithAI(session, rootDir, promptOverrides);
+    const spec = await generateSpecWithAI(session, rootDir, promptOverrides, store);
     session.spec = spec;
     session.updatedAt = new Date();
     return spec;
@@ -488,7 +490,8 @@ export async function generateAgentSpec(
 async function generateSpecWithAI(
   session: Session,
   rootDir: string,
-  promptOverrides?: PromptOverrideMap
+  promptOverrides?: PromptOverrideMap,
+  store?: TaskStore,
 ): Promise<AgentGenerationSpec> {
   if (!createFnAgent) {
     throw new Error("AI agent not available. Ensure the engine is properly configured.");
@@ -497,14 +500,16 @@ async function generateSpecWithAI(
   // Resolve the system prompt using prompt overrides (with fallback to default)
   const effectiveSystemPrompt = resolvePrompt("agent-generation-system", promptOverrides) || AGENT_GENERATION_SYSTEM_PROMPT;
 
+  const mcpServers = (await resolveMcpServersForStore(store ?? {})).servers;
   /*
-   * FNXC:McpConfig 2026-06-26-00:00:
-   * Agent generation is a tools:none dashboard helper built from an in-memory session and rootDir only. No TaskStore/secrets reader is available here, so configured MCP servers are intentionally not injected.
+   * FNXC:McpConfig 2026-06-26-16:58:
+   * Agent onboarding generation is a tools:none readonly helper, but routes can provide a dashboard-scoped TaskStore. Forward the resolved in-memory MCP server set consistently without changing tool semantics; no-store callers remain empty and secrets are never logged.
    */
   const agent = await createFnAgent({
     cwd: rootDir,
     systemPrompt: effectiveSystemPrompt,
     tools: "none",
+    mcpServers,
   });
 
   try {

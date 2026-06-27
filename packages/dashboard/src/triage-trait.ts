@@ -349,7 +349,7 @@ export async function runTriageOnEnter(task: Task, deps: TriageDeps): Promise<Tr
 
   let subtasks: SubtaskItem[];
   try {
-    const decompose = deps.decompose ?? ((d: string) => decomposeForTriage(d, deps.rootDir, deps.promptOverrides));
+    const decompose = deps.decompose ?? ((d: string) => decomposeForTriage(d, deps.rootDir, deps.promptOverrides, deps.store));
     subtasks = await decompose(task.description);
   } catch (err) {
     return parkInTriage(store, task, err, "decompose");

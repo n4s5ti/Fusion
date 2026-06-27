@@ -11,7 +11,7 @@ import {
 } from "./ai-session-diagnostics.js";
 import { GenerationGuard, createAbortError, isAbortError } from "./ai-session-timeout.js";
 
-import { createFnAgent as engineCreateFnAgent } from "@fusion/engine";
+import { createFnAgent as engineCreateFnAgent, resolveMcpServersForStore } from "@fusion/engine";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const createFnAgent: any = engineCreateFnAgent;
@@ -398,6 +398,7 @@ export async function decomposeForTriage(
   description: string,
   rootDir?: string,
   promptOverrides?: PromptOverrideMap,
+  store?: TaskStore,
 ): Promise<SubtaskItem[]> {
   await ensureEngineReady();
   const cwd = rootDir ?? process.cwd();
@@ -407,11 +408,12 @@ export async function decomposeForTriage(
     return generateFallbackSubtasks(description);
   }
 
+  const mcpServers = (await resolveMcpServersForStore(store ?? {})).servers;
   /*
-   * FNXC:McpConfig 2026-06-26-00:00:
-   * Triage subtask decomposition receives only description/rootDir/prompt overrides. With no TaskStore or secrets reader at this one-shot seam, configured MCP servers are intentionally skipped.
+   * FNXC:McpConfig 2026-06-26-16:45:
+   * Triage subtask decomposition is a readonly planning helper; when the dashboard triage hook provides a scoped store, resolve MCP at session creation and forward only the in-memory server set. Keep no-store callers on an empty MCP set and never log materialized secrets.
    */
-  const agent: SubtaskAgent = await createFnAgent({ cwd, systemPrompt, tools: "readonly" });
+  const agent: SubtaskAgent = await createFnAgent({ cwd, systemPrompt, tools: "readonly", mcpServers });
   try {
     await agent.session.prompt(description);
     const messages = agent.session.state.messages as Array<{
@@ -440,7 +442,7 @@ export async function decomposeForTriage(
 
 export async function createSubtaskSession(
   initialDescription: string,
-  _store?: TaskStore,
+  store?: TaskStore,
   rootDir?: string,
   promptOverrides?: PromptOverrideMap,
   projectId?: string,
@@ -460,7 +462,7 @@ export async function createSubtaskSession(
   persistSubtaskSession(session, "generating");
 
   const cwd = rootDir ?? process.cwd();
-  void startSubtaskGeneration(sessionId, cwd, promptOverrides);
+  void startSubtaskGeneration(sessionId, cwd, promptOverrides, store);
 
   return {
     sessionId,
@@ -475,9 +477,10 @@ async function startSubtaskGeneration(
   sessionId: string,
   cwd: string,
   promptOverrides?: PromptOverrideMap,
+  store?: TaskStore,
 ): Promise<void> {
   try {
-    await generateSubtasks(sessionId, cwd, promptOverrides);
+    await generateSubtasks(sessionId, cwd, promptOverrides, store);
   } catch (err) {
     // Timeout / user-stop already published an error state via the guard
     // handlers. Don't overwrite it with a generic AbortError message.
@@ -498,6 +501,7 @@ async function generateSubtasks(
   sessionId: string,
   cwd: string,
   promptOverrides?: PromptOverrideMap,
+  store?: TaskStore,
 ): Promise<void> {
   const session = sessions.get(sessionId);
   if (!session) throw new SessionNotFoundError(`Subtask session ${sessionId} not found`);
@@ -532,14 +536,16 @@ async function generateSubtasks(
         FNXC:SubtaskBreakdown 2026-06-16-20:15:
         FN-6511 requires the full subtask generation lifecycle to be timeout-bounded, including createFnAgent construction before prompt() starts. Keep construction and prompt inside one GenerationGuard entry so a model-registry or extension-discovery stall cannot pin the SSE session in generating forever.
         */
+        const mcpServers = (await resolveMcpServersForStore(store ?? {})).servers;
         /*
-        FNXC:McpConfig 2026-06-26-00:00:
-        Streaming subtask generation currently does not thread the optional TaskStore into the async generation worker, so this readonly planning surface intentionally skips MCP until that larger session-state refactor is performed.
+        FNXC:McpConfig 2026-06-26-16:45:
+        Streaming subtask generation is a readonly planning helper that now carries the dashboard-scoped TaskStore into the timeout-bounded worker. Resolve MCP inside the GenerationGuard window and forward only counts/errors if diagnostics are added; never expose plaintext env/header secrets.
         */
         const agentPromise = createFnAgent({
           cwd,
           systemPrompt,
           tools: "readonly",
+          mcpServers,
           onThinking: (delta: string) => {
             const current = sessions.get(sessionId);
             if (!current) return;
@@ -700,6 +706,7 @@ export async function retrySubtaskSession(
   sessionId: string,
   rootDir: string,
   promptOverrides?: PromptOverrideMap,
+  store?: TaskStore,
 ): Promise<void> {
   const visibleSession = getSubtaskSession(sessionId);
   if (!visibleSession) {
@@ -730,7 +737,7 @@ export async function retrySubtaskSession(
   session.updatedAt = new Date();
   persistSubtaskSession(session, "generating");
 
-  await startSubtaskGeneration(sessionId, rootDir, promptOverrides);
+  await startSubtaskGeneration(sessionId, rootDir, promptOverrides, store);
 }
 
 export function getSubtaskSession(sessionId: string): SubtaskSession | undefined {

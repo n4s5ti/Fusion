@@ -11,10 +11,10 @@
  * - Prompt override support for project-level customization
  */
 
-import type { PromptOverrideMap } from "@fusion/core";
+import type { PromptOverrideMap, TaskStore } from "@fusion/core";
 import { resolvePrompt } from "@fusion/core";
 
-import { createFnAgent as engineCreateFnAgent } from "@fusion/engine";
+import { createFnAgent as engineCreateFnAgent, resolveMcpServersForStore } from "@fusion/engine";
 import { registerBeforeExitCleanup } from "./process-lifecycle.js";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -322,6 +322,7 @@ export async function refineText(
   type: RefinementType,
   rootDir: string,
   promptOverrides?: PromptOverrideMap,
+  store?: TaskStore,
 ): Promise<string> {
   // Ensure engine is loaded before using createFnAgent
   await ensureEngineReady();
@@ -332,14 +333,16 @@ export async function refineText(
 
   const effectivePrompt = resolvePrompt("ai-refine-system", promptOverrides);
 
+  const mcpServers = (await resolveMcpServersForStore(store ?? {})).servers;
   /*
-   * FNXC:McpConfig 2026-06-26-00:00:
-   * Text refinement receives only rootDir and prompt overrides, not a TaskStore/secrets reader. This readonly helper intentionally skips configured MCP resolution until a store is threaded through the API.
+   * FNXC:McpConfig 2026-06-26-16:55:
+   * Text refinement is a readonly dashboard helper that receives the request-scoped TaskStore from routes. Resolve configured MCP servers at session creation and forward only the in-memory server set; keep no-store callers on an empty set and never log materialized secrets.
    */
   const agentResult = await createFnAgent({
     cwd: rootDir,
     systemPrompt: effectivePrompt,
     tools: "readonly",
+    mcpServers,
   });
 
   if (!agentResult?.session) {
@@ -395,6 +398,7 @@ export async function draftGoalDescription(
   title: string,
   rootDir: string,
   _promptOverrides?: PromptOverrideMap,
+  store?: TaskStore,
 ): Promise<string> {
   await ensureEngineReady();
 
@@ -402,14 +406,16 @@ export async function draftGoalDescription(
     throw new AiServiceError("AI engine not available");
   }
 
+  const mcpServers = (await resolveMcpServersForStore(store ?? {})).servers;
   /*
-   * FNXC:McpConfig 2026-06-26-00:00:
-   * Goal description drafting shares the text-refine no-store seam; without TaskStore/secrets access it intentionally creates a readonly non-MCP session.
+   * FNXC:McpConfig 2026-06-26-16:55:
+   * Goal description drafting shares the text-refine readonly helper seam and now resolves MCP from the dashboard-scoped TaskStore when routes can provide it. No-store callers intentionally receive an empty server set; do not log env/header secret values.
    */
   const agentResult = await createFnAgent({
     cwd: rootDir,
     systemPrompt: GOAL_DRAFT_SYSTEM_PROMPT,
     tools: "readonly",
+    mcpServers,
   });
 
   if (!agentResult?.session) {

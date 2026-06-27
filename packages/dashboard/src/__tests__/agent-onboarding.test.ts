@@ -1,7 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const { mockCreateFnAgent } = vi.hoisted(() => ({
+const { mockCreateFnAgent, mockResolveMcpServersForStore } = vi.hoisted(() => ({
   mockCreateFnAgent: vi.fn(),
+  mockResolveMcpServersForStore: vi.fn(async () => ({ servers: [], errors: [] })),
 }));
 
 vi.mock("@fusion/engine", () => ({
@@ -22,6 +23,7 @@ vi.mock("@fusion/engine", () => ({
     };
   },
   createFnAgent: mockCreateFnAgent,
+  resolveMcpServersForStore: mockResolveMcpServersForStore,
 }));
 
 import {
@@ -33,6 +35,7 @@ import {
   InvalidSessionStateError,
   parseAgentOnboardingResponse,
   respondToAgentOnboarding,
+  retryAgentOnboardingSession,
   SessionNotFoundError,
   startAgentOnboardingSession,
 } from "../agent-onboarding.js";
@@ -71,6 +74,7 @@ function createSkillPluginRunner(skills: Array<{ name: string; enabled?: boolean
 describe("agent-onboarding", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockResolveMcpServersForStore.mockResolvedValue({ servers: [], errors: [] });
     __resetAgentOnboardingState();
   });
 
@@ -292,6 +296,72 @@ describe("agent-onboarding", () => {
 
     const options = mockCreateFnAgent.mock.calls.at(-1)?.[0] as { skillSelection?: { requestedSkillNames?: string[] } };
     expect(options.skillSelection?.requestedSkillNames).toEqual(["fusion", "ce-debug"]);
+  });
+
+  it("forwards store-resolved MCP servers to onboarding helper agents", async () => {
+    const mcpServers = [{ name: "planning-helper", command: "mcp-helper", env: { TOKEN: "materialized-secret" } }];
+    const store = { getSettingsByScope: vi.fn() };
+    mockResolveMcpServersForStore.mockResolvedValueOnce({ servers: mcpServers, errors: [] });
+    mockCreateFnAgent.mockResolvedValueOnce(
+      createMockAgent([
+        JSON.stringify({
+          type: "question",
+          data: { id: "goal", type: "text", question: "What is the primary goal?" },
+        }),
+      ]),
+    );
+
+    await startAgentOnboardingSession(
+      "127.0.0.1",
+      { intent: "mcp", existingAgents: [], templates: [] },
+      process.cwd(),
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      store as never,
+    );
+
+    expect(mockResolveMcpServersForStore).toHaveBeenCalledWith(store);
+    const options = mockCreateFnAgent.mock.calls.at(-1)?.[0] as { mcpServers?: unknown[] };
+    expect(options.mcpServers).toBe(mcpServers);
+  });
+
+  it("uses the retry scoped store when recreating an uninitialized onboarding helper agent", async () => {
+    const startStore = { getSettingsByScope: vi.fn() };
+    const retryStore = { getSettingsByScope: vi.fn() };
+    const retryMcpServers = [{ name: "planning-helper", command: "mcp-helper", env: { TOKEN: "retry-secret" } }];
+    mockCreateFnAgent.mockResolvedValueOnce(
+      createMockAgent([
+        JSON.stringify({
+          type: "question",
+          data: { id: "goal", type: "text", question: "What is the primary goal?" },
+        }),
+      ]),
+    );
+
+    const sessionId = await startAgentOnboardingSession(
+      "127.0.0.1",
+      { intent: "mcp retry", existingAgents: [], templates: [] },
+      process.cwd(),
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      startStore as never,
+    );
+    const session = getAgentOnboardingSession(sessionId) as { agent?: unknown; error?: string };
+    session.agent = undefined;
+    session.error = "AI generation timed out. You can retry.";
+    mockResolveMcpServersForStore.mockClear();
+    mockResolveMcpServersForStore.mockResolvedValueOnce({ servers: retryMcpServers, errors: [] });
+    mockCreateFnAgent.mockResolvedValueOnce(createMockAgent([JSON.stringify({ type: "question", data: { id: "retry", type: "text", question: "Retry?" } })]));
+
+    await retryAgentOnboardingSession(sessionId, retryStore as never);
+
+    expect(mockResolveMcpServersForStore).toHaveBeenCalledWith(retryStore);
+    const options = mockCreateFnAgent.mock.calls.at(-1)?.[0] as { mcpServers?: unknown[] };
+    expect(options.mcpServers).toBe(retryMcpServers);
   });
 
   it("requests role-fallback skills when onboarding plugin runner is unavailable", async () => {
