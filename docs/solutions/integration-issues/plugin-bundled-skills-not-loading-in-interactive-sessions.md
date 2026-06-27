@@ -115,6 +115,7 @@ A plugin author shipping a bundled skill should:
 2. **Forward both** seam options when starting the session: `requestedSkillNames: [skillId]` (so the resolver keeps it) **and** `additionalSkillPaths: [installRoot]` (so the loader discovers it). One without the other silently no-ops — a name with no discovered file filters to `[]`; a discovered file with no requested name can be filtered out.
 3. Remember `skillsOverride` only filters — declaring a `PluginSkillContribution` is **name-only** and never injects skill content into a live session.
 4. **Prove it with a real `DefaultResourceLoader`** (see `packages/engine/src/__tests__/compound-engineering-skill-resolution.test.ts`) that asserts the skill actually appears in the resolved session skills — a scripted/fake session cannot catch a discovery gap.
+5. **For stage registries, iterate the registry instead of sampling.** Compound Engineering now treats each `listStages()` entry as a skill-loading invariant: `<stage.skillId>` must have bundled source frontmatter, an installed `<skillId>/SKILL.md`, a plugin-local discovery path, and session options that request the skill. A missing installed stage skill should emit a clear guard warning before session start, not silently run a degraded skill-less stage.
 
 ## Related Issues
 

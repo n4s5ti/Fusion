@@ -1,4 +1,4 @@
-import { mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { dirname, isAbsolute, join } from "node:path";
 import type {
   CreateInteractiveAiSessionFactory,
@@ -149,6 +149,48 @@ export function resolveStageSkillPaths(): string[] {
   return [resolveDefaultInstallTargetRoot()];
 }
 
+export interface StageSkillResolutionGuardResult {
+  skillId: string;
+  expectedSkillMdPaths: string[];
+  found: boolean;
+}
+
+/**
+ * FNXC:CompoundEngineering 2026-06-27-15:33:
+ * Every interactive CE stage must launch with its registered `ce-*` skill both selected and discoverable. If the plugin-local install is missing `<skillId>/SKILL.md`, surface that before session creation so operators see a skill-loading fault instead of a silent degraded stage.
+ */
+export function checkStageSkillResolution(
+  stage: CeStageDefinition,
+  skillPaths: string[] = resolveStageSkillPaths(),
+): StageSkillResolutionGuardResult {
+  const expectedSkillMdPaths = skillPaths.map((root) => join(root, stage.skillId, "SKILL.md"));
+  return {
+    skillId: stage.skillId,
+    expectedSkillMdPaths,
+    found: expectedSkillMdPaths.some((skillMd) => existsSync(skillMd)),
+  };
+}
+
+export function warnIfStageSkillMissing(
+  logger: PluginContext["logger"],
+  stage: CeStageDefinition,
+  additionalSkillPaths: string[] = resolveStageSkillPaths(),
+): StageSkillResolutionGuardResult {
+  const guard = checkStageSkillResolution(stage, additionalSkillPaths);
+  if (!guard.found) {
+    logger.warn(
+      `Compound Engineering stage '${stage.stageId}' requested skill '${stage.skillId}', but no SKILL.md was found on the plugin-local discovery paths. The session will still request the skill so the engine can resolve it if installation completes, but the current install appears missing.`,
+      {
+        stageId: stage.stageId,
+        skillId: stage.skillId,
+        expectedSkillMdPaths: guard.expectedSkillMdPaths,
+        additionalSkillPaths,
+      },
+    );
+  }
+  return guard;
+}
+
 /**
  * Build the system prompt: instruct the agent to (a) apply the named ce-* skill
  * and (b) emit the JSON question/complete protocol the U4 seam parses.
@@ -252,12 +294,14 @@ export class CeOrchestrator {
   ): Parameters<CreateInteractiveAiSessionFactory>[0] {
     const defaultProvider = getDefaultProvider(this.ctx.settings);
     const defaultModelId = getDefaultModelId(this.ctx.settings);
+    const additionalSkillPaths = resolveStageSkillPaths();
+    warnIfStageSkillMissing(this.ctx.logger, stage, additionalSkillPaths);
     return {
       cwd: this.projectRoot,
       systemPrompt: buildStageSystemPrompt(stage),
       tools: "coding",
       requestedSkillNames: [stage.skillId],
-      additionalSkillPaths: resolveStageSkillPaths(),
+      additionalSkillPaths,
       onProgress: (event) => this.handleProgress(sessionId, event),
       ...(defaultProvider ? { defaultProvider } : {}),
       ...(defaultModelId ? { defaultModelId } : {}),
