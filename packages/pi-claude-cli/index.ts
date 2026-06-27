@@ -25,10 +25,10 @@ import {
 } from "./src/mcp-config.js";
 
 /**
- * Route A kill-switch (U11). When `FUSION_CLAUDE_ACP=1` AND a bridge binary path
- * is available (`FUSION_CLAUDE_ACP_BRIDGE`, injected by the engine seam per
- * KTD10), the provider drives Claude through the ACP bridge instead of
- * `claude -p`. OFF by default: the live `-p` path is untouched until soak.
+ * FNXC:pi-claude-cli 2026-06-27-06:39:
+ * Route A drives Claude through the ACP bridge only when `FUSION_CLAUDE_ACP=1`
+ * AND a bridge binary path is injected via `FUSION_CLAUDE_ACP_BRIDGE`.
+ * OFF by default: the live `claude -p` path stays untouched until soak.
  */
 function resolveAcpBridgePath(): string | undefined {
   if (process.env.FUSION_CLAUDE_ACP !== "1") return undefined;
@@ -52,14 +52,12 @@ process.on("exit", killAllProcesses);
 const PROVIDER_ID = "pi-claude-cli";
 
 /**
- * Run CLI presence + auth probes at most once per process, asynchronously.
- *
- * The factory below is invoked on every `createFnAgent` call (the dashboard
- * does this per chat message). Doing the probes synchronously with execSync
- * froze the entire Node event loop for a few seconds while `claude` cold-
- * started. Memoizing as a Promise + spawning the probes async means the
- * factory returns immediately and other requests keep flowing; the result
- * is logged once on first run and reused thereafter.
+ * FNXC:pi-claude-cli 2026-06-27-06:39:
+ * The factory runs per `createFnAgent` call, which the dashboard does for each
+ * chat message. Synchronous `execSync` presence + auth probes froze the Node
+ * event loop while `claude` cold-started, so memoize the probes as an async
+ * Promise: the factory returns immediately, the result logs once, and later
+ * calls reuse it.
  */
 let cliValidationPromise: Promise<void> | undefined;
 
@@ -257,8 +255,7 @@ export default function (pi: ExtensionAPI) {
           parameters: Record<string, unknown>;
         }> }).tools;
 
-        // Route A (U11): drive Claude through the ACP bridge when the kill-switch
-        // is on AND a bridge path is injected. OFF by default → `-p` path below.
+        // FNXC:pi-claude-cli 2026-06-27-06:39: Route A drives Claude through the ACP bridge only when the kill-switch is on AND a bridge path is injected. OFF by default → `-p` path below.
         const bridgePath = resolveAcpBridgePath();
         if (bridgePath) {
           const toolDefs = resolveToolDefs(pi, contextTools);
@@ -268,8 +265,7 @@ export default function (pi: ExtensionAPI) {
             ...options,
             bridgePath,
             mcpServers: buildAcpMcpServers(toolDefs, hash, userMcpServers),
-            // Forward only HOME/PATH so the bridged `claude` authenticates from the
-            // login/keychain session (R17); never inherited process.env or API keys.
+            // FNXC:pi-claude-cli 2026-06-27-06:39: Forward only HOME/PATH so the bridged `claude` authenticates from the login/keychain session (R17); never inherited process.env or API keys.
             bridgeEnv: { HOME: process.env.HOME, PATH: process.env.PATH },
           });
         }
