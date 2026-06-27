@@ -26,11 +26,10 @@
  *      common path.
  *   4. CAS fast-forward of `refs/heads/<integration>` to the squash (retry on a
  *      concurrent advance by rebuilding on the new tip).
- *   5. Sync the user's local checkout to the new tip only when it is clean by
- *      default. Dirty checked-out integration worktrees fail closed before the
- *      branch ref advances, preventing unrelated local changes from poisoning
- *      subsequent merge runs. An explicit escape hatch can opt into the legacy
- *      stash → ff → restore path.
+ *   5. Sync the user's local checkout to the new tip. Resolved project settings
+ *      now default to the legacy dirty-checkout stash → ff → restore path, while
+ *      an explicit project opt-out can still fail closed before the branch ref
+ *      advances.
  *
  * Pure helpers (prompt builders, verdict parser) are exported for unit testing;
  * the orchestrator accepts injectable agent functions for the same reason.
@@ -382,10 +381,11 @@ async function hasUnresolvedConflicts(cwd: string): Promise<boolean> {
  *      checkout — `git merge --ff-only <squash>` (it moves both the branch ref
  *      and the working tree). The user's real dirty state is read accurately
  *      BEFORE the fast-forward (while HEAD === tipSha, so `git status` isn't
- *      polluted by the ref move). By default a dirty checked-out integration
- *      worktree is a hard blocker; callers must explicitly opt into stash/pop
- *      reconciliation. If the checkout HEAD has already moved off tipSha,
- *      that's a concurrent advance → rebuild.
+ *      polluted by the ref move). Project-resolved settings default to stash/pop
+ *      reconciliation for dirty integration checkouts, but this lower-level
+ *      helper still requires direct callers to opt in; otherwise dirty state is
+ *      a hard blocker. If the checkout HEAD has already moved off tipSha, that's
+ *      a concurrent advance → rebuild.
  *
  *   B. The checkout is on a different branch (or the target isn't checked out
  *      here). We advance the ref atomically via `update-ref` (CAS) and leave the
@@ -405,9 +405,10 @@ export async function landSquash(input: {
   resolveConflicts?: (cwd: string, prompt: string) => Promise<void>;
   /**
    * Explicit escape hatch for callers that truly want Fusion to stash/pop real
-   * local edits in the checked-out integration worktree. The default is false:
-   * automation must not land a task while also manufacturing uncommitted local
-   * state in the project root, because that poisons subsequent merge runs.
+   * local edits in the checked-out integration worktree.
+   *
+   * FNXC:Merge 2026-06-26-00:00:
+   * Resolved project settings default merger.allowDirtyLocalCheckoutSync to true for legacy operator UX, but this helper's parameter default intentionally remains false so direct/programmatic callers and tests fail closed unless they make the dirty-checkout sync policy explicit.
    */
   allowDirtyLocalCheckoutSync?: boolean;
 }): Promise<LandResult> {
@@ -855,6 +856,11 @@ export async function runAiMerge(
   const reviewAgent = deps.reviewAgent ?? makeReviewAgent(store, settings, taskId, options, audit);
   const stashResolveAgent = deps.stashResolveAgent ?? makeMutatingAgent(store, settings, taskId, options, audit, buildStashResolveSystemPrompt());
   const includeTaskId = settings.includeTaskIdInCommit !== false;
+  /*
+   * FNXC:Merge 2026-06-26-00:00:
+   * runAiMerge callers may rely on already-resolved project settings instead of forwarding MergerOptions. Preserve an explicit option false, otherwise inherit merger.allowDirtyLocalCheckoutSync so new-project default true reaches both single-repo and workspace landing paths.
+   */
+  const allowDirtyLocalCheckoutSync = options.allowDirtyLocalCheckoutSync ?? (settings.merger?.allowDirtyLocalCheckoutSync === true);
   // Trailers that link the squash commit to the board task (FN-id + lineage) and deterministic co-author attribution.
   const trailers = taskTrailers(taskId, task.lineageId, settings);
   const taskTitle = task.title?.trim() ? task.title.split("\n")[0] : undefined;
@@ -870,7 +876,7 @@ export async function runAiMerge(
     taskId, settings, audit, log, setStatus, maxPasses,
     mergeAgent, reviewAgent, stashResolveAgent,
     includeTaskId, trailers, taskTitle, signal: options.signal,
-    allowDirtyLocalCheckoutSync: options.allowDirtyLocalCheckoutSync === true,
+    allowDirtyLocalCheckoutSync,
     store,
   });
 
@@ -1107,6 +1113,7 @@ export async function landWorkspaceTask(
   const reviewAgent = deps.reviewAgent ?? makeReviewAgent(store, settings, taskId, options, audit);
   const stashResolveAgent = deps.stashResolveAgent ?? makeMutatingAgent(store, settings, taskId, options, audit, buildStashResolveSystemPrompt());
   const includeTaskId = settings.includeTaskIdInCommit !== false;
+  const allowDirtyLocalCheckoutSync = options.allowDirtyLocalCheckoutSync ?? (settings.merger?.allowDirtyLocalCheckoutSync === true);
   const trailers = taskTrailers(taskId, task.lineageId, settings);
   const taskTitle = task.title?.trim() ? task.title.split("\n")[0] : undefined;
 
@@ -1199,7 +1206,7 @@ export async function landWorkspaceTask(
         taskId, settings, audit, log, setStatus, maxPasses,
         mergeAgent, reviewAgent, stashResolveAgent,
         includeTaskId, trailers, taskTitle, signal: options.signal,
-        allowDirtyLocalCheckoutSync: options.allowDirtyLocalCheckoutSync === true,
+        allowDirtyLocalCheckoutSync,
         // FNXC:Workspace 2026-06-24-23:50: one sub-repo's dependency-sync failure must not block
         // landing the others — degrade verification for that repo, still land the git squash.
         nonFatalDependencySync: true,

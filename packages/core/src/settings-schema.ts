@@ -362,7 +362,11 @@ export const DEFAULT_PROJECT_SETTINGS = {
    * Project settings own the auto-merge conflict retry cap because existing engine/dashboard consumers already resolve project settings; the default imports core's stall-detection fallback to keep every surface on the historical value of 3.
    */
   maxAutoMergeRetries: DEFAULT_MAX_AUTO_MERGE_RETRIES,
-  merger: { mode: "ai", maxReviewPasses: 3, allowDirtyLocalCheckoutSync: false },
+  /**
+   * FNXC:Merge 2026-06-26-00:00:
+   * New and unconfigured projects default AI merge to sync a dirty checked-out integration branch, restoring the legacy stash → fast-forward → restore landing behavior. Explicit persisted merger.allowDirtyLocalCheckoutSync values still win, and no existing-project migration stamps this default into storage.
+   */
+  merger: { mode: "ai", maxReviewPasses: 3, allowDirtyLocalCheckoutSync: true },
   mergeDiffVolumeMinLines: undefined,
   mergeDiffVolumeThreshold: undefined,
   mergeDiffVolumeAllowlist: undefined,

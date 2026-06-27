@@ -3776,6 +3776,11 @@ ${TASK_UPSERT_SQL_ASSIGNMENTS}
       ...DEFAULT_SETTINGS,
       ...globalSettings,
       ...projectSettings,
+      /**
+       * FNXC:Merge 2026-06-26-00:00:
+       * The top-level settings spread is shallow, so legacy project rows with a partial merger object would otherwise drop nested defaults such as allowDirtyLocalCheckoutSync. Merge the nested default explicitly here and in fast/scoped reads, mirroring the worktrunk resolver and ephemeralAgentsEnabled upgrade fallback precedents.
+       */
+      merger: { ...DEFAULT_PROJECT_SETTINGS.merger, ...(projectSettings as Partial<Settings>).merger },
       worktrunk: resolveWorktrunkSettings(
         globalSettings.worktrunk,
         (projectSettings as Partial<Settings>).worktrunk,
@@ -3823,6 +3828,7 @@ ${TASK_UPSERT_SQL_ASSIGNMENTS}
       ...DEFAULT_SETTINGS,
       ...globalSettings,
       ...projectSettings,
+      merger: { ...DEFAULT_PROJECT_SETTINGS.merger, ...projectSettings?.merger },
       worktrunk: resolveWorktrunkSettings(globalSettings.worktrunk, projectSettings?.worktrunk),
     };
     try {
@@ -3868,6 +3874,9 @@ ${TASK_UPSERT_SQL_ASSIGNMENTS}
     if (canonicalizedProject.ephemeralAgentsEnabled === undefined) {
       canonicalizedProject.ephemeralAgentsEnabled = DEFAULT_PROJECT_SETTINGS.ephemeralAgentsEnabled;
     }
+    if (canonicalizedProject.merger?.allowDirtyLocalCheckoutSync === undefined) {
+      canonicalizedProject.merger = { ...DEFAULT_PROJECT_SETTINGS.merger, ...canonicalizedProject.merger };
+    }
 
     return { global: globalSettings, project: canonicalizedProject };
   }
@@ -3911,6 +3920,9 @@ ${TASK_UPSERT_SQL_ASSIGNMENTS}
     const canonicalizedProject = canonicalizeSettings(projectScoped as Settings);
     if (canonicalizedProject.ephemeralAgentsEnabled === undefined) {
       canonicalizedProject.ephemeralAgentsEnabled = DEFAULT_PROJECT_SETTINGS.ephemeralAgentsEnabled;
+    }
+    if (canonicalizedProject.merger?.allowDirtyLocalCheckoutSync === undefined) {
+      canonicalizedProject.merger = { ...DEFAULT_PROJECT_SETTINGS.merger, ...canonicalizedProject.merger };
     }
 
     return { global: globalSettings, project: canonicalizedProject };

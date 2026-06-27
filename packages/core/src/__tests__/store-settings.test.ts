@@ -1663,6 +1663,46 @@ describe("TaskStore", () => {
       expect(scopedFast.project.ephemeralAgentsEnabled).toBe(false);
     });
 
+    it("defaults merger.allowDirtyLocalCheckoutSync to true for new projects", async () => {
+      const fast = await harness.store().getSettingsFast();
+      const regular = await harness.store().getSettings();
+      const scopedFast = await harness.store().getSettingsByScopeFast();
+
+      expect(fast.merger?.allowDirtyLocalCheckoutSync).toBe(true);
+      expect(regular.merger?.allowDirtyLocalCheckoutSync).toBe(true);
+      expect(scopedFast.project.merger?.allowDirtyLocalCheckoutSync).toBe(true);
+    });
+
+    it("falls back to merger.allowDirtyLocalCheckoutSync=true when upgrading partial merger settings", async () => {
+      const db = (harness.store() as any).db;
+      const row = db.prepare("SELECT settings FROM config WHERE id = 1").get() as { settings?: string } | undefined;
+      const existingSettings = row?.settings ? JSON.parse(row.settings) : {};
+      existingSettings.merger = { mode: "ai", maxReviewPasses: 3 };
+      db.prepare("UPDATE config SET settings = ? WHERE id = 1").run(JSON.stringify(existingSettings));
+
+      const fast = await harness.store().getSettingsFast();
+      const regular = await harness.store().getSettings();
+      const scopedFast = await harness.store().getSettingsByScopeFast();
+
+      expect(fast.merger?.allowDirtyLocalCheckoutSync).toBe(true);
+      expect(regular.merger?.allowDirtyLocalCheckoutSync).toBe(true);
+      expect(scopedFast.project.merger?.allowDirtyLocalCheckoutSync).toBe(true);
+    });
+
+    it("preserves explicit merger.allowDirtyLocalCheckoutSync=false", async () => {
+      await harness.store().updateSettings({
+        merger: { mode: "ai", maxReviewPasses: 3, allowDirtyLocalCheckoutSync: false },
+      });
+
+      const fast = await harness.store().getSettingsFast();
+      const regular = await harness.store().getSettings();
+      const scopedFast = await harness.store().getSettingsByScopeFast();
+
+      expect(fast.merger?.allowDirtyLocalCheckoutSync).toBe(false);
+      expect(regular.merger?.allowDirtyLocalCheckoutSync).toBe(false);
+      expect(scopedFast.project.merger?.allowDirtyLocalCheckoutSync).toBe(false);
+    });
+
     it("returns the same merged result as getSettings()", async () => {
       await harness.store().updateGlobalSettings({ themeMode: "light", ntfyEnabled: true });
       await harness.store().updateSettings({ maxConcurrent: 5, autoMerge: false });

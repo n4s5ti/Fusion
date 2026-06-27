@@ -549,9 +549,9 @@ export interface MergerSettings {
    *  validator/reviewer model lane — there is no merge-specific model setting. */
   maxReviewPasses?: number;
   /** Dangerous compatibility escape hatch for the AI merge landing path.
-   *  When false (default), Fusion refuses to land an AI merge if the checked-out
-   *  integration worktree is dirty. When true, restores the legacy stash →
-   *  fast-forward → restore behavior for operators who explicitly accept that
+   *  When true (default for resolved project settings), Fusion restores the legacy
+   *  stash → fast-forward → restore behavior when the checked-out integration
+   *  worktree is dirty. Set false to explicitly opt out and fail closed before
    *  unrelated local edits can be reintroduced after landing. */
   allowDirtyLocalCheckoutSync?: boolean;
 }
