@@ -461,8 +461,20 @@ describe("multi-instance /api/ws integration", () => {
     (storeA as unknown as MockStore).task = updatedTaskA;
     (storeA as unknown as MockStore).emit("task:updated", updatedTaskA);
 
-    // Wait for pub/sub propagation (InMemory uses setImmediate)
-    await new Promise((resolve) => setTimeout(resolve, 200));
+    /*
+    FNXC:WebSocketBadgeTests 2026-06-26-17:10:
+    FN-5048 (prefer fake timers / event waits over arbitrary real sleeps). Replace fixed 200ms
+    "wait for pub/sub propagation" sleeps in the multi-instance badge tests with a polled
+    waitForExpectation on the collected messages. This returns as soon as the expected
+    badge:updated arrives (typically <20ms) instead of always paying 200ms, and removes the
+    delivery>200ms race that an unconditional sleep masks.
+    */
+    await waitForExpectation(() => {
+      const merged = messagesB.filter(
+        (m) => m.type === "badge:updated" && m.prInfo?.status === "merged",
+      );
+      expect(merged.length).toBeGreaterThanOrEqual(1);
+    });
 
     // Cleanup first to avoid hanging
     clientB.close();
@@ -532,8 +544,14 @@ describe("multi-instance /api/ws integration", () => {
     (store as unknown as MockStore).task = updatedTask;
     (store as unknown as MockStore).emit("task:updated", updatedTask);
 
-    // Wait for any message delivery
-    await new Promise((resolve) => setTimeout(resolve, 200));
+    // FNXC:WebSocketBadgeTests 2026-06-26-17:10: Poll for the echoed badge:updated (PR #99)
+    // instead of a fixed 200ms sleep — returns on delivery and avoids the >200ms race (FN-5048).
+    await waitForExpectation(() => {
+      const delivered = messages.filter(
+        (m) => m.type === "badge:updated" && m.taskId === task.id && m.prInfo?.number === 99,
+      );
+      expect(delivered.length).toBeGreaterThanOrEqual(1);
+    });
 
     // Cleanup first
     client.close();
@@ -628,8 +646,14 @@ describe("multi-instance /api/ws integration", () => {
     await once(clientB, "open");
     clientB.send(JSON.stringify({ type: "subscribe", taskId: task.id }));
 
-    // Wait for late subscription replay
-    await new Promise((resolve) => setTimeout(resolve, 200));
+    // FNXC:WebSocketBadgeTests 2026-06-26-17:10: Poll for the replayed merged snapshot instead of a
+    // fixed 200ms sleep — returns on delivery and avoids the >200ms replay race (FN-5048).
+    await waitForExpectation(() => {
+      const replayed = messages.some(
+        (m) => m.type === "badge:updated" && m.prInfo?.status === "merged",
+      );
+      expect(replayed).toBe(true);
+    });
 
     // Cleanup
     clientB.close();
