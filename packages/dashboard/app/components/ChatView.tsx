@@ -1024,7 +1024,7 @@ export function ChatView({ projectId, addToast, floating = false, onPopOut, onMa
     deleteSession,
     sendMessage,
     stopStreaming,
-    pendingMessage,
+    pendingMessages,
     clearPendingMessage,
     loadMoreMessages,
     hasMoreMessages,
@@ -2731,9 +2731,9 @@ export function ChatView({ projectId, addToast, floating = false, onPopOut, onMa
   // the render-mode toggle still appears in a slim toolbar.
   const hideAssistantIdentity = activeSession?.agentId === FN_AGENT_ID;
 
-  const pendingPreview = pendingMessage.length > 50
-    ? `${pendingMessage.slice(0, 50)}…`
-    : pendingMessage;
+  const getPendingPreview = (message: string) => message.length > 50
+    ? `${message.slice(0, 50)}…`
+    : message;
 
   const toggleAllAsPlain = useCallback(() => {
     setShowAllAsPlain((value) => !value);
@@ -3057,23 +3057,27 @@ export function ChatView({ projectId, addToast, floating = false, onPopOut, onMa
           ))}
         </div>
       )}
-      {pendingMessage && (
+      {pendingMessages.length > 0 && (
         <>
           {/*
           FNXC:ChatComposer 2026-06-27-00:00:
-          The single-slot queued chat message must appear above the input box, separated by a divider, so users can notice the pending send without changing the one-pending-message queue model.
+          Queued direct-chat messages stack above the input in FIFO order with one shared divider, so multiple sends remain visible without changing the above-composer placement established by FN-7121.
           */}
-          <div className="chat-pending-message" data-testid="chat-pending-indicator">
-            <span>{t("chat.queuedMessage", "Queued: {{preview}}", { preview: pendingPreview })}</span>
-            <button
-              type="button"
-              className="chat-pending-message-dismiss"
-              aria-label={t("chat.dismissQueuedMessage", "Dismiss queued message")}
-              data-testid="chat-pending-dismiss"
-              onClick={clearPendingMessage}
-            >
-              ×
-            </button>
+          <div className="chat-pending-stack" data-testid="chat-pending-stack">
+            {pendingMessages.map((pendingMessage, index) => (
+              <div className="chat-pending-message" data-testid="chat-pending-indicator" key={`${index}-${pendingMessage}`}>
+                <span>{t("chat.queuedMessage", "Queued: {{preview}}", { preview: getPendingPreview(pendingMessage) })}</span>
+                <button
+                  type="button"
+                  className="chat-pending-message-dismiss"
+                  aria-label={t("chat.dismissQueuedMessage", "Dismiss queued message")}
+                  data-testid={`chat-pending-dismiss-${index}`}
+                  onClick={() => clearPendingMessage(index)}
+                >
+                  ×
+                </button>
+              </div>
+            ))}
           </div>
           <div className="chat-pending-divider" aria-hidden="true" />
         </>

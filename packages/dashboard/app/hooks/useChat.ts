@@ -48,9 +48,9 @@ export type { ChatMessageInfo, FailureInfo, FallbackInfo, ToolCallInfo } from ".
 import type { ChatMessageInfo, FailureInfo, FallbackInfo, ToolCallInfo } from "./chatTypes";
 import { createChatStreamHandlers } from "./createChatStreamHandlers";
 import {
-  getPersistedPendingChatMessage,
-  removePersistedPendingChatMessage,
-  setPersistedPendingChatMessage,
+  getPersistedPendingChatMessages,
+  removePersistedPendingChatMessages,
+  setPersistedPendingChatMessages,
 } from "./chatPendingMessageStorage";
 import { isLikelyTabSuspensionError, useTabVisibilitySuspension } from "./visibilitySuspension";
 import { clearCache, readCache, SWR_CACHE_KEYS, SWR_TASKS_MAX_AGE_MS, writeCache } from "../utils/swrCache";
@@ -69,7 +69,7 @@ export interface UseChatReturn {
   streamingText: string;
   streamingThinking: string;
   streamingToolCalls: ToolCallInfo[];
-  pendingMessage: string;
+  pendingMessages: string[];
 
   // Session operations
   selectSession: (id: string, sessionOverride?: ChatSessionInfo) => void;
@@ -84,7 +84,7 @@ export interface UseChatReturn {
   /** Send a message, optionally with file attachments to upload with the prompt. */
   sendMessage: (content: string, attachments?: File[]) => void;
   stopStreaming: () => void;
-  clearPendingMessage: () => void;
+  clearPendingMessage: (index?: number) => void;
   loadMoreMessages: () => Promise<void>;
   hasMoreMessages: boolean;
 
@@ -294,7 +294,7 @@ export function useChat(
   const [streamingText, setStreamingText] = useState("");
   const [streamingThinking, setStreamingThinking] = useState("");
   const [streamingToolCalls, setStreamingToolCalls] = useState<ToolCallInfo[]>([]);
-  const [pendingMessage, setPendingMessage] = useState("");
+  const [pendingMessages, setPendingMessages] = useState<string[]>([]);
 
   // Search/filter
   const [searchQuery, setSearchQuery] = useState("");
@@ -309,7 +309,12 @@ export function useChat(
   const streamRef = useRef<{ close: () => void } | null>(null);
   const lastAttachedGenerationRef = useRef<{ sessionId: string; replayFromEventId: number | null } | null>(null);
   const cancelledByUserRef = useRef(false);
-  const pendingMessageRef = useRef("");
+  const pendingMessagesRef = useRef<string[]>([]);
+  const attachIfGeneratingRef = useRef<(
+    sessionId: string,
+    inFlightGeneration?: ChatInFlightGenerationState | null,
+    options?: { silent?: boolean; priorThreadLoadAlreadyStarted?: boolean },
+  ) => boolean>(() => false);
   // Cancel any pending requestAnimationFrame flushes from the active stream.
   // Set when sendMessage starts, cleared on done/error. Called from stopStreaming
   // so a clear-then-rAF-fires sequence doesn't flash stale text back in.
@@ -326,8 +331,8 @@ export function useChat(
   isStreamingRef.current = isStreaming;
 
   useEffect(() => {
-    pendingMessageRef.current = pendingMessage;
-  }, [pendingMessage]);
+    pendingMessagesRef.current = pendingMessages;
+  }, [pendingMessages]);
 
   // Tracks message IDs that were added via streaming completion.
   // Used to prevent duplicate messages when SSE event arrives before streaming state clears.
@@ -503,31 +508,70 @@ export function useChat(
   const resetTransientComposerState = useCallback(() => {
     cancelStreamingFlushesRef.current?.();
     cancelStreamingFlushesRef.current = null;
-    pendingMessageRef.current = "";
-    setPendingMessage("");
+    pendingMessagesRef.current = [];
+    setPendingMessages([]);
     setStreamingText("");
     setStreamingThinking("");
     setStreamingToolCalls([]);
     setIsStreaming(false);
   }, []);
 
-  const clearPendingMessage = useCallback(() => {
-    removePersistedPendingChatMessage(activeSessionRef.current?.id);
-    pendingMessageRef.current = "";
-    setPendingMessage("");
-  }, []);
-
-  const flushPendingMessage = useCallback(() => {
-    const queuedMessage = pendingMessageRef.current.trim();
-    if (!queuedMessage) {
+  const clearPendingMessage = useCallback((index?: number) => {
+    const sessionId = activeSessionRef.current?.id;
+    if (typeof index === "number") {
+      const nextMessages = pendingMessagesRef.current.filter((_, messageIndex) => messageIndex !== index);
+      pendingMessagesRef.current = nextMessages;
+      setPendingMessages(nextMessages);
+      setPersistedPendingChatMessages(sessionId, nextMessages);
       return;
     }
 
-    removePersistedPendingChatMessage(activeSessionRef.current?.id);
-    pendingMessageRef.current = "";
-    setPendingMessage("");
-    sendMessageRef.current(queuedMessage);
+    removePersistedPendingChatMessages(sessionId);
+    pendingMessagesRef.current = [];
+    setPendingMessages([]);
   }, []);
+
+  const flushPendingMessage = useCallback(() => {
+    const [queuedMessage, ...remainingMessages] = pendingMessagesRef.current;
+    const trimmedQueuedMessage = queuedMessage?.trim();
+    if (!trimmedQueuedMessage) {
+      return;
+    }
+
+    const sessionId = activeSessionRef.current?.id;
+    pendingMessagesRef.current = remainingMessages;
+    setPendingMessages(remainingMessages);
+    setPersistedPendingChatMessages(sessionId, remainingMessages);
+    sendMessageRef.current(trimmedQueuedMessage);
+  }, []);
+
+  const flushPendingMessageAfterAttachedError = useCallback(async (
+    sessionId: string,
+    options?: { silent?: boolean },
+  ) => {
+    try {
+      const { session: refreshedSession } = await fetchChatSession(sessionId, projectId);
+      if (activeSessionRef.current?.id !== sessionId || pendingMessagesRef.current.length === 0) {
+        return;
+      }
+
+      if (refreshedSession.isGenerating || refreshedSession.inFlightGeneration) {
+        /*
+        FNXC:ChatComposer 2026-06-27-00:00:
+        Attach-stream errors must not dequeue restored messages until an authoritative session fetch proves the server is idle; otherwise a reconnect race can send the FIFO front while the previous generation is still in flight.
+        */
+        attachIfGeneratingRef.current(sessionId, refreshedSession.inFlightGeneration, {
+          silent: options?.silent,
+          priorThreadLoadAlreadyStarted: true,
+        });
+        return;
+      }
+
+      flushPendingMessage();
+    } catch {
+      // Keep the queue durable when the authoritative generation check is unavailable.
+    }
+  }, [flushPendingMessage, projectId]);
 
   const attachIfGenerating = useCallback((
     sessionId: string,
@@ -609,7 +653,7 @@ export function useChat(
           addToast?.(failureInfo.summary, "error");
         }
         void loadMessages(sessionId);
-        flushPendingMessage();
+        void flushPendingMessageAfterAttachedError(sessionId, { silent: options?.silent });
       },
     });
 
@@ -628,7 +672,8 @@ export function useChat(
     });
     streamRef.current = stream;
     return true;
-  }, [addToast, hydrateMessagesFromCache, loadMessages, projectId, flushPendingMessage]);
+  }, [addToast, flushPendingMessage, flushPendingMessageAfterAttachedError, hydrateMessagesFromCache, loadMessages, projectId]);
+  attachIfGeneratingRef.current = attachIfGenerating;
 
   // Select a session
   const selectSession = useCallback(
@@ -710,13 +755,17 @@ export function useChat(
       return;
     }
 
-    const restoredPendingMessage = getPersistedPendingChatMessage(sessionId);
-    if (!restoredPendingMessage) {
+    const restoredPendingMessages = getPersistedPendingChatMessages(sessionId);
+    if (restoredPendingMessages.length === 0) {
       return;
     }
 
-    pendingMessageRef.current = restoredPendingMessage;
-    setPendingMessage(restoredPendingMessage);
+    /*
+    FNXC:ChatComposer 2026-06-27-00:00:
+    Queued direct-chat sends are a FIFO array: every send during streaming stacks above the composer and exactly one front item flushes after each stream completion, preserving FN-5852's server-in-flight guard.
+    */
+    pendingMessagesRef.current = restoredPendingMessages;
+    setPendingMessages(restoredPendingMessages);
 
     // Flush only once the server confirms no generation is in flight. The
     // local sessions list can hold a stale falsy `isGenerating` (it is a
@@ -729,7 +778,7 @@ export function useChat(
         if (
           cancelled ||
           activeSessionRef.current?.id !== sessionId ||
-          pendingMessageRef.current.trim().length === 0
+          pendingMessagesRef.current.length === 0
         ) {
           return;
         }
@@ -784,7 +833,7 @@ export function useChat(
         return [newSession, ...prev];
       });
 
-      removePersistedPendingChatMessage(previousSessionId);
+      removePersistedPendingChatMessages(previousSessionId);
       resetTransientComposerState();
       selectSession(newSession.id, newSession);
 
@@ -796,7 +845,7 @@ export function useChat(
   // Archive a session
   const archiveSession = useCallback(
     async (id: string) => {
-      removePersistedPendingChatMessage(id);
+      removePersistedPendingChatMessages(id);
       await updateChatSession(id, { status: "archived" }, projectId);
       // Remove from sessions list
       setSessions((prev) => prev.filter((s) => s.id !== id));
@@ -859,7 +908,7 @@ export function useChat(
   // Delete a session
   const deleteSession = useCallback(
     async (id: string) => {
-      removePersistedPendingChatMessage(id);
+      removePersistedPendingChatMessages(id);
       // Close stream if active
       if (activeSession?.id === id && streamRef.current) {
         streamRef.current.close();
@@ -971,9 +1020,14 @@ export function useChat(
       if (!activeSession) return;
 
       if (isStreamingRef.current) {
-        pendingMessageRef.current = content;
-        setPendingMessage(content);
-        setPersistedPendingChatMessage(activeSession.id, content);
+        const trimmedContent = content.trim();
+        if (!trimmedContent) {
+          return;
+        }
+        const nextMessages = [...pendingMessagesRef.current, trimmedContent];
+        pendingMessagesRef.current = nextMessages;
+        setPendingMessages(nextMessages);
+        setPersistedPendingChatMessages(activeSession.id, nextMessages);
         return;
       }
 
@@ -1002,6 +1056,7 @@ export function useChat(
       setStreamingThinking("");
       setStreamingToolCalls([]);
       setIsStreaming(true);
+      isStreamingRef.current = true;
 
       const { handlers } = createChatStreamHandlers({
         sessionId: activeSession.id,
@@ -1375,7 +1430,7 @@ export function useChat(
     streamingText,
     streamingThinking,
     streamingToolCalls,
-    pendingMessage,
+    pendingMessages,
     selectSession,
     createSession,
     archiveSession,

@@ -732,22 +732,23 @@ describe("ChatView core interactions", () => {
     expect(screen.getByTestId("chat-send-btn")).toBeInTheDocument();
   });
 
-  it("renders pending message indicator above the input row and dismisses it", async () => {
+  it("renders stacked pending message indicators above the input row and dismisses one entry", async () => {
     const clearPendingMessage = vi.fn();
     const activeSession = activeSessionFixture;
     setupMockChat({
       activeSession,
       messages: [],
-      pendingMessage: "Queued while streaming",
+      pendingMessages: ["Queued A", "Queued B", "Queued C with a very long body that should truncate in the preview"],
       clearPendingMessage,
     });
 
     const { rerender } = await renderWithAct(<ChatView projectId="proj-123" addToast={vi.fn()} />);
 
     const indicators = screen.getAllByTestId("chat-pending-indicator");
-    expect(indicators).toHaveLength(1);
-    const indicator = indicators[0];
-    expect(indicator).toHaveTextContent("Queued: Queued while streaming");
+    expect(indicators).toHaveLength(3);
+    expect(indicators[0]).toHaveTextContent("Queued: Queued A");
+    expect(indicators[1]).toHaveTextContent("Queued: Queued B");
+    expect(indicators[2]).toHaveTextContent("Queued: Queued C with a very long body that should truncat…");
 
     const input = screen.getByTestId("chat-input");
     const inputArea = input.closest(".chat-input-area");
@@ -756,18 +757,20 @@ describe("ChatView core interactions", () => {
     expect(inputArea).not.toBeNull();
     expect(inputRow).not.toBeNull();
     expect(inputWrapper).not.toBeNull();
-    expect(inputArea).toContainElement(indicator);
-    expect(inputWrapper).not.toContainElement(indicator);
-    expect(indicator.compareDocumentPosition(inputRow!)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
-    expect(inputArea!.querySelector(".chat-pending-divider")).toBeInTheDocument();
+    indicators.forEach((indicator) => {
+      expect(inputArea).toContainElement(indicator);
+      expect(inputWrapper).not.toContainElement(indicator);
+      expect(indicator.compareDocumentPosition(inputRow!)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+    });
+    expect(inputArea!.querySelectorAll(".chat-pending-divider")).toHaveLength(1);
 
-    await userEvent.click(screen.getByTestId("chat-pending-dismiss"));
-    expect(clearPendingMessage).toHaveBeenCalledTimes(1);
+    await userEvent.click(screen.getByTestId("chat-pending-dismiss-1"));
+    expect(clearPendingMessage).toHaveBeenCalledWith(1);
 
     setupMockChat({
       activeSession,
       messages: [],
-      pendingMessage: "",
+      pendingMessages: [],
       clearPendingMessage,
     });
     rerender(<ChatView projectId="proj-123" addToast={vi.fn()} />);
