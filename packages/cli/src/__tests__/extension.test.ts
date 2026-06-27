@@ -100,13 +100,32 @@ async function seedAgent(
 
 function linearWorkflowIr(name: string): WorkflowIr {
   return {
-    version: "v1",
+    version: "v2",
     name,
+    columns: [{ id: "todo", name: "Todo", traits: [] }],
     nodes: [
-      { id: "start", kind: "start" },
-      { id: "lint", kind: "gate", config: { name: "Lint", scriptName: "lint" } },
-      { id: "spec", kind: "prompt", config: { name: "Spec", prompt: "check" } },
-      { id: "end", kind: "end" },
+      { id: "start", kind: "start", column: "todo" },
+      {
+        id: "lint",
+        kind: "optional-group",
+        column: "todo",
+        config: {
+          name: "Lint",
+          defaultOn: true,
+          template: { nodes: [{ id: "lint-step", kind: "gate", config: { name: "Lint", scriptName: "lint" } }], edges: [] },
+        },
+      },
+      {
+        id: "spec",
+        kind: "optional-group",
+        column: "todo",
+        config: {
+          name: "Spec",
+          defaultOn: true,
+          template: { nodes: [{ id: "spec-step", kind: "prompt", config: { name: "Spec", prompt: "check" } }], edges: [] },
+        },
+      },
+      { id: "end", kind: "end", column: "todo" },
     ],
     edges: [
       { from: "start", to: "lint", condition: "success" },
@@ -2412,6 +2431,7 @@ describe.skipIf(!SHOULD_RUN_LEGACY_EXTENSION_INTEGRATION)("fn pi extension (lega
       const tasks = await store.listTasks({ includeArchived: true });
       expect(tasks).toHaveLength(2);
       const issueOneTask = tasks.find((task) => task.sourceIssue?.issueNumber === 1);
+      expect(issueOneTask?.githubTracking?.enabled).toBeUndefined();
       expect(issueOneTask?.sourceIssue).toEqual({
         provider: "github",
         repository: "acme/demo",
@@ -2423,6 +2443,101 @@ describe.skipIf(!SHOULD_RUN_LEGACY_EXTENSION_INTEGRATION)("fn pi extension (lega
         issueUrl: "https://github.com/acme/demo/issues/1",
         issueNumber: 1,
       });
+      await store.close();
+    });
+
+    it("fn_task_import_github marks imported issues as tracked when tracking defaults are on", async () => {
+      const store = new TaskStore(tmpDir);
+      await store.init();
+      await store.updateSettings({ githubTrackingEnabledByDefault: true });
+      await store.close();
+
+      const tool = api.tools.get("fn_task_import_github")!;
+      vi.mocked(runGhJsonAsync).mockResolvedValueOnce([
+        {
+          number: 7,
+          title: "Tracked issue",
+          body: "Tracked issue body",
+          html_url: "https://github.com/acme/demo/issues/7",
+        },
+      ] as never);
+
+      await tool.execute("gh-tracked-bulk", { ownerRepo: "acme/demo" }, undefined, undefined, makeCtx(tmpDir));
+
+      const verifyStore = new TaskStore(tmpDir);
+      await verifyStore.init();
+      const tasks = await verifyStore.listTasks({ includeArchived: true });
+      const imported = tasks.find((task) => task.sourceIssue?.issueNumber === 7);
+      expect(imported?.githubTracking?.enabled).toBe(true);
+      expect(imported?.sourceIssue).toEqual(expect.objectContaining({
+        provider: "github",
+        repository: "acme/demo",
+        issueNumber: 7,
+      }));
+      await verifyStore.close();
+    });
+
+    it("fn_task_import_github_issue leaves imported issues unforced when tracking defaults are off", async () => {
+      const tool = api.tools.get("fn_task_import_github_issue")!;
+      vi.mocked(runGhJsonAsync).mockResolvedValueOnce({
+        number: 6,
+        title: "Single untracked issue",
+        body: "Single issue body",
+        html_url: "https://github.com/acme/demo/issues/6",
+      } as never);
+
+      const result = await tool.execute(
+        "gh-untracked-single",
+        { owner: "acme", repo: "demo", issueNumber: 6 },
+        undefined,
+        undefined,
+        makeCtx(tmpDir),
+      );
+
+      const verifyStore = new TaskStore(tmpDir);
+      await verifyStore.init();
+      const imported = await verifyStore.getTask(result.details.taskId);
+      expect(imported?.githubTracking?.enabled).toBeUndefined();
+      expect(imported?.sourceIssue).toEqual(expect.objectContaining({
+        provider: "github",
+        repository: "acme/demo",
+        issueNumber: 6,
+      }));
+      await verifyStore.close();
+    });
+
+    it("fn_task_import_github_issue marks imported issues as tracked when tracking defaults are on", async () => {
+      const store = new TaskStore(tmpDir);
+      await store.init();
+      await store.updateSettings({ githubTrackingEnabledByDefault: true });
+      await store.close();
+
+      const tool = api.tools.get("fn_task_import_github_issue")!;
+      vi.mocked(runGhJsonAsync).mockResolvedValueOnce({
+        number: 8,
+        title: "Single tracked issue",
+        body: "Single issue body",
+        html_url: "https://github.com/acme/demo/issues/8",
+      } as never);
+
+      const result = await tool.execute(
+        "gh-tracked-single",
+        { owner: "acme", repo: "demo", issueNumber: 8 },
+        undefined,
+        undefined,
+        makeCtx(tmpDir),
+      );
+
+      const verifyStore = new TaskStore(tmpDir);
+      await verifyStore.init();
+      const imported = await verifyStore.getTask(result.details.taskId);
+      expect(imported?.githubTracking?.enabled).toBe(true);
+      expect(imported?.sourceIssue).toEqual(expect.objectContaining({
+        provider: "github",
+        repository: "acme/demo",
+        issueNumber: 8,
+      }));
+      await verifyStore.close();
     });
 
     it("fn_task_import_github skips issues already imported via sourceIssue even when description was edited", async () => {

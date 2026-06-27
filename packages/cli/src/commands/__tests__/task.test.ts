@@ -1275,7 +1275,12 @@ describe("project-aware task command behavior", () => {
       projectPath: "/test",
       projectName: "demo-project",
       isRegistered: true,
-      store: { listTasks, createTask } as unknown as TaskStore,
+      store: {
+        listTasks,
+        createTask,
+        getSettings: vi.fn().mockResolvedValue({}),
+        getGlobalSettingsStore: vi.fn().mockReturnValue({ getSettings: vi.fn().mockResolvedValue({}) }),
+      } as unknown as TaskStore,
     });
 
     vi.mocked(runGhJsonAsync).mockResolvedValueOnce([
@@ -1304,7 +1309,12 @@ describe("project-aware task command behavior", () => {
       projectPath: "/test",
       projectName: "demo-project",
       isRegistered: true,
-      store: { listTasks, createTask } as unknown as TaskStore,
+      store: {
+        listTasks,
+        createTask,
+        getSettings: vi.fn().mockResolvedValue({}),
+        getGlobalSettingsStore: vi.fn().mockReturnValue({ getSettings: vi.fn().mockResolvedValue({}) }),
+      } as unknown as TaskStore,
     });
 
     vi.mocked(runGhJsonAsync).mockResolvedValueOnce([
@@ -1539,6 +1549,8 @@ describe("runTaskImportGitHubInteractive", () => {
       init: vi.fn(),
       createTask: mockCreateTask,
       listTasks: mockListTasks,
+      getSettings: vi.fn().mockResolvedValue({}),
+      getGlobalSettingsStore: vi.fn().mockReturnValue({ getSettings: vi.fn().mockResolvedValue({}) }),
     }));
   });
 
@@ -1601,6 +1613,30 @@ describe("runTaskImportGitHubInteractive", () => {
       },
       source: { sourceType: "github_import", sourceMetadata: { issueUrl: "https://github.com/owner/repo/issues/3", issueNumber: 3 } },
     });
+  });
+
+  it("marks interactive imports as tracked when tracking defaults are on", async () => {
+    (TaskStore as unknown as ReturnType<typeof vi.fn>).mockImplementation(() => ({
+      init: vi.fn(),
+      createTask: mockCreateTask,
+      listTasks: mockListTasks,
+      getSettings: vi.fn().mockResolvedValue({ githubTrackingEnabledByDefault: true }),
+      getGlobalSettingsStore: vi.fn().mockReturnValue({ getSettings: vi.fn().mockResolvedValue({}) }),
+    }));
+    vi.mocked(runGhJsonAsync).mockResolvedValueOnce([
+      mockIssue(1, "Tracked Issue", "Description 1"),
+    ] as never);
+    vi.mocked(createInterface).mockReturnValueOnce({
+      question: vi.fn().mockResolvedValueOnce("all"),
+      close: vi.fn(),
+    } as any);
+
+    await runTaskImportGitHubInteractive("owner/repo");
+
+    expect(mockCreateTask).toHaveBeenCalledWith(expect.objectContaining({
+      githubTracking: { enabled: true },
+      sourceIssue: expect.objectContaining({ provider: "github", repository: "owner/repo", issueNumber: 1 }),
+    }));
   });
 
   it('imports all issues when "all" is selected', async () => {
@@ -1873,6 +1909,8 @@ describe("runTaskImportFromGitHub", () => {
       init: vi.fn(),
       createTask: mockCreateTask,
       listTasks: mockListTasks,
+      getSettings: vi.fn().mockResolvedValue({}),
+      getGlobalSettingsStore: vi.fn().mockReturnValue({ getSettings: vi.fn().mockResolvedValue({}) }),
     }));
   });
 
@@ -1918,6 +1956,28 @@ describe("runTaskImportFromGitHub", () => {
       (call) => typeof call[0] === "string" && call[0].includes("✓ Imported 2 tasks"),
     );
     expect(successLine).toBeDefined();
+  });
+
+  it("marks non-interactive imports as tracked when tracking defaults are on", async () => {
+    (TaskStore as unknown as ReturnType<typeof vi.fn>).mockImplementation(() => ({
+      init: vi.fn(),
+      createTask: mockCreateTask,
+      listTasks: mockListTasks,
+      getSettings: vi.fn().mockResolvedValue({}),
+      getGlobalSettingsStore: vi.fn().mockReturnValue({
+        getSettings: vi.fn().mockResolvedValue({ githubTrackingDefaultEnabledForNewTasks: true }),
+      }),
+    }));
+    vi.mocked(runGhJsonAsync).mockResolvedValueOnce([
+      mockIssue(1, "Tracked Issue", "Description 1"),
+    ] as never);
+
+    await runTaskImportFromGitHub("owner/repo");
+
+    expect(mockCreateTask).toHaveBeenCalledWith(expect.objectContaining({
+      githubTracking: { enabled: true },
+      sourceIssue: expect.objectContaining({ provider: "github", repository: "owner/repo", issueNumber: 1 }),
+    }));
   });
 
   it("skips already imported issues", async () => {

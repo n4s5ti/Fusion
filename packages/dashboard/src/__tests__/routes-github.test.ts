@@ -626,6 +626,34 @@ describe("POST /github/issues/import", () => {
     });
   });
 
+  it("marks a single imported issue as tracked when tracking defaults are on", async () => {
+    (store.getSettings as ReturnType<typeof vi.fn>).mockResolvedValueOnce({ githubTrackingEnabledByDefault: true });
+    getIssueSpy.mockResolvedValueOnce(mockGitHubIssue);
+
+    const res = await REQUEST(buildApp(), "POST", "/api/github/issues/import", JSON.stringify({ owner: "owner", repo: "repo", issueNumber: 1 }), {
+      "Content-Type": "application/json",
+    });
+
+    expect(res.status).toBe(201);
+    expect(store.createTask).toHaveBeenCalledWith(expect.objectContaining({
+      githubTracking: { enabled: true },
+      sourceIssue: expect.objectContaining({ provider: "github", repository: "owner/repo", issueNumber: 1 }),
+    }));
+  });
+
+  it("leaves a single imported issue unforced when tracking defaults are off", async () => {
+    getIssueSpy.mockResolvedValueOnce(mockGitHubIssue);
+
+    const res = await REQUEST(buildApp(), "POST", "/api/github/issues/import", JSON.stringify({ owner: "owner", repo: "repo", issueNumber: 1 }), {
+      "Content-Type": "application/json",
+    });
+
+    expect(res.status).toBe(201);
+    expect(store.createTask).toHaveBeenCalledWith(expect.not.objectContaining({
+      githubTracking: expect.anything(),
+    }));
+  });
+
   it("logs the import action", async () => {
     getIssueSpy.mockResolvedValueOnce(mockGitHubIssue);
 
@@ -861,6 +889,52 @@ describe("POST /github/issues/batch-import", () => {
         issueNumber: 3,
         url: "https://github.com/owner/repo/issues/3",
       },
+    }));
+  });
+
+  it("marks batch imported issues as tracked when global tracking defaults are on", async () => {
+    const globalSettingsStore = { getSettings: vi.fn().mockResolvedValue({ githubTrackingDefaultEnabledForNewTasks: true }) };
+    (store.getGlobalSettingsStore as ReturnType<typeof vi.fn>).mockReturnValueOnce(globalSettingsStore);
+    const throttledSpy = vi.spyOn(GitHubClient.prototype, "fetchThrottled")
+      .mockResolvedValueOnce({
+        success: true,
+        data: mockGitHubIssue(1, "Tracked Batch Issue"),
+      } as Awaited<ReturnType<GitHubClient["fetchThrottled"]>>);
+
+    const res = await REQUEST(
+      buildApp(),
+      "POST",
+      "/api/github/issues/batch-import",
+      JSON.stringify({ owner: "owner", repo: "repo", issueNumbers: [1], delayMs: 1 }),
+      { "Content-Type": "application/json" }
+    );
+
+    expect(res.status).toBe(200);
+    expect(throttledSpy).toHaveBeenCalledTimes(1);
+    expect(store.createTask).toHaveBeenCalledWith(expect.objectContaining({
+      githubTracking: { enabled: true },
+      sourceIssue: expect.objectContaining({ provider: "github", repository: "owner/repo", issueNumber: 1 }),
+    }));
+  });
+
+  it("leaves batch imported issues unforced when tracking defaults are off", async () => {
+    vi.spyOn(GitHubClient.prototype, "fetchThrottled")
+      .mockResolvedValueOnce({
+        success: true,
+        data: mockGitHubIssue(1, "Untracked Batch Issue"),
+      } as Awaited<ReturnType<GitHubClient["fetchThrottled"]>>);
+
+    const res = await REQUEST(
+      buildApp(),
+      "POST",
+      "/api/github/issues/batch-import",
+      JSON.stringify({ owner: "owner", repo: "repo", issueNumbers: [1], delayMs: 1 }),
+      { "Content-Type": "application/json" }
+    );
+
+    expect(res.status).toBe(200);
+    expect(store.createTask).toHaveBeenCalledWith(expect.not.objectContaining({
+      githubTracking: expect.anything(),
     }));
   });
 

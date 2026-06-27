@@ -3,6 +3,7 @@ import { mkdtemp, mkdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { TaskStore, setTaskCreatedHook } from "@fusion/core";
+import { runGhJsonAsync } from "@fusion/core/gh-cli";
 
 const hookSpy = vi.hoisted(() => vi.fn(async () => {}));
 const registerGithubTrackingHookMock = vi.hoisted(() => vi.fn(() => {
@@ -17,6 +18,13 @@ const registerGithubTrackingHookMock = vi.hoisted(() => vi.fn(() => {
 
 vi.mock("@fusion/dashboard", () => ({
   registerGithubTrackingHook: registerGithubTrackingHookMock,
+}));
+
+vi.mock("@fusion/core/gh-cli", () => ({
+  isGhAvailable: vi.fn(() => true),
+  isGhAuthenticated: vi.fn(() => true),
+  runGhJsonAsync: vi.fn(),
+  getGhErrorMessage: vi.fn((error: unknown) => (error instanceof Error ? error.message : String(error))),
 }));
 
 vi.mock("@fusion/engine", () => ({
@@ -92,6 +100,61 @@ describe("extension github tracking hook wiring", () => {
       const persisted = await taskStore.getTask(result.details.taskId);
       expect(persisted).toBeTruthy();
       expect(persisted?.githubTracking?.enabled).toBe(true);
+      taskStore.close();
+    } finally {
+      await rm(repoRoot, { recursive: true, force: true });
+    }
+  });
+
+  it("fn_task_import_github_issue creates a tracked source issue task when tracking defaults are on", async () => {
+    const repoRoot = await mkdtemp(join(tmpdir(), "fn-7090-extension-gh-import-"));
+    const cwd = join(repoRoot, ".worktrees", "feature");
+    try {
+      await mkdir(join(repoRoot, ".fusion"), { recursive: true });
+
+      const extension = await loadExtension();
+      const tools = new Map<string, any>();
+      extension({
+        registerTool: (def: any) => tools.set(def.name, def),
+        registerCommand: vi.fn(),
+        registerShortcut: vi.fn(),
+        registerFlag: vi.fn(),
+        on: vi.fn(),
+      } as any);
+
+      const taskStore = new TaskStore(repoRoot, undefined, { inMemoryDb: false });
+      await taskStore.init();
+      await taskStore.updateSettings({ githubTrackingEnabledByDefault: true });
+      vi.mocked(runGhJsonAsync).mockResolvedValueOnce({
+        number: 123,
+        title: "Imported issue",
+        body: "Imported issue body",
+        html_url: "https://github.com/upstream/repo/issues/123",
+      } as never);
+
+      const result = await tools.get("fn_task_import_github_issue").execute(
+        "import-1",
+        { owner: "upstream", repo: "repo", issueNumber: 123 },
+        undefined,
+        undefined,
+        { cwd },
+      );
+
+      const persisted = await taskStore.getTask(result.details.taskId);
+      expect(persisted?.githubTracking?.enabled).toBe(true);
+      expect(persisted?.sourceIssue).toEqual(expect.objectContaining({
+        provider: "github",
+        repository: "upstream/repo",
+        issueNumber: 123,
+      }));
+      expect(hookSpy).toHaveBeenCalledWith(
+        expect.objectContaining({
+          id: result.details.taskId,
+          githubTracking: { enabled: true },
+          sourceIssue: expect.objectContaining({ issueNumber: 123 }),
+        }),
+        expect.anything(),
+      );
       taskStore.close();
     } finally {
       await rm(repoRoot, { recursive: true, force: true });

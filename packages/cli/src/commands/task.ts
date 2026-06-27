@@ -1,4 +1,4 @@
-import { TaskStore, COLUMNS, COLUMN_LABELS, CentralCore, buildAutoPauseClearPatch, buildManualRetryResetPatch, extractIntentSignature, findNearDuplicates, getTaskDuplicateLineage, isWorkspaceTask, reconcileDeterministicDuplicate, runDeterministicDuplicateGuard, type Settings, type Column, type ColumnId, type StepStatus, type AgentLogType, type AgentLogEntry, type IntentSignature, type NearDuplicateCandidate, type NearDuplicateMatch, type TaskDependencyMutation } from "@fusion/core";
+import { TaskStore, COLUMNS, COLUMN_LABELS, CentralCore, buildAutoPauseClearPatch, buildManualRetryResetPatch, extractIntentSignature, findNearDuplicates, getTaskDuplicateLineage, isWorkspaceTask, reconcileDeterministicDuplicate, resolveTaskGithubTracking, runDeterministicDuplicateGuard, type Settings, type Column, type ColumnId, type StepStatus, type AgentLogType, type AgentLogEntry, type IntentSignature, type NearDuplicateCandidate, type NearDuplicateMatch, type TaskDependencyMutation } from "@fusion/core";
 import { runAiMerge, landWorkspaceTask } from "@fusion/engine";
 import { createInterface } from "node:readline/promises";
 import type { PlanningQuestion, PlanningSummary } from "@fusion/core";
@@ -1293,6 +1293,19 @@ export async function runTaskImportGitHubInteractive(
 
   console.log();
 
+  const projectSettings = await store.getSettings();
+  const globalSettings = await store.getGlobalSettingsStore().getSettings();
+  const resolvedTracking = resolveTaskGithubTracking(
+    { githubTracking: undefined },
+    projectSettings,
+    globalSettings,
+  );
+  /*
+  FNXC:GithubImportTracking 2026-06-26-00:00:
+  CLI issue imports mark created tasks as tracking-enabled only when defaults resolve on. The task-created hook then links the GitHub source issue through source_issue_linked and avoids a duplicate tracking issue.
+  */
+  const importedIssueGithubTracking = resolvedTracking.enabled ? { enabled: true as const } : undefined;
+
   let created = 0;
   let skipped = 0;
 
@@ -1327,6 +1340,7 @@ export async function runTaskImportGitHubInteractive(
         sourceType: "github_import",
         sourceMetadata: source.sourceMetadata,
       },
+      ...(importedIssueGithubTracking ? { githubTracking: importedIssueGithubTracking } : {}),
     });
 
     const label = task.title || task.description.slice(0, 60) + (task.description.length > 60 ? "…" : "");
@@ -1451,6 +1465,19 @@ export async function runTaskImportFromGitHub(
     return;
   }
 
+  const projectSettings = await store.getSettings();
+  const globalSettings = await store.getGlobalSettingsStore().getSettings();
+  const resolvedTracking = resolveTaskGithubTracking(
+    { githubTracking: undefined },
+    projectSettings,
+    globalSettings,
+  );
+  /*
+  FNXC:GithubImportTracking 2026-06-26-00:00:
+  Non-interactive fn task import uses the same tracking default resolution as the extension tools so imported source issues are adopted instead of duplicated when tracking is on.
+  */
+  const importedIssueGithubTracking = resolvedTracking.enabled ? { enabled: true as const } : undefined;
+
   let created = 0;
   let skipped = 0;
 
@@ -1483,6 +1510,7 @@ export async function runTaskImportFromGitHub(
         sourceType: "github_import",
         sourceMetadata: source.sourceMetadata,
       },
+      ...(importedIssueGithubTracking ? { githubTracking: importedIssueGithubTracking } : {}),
     });
 
     const label = task.title || task.description.slice(0, 60) + (task.description.length > 60 ? "…" : "");

@@ -17,7 +17,7 @@ import type {
   Task,
   TaskStore,
 } from "@fusion/core";
-import { classifyGhError, getCurrentRepo, isGhAuthenticated, loadWorkspaceConfig } from "@fusion/core";
+import { classifyGhError, getCurrentRepo, isGhAuthenticated, loadWorkspaceConfig, resolveTaskGithubTracking } from "@fusion/core";
 import {
   dropAutostashHandle,
   generateSyntheticRunId,
@@ -2133,6 +2133,21 @@ function isIssueAlreadyImported(
       && sourceIssue.issueNumber === issueNumber);
 }
 
+async function resolveImportedIssueGithubTracking(store: TaskStore): Promise<{ enabled: true } | undefined> {
+  const projectSettings = await store.getSettings();
+  const globalSettings = await store.getGlobalSettingsStore().getSettings();
+  const resolvedTracking = resolveTaskGithubTracking(
+    { githubTracking: undefined },
+    projectSettings,
+    globalSettings,
+  );
+  /*
+  FNXC:GithubImportTracking 2026-06-26-00:00:
+  Dashboard GitHub issue imports must mark tasks tracking-enabled only when project/global defaults resolve on. The post-create hook uses the GitHub sourceIssue to link source_issue_linked and prevents duplicate Fusion-created tracking issues.
+  */
+  return resolvedTracking.enabled ? { enabled: true } : undefined;
+}
+
 export function getDefaultGitHubRepo(store: TaskStore): { owner: string; repo: string } | null {
   const envRepo = process.env.GITHUB_REPOSITORY;
   if (envRepo) {
@@ -3991,6 +4006,7 @@ export function registerGitGitHubRoutes(ctx: ApiRoutesContext): void {
       const body = issue.body?.trim() || "(no description)";
       const description = `${body}\n\nSource: ${sourceUrl}`;
 
+      const importedIssueGithubTracking = await resolveImportedIssueGithubTracking(scopedStore);
       const source = buildGitHubIssueSource(owner, repo, issue);
       const task = await scopedStore.createTask({
         title: title || undefined,
@@ -4002,6 +4018,7 @@ export function registerGitGitHubRoutes(ctx: ApiRoutesContext): void {
           sourceType: "github_import",
           sourceMetadata: source.sourceMetadata,
         },
+        ...(importedIssueGithubTracking ? { githubTracking: importedIssueGithubTracking } : {}),
       });
 
       // Log the import action
@@ -4062,6 +4079,7 @@ export function registerGitGitHubRoutes(ctx: ApiRoutesContext): void {
 
       // Get existing tasks to check for duplicates
       const existingTasks = await scopedStore.listTasks({ slim: false, includeArchived: false });
+      const importedIssueGithubTracking = await resolveImportedIssueGithubTracking(scopedStore);
 
       // Process issues sequentially with throttling
       const results: Array<{
@@ -4137,6 +4155,7 @@ export function registerGitGitHubRoutes(ctx: ApiRoutesContext): void {
               sourceType: "github_import",
               sourceMetadata: source.sourceMetadata,
             },
+            ...(importedIssueGithubTracking ? { githubTracking: importedIssueGithubTracking } : {}),
           });
 
           // Log the import action

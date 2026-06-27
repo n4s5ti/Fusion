@@ -613,6 +613,8 @@ Flags:
 
 Default behavior: PR title/body are AI-generated unless both `--title` and `--body` are provided. Use `--no-ai` to suppress AI generation.
 
+`fn task import` creates Fusion tasks from GitHub issues. If project or global GitHub tracking defaults are enabled, imported issue tasks are marked as tracked and the tracking hook links the source issue itself instead of opening a duplicate Fusion tracking issue.
+
 ```bash
 fn pr create FN-001
 fn pr create FN-001 --draft --reviewer octocat --reviewer hubot --base main
