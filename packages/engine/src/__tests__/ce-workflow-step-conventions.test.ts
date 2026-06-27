@@ -8,13 +8,12 @@
  *      instruction, and the persona-fan-out / systemPromptOverride /
  *      path-confinement instruction (always feasible — pure constant assertion).
  *
- *   2. Skill resolution: a skill step requesting BOTH the namespaced
- *      `compound-engineering:ce-X` and bare `ce-X` forms (exactly what
- *      executeWorkflowStep merges into requestedSkillNames) resolves the named
- *      CE skill once the install dir is fed as a discovery path — the bare name
- *      matches case-insensitively against the discovered SKILL.md. This mirrors
+ *   2. Skill resolution: requested CE skill names resolve the named CE skill
+ *      once the install dir is fed as a discovery path, whether the request uses
+ *      the bare, namespaced, path/SKILL.md-suffixed, mixed-case, or dual form
+ *      that executeWorkflowStep merges into requestedSkillNames. This mirrors
  *      and extends compound-engineering-skill-resolution.test.ts, asserting the
- *      DUAL (namespaced + bare) request form U1 now produces.
+ *      normalized U1 request forms resolve once without duplicates.
  *
  * The full runGraphCustomNode -> executeWorkflowStep session path (skillName on
  * the synthesized step, spawn gating, FUSION_HEADLESS, verdict conditional) is
@@ -91,18 +90,19 @@ describe("FUSION_WORKFLOW_STEP_CONVENTIONS_PREAMBLE (U2/U9 constant)", () => {
 });
 
 /**
- * U1 dual-form resolution. executeWorkflowStep merges BOTH the namespaced
- * `compound-engineering:ce-work` and the bare `ce-work` into requestedSkillNames
- * before resolution.
+ * U1 normalized request-form resolution. executeWorkflowStep still merges BOTH
+ * the namespaced `compound-engineering:ce-work` and the bare `ce-work` into
+ * requestedSkillNames before resolution, and the resolver now compares those
+ * requested names through requestedSkillMatchKey.
  *
- * REAL FINDING (asserted below): the resolver's name match is `bareSkillName`,
- * which only strips a trailing `/SKILL.md` — it does NOT strip a `namespace:`
- * prefix. So the NAMESPACED form alone does NOT match the on-disk bare
- * `ce-work`; only the BARE form does. This is precisely why executeWorkflowStep
- * must merge both forms — the bare half is what actually selects the skill, and
- * the namespaced half is a (currently non-matching) belt-and-suspenders entry.
+ * FNXC:SkillResolution 2026-06-27-04:15:
+ * requestedSkillMatchKey strips trailing `/SKILL.md`, keeps the final slash
+ * segment, strips a `namespace:` prefix, and lowercases only the request-name
+ * comparison key. A discovered bare CE skill should therefore load from each
+ * supported request spelling exactly once, while still requiring the skill to be
+ * present on the discovery path.
  */
-describe("U1: dual-form (namespaced + bare) CE skill resolution", () => {
+describe("U1: normalized CE skill request-form resolution", () => {
   let tmp: string;
   let projectRootDir: string;
   let agentDir: string;
@@ -117,11 +117,14 @@ describe("U1: dual-form (namespaced + bare) CE skill resolution", () => {
     );
   }
 
-  function resolveFor(requestedSkillNames: string[]): string[] {
+  function resolveFor(
+    requestedSkillNames: string[],
+    skillPaths = [installRoot],
+  ): string[] {
     const discovered = loadSkills({
       cwd: projectRootDir,
       agentDir,
-      skillPaths: [installRoot],
+      skillPaths,
       includeDefaults: false,
     });
     const selection = resolveSessionSkills({
@@ -155,33 +158,39 @@ describe("U1: dual-form (namespaced + bare) CE skill resolution", () => {
     expect(resolveFor(["ce-work"])).toContain("ce-work");
   });
 
-  it("namespaced name `compound-engineering:ce-work` ALONE does NOT resolve it (no namespace stripping)", () => {
-    // bareSkillName only strips `/SKILL.md`, not a `namespace:` prefix — so the
-    // namespaced tail never matches the on-disk bare `ce-work`. This is the gap
-    // that makes the bare half of the executor's dual merge load-bearing.
-    expect(resolveFor(["compound-engineering:ce-work"])).not.toContain("ce-work");
+  it("namespaced name `compound-engineering:ce-work` resolves the installed skill", () => {
+    expect(resolveFor(["compound-engineering:ce-work"])).toContain("ce-work");
   });
 
-  it("the dual request (both forms together, as executeWorkflowStep merges them) resolves it once via the bare half", () => {
+  it("slash and SKILL.md-suffixed request forms resolve the installed skill", () => {
+    expect(resolveFor(["compound-engineering/ce-work"])).toContain("ce-work");
+    expect(resolveFor(["ce-work/SKILL.md"])).toContain("ce-work");
+  });
+
+  it("mixed-case request forms resolve the installed skill", () => {
+    expect(resolveFor(["CE-Work"])).toContain("ce-work");
+    expect(resolveFor(["Compound-Engineering:CE-WORK"])).toContain("ce-work");
+  });
+
+  it("the dual request (both forms together, as executeWorkflowStep merges them) resolves it once", () => {
     const resolved = resolveFor(["compound-engineering:ce-work", "ce-work"]);
     expect(resolved).toContain("ce-work");
     // No duplicate skill entries from the two request forms.
     expect(resolved.filter((n) => n === "ce-work")).toHaveLength(1);
   });
 
-  it("without the install dir on the discovery path, the request does NOT resolve (both halves required)", () => {
-    // Repoint discovery away from the install root: name alone is insufficient.
-    const discovered = loadSkills({ cwd: projectRootDir, agentDir, skillPaths: [], includeDefaults: false });
-    const selection = resolveSessionSkills({
-      projectRootDir,
-      requestedSkillNames: ["compound-engineering:ce-work", "ce-work"],
-      sessionPurpose: "executor",
-    });
-    const override = createSkillsOverrideFromSelection(selection, {
-      requestedSkillNames: ["compound-engineering:ce-work", "ce-work"],
-      sessionPurpose: "executor",
-    });
-    const result = override({ skills: discovered.skills, diagnostics: discovered.diagnostics });
-    expect(result.skills.map((s) => s.name)).not.toContain("ce-work");
+  it("without the install dir on the discovery path, the request does NOT resolve", () => {
+    // Repoint discovery away from the install root: name alone is insufficient
+    // for every normalized request form.
+    for (const requestedSkillNames of [
+      ["ce-work"],
+      ["compound-engineering:ce-work"],
+      ["compound-engineering/ce-work"],
+      ["ce-work/SKILL.md"],
+      ["Compound-Engineering:CE-WORK"],
+      ["compound-engineering:ce-work", "ce-work"],
+    ]) {
+      expect(resolveFor(requestedSkillNames, [])).not.toContain("ce-work");
+    }
   });
 });
