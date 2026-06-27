@@ -1,5 +1,5 @@
 {
-  "capturedAt": "2026-06-25T05:45:08.116Z",
+  "capturedAt": "2026-06-27T05:41:42.568Z",
   "packages": {
     "@fusion-plugin-examples/acp-runtime": {
       "files": {
@@ -369,7 +369,6 @@
         "packages/core/src/__tests__/store-upsert.test.ts": 5100,
         "packages/core/src/__tests__/store-watcher.test.ts": 100,
         "packages/core/src/__tests__/store-workflow-runtime.test.ts": 900,
-        "packages/core/src/__tests__/store-workflow-steps.test.ts": 500,
         "packages/core/src/__tests__/store.experiment-session-accessor.test.ts": 300,
         "packages/core/src/__tests__/stranded-refinements.test.ts": 400,
         "packages/core/src/__tests__/strip-approval-bypass-flags.test.ts": 100,
@@ -430,8 +429,6 @@
         "packages/core/src/__tests__/workflow-settings-resolver.test.ts": 100,
         "packages/core/src/__tests__/workflow-settings.test.ts": 100,
         "packages/core/src/__tests__/workflow-step-instances.test.ts": 900,
-        "packages/core/src/__tests__/workflow-step-migration.test.ts": 200,
-        "packages/core/src/__tests__/workflow-step-templates-verdict.test.ts": 100,
         "packages/core/src/__tests__/workflow-steps-to-ir.test.ts": 100,
         "packages/core/src/__tests__/workspace-dependency-acyclicity.test.ts": 100,
         "packages/core/src/__tests__/worktrunk-settings.test.ts": 100,
@@ -552,7 +549,6 @@
         "packages/dashboard/app/components/__tests__/AgentGenerationModal.test.tsx": 1100,
         "packages/dashboard/app/components/__tests__/AgentImportModal.test.tsx": 300,
         "packages/dashboard/app/components/__tests__/AgentListModal.test.tsx": 1200,
-        "packages/dashboard/app/components/__tests__/AgentLogViewer.test.tsx": 500,
         "packages/dashboard/app/components/__tests__/AgentMentionPopup.room.test.tsx": 100,
         "packages/dashboard/app/components/__tests__/AgentMentionPopup.test.tsx": 100,
         "packages/dashboard/app/components/__tests__/AgentMetricsBar.test.tsx": 100,
@@ -587,7 +583,6 @@
         "packages/dashboard/app/components/__tests__/ChatView.scroll-to-top.test.tsx": 100,
         "packages/dashboard/app/components/__tests__/ChatView.streaming-thread.test.tsx": 100,
         "packages/dashboard/app/components/__tests__/ChatView.swipe-back.test.tsx": 100,
-        "packages/dashboard/app/components/__tests__/ChatView.test.tsx": 24400,
         "packages/dashboard/app/components/__tests__/Column.test.tsx": 500,
         "packages/dashboard/app/components/__tests__/CommitDiffTab.test.tsx": 100,
         "packages/dashboard/app/components/__tests__/ConfirmDialog.test.tsx": 100,
@@ -730,7 +725,6 @@
         "packages/dashboard/app/components/__tests__/SettingsModal.backup.css.test.ts": 100,
         "packages/dashboard/app/components/__tests__/SettingsModal.memory-css.test.ts": 100,
         "packages/dashboard/app/components/__tests__/SettingsModal.memory-editor.test.ts": 100,
-        "packages/dashboard/app/components/__tests__/SettingsModal.test.tsx": 60500,
         "packages/dashboard/app/components/__tests__/SettingsModal.testMode.test.tsx": 200,
         "packages/dashboard/app/components/__tests__/SettingsModal.workflow-model-lane-css.test.ts": 100,
         "packages/dashboard/app/components/__tests__/SettingsModal.worktrunk.test.tsx": 600,
@@ -1301,8 +1295,7 @@
         "packages/dashboard/src/routes/__tests__/task-custom-fields-route.test.ts": 2200,
         "packages/dashboard/src/routes/__tests__/task-review-routes.test.ts": 100,
         "packages/dashboard/src/routes/__tests__/workflow-design-route.test.ts": 9800,
-        "packages/dashboard/src/routes/__tests__/workflow-import-export.test.ts": 6500,
-        "packages/dashboard/src/routes/__tests__/workflow-migrate-route.test.ts": 200
+        "packages/dashboard/src/routes/__tests__/workflow-import-export.test.ts": 6500
       }
     },
     "@fusion/engine": {
@@ -1432,8 +1425,6 @@
         "packages/engine/src/__tests__/executor-task-done-summary.test.ts": 100,
         "packages/engine/src/__tests__/executor-token-usage.test.ts": 100,
         "packages/engine/src/__tests__/executor-user-cancel.test.ts": 100,
-        "packages/engine/src/__tests__/executor-workflow-revision-scope.test.ts": 100,
-        "packages/engine/src/__tests__/executor-workflow-step-scope.test.ts": 100,
         "packages/engine/src/__tests__/executor-workspace-capture.test.ts": 4600,
         "packages/engine/src/__tests__/executor-workspace-concurrent-session.test.ts": 100,
         "packages/engine/src/__tests__/executor-workspace-session-cwd.test.ts": 100,
@@ -1524,7 +1515,6 @@
         "packages/engine/src/__tests__/merger-no-op-fix-finalize.test.ts": 1700,
         "packages/engine/src/__tests__/merger-orphan-rehome.test.ts": 1900,
         "packages/engine/src/__tests__/merger-post-merge-audit-rangebase.test.ts": 2800,
-        "packages/engine/src/__tests__/merger-post-merge.test.ts": 100,
         "packages/engine/src/__tests__/merger-post-push-stats-refresh.test.ts": 100,
         "packages/engine/src/__tests__/merger-prompt-and-utils.test.ts": 100,
         "packages/engine/src/__tests__/merger-rebase-base-sha.test.ts": 100,
