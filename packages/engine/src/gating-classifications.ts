@@ -4,8 +4,35 @@
 export const READONLY_BUILTIN_TOOLS: ReadonlySet<string> = new Set(["read", "find", "grep", "ls"]);
 export const FILE_WRITE_BUILTIN_TOOLS: ReadonlySet<string> = new Set(["write", "edit"]);
 
-const SHARED_TASK_AGENT_TOOLS = ["fn_task_add_dep", "fn_spawn_agent", "fn_update_agent_config", "fn_agent_create", "fn_agent_delete"] as const;
+/**
+ * FNXC:ToolGovernance 2026-06-27-12:05:
+ * Workflow edits, task status/custom-field updates, held-task promotion, and refinement creation are mutating heartbeat tools. Keep them in the shared task-agent bucket so action-gate and permanent-agent policy decisions cannot drift or fall through to silent exemption.
+ */
+const SHARED_TASK_AGENT_TOOLS = [
+  "fn_task_add_dep",
+  "fn_task_update",
+  "fn_spawn_agent",
+  "fn_update_agent_config",
+  "fn_agent_create",
+  "fn_agent_delete",
+  "fn_workflow_select",
+  "fn_workflow_create",
+  "fn_workflow_update",
+  "fn_workflow_delete",
+  "fn_workflow_settings",
+  "fn_task_promote",
+  "fn_task_refine",
+] as const;
 const PROVISIONING_TOOLS = ["fn_agent_create", "fn_agent_delete"] as const;
+
+/**
+ * FNXC:ToolGovernance 2026-06-27-12:00:
+ * Newly exposed mutating heartbeat tools must be positively classified before agents receive them, otherwise the action gate's unrecognized-tool fallback silently allows them. Verification and workspace acquisition execute subprocess/git-worktree work, so both gating paths use command_execution instead of a coordination exemption.
+ */
+export const COMMAND_EXECUTION_FN_TOOLS: ReadonlySet<string> = new Set([
+  "fn_run_verification",
+  "fn_acquire_repo_worktree",
+]);
 
 const ACTION_GATE_TASK_AGENT_ONLY_TOOLS = [
   "fn_task_create",
@@ -22,7 +49,6 @@ const PERMANENT_TASK_AGENT_ONLY_TOOLS = [
   "fn_task_unpause",
   "fn_task_retry",
   "fn_task_duplicate",
-  "fn_task_refine",
   "fn_task_archive",
   "fn_task_unarchive",
   "fn_task_delete",
@@ -75,6 +101,7 @@ export const NETWORK_API_TOOLS: ReadonlySet<string> = new Set([
 
 export const ACTION_GATE_NETWORK_API_TOOLS: ReadonlySet<string> = new Set([
   "fn_research_run",
+  "fn_research_cancel",
   "fn_web_fetch", // FN-4603: honor network_api approval policy for web fetches.
   "worktrunk_install", // FN-4624: gate binary auto-install under network_api policy.
 ]);
@@ -99,6 +126,8 @@ export const READONLY_FN_TOOLS: ReadonlySet<string> = new Set([
   "fn_insight_run_show",
   "fn_goal_list",
   "fn_goal_show",
+  // FNXC:ToolGovernance 2026-06-27-12:06: Workflow listing is read-only discovery and must stay positively recognized instead of relying on an unknown-tool fallback.
+  "fn_workflow_list",
   "fn_mission_list",
   "fn_mission_show",
   "fn_list_agents",
@@ -107,7 +136,6 @@ export const READONLY_FN_TOOLS: ReadonlySet<string> = new Set([
   "fn_skills_search",
   "fn_memory_search",
   "fn_memory_get",
-  "fn_task_update",
   "fn_task_log",
   "fn_task_done",
   "fn_heartbeat_done",
@@ -125,7 +153,6 @@ export const COORDINATION_EXEMPT_TOOLS = [
   "find",
   "grep",
   "ls",
-  "fn_task_update",
   "fn_task_log",
   "fn_task_done",
   /* FNXC:ArtifactRegistry 2026-06-21-00:00: Artifact registration mutates persisted registry state, but it is a low-risk coordination action classified like fn_task_document_write so permanent agents can publish discoverable deliverables without broad mutation approval. */
@@ -145,6 +172,7 @@ export const COORDINATION_EXEMPT_TOOLS = [
   "fn_list_agents",
   "fn_agent_show",
   "fn_agent_org_chart",
+  "fn_workflow_list",
   "fn_send_message",
   "fn_post_room_message",
   "fn_memory_append",

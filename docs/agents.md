@@ -147,10 +147,10 @@ V1 runtime action categories:
 The engine classifies tool calls by behavior (not namespace alone):
 
 - `file_write_delete`: built-in `write` / `edit`, plus direct filesystem attach helpers like `fn_task_attach`; low-risk coordination/registration writes such as `fn_task_document_write` and `fn_artifact_register` are handled by the coordination-exempt/read-only allow-lists below rather than this category
-- `command_execution`: built-in `bash` when not classified as mutating git
+- `command_execution`: built-in `bash` when not classified as mutating git, plus fn tools that run bounded subprocess/worktree acquisition flows such as `fn_run_verification` and `fn_acquire_repo_worktree`
 - `git_write`: mutating git shell commands run via `bash`
-- `network_api`: external/network-facing tools (for example `fn_research_run`, `fn_research_cancel`, `fn_research_retry`, `fn_web_fetch`)
-- `task_agent_mutation`: task/agent mutation tools (for example `fn_update_agent_config`, `fn_task_pause`, `fn_spawn_agent`; action-gate task-import/create tools like `fn_task_create`, `fn_delegate_task`, `fn_task_import_github`, and `fn_task_import_github_issue` use this category in action-gate evaluation)
+- `network_api`: external/network-facing tools (for example `fn_research_run`, `fn_research_cancel`, `fn_web_fetch`, `worktrunk_install`; `fn_research_retry` is permanent-agent network-classified and remains action-gate read-only/exception behavior)
+- `task_agent_mutation`: task/agent/workflow mutation tools (for example `fn_update_agent_config`, `fn_task_pause`, `fn_spawn_agent`, `fn_task_update`, `fn_task_promote`, `fn_task_refine`, and workflow mutators such as `fn_workflow_create`, `fn_workflow_update`, `fn_workflow_delete`, `fn_workflow_settings`, `fn_workflow_select`; action-gate task-import/create tools like `fn_task_create`, `fn_delegate_task`, `fn_task_import_github`, and `fn_task_import_github_issue` use this category in action-gate evaluation)
 - Dashboard permission editors now show per-category example tools sourced from `AGENT_PERMISSION_POLICY_CATEGORY_TOOL_EXAMPLES` in `@fusion/core`, plus a read-only exempt-tools panel for coordination/messaging bypass tools.
 - `none`: positively recognized read-only tools (`read`, `grep`, `find`, `ls`, list/show/get-style `fn_*` tools, plus permanent-agent coordination/task-creation helpers like `fn_task_create`, `fn_delegate_task`, `fn_task_import_github`, and `fn_task_import_github_issue`). Artifact tools mirror `fn_task_document_write` in the shipped allow-lists: `fn_artifact_register`, `fn_artifact_list`, and `fn_artifact_view` are present in `READONLY_FN_TOOLS` and `COORDINATION_EXEMPT_TOOLS`, so registration is treated as coordination/registry publication instead of a broad mutation approval.
 
@@ -163,7 +163,7 @@ Unknown/unclassified tool fallback:
 
 - In permanent-agent sessions, unknown tools default to `require-approval` (fail-safe).
 - Category `none` only yields `allow` when the tool is positively recognized as read-only.
-- Internal Fusion runtime coordination tools (heartbeat completion, task/agent coordination, messaging, evaluations, identity reflection, memory bookkeeping) are exempt by design and always allowed so permanent-agent heartbeats can complete.
+- Internal Fusion runtime coordination tools (heartbeat completion, logs, documents, task creation/delegation, messaging, evaluations, identity reflection, memory bookkeeping) are exempt by design and always allowed so permanent-agent heartbeats can complete. Task field/status mutation via `fn_task_update` is not exempt; it is governed as `task_agent_mutation`.
 - Operators can reload the in-memory exempt-tool registry at runtime via `POST /api/action-gate/reload` (optional body `{ "tools": string[] }`) to apply exemption-list updates without restarting the engine process.
 - Canonical tool classification/exemption sets live in `packages/engine/src/gating-classifications.ts` and are shared by both action-gate paths.
 

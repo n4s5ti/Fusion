@@ -7,6 +7,7 @@ import type {
 import {
   ACTION_GATE_NETWORK_API_TOOLS,
   ACTION_GATE_TASK_AGENT_MANAGEMENT_TOOLS,
+  COMMAND_EXECUTION_FN_TOOLS,
   COORDINATION_EXEMPT_TOOLS,
   READONLY_BUILTIN_TOOLS,
   classifyGitCommand,
@@ -85,6 +86,7 @@ export function getExemptToolNames(): string[] {
 
 const TASK_AGENT_MANAGEMENT_TOOLS = ACTION_GATE_TASK_AGENT_MANAGEMENT_TOOLS;
 const NETWORK_API_TOOLS = ACTION_GATE_NETWORK_API_TOOLS;
+const COMMAND_EXECUTION_TOOLS = COMMAND_EXECUTION_FN_TOOLS;
 const READONLY_DISCOVERY_TOOLS = READONLY_BUILTIN_TOOLS;
 
 function normalizeArgs(args: unknown): Record<string, unknown> {
@@ -159,6 +161,10 @@ export function evaluateAgentActionGate(params: {
     category = "task_agent_mutation";
     operation = params.toolName;
     resourceType = params.toolName.includes("agent") || params.toolName.includes("spawn") ? "agent" : "task";
+  } else if (COMMAND_EXECUTION_TOOLS.has(params.toolName)) {
+    category = "command_execution";
+    operation = params.toolName;
+    resourceType = "command";
   } else if (NETWORK_API_TOOLS.has(params.toolName)) {
     category = "network_api";
     operation = params.toolName;

@@ -3,6 +3,7 @@ import { evaluateAgentActionGate } from "../agent-action-gate.js";
 import {
   ACTION_GATE_NETWORK_API_TOOLS,
   ACTION_GATE_TASK_AGENT_MANAGEMENT_TOOLS,
+  COMMAND_EXECUTION_FN_TOOLS,
   COORDINATION_EXEMPT_TOOLS,
   FILE_WRITE_DELETE_FN_TOOLS,
   NETWORK_API_TOOLS,
@@ -14,6 +15,28 @@ import {
 import { classifyPermanentAgentToolCall, resolvePermanentAgentToolDecision } from "../permanent-agent-gating.js";
 import type { AgentPermissionPolicy } from "@fusion/core";
 
+const unrestrictedPolicy: AgentPermissionPolicy = {
+  presetId: "unrestricted",
+  rules: {
+    git_write: "allow",
+    file_write_delete: "allow",
+    command_execution: "allow",
+    network_api: "allow",
+    task_agent_mutation: "allow",
+  },
+};
+
+const approvalRequiredPolicy: AgentPermissionPolicy = {
+  presetId: "approval-required",
+  rules: {
+    git_write: "require-approval",
+    file_write_delete: "require-approval",
+    command_execution: "require-approval",
+    network_api: "require-approval",
+    task_agent_mutation: "require-approval",
+  },
+};
+
 const blockedPolicy: AgentPermissionPolicy = {
   presetId: "locked-down",
   rules: {
@@ -24,6 +47,20 @@ const blockedPolicy: AgentPermissionPolicy = {
     task_agent_mutation: "block",
   },
 };
+
+const FN_7111_GOVERNED_TOOLS = [
+  ["fn_workflow_select", "task_agent_mutation"],
+  ["fn_workflow_create", "task_agent_mutation"],
+  ["fn_workflow_update", "task_agent_mutation"],
+  ["fn_workflow_delete", "task_agent_mutation"],
+  ["fn_workflow_settings", "task_agent_mutation"],
+  ["fn_task_update", "task_agent_mutation"],
+  ["fn_task_promote", "task_agent_mutation"],
+  ["fn_task_refine", "task_agent_mutation"],
+  ["fn_run_verification", "command_execution"],
+  ["fn_acquire_repo_worktree", "command_execution"],
+  ["fn_research_cancel", "network_api"],
+] as const;
 
 const gitCases = [
   ["git status", false, "git status"],
@@ -89,8 +126,8 @@ describe("gating-classifications parity", () => {
         "fn_task_document_write",
         "fn_task_done",
         "fn_task_log",
-        "fn_task_update",
         "fn_update_identity",
+        "fn_workflow_list",
         "grep",
         "ls",
         "read",
@@ -132,6 +169,47 @@ describe("gating-classifications parity", () => {
     expect((COORDINATION_EXEMPT_TOOLS as readonly string[]).includes("worktrunk_install")).toBe(false);
   });
 
+  it.each(FN_7111_GOVERNED_TOOLS)("governs FN-7111 tool %s as %s across action policies", (toolName, category) => {
+    expect(evaluateAgentActionGate({ agentId: "a1", toolName, args: {}, permissionPolicy: unrestrictedPolicy })).toMatchObject({
+      category,
+      disposition: "allow",
+    });
+    expect(evaluateAgentActionGate({ agentId: "a1", toolName, args: {}, permissionPolicy: approvalRequiredPolicy })).toMatchObject({
+      category,
+      disposition: "require-approval",
+    });
+    expect(evaluateAgentActionGate({ agentId: "a1", toolName, args: {}, permissionPolicy: blockedPolicy })).toMatchObject({
+      category,
+      disposition: "block",
+    });
+  });
+
+  it.each(FN_7111_GOVERNED_TOOLS)("blocks FN-7111 mutating tool %s under locked-down policy in both gate paths", (toolName, category) => {
+    const action = evaluateAgentActionGate({ agentId: "a1", toolName, args: {}, permissionPolicy: blockedPolicy });
+    const permanent = resolvePermanentAgentToolDecision({
+      toolName,
+      args: {},
+      gating: { permissionPolicy: blockedPolicy },
+    });
+
+    expect(action).toMatchObject({ category, disposition: "block" });
+    expect(permanent).toMatchObject({ category, disposition: "block", recognized: true });
+  });
+
+  it("recognizes fn_workflow_list as read-only coordination instead of an unknown fallback", () => {
+    const permanent = classifyPermanentAgentToolCall("fn_workflow_list");
+    const action = evaluateAgentActionGate({
+      agentId: "a1",
+      toolName: "fn_workflow_list",
+      args: {},
+      permissionPolicy: blockedPolicy,
+    });
+
+    expect(permanent).toEqual({ category: "none", recognized: true });
+    expect(action).toMatchObject({ category: "exempt", disposition: "allow" });
+    expect((COORDINATION_EXEMPT_TOOLS as readonly string[]).includes("fn_workflow_list")).toBe(true);
+  });
+
   it("keeps fn_* category equivalence mappings across gates", () => {
     const fnTools = new Set<string>();
     for (const source of [
@@ -140,6 +218,7 @@ describe("gating-classifications parity", () => {
       ACTION_GATE_NETWORK_API_TOOLS,
       FILE_WRITE_DELETE_FN_TOOLS,
       NETWORK_API_TOOLS,
+      COMMAND_EXECUTION_FN_TOOLS,
     ]) {
       for (const toolName of source) {
         if (toolName.startsWith("fn_")) fnTools.add(toolName);
@@ -161,7 +240,9 @@ describe("gating-classifications parity", () => {
           ? "network"
           : action.category === "file_write_delete"
             ? "file-write"
-            : "readonly";
+            : action.category === "command_execution"
+              ? "command"
+              : "readonly";
 
       const permanentKind = permanent.category === "task_agent_mutation"
         ? "mutating"
@@ -169,8 +250,14 @@ describe("gating-classifications parity", () => {
           ? "network"
           : permanent.category === "file_write_delete"
             ? "file-write"
-            : "readonly";
+            : permanent.category === "command_execution"
+              ? "command"
+              : "readonly";
 
+      if (COMMAND_EXECUTION_FN_TOOLS.has(toolName)) {
+        expect({ toolName, actionKind, permanentKind }).toEqual({ toolName, actionKind: "command", permanentKind: "command" });
+        continue;
+      }
       if (FILE_WRITE_DELETE_FN_TOOLS.has(toolName)) {
         expect({ toolName, actionKind, permanentKind }).toEqual({ toolName, actionKind: "readonly", permanentKind: "file-write" });
         continue;

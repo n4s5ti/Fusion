@@ -4,6 +4,20 @@ import {
   resolvePermanentAgentToolDecision,
 } from "../permanent-agent-gating.js";
 
+const FN_7111_GOVERNED_TOOLS = [
+  ["fn_workflow_select", "task_agent_mutation"],
+  ["fn_workflow_create", "task_agent_mutation"],
+  ["fn_workflow_update", "task_agent_mutation"],
+  ["fn_workflow_delete", "task_agent_mutation"],
+  ["fn_workflow_settings", "task_agent_mutation"],
+  ["fn_task_update", "task_agent_mutation"],
+  ["fn_task_promote", "task_agent_mutation"],
+  ["fn_task_refine", "task_agent_mutation"],
+  ["fn_run_verification", "command_execution"],
+  ["fn_acquire_repo_worktree", "command_execution"],
+  ["fn_research_cancel", "network_api"],
+] as const;
+
 const FN_3548_COORDINATION_TOOLS = [
   "fn_heartbeat_done",
   "fn_task_create",
@@ -51,12 +65,42 @@ describe("permanent-agent-gating", () => {
     expect(classifyPermanentAgentToolCall("fn_artifact_view").category).toBe("none");
     expect(classifyPermanentAgentToolCall("fn_memory_append").category).toBe("none");
     expect(classifyPermanentAgentToolCall("fn_research_run").category).toBe("network_api");
+    expect(classifyPermanentAgentToolCall("fn_research_cancel").category).toBe("network_api");
     expect(classifyPermanentAgentToolCall("worktrunk_install").category).toBe("network_api");
+    expect(classifyPermanentAgentToolCall("fn_task_update").category).toBe("task_agent_mutation");
     expect(classifyPermanentAgentToolCall("fn_task_show").category).toBe("none");
     expect(classifyPermanentAgentToolCall("fn_research_get").category).toBe("none");
     expect(classifyPermanentAgentToolCall("fn_heartbeat_done")).toEqual({ category: "none", recognized: true });
     expect(classifyPermanentAgentToolCall("fn_send_message")).toEqual({ category: "none", recognized: true });
     expect(classifyPermanentAgentToolCall("fn_read_messages")).toEqual({ category: "none", recognized: true });
+  });
+
+  it.each(FN_7111_GOVERNED_TOOLS)("classifies FN-7111 governed tool %s as recognized %s", (toolName, category) => {
+    expect(classifyPermanentAgentToolCall(toolName)).toEqual({ category, recognized: true });
+  });
+
+  it.each(FN_7111_GOVERNED_TOOLS)("blocks FN-7111 governed tool %s under locked-down policy", (toolName, category) => {
+    const decision = resolvePermanentAgentToolDecision({
+      toolName,
+      gating: {
+        permissionPolicy: {
+          presetId: "locked-down",
+          rules: {
+            git_write: "block",
+            file_write_delete: "block",
+            command_execution: "block",
+            network_api: "block",
+            task_agent_mutation: "block",
+          },
+        },
+      },
+    });
+
+    expect(decision).toMatchObject({ category, recognized: true, disposition: "block" });
+  });
+
+  it("classifies fn_workflow_list as recognized readonly", () => {
+    expect(classifyPermanentAgentToolCall("fn_workflow_list")).toEqual({ category: "none", recognized: true });
   });
 
   it("uses only canonical action-category names", () => {

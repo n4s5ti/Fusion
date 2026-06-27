@@ -5,6 +5,7 @@ import type {
   PermanentAgentSensitiveActionCategory,
 } from "@fusion/core";
 import {
+  COMMAND_EXECUTION_FN_TOOLS,
   FILE_WRITE_BUILTIN_TOOLS,
   FILE_WRITE_DELETE_FN_TOOLS,
   NETWORK_API_TOOLS,
@@ -31,6 +32,7 @@ const FILE_WRITE_TOOLS = FILE_WRITE_BUILTIN_TOOLS;
 // category "none" so restrictive permanent-agent policies cannot deadlock heartbeats.
 const TASK_AGENT_MUTATION_TOOLS = PERMANENT_AGENT_TASK_MUTATION_TOOLS;
 const FILE_WRITE_DELETE_TOOLS = FILE_WRITE_DELETE_FN_TOOLS;
+const COMMAND_EXECUTION_TOOLS = COMMAND_EXECUTION_FN_TOOLS;
 
 function normalizeArgs(args: unknown): Record<string, unknown> {
   return args && typeof args === "object" ? (args as Record<string, unknown>) : {};
@@ -61,6 +63,9 @@ export function classifyPermanentAgentToolCall(
   }
   if (FILE_WRITE_DELETE_TOOLS.has(toolName)) {
     return { category: "file_write_delete", recognized: true };
+  }
+  if (COMMAND_EXECUTION_TOOLS.has(toolName)) {
+    return { category: "command_execution", recognized: true };
   }
   if (NETWORK_API_TOOLS.has(toolName)) {
     return { category: "network_api", recognized: true };

@@ -125,9 +125,14 @@ describe("agent-action-gate", () => {
     expect(evaluateAgentActionGate({ agentId: "a1", toolName: "fn_spawn_agent", args: {}, permissionPolicy: unrestrictedPolicy }).category).toBe("task_agent_mutation");
   });
 
-  it("keeps routine task bookkeeping tools exempt", () => {
-    expect(evaluateAgentActionGate({ agentId: "a1", toolName: "fn_task_update", args: {}, permissionPolicy: approvalPolicy }).category).toBe("exempt");
-    expect(evaluateAgentActionGate({ agentId: "a1", toolName: "fn_task_update", args: {}, permissionPolicy: approvalPolicy }).disposition).toBe("allow");
+  it("governs fn_task_update as task_agent_mutation under permission policy", () => {
+    const approvalDecision = evaluateAgentActionGate({ agentId: "a1", toolName: "fn_task_update", args: {}, permissionPolicy: approvalPolicy });
+    const blockedDecision = evaluateAgentActionGate({ agentId: "a1", toolName: "fn_task_update", args: {}, permissionPolicy: lockedDownPolicy });
+
+    expect(approvalDecision.category).toBe("task_agent_mutation");
+    expect(approvalDecision.disposition).toBe("require-approval");
+    expect(blockedDecision.category).toBe("task_agent_mutation");
+    expect(blockedDecision.disposition).toBe("block");
   });
 
   it.each(FN_3548_COORDINATION_TOOLS)("always allows newly exempt internal tool %s under locked-down policies", (toolName) => {
