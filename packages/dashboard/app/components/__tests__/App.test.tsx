@@ -1411,6 +1411,11 @@ describe("App deep link handling", () => {
   const originalReplaceState = window.history.replaceState;
 
   beforeEach(() => {
+    /*
+     * FNXC:DashboardTests 2026-06-26-23:40:
+     * Deep-link App tests stub `history.replaceState` for assertions, but `useNavigationHistory` still writes real `pushState` entries and preserves existing `history.state.navIndex`. Reset the real history snapshot before installing the stub so full-file ordering cannot mount a later Back test with stale browser state.
+     */
+    originalReplaceState.call(window.history, null, "", "/");
     window.history.replaceState = vi.fn();
     Object.defineProperty(window, "location", {
       configurable: true,
@@ -1419,11 +1424,12 @@ describe("App deep link handling", () => {
   });
 
   afterEach(() => {
+    window.history.replaceState = originalReplaceState;
+    originalReplaceState.call(window.history, null, "", "/");
     Object.defineProperty(window, "location", {
       configurable: true,
       value: originalLocation,
     });
-    window.history.replaceState = originalReplaceState;
   });
 
   it("fetches and opens the task modal when task query param is present", async () => {
