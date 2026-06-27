@@ -633,6 +633,67 @@ describe("Workflow Steps Execution", () => {
     injectSpy.mockRestore();
   });
 
+  // FNXC:WorkflowOptionalStepFix 2026-06-27-13:30:
+  // Regression for the FN-7122 deadlock: a pre-merge optional-step REVISE
+  // reopens the last plan step to `pending` and schedules a rerun bounce, but
+  // a completion race can land the task in `in-review` BEFORE the setTimeout(0)
+  // bounce fires. The bounce previously only handled `in-progress`/`todo` and
+  // THREW on `in-review`, stranding the task in-review with a `pending` step:
+  // the merge gate blocks forever and self-healing only re-runs the graph
+  // (re-passing the advisory step) without re-launching the executor. The
+  // invariant: performWorkflowRerunBounce must bounce an `in-review` task back
+  // to in-progress exactly like an `in-progress` task, so the reopened step is
+  // actually re-executed.
+  it("bounces an in-review task back to in-progress (FN-7122 deadlock)", async () => {
+    vi.useRealTimers();
+
+    const store = createMockStore();
+    const mutableTask = {
+      id: "FN-7122",
+      title: "Test",
+      description: "Test task",
+      // The completion race left the task in in-review while the optional-step
+      // fix bounce was queued.
+      column: "in-review" as const,
+      dependencies: [] as string[],
+      steps: [
+        { name: "Step 0", status: "done" as const },
+        // Last step reopened by reopenLastStepForRevision — this is the step
+        // the merge gate blocks on until the executor re-runs.
+        { name: "Documentation & Delivery", status: "pending" as const },
+      ],
+      currentStep: 1,
+      log: [] as any[],
+      worktree: "/tmp/test/worktree",
+      executionStartedAt: new Date().toISOString(),
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+    store.getTask.mockImplementation(async () => mutableTask);
+
+    const onError = vi.fn();
+    const executor = new TaskExecutor(store, "/tmp/test", { onError });
+
+    const outcome = await (executor as unknown as {
+      performWorkflowRerunBounce: (
+        taskId: string,
+        worktreePath: string,
+        preserveResumeState?: boolean,
+      ) => Promise<string>;
+    }).performWorkflowRerunBounce("FN-7122", mutableTask.worktree, true);
+
+    // The bounce succeeds instead of throwing "cannot bounce to in-progress".
+    expect(outcome).toBe("bounced");
+    // in-review → todo (preserving step progress + worktree) → in-progress, so
+    // the reopened step is re-executed rather than left stranded.
+    expect(store.moveTask).toHaveBeenCalledWith("FN-7122", "todo", {
+      preserveResumeState: true,
+      preserveWorktree: true,
+    });
+    expect(store.moveTask).toHaveBeenCalledWith("FN-7122", "in-progress");
+    expect(onError).not.toHaveBeenCalled();
+  });
+
 });
 
 describe("Real-time steering injection", () => {

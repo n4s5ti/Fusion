@@ -3175,9 +3175,24 @@ export class TaskExecutor {
         return "deferred-paused";
       }
 
-      if (latestTask.column === "in-progress") {
+      /*
+      FNXC:WorkflowOptionalStepFix 2026-06-27-13:30:
+      A pre-merge optional step REVISE (Code Review / Browser Verification) schedules this
+      bounce via sendTaskBackForFix AFTER reopening the last plan step to `pending`. The
+      graph run that hosted that step reports `disposition: "completed"`, so the outer
+      completion flow can route the task to `in-review` BEFORE this setTimeout(0) bounce
+      runs. Previously the bounce only handled `in-progress`/`todo` and THREW on `in-review`
+      ("cannot bounce to in-progress"), leaving the task stranded in-review with a `pending`
+      step: the merge gate blocks forever on the incomplete step while self-healing only
+      re-runs the workflow graph (re-passing the advisory step) and never re-launches the
+      executor to finish the reopened step — a permanent deadlock (observed on FN-7122).
+      The bounce's ONLY caller is sendTaskBackForFix, which unconditionally intends to send
+      the task back for remediation, so `in-review` must bounce back exactly like
+      `in-progress` regardless of the column the completion race left it in.
+      */
+      if (latestTask.column === "in-progress" || latestTask.column === "in-review") {
         const originalExecutionStartedAt = latestTask.executionStartedAt;
-        // Preserve step progress across the in-progress → todo hop:
+        // Preserve step progress across the in-progress/in-review → todo hop:
         // moveTask's default reopen-to-todo path resets every step to
         // pending and rewrites PROMPT.md checkboxes, which would discard
         // the partial progress this bounce is supposed to retry on top of.
