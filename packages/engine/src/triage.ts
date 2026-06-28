@@ -39,6 +39,9 @@ type TaskListFormatter = (
   opts?: { maxChars?: number; clamp?: TaskListClamp },
 ) => string;
 
+const TRIAGE_STUCK_RESUME_LOG_ACTION = "Triage stuck re-queue will resume existing planning draft";
+const TRIAGE_STUCK_RESUME_FEEDBACK = "The previous triage session was killed by the stuck-task detector after writing a non-empty planning draft. Resume from the existing draft below: preserve useful structure and decisions, fill gaps, and continue toward review instead of restarting planning from scratch.";
+
 export function inlineTaskListFallback(
   lines: string[],
   opts: { maxChars?: number } = {},
@@ -567,6 +570,127 @@ export class TriageProcessor {
     return true;
   }
 
+  private async readNonEmptyPromptDraft(taskId: string, context: string): Promise<string | undefined> {
+    /*
+    FNXC:Triage 2026-06-27-00:00:
+    Stuck triage re-queues prefer a non-empty on-disk PROMPT.md draft. Match scheduler filesystem validation and approved recovery semantics (`trim().length > 0`) so empty or whitespace-only drafts cold-start safely instead of seeding a bogus revision.
+    */
+    const promptPath = join(this.rootDir, ".fusion", "tasks", taskId, "PROMPT.md");
+    const written = await readFile(promptPath, "utf-8").catch((err: unknown) => {
+      const msg = err instanceof Error ? err.message : String(err);
+      planLog.warn(`${taskId}: failed to read PROMPT.md during ${context} (${promptPath}): ${msg}`);
+      return "";
+    });
+    return written.trim().length > 0 ? written : undefined;
+  }
+
+  private async readNonEmptyPlanDocument(taskId: string, context: string): Promise<string | undefined> {
+    /*
+    FNXC:Triage 2026-06-27-16:18:
+    Some triage agents persist the draft through fn_task_document_write key="plan" before PROMPT.md exists. Stuck re-queue must still resume from that non-empty plan document when the file draft is absent, while preserving PROMPT.md as the preferred executable draft when both are present.
+    */
+    const readTaskDocument = (this.store as unknown as { getTaskDocument?: (taskId: string, key: string) => Promise<{ content?: unknown } | null> }).getTaskDocument;
+    if (typeof readTaskDocument !== "function") {
+      return undefined;
+    }
+    const document = await readTaskDocument.call(this.store, taskId, "plan").catch((err: unknown) => {
+      const msg = err instanceof Error ? err.message : String(err);
+      planLog.warn(`${taskId}: failed to read plan task document during ${context}: ${msg}`);
+      return null;
+    });
+    const content = typeof document?.content === "string" ? document.content : "";
+    return content.trim().length > 0 ? content : undefined;
+  }
+
+  private async readNonEmptyPlanningDraft(taskId: string, context: string): Promise<{ content: string; source: "prompt" | "plan-document" } | undefined> {
+    const promptDraft = await this.readNonEmptyPromptDraft(taskId, context);
+    if (promptDraft) {
+      return { content: promptDraft, source: "prompt" };
+    }
+    const planDocument = await this.readNonEmptyPlanDocument(taskId, context);
+    return planDocument ? { content: planDocument, source: "plan-document" } : undefined;
+  }
+
+  private async handleStuckAbortRequeue(task: Task, context: "in-loop" | "catch"): Promise<void> {
+    /*
+    FNXC:Triage 2026-06-27-00:00:
+    A stuck-killed planning session that already wrote a usable PROMPT.md or plan task document must resume in revision mode on the next poll, not re-triage from scratch. Reuse stuckKillCount and maxStuckKills for the triage retry budget so repeated stuck resumes escalate to manual intervention instead of looping forever.
+    */
+    const freshTask = await this.store.getTask(task.id).catch((err: unknown) => {
+      const msg = err instanceof Error ? err.message : String(err);
+      planLog.warn(`${task.id}: failed to refresh task during stuck-detector ${context} cleanup: ${msg}`);
+      return task;
+    });
+
+    if (hasLatestSpecReviewApproval(freshTask)) {
+      const recovered = await this.recoverApprovedTask(freshTask).catch((err: unknown) => {
+        const msg = err instanceof Error ? err.message : String(err);
+        planLog.warn(`${task.id}: approved-spec recovery failed during stuck-detector ${context} cleanup: ${msg}`);
+        return false;
+      });
+      if (recovered) {
+        return;
+      }
+    }
+
+    const maxStuckSettings = await this.store.getSettings().catch((err: unknown) => {
+      const msg = err instanceof Error ? err.message : String(err);
+      planLog.warn(`${task.id}: failed to read maxStuckKills during stuck-detector ${context} cleanup, using default 6: ${msg}`);
+      return {} as Settings;
+    });
+    const maxKills = Math.max(1, maxStuckSettings.maxStuckKills ?? 6);
+    const nextStuckKillCount = (freshTask.stuckKillCount ?? task.stuckKillCount ?? 0) + 1;
+    const draft = await this.readNonEmptyPlanningDraft(task.id, `stuck-detector ${context} cleanup`);
+
+    if (nextStuckKillCount >= maxKills) {
+      const exhaustedError = `STUCK_LOOP_EXHAUSTED: triage stuck detector killed ${task.id} ${nextStuckKillCount}/${maxKills} times without planning completion; task paused for manual intervention.`;
+      planLog.error(exhaustedError);
+      await this.store.logEntry(task.id, exhaustedError).catch((err: unknown) => {
+        const msg = err instanceof Error ? err.message : String(err);
+        planLog.warn(`${task.id}: failed to log stuck-loop exhaustion: ${msg}`);
+      });
+      await this.store.updateTask(task.id, {
+        stuckKillCount: nextStuckKillCount,
+        status: "failed",
+        error: exhaustedError,
+        paused: true,
+        pausedReason: "stuck-loop-exhausted-manual-intervention-required",
+        pausedByAgentId: "triage",
+      }).catch((err: unknown) => {
+        const msg = err instanceof Error ? err.message : String(err);
+        planLog.warn(`${task.id}: failed to persist stuck-loop exhaustion during stuck-detector ${context} cleanup: ${msg}`);
+      });
+      return;
+    }
+
+    if (draft) {
+      const sourceLabel = draft.source === "prompt" ? "PROMPT.md draft" : "plan task document";
+      planLog.log(`${task.id} killed by stuck detector — requeueing to resume existing ${sourceLabel} (${nextStuckKillCount}/${maxKills})`);
+      await this.store.logEntry(task.id, TRIAGE_STUCK_RESUME_LOG_ACTION, TRIAGE_STUCK_RESUME_FEEDBACK).catch((err: unknown) => {
+        const msg = err instanceof Error ? err.message : String(err);
+        planLog.warn(`${task.id}: failed to log stuck-resume feedback: ${msg}`);
+      });
+      await this.store.updateTask(task.id, {
+        status: "needs-replan",
+        stuckKillCount: nextStuckKillCount,
+      }).catch((err: unknown) => {
+        const msg = err instanceof Error ? err.message : String(err);
+        planLog.warn(`${task.id}: failed to restore status to 'needs-replan' during stuck-detector ${context} cleanup: ${msg}`);
+      });
+      return;
+    }
+
+    planLog.log(`${task.id} killed by stuck detector — clearing status for cold retry (${nextStuckKillCount}/${maxKills})`);
+    const restoreStatus = (freshTask.status ?? task.status) === "needs-replan" ? "needs-replan" : null;
+    await this.store.updateTask(task.id, {
+      status: restoreStatus,
+      stuckKillCount: nextStuckKillCount,
+    }).catch((err: unknown) => {
+      const msg = err instanceof Error ? err.message : String(err);
+      planLog.warn(`${task.id}: failed to restore status to '${restoreStatus}' during stuck-detector ${context} cleanup: ${msg}`);
+    });
+  }
+
   /**
    * If `newIntervalMs` differs from the currently active timer, restart
    * the `setInterval` so the new cadence takes effect immediately.
@@ -1046,8 +1170,21 @@ export class TriageProcessor {
                 entry.action === "User comment requested re-specification of planned task"
                 || entry.action === "User comment invalidated spec approval — task needs re-specification"
                 || entry.action === "AI spec revision requested"
+                || entry.action === TRIAGE_STUCK_RESUME_LOG_ACTION
               );
             feedback = feedbackLogEntry?.outcome;
+
+            if (feedbackLogEntry?.action === TRIAGE_STUCK_RESUME_LOG_ACTION) {
+              /*
+              FNXC:Triage 2026-06-27-16:18:
+              Stuck-resume replans must load the existing PROMPT.md draft, or the saved plan task document when PROMPT.md is absent, into buildSpecificationPrompt so `isRevision` is reachable for either persisted planning surface.
+              */
+              const planningDraft = await this.readNonEmptyPlanningDraft(task.id, "stuck-resume replan seed");
+              existingPrompt = planningDraft?.content;
+              if (!existingPrompt) {
+                feedback = undefined;
+              }
+            }
 
             // Ensure the latest user feedback is always actionable for re-plans.
             if (!feedback) {
@@ -1092,12 +1229,7 @@ export class TriageProcessor {
 
           if (this.stuckAborted.has(task.id)) {
             this.stuckAborted.delete(task.id);
-            planLog.log(`${task.id} killed by stuck detector — clearing status for retry`);
-            const restoreStatus = task.status === "needs-replan" ? "needs-replan" : null;
-            await this.store.updateTask(task.id, { status: restoreStatus }).catch((err: unknown) => {
-              const msg = err instanceof Error ? err.message : String(err);
-              planLog.warn(`${task.id}: failed to restore status to '${restoreStatus}' during stuck-detector abort cleanup: ${msg}`);
-            });
+            await this.handleStuckAbortRequeue(task, "in-loop");
             return;
           }
 
@@ -1424,15 +1556,8 @@ export class TriageProcessor {
           planLog.warn(`${task.id}: failed to restore status to '${restoreStatus}' during pause-abort error cleanup: ${msg}`);
         });
       } else if (this.stuckAborted.has(task.id)) {
-        // Stuck task detector killed this session — clear planning status so the
-        // next poll retries the task from scratch without reporting an error.
         this.stuckAborted.delete(task.id);
-        planLog.log(`${task.id} killed by stuck detector — clearing status for retry`);
-        const restoreStatus = task.status === "needs-replan" ? "needs-replan" : null;
-        await this.store.updateTask(task.id, { status: restoreStatus }).catch((err: unknown) => {
-          const msg = err instanceof Error ? err.message : String(err);
-          planLog.warn(`${task.id}: failed to restore status to '${restoreStatus}' during stuck-detector error cleanup: ${msg}`);
-        });
+        await this.handleStuckAbortRequeue(task, "catch");
       } else {
         // Check if the error is a usage-limit error and trigger global pause
         if (this.options.usageLimitPauser && isUsageLimitError(errorMessage)) {

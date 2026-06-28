@@ -1,0 +1,348 @@
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { Settings, Task, TaskDetail, TaskStore } from "@fusion/core";
+import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
+
+import { TriageProcessor } from "../triage.js";
+
+const { mockCreateResolvedAgentSession, mockPromptWithFallback } = vi.hoisted(() => ({
+  mockCreateResolvedAgentSession: vi.fn(),
+  mockPromptWithFallback: vi.fn(),
+}));
+
+vi.mock("../agent-session-helpers.js", () => ({
+  createResolvedAgentSession: mockCreateResolvedAgentSession,
+  extractRuntimeHint: vi.fn(),
+  resolvePlanningSessionModel: vi.fn().mockReturnValue({ provider: "mock", modelId: "mock-model" }),
+}));
+
+vi.mock("../pi.js", () => ({
+  describeModel: vi.fn().mockReturnValue("mock-model"),
+  promptWithFallback: mockPromptWithFallback,
+}));
+
+function createTask(overrides: Partial<Task> = {}): Task {
+  return {
+    id: "FN-7173-T",
+    title: "Preserve draft",
+    description: "Preserve an existing draft after stuck triage requeue",
+    column: "triage",
+    status: null,
+    dependencies: [],
+    steps: [],
+    currentStep: 0,
+    log: [],
+    createdAt: "2026-06-27T00:00:00.000Z",
+    updatedAt: "2026-06-27T00:00:00.000Z",
+    ...overrides,
+  } as Task;
+}
+
+function toDetail(task: Task): TaskDetail {
+  return {
+    ...task,
+    attachments: [],
+    comments: [],
+    log: task.log ?? [],
+  } as TaskDetail;
+}
+
+function createMutableStore(initialTask: Task, settings: Partial<Settings> = {}, documents: Record<string, string> = {}) {
+  let currentTask: Task = { ...initialTask, log: [...(initialTask.log ?? [])] };
+  const store = {
+    getTask: vi.fn(async () => toDetail(currentTask)),
+    listTasks: vi.fn().mockResolvedValue([]),
+    getSettings: vi.fn().mockResolvedValue({
+      pollIntervalMs: 60_000,
+      maxConcurrent: 1,
+      maxWorktrees: 1,
+      autoMerge: true,
+      groupOverlappingFiles: false,
+      maxStuckKills: 6,
+      requirePlanApproval: false,
+      ...settings,
+    } as Settings),
+    getTaskDocument: vi.fn(async (_id: string, key: string) => {
+      const content = documents[key];
+      return content === undefined
+        ? null
+        : {
+            id: `doc-${key}`,
+            taskId: currentTask.id,
+            key,
+            content,
+            revision: 1,
+            author: "agent",
+            metadata: {},
+            createdAt: "2026-06-27T00:00:00.000Z",
+            updatedAt: "2026-06-27T00:00:00.000Z",
+          };
+    }),
+    updateTask: vi.fn(async (_id: string, updates: Partial<Task>) => {
+      currentTask = { ...currentTask, ...updates, updatedAt: "2026-06-27T00:01:00.000Z" } as Task;
+      return currentTask;
+    }),
+    moveTask: vi.fn(async (_id: string, column: Task["column"]) => {
+      currentTask = { ...currentTask, column, status: null } as Task;
+      return currentTask;
+    }),
+    logEntry: vi.fn(async (_id: string, action: string, outcome?: string) => {
+      currentTask = {
+        ...currentTask,
+        log: [...(currentTask.log ?? []), { timestamp: new Date().toISOString(), action, outcome }],
+      } as Task;
+    }),
+    appendAgentLog: vi.fn().mockResolvedValue(undefined),
+    parseDependenciesFromPrompt: vi.fn().mockResolvedValue([]),
+    parseStepsFromPrompt: vi.fn().mockResolvedValue([]),
+    parseFileScopeFromPrompt: vi.fn().mockResolvedValue([]),
+    on: vi.fn(),
+    off: vi.fn(),
+  } as unknown as TaskStore;
+
+  return {
+    store,
+    get currentTask() {
+      return currentTask;
+    },
+  };
+}
+
+async function createRoot(taskId: string, draft?: string): Promise<string> {
+  const rootDir = await mkdtemp(join(tmpdir(), "fusion-triage-stuck-draft-"));
+  const taskDir = join(rootDir, ".fusion", "tasks", taskId);
+  await mkdir(taskDir, { recursive: true });
+  if (draft !== undefined) {
+    await writeFile(join(taskDir, "PROMPT.md"), draft, "utf8");
+  }
+  return rootDir;
+}
+
+function mockSession() {
+  mockCreateResolvedAgentSession.mockResolvedValue({
+    session: {
+      state: {},
+      sessionManager: { getLeafId: vi.fn().mockReturnValue(null) },
+      prompt: vi.fn().mockResolvedValue(undefined),
+      dispose: vi.fn(),
+      navigateTree: vi.fn(),
+    },
+  });
+}
+
+async function cleanup(rootDir: string | undefined) {
+  if (rootDir) {
+    await rm(rootDir, { recursive: true, force: true });
+  }
+}
+
+describe("triage stuck requeue preserves existing PROMPT.md drafts", () => {
+  let rootDir: string | undefined;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockSession();
+  });
+
+  afterEach(async () => {
+    await cleanup(rootDir);
+    rootDir = undefined;
+  });
+
+  it("reproduces the cold-start symptom and asserts the retry resumes from a non-empty draft", async () => {
+    const draft = "# Task: FN-7173-T\n\n## Mission\n\nContinue from this already drafted plan.";
+    const task = createTask();
+    rootDir = await createRoot(task.id, draft);
+    const harness = createMutableStore(task);
+    const processor = new TriageProcessor(harness.store, rootDir);
+    let retryPrompt = "";
+
+    mockPromptWithFallback
+      .mockImplementationOnce(async () => {
+        processor.markStuckAborted(task.id);
+      })
+      .mockImplementationOnce(async (_session: unknown, prompt: string) => {
+        retryPrompt = prompt;
+        processor.markStuckAborted(task.id);
+      });
+
+    await processor.specifyTask(harness.currentTask);
+    expect(harness.currentTask.status).toBe("needs-replan");
+    expect(harness.store.logEntry).toHaveBeenCalledWith(
+      task.id,
+      "Triage stuck re-queue will resume existing planning draft",
+      expect.stringContaining("Resume from the existing draft"),
+    );
+
+    await processor.specifyTask(harness.currentTask);
+
+    expect(retryPrompt).toContain("Revise this task");
+    expect(retryPrompt).toContain("## Existing Specification");
+    expect(retryPrompt).toContain(draft);
+    expect(retryPrompt).toContain("instead of restarting planning from scratch");
+  });
+
+  it("resumes from a saved plan task document when PROMPT.md is absent", async () => {
+    const planDocument = "# Plan document draft\n\n## Mission\n\nResume from the saved task document.";
+    const task = createTask({ id: "FN-7173-PLAN-DOC" });
+    rootDir = await createRoot(task.id);
+    const harness = createMutableStore(task, {}, { plan: planDocument });
+    const processor = new TriageProcessor(harness.store, rootDir);
+    let retryPrompt = "";
+
+    mockPromptWithFallback
+      .mockImplementationOnce(async () => {
+        processor.markStuckAborted(task.id);
+      })
+      .mockImplementationOnce(async (_session: unknown, prompt: string) => {
+        retryPrompt = prompt;
+        processor.markStuckAborted(task.id);
+      });
+
+    await processor.specifyTask(harness.currentTask);
+    expect(harness.currentTask.status).toBe("needs-replan");
+    expect(harness.store.logEntry).toHaveBeenCalledWith(
+      task.id,
+      "Triage stuck re-queue will resume existing planning draft",
+      expect.stringContaining("Resume from the existing draft"),
+    );
+
+    await processor.specifyTask(harness.currentTask);
+
+    expect(retryPrompt).toContain("Revise this task");
+    expect(retryPrompt).toContain("## Existing Specification");
+    expect(retryPrompt).toContain(planDocument);
+    expect(retryPrompt).toContain("instead of restarting planning from scratch");
+  });
+
+  it("prefers PROMPT.md over the plan task document when both drafts exist", async () => {
+    const promptDraft = "# Prompt draft\n\n## Mission\n\nPrefer the executable prompt draft.";
+    const planDocument = "# Plan document draft\n\nThis older plan document should not be the seed.";
+    const task = createTask({ id: "FN-7173-PROMPT-WINS" });
+    rootDir = await createRoot(task.id, promptDraft);
+    const harness = createMutableStore(task, {}, { plan: planDocument });
+    const processor = new TriageProcessor(harness.store, rootDir);
+    let retryPrompt = "";
+
+    mockPromptWithFallback
+      .mockImplementationOnce(async () => {
+        processor.markStuckAborted(task.id);
+      })
+      .mockImplementationOnce(async (_session: unknown, prompt: string) => {
+        retryPrompt = prompt;
+        processor.markStuckAborted(task.id);
+      });
+
+    await processor.specifyTask(harness.currentTask);
+    await processor.specifyTask(harness.currentTask);
+
+    expect(retryPrompt).toContain(promptDraft);
+    expect(retryPrompt).not.toContain(planDocument);
+  });
+
+  it.each([
+    ["absent", undefined],
+    ["whitespace-only", "  \n\t  "],
+  ])("preserves cold-start behavior when the draft is %s", async (_label, draft) => {
+    const task = createTask({ id: `FN-7173-${_label}` });
+    rootDir = await createRoot(task.id, draft);
+    const harness = createMutableStore(task);
+    const processor = new TriageProcessor(harness.store, rootDir);
+    let retryPrompt = "";
+
+    mockPromptWithFallback
+      .mockImplementationOnce(async () => {
+        processor.markStuckAborted(task.id);
+      })
+      .mockImplementationOnce(async (_session: unknown, prompt: string) => {
+        retryPrompt = prompt;
+        processor.markStuckAborted(task.id);
+      });
+
+    await processor.specifyTask(harness.currentTask);
+    expect(harness.currentTask.status ?? null).toBeNull();
+    expect(harness.store.logEntry).not.toHaveBeenCalledWith(
+      task.id,
+      "Triage stuck re-queue will resume existing planning draft",
+      expect.anything(),
+    );
+
+    await processor.specifyTask(harness.currentTask);
+
+    expect(retryPrompt).toContain("Specify this task");
+    expect(retryPrompt).not.toContain("## Existing Specification");
+  });
+
+  it("uses the same resume behavior for the outer catch stuck-abort path", async () => {
+    const draft = "# Task: FN-7173-CATCH\n\n## Mission\n\nCatch path draft.";
+    const task = createTask({ id: "FN-7173-CATCH" });
+    rootDir = await createRoot(task.id, draft);
+    const harness = createMutableStore(task);
+    const processor = new TriageProcessor(harness.store, rootDir);
+    let retryPrompt = "";
+
+    mockPromptWithFallback
+      .mockImplementationOnce(async () => {
+        processor.markStuckAborted(task.id);
+        throw new Error("disposed by stuck detector");
+      })
+      .mockImplementationOnce(async (_session: unknown, prompt: string) => {
+        retryPrompt = prompt;
+        processor.markStuckAborted(task.id);
+      });
+
+    await processor.specifyTask(harness.currentTask);
+    expect(harness.currentTask.status).toBe("needs-replan");
+
+    await processor.specifyTask(harness.currentTask);
+
+    expect(retryPrompt).toContain("Revise this task");
+    expect(retryPrompt).toContain(draft);
+  });
+
+  it("bounds repeated stuck retries by maxStuckKills and pauses failed tasks", async () => {
+    const task = createTask({ id: "FN-7173-BOUND", stuckKillCount: 1 });
+    rootDir = await createRoot(task.id, "# Task: FN-7173-BOUND\n\n## Mission\n\nDraft.");
+    const harness = createMutableStore(task, { maxStuckKills: 2 });
+    const processor = new TriageProcessor(harness.store, rootDir);
+
+    mockPromptWithFallback.mockImplementationOnce(async () => {
+      processor.markStuckAborted(task.id);
+    });
+
+    await processor.specifyTask(harness.currentTask);
+
+    expect(harness.currentTask.stuckKillCount).toBe(2);
+    expect(harness.currentTask.status).toBe("failed");
+    expect(harness.currentTask.paused).toBe(true);
+    expect(harness.currentTask.error).toContain("STUCK_LOOP_EXHAUSTED");
+  });
+
+  it("leaves already-approved drafts on the approved-spec recovery path", async () => {
+    const task = createTask({
+      id: "FN-7173-APPROVED",
+      status: "planning",
+      log: [{ timestamp: new Date().toISOString(), action: "Spec review: APPROVE" }],
+    });
+    rootDir = await createRoot(
+      task.id,
+      "# Task: FN-7173-APPROVED\n\n## Mission\n\nApproved draft.\n\n## File Scope\n\n- packages/engine/src/triage.ts\n",
+    );
+    const harness = createMutableStore(task, { requirePlanApproval: false });
+    const processor = new TriageProcessor(harness.store, rootDir);
+
+    mockPromptWithFallback.mockImplementationOnce(async () => {
+      processor.markStuckAborted(task.id);
+    });
+
+    await processor.specifyTask(harness.currentTask);
+
+    expect(harness.store.moveTask).toHaveBeenCalledWith(task.id, "todo");
+    expect(harness.store.logEntry).not.toHaveBeenCalledWith(
+      task.id,
+      "Triage stuck re-queue will resume existing planning draft",
+      expect.anything(),
+    );
+  });
+});

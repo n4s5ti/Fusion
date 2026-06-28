@@ -3935,7 +3935,7 @@ describe("specifyTask — status restore failure diagnostics", () => {
 
     await expect(specifyPromise).resolves.toBeUndefined();
     expect(warnSpy).toHaveBeenCalledWith(
-      expect.stringContaining("FN-002: failed to restore status to 'null' during stuck-detector abort cleanup"),
+      expect.stringContaining("FN-002: failed to restore status to 'null' during stuck-detector in-loop cleanup"),
     );
 
     warnSpy.mockRestore();
