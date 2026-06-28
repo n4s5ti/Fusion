@@ -1,5 +1,142 @@
 # @runfusion/fusion
 
+## 0.51.0
+
+### Minor Changes
+
+- f7e20ab: summary: Add a Chat tab to the right sidebar so you can chat inline and pop it out.
+  category: feature
+  dev: Registers ChatView as the always-visible `chat` overflow-view entry in the right dock.
+- dc54b61: summary: Tasks with a manually-created open Pull Request are no longer auto-merged.
+  category: feature
+  dev: New PrInfo.manual flag set by POST /tasks/:id/pr/create; allowsAutoMergeProcessing now returns false when a task has an open manual PR (status === "open"), excluding it from the engine merge queue and self-healing sweeps until the human merges the PR. Pipeline (PR-merge-strategy) PRs are unaffected. FN-7182.
+- d9a518c: summary: Fast-mode tasks now plan with a lean, speed-first prompt routed through the workflow.
+  category: feature
+  dev: Replaces the verbose built-in `planning-fast` seam prompt (FAST_TRIAGE_PROMPT_TEXT) with a concise variant; resolution still prefers a workflow's `planning-fast` seam and falls back to the built-in.
+- 7ebf58e: summary: CE HTML plans and brainstorm docs now get report-only ce-doc-review instead of being skipped.
+  category: feature
+  dev: Updates bundled Compound Engineering ce-doc-review handoffs so HTML runs review without autofix/write-back.
+- fecb27e: summary: CE HTML docs now support DOM-validated in-place ce-doc-review fixes with report-only fallback.
+  category: feature
+  dev: Adds a direct parse5 CE HTML mutation helper with atomic writes, rollback, and allowlisted operations.
+- 6ca5118: summary: Close the Quick Chat window by clicking outside it.
+  category: feature
+  dev: New opt-in `closeOnOutsidePointerDown` prop on FloatingWindow; enabled only for the Quick Chat (windowKey="chat-modal"). Uses a capture-phase document pointerdown listener that excludes in-flight drag/resize and nested dialog/floating surfaces. Task pop-outs are unaffected.
+- 605e4d7: summary: Emit run-audit telemetry for agent performance reflections.
+  category: feature
+  dev: Adds reflection:generated/skipped/failed DatabaseMutationType events emitted from AgentReflectionService.generateReflection; metadata carries ids/counts/outcomes only.
+- 631e8fc: summary: CE HTML docs can define and safely repair malformed checklists in ce-doc-review.
+  category: feature
+  dev: Adds parse5-backed canonical checklist repair with validation, atomic writes, and report-only fallback.
+- 2448447: summary: Add a project setting to show or hide worktree names and grouping on the board.
+  category: feature
+  dev: New project setting `showWorktreeGrouping` (default false). When true, Column groups WIP tasks by worktree in both legacy and workflow modes; when false, WIP columns render plain task cards.
+- 34efa8b: summary: Refinement tasks are now titled with the source task ID followed by the entered comment.
+  category: feature
+  dev: TaskStore.refineTask now sets title = "{sourceId}: {feedback}"; normalization is skipped to preserve the source-id prefix; FN-7165.
+- a0602d0: summary: Add a project setting to open task details in the right sidebar instead of the full panel.
+  category: feature
+  dev: New project setting `openTasksInRightSidebar` (default false). When true and the right dock is available, board card clicks render the task in the right dock; falls back to the full-panel view on mobile / when the dock is inactive.
+- 4118061: summary: The Create PR dialog is now movable and resizable like other Fusion pop-outs.
+  category: feature
+  dev: PrCreateModal now renders inside the shared FloatingWindow (windowKey "pr-create", persistGeometryKey "floating-window:pr-create") instead of a fixed .modal-overlay; geometry persists, mobile stays full-screen via CSS, and overlay click-to-dismiss was dropped (close via X / Cancel / Escape).
+- 5d9184d: summary: Add a pin toggle to the right sidebar to push content aside instead of overlaying it.
+  category: feature
+  dev: New persisted localStorage flag `fusion:right-dock-pinned` (default false). When pinned, `.right-dock` switches from absolute overlay to in-flow (`right-dock--pinned`, position: relative) so the shell flex layout reflows `.project-content`; unpinned restores overlay. Toggle lives in the right-dock toolbar.
+- fc958bc: summary: Task detail Review tab now hides HTML comments and shows comment avatars, human/bot badges, and author-type filtering.
+  category: feature
+  dev: TaskReviewTab renders bodies via the shared sanitized MailboxMessageContent and a new app/utils/githubCommentAuthor helper for bot/avatar derivation.
+- 9c207fd: summary: Add project settings to customize the AI prompts for PR title and description generation.
+  category: feature
+  dev: New project settings `prTitlePromptInstructions` / `prDescriptionPromptInstructions` (default undefined) are appended to the Create PR dialog's metadata-generation system prompt in generatePrMetadata.
+- 65abae2: summary: Improve AI-generated PR titles and descriptions, and show a clear loading state while the description generates.
+  category: feature
+  dev: Rewrote the pr-metadata-generator system/context prompt (exported as a named default constant) for grounded, conventional-commit-style output while preserving the strict {title,summary,changes,testing,linkedTask} JSON schema; PrCreateModal now renders a skeleton + aria-busy loading affordance with disabled inputs during generation that clears into content or the existing error/manual-fallback path.
+- 9050ee1: summary: Add an "Address PR feedback" button that starts an AI session to resolve PR review comments.
+  category: feature
+  dev: New POST /tasks/:id/pr/address-feedback route seeds a ce-resolve-pr-feedback steering prompt and wakes the assigned agent; button gates on linked-PR actionable feedback (commentCount or CHANGES_REQUESTED).
+- 4405dec: summary: Re-engage an executor when users chat on in-review tasks.
+  category: feature
+  dev: Shares the review-address re-engagement helper for Chat steering and Comments-tab task comments while preserving PR-await guards.
+
+### Patch Changes
+
+- e5a0273: summary: Artifact lists now refresh live when new artifacts are registered.
+  category: fix
+  dev: TaskStore emits artifact:registered SSE; useArtifacts also accepts message:sent/message:received and coalesces scoped refreshes.
+- 524c15c: summary: Agents no longer pause tasks on failure — pausing is reserved for explicit user requests.
+  category: fix
+  dev: Adds a no-pause-on-failure standing rule to HEARTBEAT_SYSTEM_PROMPT / HEARTBEAT_NO_TASK_SYSTEM_PROMPT, clarifies the fn_task_pause tool description, and regenerates the fusion skill docs (sync:fusion-skill).
+- 7a2137c: summary: Permanent agents can ask the user a question directly without an approval gate.
+  category: fix
+  dev: Classify fn_ask_question in COORDINATION_EXEMPT_TOOLS and READONLY_FN_TOOLS (gating-classifications.ts) so both the permanent-agent gate and action gate auto-allow it, mirroring fn_send_message.
+- c48dcae: summary: Compound Engineering now uses a distinct sidebar icon instead of duplicating Insights.
+  category: fix
+  dev: Plugin dashboard view icon changed Sparkles → Boxes; registered `boxes` in dashboard PLUGIN_NAV_ICON_MAP so desktop + mobile nav resolve it.
+- 581f850: summary: Compound Engineering sidebar navigation now matches its Boxes header icon.
+  category: fix
+  dev: Pins Compound Engineering plugin nav entries to Boxes by plugin id so stale dashboard view metadata cannot render Sparkles/Grid3X3 in desktop or mobile navigation.
+- 100164d: summary: Ephemeral/task-worker agents now show their token usage on the dashboard.
+  category: fix
+  dev: Derives zero/absent per-agent dashboard totals from task token usage and allows ephemeral Agent Detail token windows.
+- d7a02c4: summary: Stopping the engine or pausing a project now frees its global agent slots for other projects.
+  category: fix
+  dev: InProcessRuntime now returns the project's held slots back to the shared cross-project AgentSemaphore after abort+drain on stop, and ProjectEngineManager.pauseProject/stopAll return residual slots per project without clobbering slots held by other projects.
+- bb89e1e: summary: Project Dashboard cards now say "Stop engine"/"Start engine" instead of "Pause"/"Resume".
+  category: feature
+  dev: Relabels ProjectCard pause/resume controls; pauseProject already stops the engine, so behavior is unchanged. i18n projectCard.\* keys updated (en) with empty-string fallback for other locales.
+- b570a83: summary: Missions tab now always opens the mission overview instead of a specific mission.
+  category: fix
+  dev: Removed MissionManager cache-restore and default-select effects; targetMissionId deep-links and interview resume still open a specific mission.
+- 8ef9750: summary: Theme the quick-entry steps drop-down with canonical dashboard menu tokens.
+  category: fix
+  dev: Aligns WorkflowOptionalStepsDropdown panel CSS with shared dropdown surface, border, radius, shadow, and hover tokens.
+- a95cfa7: summary: Running-agent counts include active in-review agents, and the concurrency use-marker is no longer off by one.
+  category: fix
+  dev: Adds shared isRunningAgentTask/countRunningAgentTasks in @fusion/core; engine concurrency.persistedTopLevelAgentSlots and the dashboard/CLI count surfaces delegate to it. CommandCenterControls use-marker ratio is now 0-based.
+- 987abc7: summary: Tasks sent back by Code Review or Browser Verification verdicts now re-run and complete their steps before re-checking.
+  category: fix
+  dev: Fixes the post-verdict remediation bounce (requestPreMergeOptionalStepFix → sendTaskBackForFix → reopenLastStepForRevision → scheduleWorkflowRerun → graph re-run) so resumed execution re-launches the executor and drives reopened implementation/verification/delivery steps and the verdict-demanded fix to done across both in-progress and in-review bounce sources, bounded by the existing maxRevisions/maxPostReviewFixes budget.
+- bee93c3: summary: Footer no longer blinks and the concurrency panel stays open across status refreshes.
+  category: fix
+  dev: Keeps executor stats loading initial-only and guards the footer loading branch after populated render.
+- 7923977: summary: Keep Create PR preview commit SHAs readable on one line.
+  category: fix
+  dev: Corrects the dashboard Create Pull Request commit-row grid and guards the DOM contract in tests.
+- e42679d: summary: Stuck triage re-queues now resume from the drafted plan instead of restarting planning from scratch.
+  category: fix
+  dev: triage.ts stuck-abort paths seed buildSpecificationPrompt with the on-disk PROMPT.md draft, or a non-empty plan task document when PROMPT.md is absent, and bound consecutive triage stuck-retries by settings.maxStuckKills before escalating to failed/paused.
+- 9f45f10: summary: Stuck re-queue no longer loses uncommitted work while keeping steps marked complete.
+  category: fix
+  dev: Reconciles lost-work steps before worktree removal across all three executor stuck-requeue paths; corrects the preserveProgressOnStuckRequeue docstring.
+- 01fe47d: summary: Fix the Create PR dialog spinner, diff preview default, and stray-click dismissal behavior.
+  category: fix
+  dev: PrCreateModal keeps the FloatingWindow no-backdrop-dismiss path, defaults the diff/commit <details> closed, and time-bounds generatePrMetadata with PR_METADATA_TIMEOUT_MS so hangs use the existing error/manual-body fallback.
+- 5b71bdb: summary: PR badge color now follows GitHub status: green/gray/purple/red plus a conflict color.
+  category: fix
+  dev: Adds getPrBadgeModifierClass and a token-backed --color-merged badge modifier.
+- 11e5dde: summary: Show active project pull requests in the Pull Requests sidebar and main view.
+  category: fix
+  dev: Adds PullRequestView list mode for no-id hosts with selectable detail and back navigation.
+- 27b0cbb: summary: The PR number in a task's Pull Request tab now links to the pull request on GitHub.
+  category: feature
+  dev: PrCard (PrPanel.tsx) wraps the pr-number in an anchor to prInfo.url (new tab, rel=noopener); plain-span fallback when no URL.
+- b60a743: summary: Fix "Request revision" error on reviewer-agent task reviews.
+  category: fix
+  dev: review/address now validates selected items against the same canonical review source the UI renders (buildDirectTaskReviewData / getPrReviewDetails) instead of the persisted reviewState.items.
+- fb509b1: summary: Fix Compound Engineering, Quick fix, and Review-heavy workflow tasks getting stuck in Todo.
+  category: fix
+  dev: linear() built-in workflows now synthesize the canonical default column traits (hold(capacity) on todo, wip on in-progress, merge on in-review) matching BUILTIN_CODING_WORKFLOW_IR, so the hold/release sweep dispatches their todo cards. Fixes FN-7190.
+- 8d3c15e: summary: Theme quick-add optional-step checkboxes and phase badges consistently.
+  category: fix
+  dev: Co-locates workflow phase badge CSS with the shared helper and applies the dashboard checkbox accent token.
+- f0b3003: summary: Keep Summary token table model names readable in narrow task detail panels.
+  category: fix
+  dev: Adds token-table CSS min-width and wrap-contract regression coverage for right-dock layouts.
+- b5ed4e0: summary: Pressing q (or Ctrl+C) in the TUI now quits cleanly without engine logs bleeding onto your shell.
+  category: fix
+  dev: Two-part fix. (1) dashboard.ts shutdown/devShutdown arm an unref'd 3s hard-exit watchdog on the first signal and force an immediate process.exit(0) on a second signal, so a hung stopAllDevServers/engine/central-core teardown can no longer leave the process alive. (2) Root cause of the "TUI keeps rendering after q" symptom: dispose() called logSink.releaseConsole() (re-pointing console._ at the terminal) before tui.stop() restored the shell, so slow engine/mesh/dev-server teardown logs painted over the recovered prompt. dispose() now calls the new logSink.silence() instead, dropping all sink + console._ output from quit to exit. Shutdown step diagnostics (timeShutdownStep + the watchdog stall line) are gated behind FUSION_DEBUG_SHUTDOWN=1 so a normal quit is pristine.
+
 ## 0.50.0
 
 ### Minor Changes
