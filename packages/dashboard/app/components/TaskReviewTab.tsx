@@ -1,17 +1,16 @@
 import "./TaskReviewTab.css";
 import { getErrorMessage, type Task, type TaskDetail } from "@fusion/core";
 import { resolveEffectiveAutoMerge } from "../../../core/src/task-merge";
-import { GitPullRequest } from "lucide-react";
+import { Bot, GitPullRequest, User } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
-import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
-import type { Components } from "react-markdown";
 import { fetchTaskReview, refreshTaskReview, reviseTaskReviewItems, updateTask } from "../api";
 import type { SelectedReviewItem } from "../api";
 import type { ToastType } from "../hooks/useToast";
-import { linkifyFilePaths, linkifyReactChildren } from "../utils/filePathLinkify";
+import { linkifyFilePaths } from "../utils/filePathLinkify";
+import { resolveReviewCommentAuthor } from "../utils/githubCommentAuthor";
 import { LoadingSpinner } from "./LoadingSpinner";
+import { MailboxMessageContent } from "./MailboxMessageContent";
 
 interface Props {
   task: Task | TaskDetail;
@@ -24,6 +23,9 @@ interface Props {
 }
 
 const REVIEW_MARKDOWN_TOGGLE_STORAGE_KEY = "fn-task-review-markdown";
+type AuthorTypeFilter = "all" | "human" | "bot";
+
+const AUTHOR_TYPE_FILTERS: AuthorTypeFilter[] = ["all", "human", "bot"];
 
 type ReviewState = NonNullable<TaskDetail["reviewState"]>;
 type ReviewItem = ReviewState["items"][number];
@@ -33,6 +35,7 @@ type DisplayReviewItem = {
   id: string;
   summary: string;
   body: string;
+  author?: string;
   path?: string;
   createdAt?: string;
   status: "queued" | "in-progress" | "addressed" | "failed";
@@ -60,36 +63,15 @@ function writeBooleanPref(key: string, value: boolean): void {
   }
 }
 
-const markdownComponents: Components = {
-  p: ({ children, ...props }) => <p {...props}>{linkifyReactChildren(children)}</p>,
-  li: ({ children, ...props }) => <li {...props}>{linkifyReactChildren(children)}</li>,
-  code: ({ children, ...props }) => <code {...props}>{linkifyReactChildren(children)}</code>,
-  pre: ({ children, ...props }) => (
-    <pre
-      {...props}
-      style={{
-        overflowX: "auto",
-        maxWidth: "100%",
-        whiteSpace: "pre-wrap",
-        wordBreak: "break-word",
-      }}
-    >
-      {linkifyReactChildren(children)}
-    </pre>
-  ),
-  table: ({ children, ...props }) => (
-    <table
-      {...props}
-      style={{
-        display: "block",
-        overflowX: "auto",
-        maxWidth: "100%",
-      }}
-    >
-      {children}
-    </table>
-  ),
-};
+const HTML_COMMENT_PATTERN = /<!--[\s\S]*?-->/g;
+
+/*
+FNXC:TaskReview 2026-06-27-00:00:
+Review comments can include GitHub template comments. Plain-text mode must hide the same `<!-- -->` content as the shared sanitized markdown renderer so switching modes never leaks hidden reviewer templates.
+*/
+function stripHtmlComments(value: string): string {
+  return value.replace(HTML_COMMENT_PATTERN, "").trim();
+}
 
 function formatTimestamp(value?: string, t?: (key: string, defaultValue: string) => string): string {
   if (!value) return t?.("taskReview.never", "Never") ?? "Never";
@@ -110,6 +92,7 @@ function getDisplayReviewItems(review: ReviewState): DisplayReviewItem[] {
       id: item.id,
       summary: item.summary ?? item.body.slice(0, 120),
       body: item.body,
+      author: item.author?.login,
       path: item.path,
       createdAt: item.createdAt,
       status: addressing?.status ?? "queued",
@@ -125,6 +108,7 @@ function getDisplayReviewItems(review: ReviewState): DisplayReviewItem[] {
       id: record.itemId,
       summary: record.snapshot?.summary ?? record.itemId,
       body: record.snapshot?.body ?? record.snapshot?.summary ?? record.itemId,
+      author: record.snapshot?.authorLogin,
       path: record.snapshot?.filePath,
       createdAt: record.selectedAt,
       status: record.status,
@@ -152,18 +136,36 @@ export function TaskReviewTab({
   const [emptyMessage, setEmptyMessage] = useState<string | null>(null);
   const [review, setReview] = useState(task.reviewState ?? null);
   const [renderMarkdown, setRenderMarkdown] = useState<boolean>(() => readBooleanPref(REVIEW_MARKDOWN_TOGGLE_STORAGE_KEY, true));
+  const [authorTypeFilter, setAuthorTypeFilter] = useState<AuthorTypeFilter>("all");
+  const [brokenAvatars, setBrokenAvatars] = useState<Set<string>>(new Set());
   const [autoMergePreference, setAutoMergePreference] = useState<"follow-default" | "on" | "off">(
     task.autoMerge === true ? "on" : task.autoMerge === false ? "off" : "follow-default",
   );
   const [isSavingAutoMergePreference, setIsSavingAutoMergePreference] = useState(false);
 
-  const canRevise = selected.length > 0 && !revising;
   const isPrMode = review?.source === "pull-request";
   const displayItems = useMemo(() => (review ? getDisplayReviewItems(review) : []), [review]);
+  const filteredDisplayItems = useMemo(() => {
+    if (authorTypeFilter === "all") return displayItems;
+    return displayItems.filter((item) => {
+      const authorInfo = resolveReviewCommentAuthor(item.author, { reviewSource: review?.source });
+      return authorTypeFilter === "bot" ? authorInfo.authorIsBot : !authorInfo.authorIsBot;
+    });
+  }, [authorTypeFilter, displayItems]);
+  const visibleItemIds = useMemo(() => new Set(filteredDisplayItems.map((item) => item.id)), [filteredDisplayItems]);
+  const canRevise = selected.length > 0 && !revising;
 
   useEffect(() => {
     writeBooleanPref(REVIEW_MARKDOWN_TOGGLE_STORAGE_KEY, renderMarkdown);
   }, [renderMarkdown]);
+
+  useEffect(() => {
+    /*
+    FNXC:TaskReview 2026-06-27-00:00:
+    Author-type filtering makes hidden review comments non-actionable. Prune selected ids to the currently visible Human/Bot/All set so Request revision never submits an item the user filtered out of view.
+    */
+    setSelected((current) => current.filter((id) => visibleItemIds.has(id)));
+  }, [visibleItemIds]);
 
   useEffect(() => {
     setAutoMergePreference(task.autoMerge === true ? "on" : task.autoMerge === false ? "off" : "follow-default");
@@ -269,7 +271,7 @@ export function TaskReviewTab({
       if (!review) return;
       setError(null);
       setRevising(true);
-      const selectedItems: SelectedReviewItem[] = displayItems
+      const selectedItems: SelectedReviewItem[] = filteredDisplayItems
         .filter((item) => selected.includes(item.id))
         .map((item) => {
           if (!item.item) {
@@ -313,6 +315,27 @@ export function TaskReviewTab({
       setRevising(false);
     }
   };
+
+  const renderAuthorFilter = displayItems.length > 0 ? (
+    <div className="task-review-tab__comments-filter" data-testid="task-review-comments-filter" role="group" aria-label={t("taskReview.filterCommentsAriaLabel", "Filter review comments by author type")}>
+      {AUTHOR_TYPE_FILTERS.map((mode) => (
+        <button
+          key={mode}
+          type="button"
+          className={`task-review-tab__comments-filter-chip ${authorTypeFilter === mode ? "active" : ""}`}
+          aria-pressed={authorTypeFilter === mode}
+          data-filter={mode}
+          onClick={() => setAuthorTypeFilter(mode)}
+        >
+          {mode === "all"
+            ? t("taskReview.filterAll", "All")
+            : mode === "human"
+              ? t("taskReview.filterHuman", "Human")
+              : t("taskReview.filterBot", "Bot")}
+        </button>
+      ))}
+    </div>
+  ) : null;
 
   const effectiveAutoMerge = resolveEffectiveAutoMerge({ autoMerge: task.autoMerge }, { autoMerge: autoMergeEnabled });
   const effectiveAutoMergeLabel = effectiveAutoMerge ? t("taskReview.autoMergeOn", "Auto-merge on") : t("taskReview.autoMergeOff", "Auto-merge off");
@@ -377,13 +400,18 @@ export function TaskReviewTab({
       {loading ? <div className="task-review-tab__meta"><LoadingSpinner label={t("taskReview.loadingData", "Loading review data…")} /></div> : null}
       {!loading && error ? <div className="task-review-tab__error">{error}</div> : null}
       {!loading && !error && !isPrMode && displayItems.length === 0 ? <div className="task-review-tab__empty">{emptyMessage ?? t("taskReview.noFeedbackDirect", "No reviewer feedback yet — this task has not produced reviewer-agent feedback in direct mode.")}</div> : null}
-      {!loading && !error && displayItems.length > 0 ? (
+      {!loading && !error && renderAuthorFilter}
+      {!loading && !error && displayItems.length > 0 && filteredDisplayItems.length > 0 ? (
         <ul className="task-review-tab__list">
-          {displayItems.map((item) => {
+          {filteredDisplayItems.map((item) => {
             const checkboxId = `task-review-item-checkbox-${item.id}`;
+            const authorInfo = resolveReviewCommentAuthor(item.author, { reviewSource: review?.source });
+            const authorType = authorInfo.authorIsBot ? "bot" : "human";
+            const avatarKey = `${item.id}:${authorInfo.author}`;
+            const showAvatarImg = Boolean(authorInfo.authorAvatarUrl && !brokenAvatars.has(avatarKey));
 
             return (
-              <li key={item.id} className="task-review-tab__item card">
+              <li key={item.id} className="task-review-tab__item card" data-review-comment-author-type={authorType}>
                 <div className="task-review-tab__item-inner">
                   <label htmlFor={checkboxId} className="task-review-tab__direct-item task-review-tab__direct-item--selectable">
                     <div className="task-review-tab__item-header">
@@ -394,8 +422,33 @@ export function TaskReviewTab({
                       <span className={`task-review-tab__status task-review-tab__status--${item.status}`}>{item.status}</span>
                     </div>
                   </label>
+                  {/*
+                  FNXC:TaskReview 2026-06-27-00:00:
+                  Every Review-tab item needs visible author provenance across PR live items, reviewer-agent items, and snapshot-only addressing records. Render a deterministic avatar image only for human GitHub logins; missing authors and bots use generic icons so there is never an empty or broken avatar shell.
+                  */}
+                  <div className="task-review-tab__comment-meta">
+                    <span className="task-review-tab__comment-avatar" aria-hidden="true" data-testid="task-review-comment-avatar">
+                      {showAvatarImg ? (
+                        <img
+                          src={authorInfo.authorAvatarUrl}
+                          alt={t("taskReview.avatarAlt", "{{author}} avatar", { author: authorInfo.author })}
+                          className="task-review-tab__comment-avatar-img"
+                          onError={() => setBrokenAvatars((prev) => new Set(prev).add(avatarKey))}
+                        />
+                      ) : authorInfo.authorIsBot ? (
+                        <Bot size={16} aria-hidden="true" />
+                      ) : (
+                        <User size={16} aria-hidden="true" />
+                      )}
+                    </span>
+                    <span className="task-review-tab__comment-author">{authorInfo.author}</span>
+                    <span className={`task-review-tab__comment-type-badge task-review-tab__comment-type-badge--${authorType}`} data-review-comment-author-type={authorType}>
+                      {authorInfo.authorIsBot ? <Bot size={11} aria-hidden="true" /> : <User size={11} aria-hidden="true" />}
+                      <span>{authorInfo.authorIsBot ? t("taskReview.bot", "Bot") : t("taskReview.human", "Human")}</span>
+                    </span>
+                    <time className="task-review-tab__comment-time" dateTime={item.createdAt} title={item.createdAt}>{formatTimestamp(item.createdAt, t)}</time>
+                  </div>
                   <div className="task-review-tab__item-meta-list">
-                    <div className="task-review-tab__meta">{formatTimestamp(item.createdAt, t)}</div>
                     {item.addressing ? (
                       <div className="task-review-tab__meta">
                         {t("taskReview.selectedAt", "Selected: {{timestamp}}", { timestamp: formatTimestamp(item.addressing.selectedAt, t) })}
@@ -406,13 +459,9 @@ export function TaskReviewTab({
                     ) : null}
                   </div>
                   {renderMarkdown ? (
-                    <div className="task-review-tab__body markdown-body">
-                      <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
-                        {item.body}
-                      </ReactMarkdown>
-                    </div>
+                    <MailboxMessageContent className="task-review-tab__body markdown-body" content={item.body} testId="task-review-comment-body" />
                   ) : (
-                    <pre className="task-review-tab__body">{linkifyFilePaths(item.body)}</pre>
+                    <pre className="task-review-tab__body" data-testid="task-review-comment-body">{linkifyFilePaths(stripHtmlComments(item.body))}</pre>
                   )}
                 </div>
               </li>
@@ -420,6 +469,7 @@ export function TaskReviewTab({
           })}
         </ul>
       ) : null}
+      {!loading && !error && displayItems.length > 0 && filteredDisplayItems.length === 0 ? <div className="task-review-tab__empty">{t("taskReview.noItemsForFilter", "No review items match the filter.")}</div> : null}
       {isPrMode && !loading && !error && displayItems.length === 0 ? <div className="task-review-tab__empty">{t("taskReview.noReviewItems", "No review items yet.")}</div> : null}
     </div>
   );

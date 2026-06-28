@@ -268,6 +268,159 @@ describe("TaskReviewTab", () => {
     expect(body?.closest("label")).toBeNull();
   });
 
+  it("hides GitHub HTML comments and renders PR author avatars, badges, and filters", async () => {
+    const task = makeTask({
+      reviewState: {
+        source: "pull-request",
+        summary: { reviewDecision: "CHANGES_REQUESTED", reviewers: [], blockingReasons: [], checks: [] },
+        items: [
+          {
+            id: "human-comment",
+            body: "Real human feedback\n<!-- hidden template -->",
+            author: { login: "octocat" },
+            createdAt: "2026-06-27T00:00:00.000Z",
+            summary: "Human feedback",
+          },
+          {
+            id: "bot-comment",
+            body: "Automated feedback\n<!-- bot hidden template -->",
+            author: { login: "coderabbitai[bot]" },
+            createdAt: "2026-06-27T00:01:00.000Z",
+            summary: "Bot feedback",
+          },
+        ],
+        addressing: [],
+      },
+    });
+
+    apiMocks.fetchTaskReview.mockResolvedValue({ reviewState: task.reviewState, automationStatus: null, emptyMessage: null });
+    const { container } = await renderWithAct(<TaskReviewTab task={task} addToast={vi.fn()} />);
+
+    expect(await screen.findByText("Real human feedback")).toBeInTheDocument();
+    expect(screen.queryByText(/hidden template/)).not.toBeInTheDocument();
+    expect(screen.getByAltText("octocat avatar")).toHaveAttribute("src", "https://github.com/octocat.png?size=40");
+    expect(screen.getByText("octocat")).toBeInTheDocument();
+    expect(screen.getByText("coderabbitai[bot]")).toBeInTheDocument();
+    expect(container.querySelectorAll('[data-review-comment-author-type="human"]')).toHaveLength(2);
+    expect(container.querySelectorAll('[data-review-comment-author-type="bot"]')).toHaveLength(2);
+    expect(container.querySelectorAll(".task-review-tab__comment-avatar-img")).toHaveLength(1);
+    expect(container.querySelectorAll(".task-review-tab__comment-avatar svg")).toHaveLength(1);
+
+    fireEvent.click(screen.getByRole("button", { name: "Bot" }));
+    expect(screen.queryByText("Human feedback")).not.toBeInTheDocument();
+    expect(screen.getByText("Bot feedback")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "All" }));
+    fireEvent.click(screen.getByTestId("task-review-markdown-toggle"));
+    expect(await screen.findByText(/Real human feedback/)).toBeInTheDocument();
+    expect(screen.queryByText(/hidden template/)).not.toBeInTheDocument();
+  });
+
+  it("surfaces reviewer-agent live and snapshot authors with safe fallback avatars", async () => {
+    const task = makeTask({
+      reviewState: {
+        source: "reviewer-agent",
+        summary: { verdict: "REVISE", reviewType: "code", summary: "Needs fixes" },
+        items: [
+          {
+            id: "agent-missing-author",
+            body: "Agent feedback without login\n<!-- agent template -->",
+            author: undefined,
+            createdAt: "2026-06-27T00:02:00.000Z",
+            summary: "Missing author feedback",
+          } as never,
+          {
+            id: "agent-login-author",
+            body: "Agent feedback with reviewer login",
+            author: { login: "reviewer-agent" },
+            createdAt: "2026-06-27T00:02:30.000Z",
+            summary: "Reviewer-agent login feedback",
+          },
+        ],
+        addressing: [
+          {
+            itemId: "snapshot-human",
+            status: "queued",
+            selectedAt: "2026-06-27T00:03:00.000Z",
+            snapshot: {
+              itemId: "snapshot-human",
+              sourceMode: "reviewer-agent",
+              source: "reviewer-agent",
+              authorLogin: "snapshot-user",
+              summary: "Snapshot human feedback",
+              body: "Snapshot body",
+            },
+          },
+          {
+            itemId: "snapshot-bot",
+            status: "queued",
+            selectedAt: "2026-06-27T00:04:00.000Z",
+            snapshot: {
+              itemId: "snapshot-bot",
+              sourceMode: "reviewer-agent",
+              source: "reviewer-agent",
+              authorLogin: "reviewer-agent[bot]",
+              summary: "Snapshot bot feedback",
+              body: "Snapshot bot body",
+            },
+          },
+        ],
+      },
+    });
+
+    apiMocks.fetchTaskReview.mockResolvedValue({ reviewState: task.reviewState, automationStatus: null, emptyMessage: null });
+    const { container } = await renderWithAct(<TaskReviewTab task={task} addToast={vi.fn()} />);
+
+    expect(await screen.findByText("Missing author feedback")).toBeInTheDocument();
+    expect(screen.getByText("unknown")).toBeInTheDocument();
+    expect(screen.getByText("reviewer-agent")).toBeInTheDocument();
+    expect(screen.getByText("snapshot-user")).toBeInTheDocument();
+    expect(screen.getByText("reviewer-agent[bot]")).toBeInTheDocument();
+    expect(screen.getByAltText("snapshot-user avatar")).toHaveAttribute("src", "https://github.com/snapshot-user.png?size=40");
+    expect(container.querySelectorAll(".task-review-tab__comment-avatar-img")).toHaveLength(1);
+    expect(container.querySelectorAll(".task-review-tab__comment-avatar svg")).toHaveLength(3);
+
+    fireEvent.click(screen.getByRole("button", { name: "Human" }));
+    expect(screen.queryByText("Missing author feedback")).not.toBeInTheDocument();
+    expect(screen.queryByText("Reviewer-agent login feedback")).not.toBeInTheDocument();
+    expect(screen.getByText("Snapshot human feedback")).toBeInTheDocument();
+    expect(screen.queryByText("Snapshot bot feedback")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Bot" }));
+    expect(screen.getByText("Missing author feedback")).toBeInTheDocument();
+    expect(screen.getByText("Reviewer-agent login feedback")).toBeInTheDocument();
+    expect(screen.getByText("Snapshot bot feedback")).toBeInTheDocument();
+    expect(screen.queryByText("Snapshot human feedback")).not.toBeInTheDocument();
+  });
+
+  it("prunes hidden selections when filtering before requesting revision", async () => {
+    const task = makeTask({
+      reviewState: {
+        source: "pull-request",
+        summary: { reviewDecision: "CHANGES_REQUESTED", reviewers: [], blockingReasons: [], checks: [] },
+        items: [
+          { id: "human-selected", body: "Human body", author: { login: "octocat" }, createdAt: new Date().toISOString(), summary: "Human selected" },
+          { id: "bot-selected", body: "Bot body", author: { login: "renovate[bot]" }, createdAt: new Date().toISOString(), summary: "Bot selected" },
+        ],
+        addressing: [],
+      },
+    });
+
+    apiMocks.fetchTaskReview.mockResolvedValue({ reviewState: task.reviewState, automationStatus: null, emptyMessage: null });
+    apiMocks.reviseTaskReviewItems.mockResolvedValue({ task, reviewState: task.reviewState });
+    await renderWithAct(<TaskReviewTab task={task} addToast={vi.fn()} />);
+
+    const checkboxes = await screen.findAllByRole("checkbox");
+    fireEvent.click(checkboxes[0]);
+    fireEvent.click(checkboxes[1]);
+    fireEvent.click(screen.getByRole("button", { name: "Bot" }));
+    await waitFor(() => expect(screen.queryByText("Human selected")).not.toBeInTheDocument());
+
+    fireEvent.click(screen.getByRole("button", { name: "Request revision" }));
+    await waitFor(() => expect(apiMocks.reviseTaskReviewItems).toHaveBeenCalled());
+    expect(apiMocks.reviseTaskReviewItems).toHaveBeenCalledWith(task.id, [expect.objectContaining({ id: "bot-selected" })], undefined);
+  });
+
   it("renders markdown by default and persists plain-text toggle preference", async () => {
     const task = makeTask({
       reviewState: {

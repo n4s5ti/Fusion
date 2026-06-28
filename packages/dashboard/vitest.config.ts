@@ -195,6 +195,7 @@ const qualityAppComponentTests = [
   "TaskDetailModal.github-tracking-stale",
   "TaskDocumentsTab",
   "TaskFieldsSection",
+  "TaskReviewTab",
   "TaskForm",
   "TaskIdIntegrityBanner",
   "TrackingRepoSelect",

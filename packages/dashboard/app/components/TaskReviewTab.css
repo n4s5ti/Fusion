@@ -102,6 +102,42 @@
   background: color-mix(in srgb, var(--surface) 72%, var(--card));
 }
 
+/*
+FNXC:TaskReview 2026-06-27-00:00:
+Review comments need the same All/Human/Bot narrowing affordance as the GitHub import preview. Chips wrap instead of scrolling so mobile task detail users can filter reviewer-agent noise without losing access to revision controls.
+*/
+.task-review-tab__comments-filter {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-xs);
+  min-width: 0;
+}
+
+.task-review-tab__comments-filter-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: calc(var(--space-lg) + var(--space-xs));
+  padding: 0 var(--space-sm);
+  border: var(--btn-border-width) solid var(--border);
+  border-radius: var(--radius-pill);
+  background: var(--surface);
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 0.75rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.task-review-tab__comments-filter-chip:hover,
+.task-review-tab__comments-filter-chip:focus-visible,
+.task-review-tab__comments-filter-chip.active {
+  color: var(--text);
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, var(--surface));
+}
+
 .task-review-tab__list {
   display: flex;
   flex-direction: column;
@@ -165,6 +201,79 @@
   display: flex;
   flex-direction: column;
   gap: var(--space-xs);
+}
+
+/*
+FNXC:TaskReview 2026-06-27-00:00:
+The Review tab mirrors the Import-from-GitHub comment provenance model: avatar, author, Human/Bot badge, and timestamp sit in a wrapping meta row so desktop task detail and the mobile detail pane both expose comment identity without horizontal overflow.
+*/
+.task-review-tab__comment-meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-xs) var(--space-sm);
+  min-width: 0;
+  color: var(--text-muted);
+  font-family: var(--font-primary);
+  font-size: 0.75rem;
+  line-height: 1.5;
+}
+
+.task-review-tab__comment-avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: calc(var(--space-lg) + var(--space-xs));
+  height: calc(var(--space-lg) + var(--space-xs));
+  border-radius: var(--radius-pill);
+  border: var(--btn-border-width) solid var(--border);
+  background: var(--surface);
+  color: var(--text-muted);
+  overflow: hidden;
+}
+
+.task-review-tab__comment-avatar-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.task-review-tab__comment-author {
+  color: var(--text);
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.task-review-tab__comment-type-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2xs);
+  padding: 0 var(--space-xs);
+  min-height: var(--space-lg);
+  border-radius: var(--radius-pill);
+  border: var(--btn-border-width) solid var(--border);
+  font-size: 0.6875rem;
+  font-weight: 700;
+  line-height: 1.2;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.task-review-tab__comment-type-badge--human {
+  color: var(--color-success);
+  background: color-mix(in srgb, var(--color-success) 12%, transparent);
+  border-color: color-mix(in srgb, var(--color-success) 28%, transparent);
+}
+
+.task-review-tab__comment-type-badge--bot {
+  color: var(--color-info);
+  background: color-mix(in srgb, var(--color-info) 12%, transparent);
+  border-color: color-mix(in srgb, var(--color-info) 28%, transparent);
+}
+
+.task-review-tab__comment-time {
+  color: var(--text-muted);
 }
 
 .task-review-tab__body {
@@ -288,6 +397,10 @@
     justify-content: center;
   }
 
+  .task-review-tab__comments-filter-chip {
+    flex: 1 1 0;
+  }
+
   .task-review-tab__item,
   .task-review-tab__body,
   .task-review-tab__refresh-meta,
@@ -299,6 +412,10 @@
   .task-review-tab__item-header {
     flex-direction: column;
     align-items: stretch;
+  }
+
+  .task-review-tab__comment-meta {
+    align-items: flex-start;
   }
 
   .task-review-tab__status,
