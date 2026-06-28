@@ -669,7 +669,7 @@ Runtime action-gate flow (v1):
 - `require-approval` persists durable requests via `ApprovalRequestStore`, reusing pending requests by dedupe key in `targetAction.context.approvalDedupeKey`.
 
 ### Concurrency, recovery, and resiliency
-- `AgentSemaphore` (`concurrency.ts`) — slot acquisition
+- `AgentSemaphore` (`concurrency.ts`) — slot acquisition. Multi-project runtimes share a single manager-owned semaphore for the cross-project `globalMaxConcurrent` cap, while each `InProcessRuntime` wraps that pool in a scoped semaphore that tracks only that project's held slots. Engine stop, `pauseProject`, and `stopAll` abort in-flight agents, wait the configured stop drain window, then return any residual scoped slots to the shared pool without using a blanket `reconcileActiveCount(0)`, so other projects' active slots are preserved and stopped projects do not starve global capacity.
 - `RecoveryPolicy` (`recovery-policy.ts`) — retry/recovery decision policy
 - `StuckTaskDetector` (`stuck-task-detector.ts`) — inactivity/loop stall detection
 - `GridlockDetector` (`gridlock-detector.ts`) — detects all-blocked todo pipelines and emits notification events (plus explicit clear signals when gridlock resolves)

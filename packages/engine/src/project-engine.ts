@@ -2346,7 +2346,7 @@ export class ProjectEngine {
             // Direct merge via AI agent, gated by semaphore
             runtimeLog.log(`${hasManualResolver ? "Manual" : "Auto"}-merge merging ${taskId}...`);
 
-            const semaphore = (this.runtime as any).globalSemaphore;
+            const semaphore = (this.runtime as any).projectSemaphore ?? (this.runtime as any).globalSemaphore;
 
             const pool = (this.runtime as any).worktreePool;
 

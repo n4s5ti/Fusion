@@ -261,12 +261,22 @@ export class AgentSemaphore {
    * deadlock that would occur if both parent and child needed a queued slot.
    */
   async runNested<T>(fn: () => Promise<T>): Promise<T> {
-    this._active++;
+    this.acquireNestedSlot();
     try {
       return await fn();
     } finally {
-      this.returnSlot("runNested");
+      this.releaseNestedSlot();
     }
+  }
+
+  /** Reserve a nested helper-agent slot without queueing. */
+  acquireNestedSlot(): void {
+    this._active++;
+  }
+
+  /** Return a nested helper-agent slot. */
+  releaseNestedSlot(): void {
+    this.returnSlot("runNested");
   }
 
   /**
@@ -318,5 +328,114 @@ export class AgentSemaphore {
       }
     }
     return bestIdx;
+  }
+}
+
+/**
+ * FNXC:Scheduler-Concurrency 2026-06-27-19:50:
+ * Project engines share one global AgentSemaphore, so each runtime needs scope-local slot accounting. When a project stops or pauses after abort+drain, return only that project's residual held slots to the shared pool so other projects regain capacity without releasing slots held by still-running projects.
+ */
+export class ScopedAgentSemaphore extends AgentSemaphore {
+  private readonly delegate: AgentSemaphore;
+  private _held = 0;
+
+  constructor(delegate: AgentSemaphore) {
+    super(() => delegate.limit);
+    this.delegate = delegate;
+  }
+
+  /** Number of slots this scope currently owns in the delegated semaphore. */
+  get heldCount(): number {
+    return this._held;
+  }
+
+  /** Shared-pool active count, preserving scheduler/metrics semantics. */
+  override get activeCount(): number {
+    return this.delegate.activeCount;
+  }
+
+  override get waitingCount(): number {
+    return this.delegate.waitingCount;
+  }
+
+  override get availableCount(): number {
+    return this.delegate.availableCount;
+  }
+
+  override get limit(): number {
+    return this.delegate.limit;
+  }
+
+  override snapshot(): { activeCount: number; waitingCount: number; availableCount: number; limit: number } {
+    return this.delegate.snapshot();
+  }
+
+  override reconcileActiveCount(maxActive: number): { before: number; after: number; changed: boolean } {
+    const bounded = Math.max(0, Math.floor(maxActive));
+    const before = this._held;
+    if (before > bounded) {
+      const returned = before - bounded;
+      this._held = bounded;
+      for (let i = 0; i < returned; i++) {
+        this.delegate.release();
+      }
+    }
+    return { before, after: this._held, changed: before !== this._held };
+  }
+
+  override async acquire(priority: number = 0): Promise<void> {
+    await this.delegate.acquire(priority);
+    this._held++;
+  }
+
+  override tryAcquire(): boolean {
+    const acquired = this.delegate.tryAcquire();
+    if (acquired) this._held++;
+    return acquired;
+  }
+
+  override release(): void {
+    if (this._held <= 0) return;
+    this._held--;
+    this.delegate.release();
+  }
+
+  override async run<T>(fn: () => Promise<T>, priority: number = 0): Promise<T> {
+    await this.acquire(priority);
+    try {
+      return await fn();
+    } finally {
+      this.release();
+    }
+  }
+
+  override async runNested<T>(fn: () => Promise<T>): Promise<T> {
+    this.delegate.acquireNestedSlot();
+    this._held++;
+    try {
+      return await fn();
+    } finally {
+      if (this._held > 0) {
+        this._held--;
+        this.delegate.releaseNestedSlot();
+      }
+    }
+  }
+
+  /**
+   * Return every slot still attributed to this scope.
+   *
+   * Late normal releases from already-aborted agents become no-ops because the
+   * scope's held count is zeroed before returning residual slots to the pool.
+   */
+  returnAllHeldSlots(): number {
+    const residual = this._held;
+    if (residual <= 0) return 0;
+
+    this._held = 0;
+    for (let i = 0; i < residual; i++) {
+      this.delegate.release();
+    }
+    return residual;
   }
 }

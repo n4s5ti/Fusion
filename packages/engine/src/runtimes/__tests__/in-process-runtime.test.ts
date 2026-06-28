@@ -8,6 +8,7 @@ import type { Task, TaskStore, CentralCore, AgentStore, Agent } from "@fusion/co
 import { InProcessRuntime } from "../in-process-runtime.js";
 import type { ProjectRuntimeConfig } from "../../project-runtime.js";
 import { runtimeLog } from "../../logger.js";
+import { AgentSemaphore } from "../../concurrency.js";
 
 const {
   mockSelfHealingStart,
@@ -536,6 +537,56 @@ describe("InProcessRuntime", () => {
       await runtime.stop();
 
       expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("post-abort drain timeout"));
+    }, 30000);
+
+    it("returns residual scoped semaphore slots after the post-abort drain", async () => {
+      const sharedSemaphore = new AgentSemaphore(2);
+      runtime = new InProcessRuntime(
+        { ...buildTestConfig(testDir), globalSemaphore: sharedSemaphore },
+        mockCentralCore,
+      );
+      await runtime.start();
+
+      const projectSemaphore = (runtime as any).projectSemaphore;
+      await projectSemaphore.acquire();
+      await projectSemaphore.acquire();
+      expect(projectSemaphore.heldCount).toBe(2);
+      expect(sharedSemaphore.availableCount).toBe(0);
+
+      await runtime.stop();
+
+      expect(projectSemaphore.heldCount).toBe(0);
+      expect(sharedSemaphore.activeCount).toBe(0);
+      expect(sharedSemaphore.availableCount).toBe(2);
+      await runtime.stop();
+      expect(sharedSemaphore.activeCount).toBe(0);
+    }, 30000);
+
+    it("returns residual slots in single-project local-semaphore mode without double-return warnings", async () => {
+      const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+      try {
+        await runtime.start();
+        const localSemaphore = (runtime as any).globalSemaphore;
+        const projectSemaphore = (runtime as any).projectSemaphore;
+
+        await projectSemaphore.acquire();
+        await projectSemaphore.acquire();
+        expect(projectSemaphore.heldCount).toBe(2);
+        expect(localSemaphore.activeCount).toBe(2);
+        expect(localSemaphore.availableCount).toBe(2);
+
+        await runtime.stop();
+        await runtime.stop();
+
+        expect(projectSemaphore.heldCount).toBe(0);
+        expect(localSemaphore.activeCount).toBe(0);
+        expect(localSemaphore.availableCount).toBe(4);
+        expect(warnSpy).not.toHaveBeenCalledWith(
+          expect.stringContaining("AgentSemaphore excess slot return ignored"),
+        );
+      } finally {
+        warnSpy.mockRestore();
+      }
     }, 30000);
 
     it("continues stopping when abortAllInFlight throws", async () => {

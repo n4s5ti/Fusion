@@ -25,7 +25,7 @@ import { buildPrNodeDeps } from "../pr-nodes.js";
 import { isExperimentalFeatureEnabled } from "@fusion/core";
 import { createCliAgentRuntime, type BootstrappedCliAgentRuntime } from "../cli-agent/runtime.js";
 import { WorktreePool, isGitRepository, type PoolInvariantViolation } from "../worktree-pool.js";
-import { AgentSemaphore } from "../concurrency.js";
+import { AgentSemaphore, ScopedAgentSemaphore } from "../concurrency.js";
 import { HeartbeatMonitor, HeartbeatTriggerScheduler, type WakeContext } from "../agent-heartbeat.js";
 import { AutoClaimSnapshotManager } from "../auto-claim-snapshot.js";
 import { RoutineRunner, type RoutineRunnerOptions } from "../routine-runner.js";
@@ -178,6 +178,7 @@ export class InProcessRuntime
   private executor!: TaskExecutor;
   private worktreePool!: WorktreePool;
   private globalSemaphore?: AgentSemaphore;
+  private projectSemaphore?: ScopedAgentSemaphore;
   private stuckTaskDetector?: StuckTaskDetector;
   /**
    * Per-project CLI Agent Executor runtime bundle (PTY manager + telemetry hub +
@@ -378,6 +379,8 @@ export class InProcessRuntime
         }
       }
 
+      this.projectSemaphore = new ScopedAgentSemaphore(this.globalSemaphore);
+
       await yieldEventLoop();
 
       // 5a. Initialize AgentStore (required for scheduler assignment, reflection service, and heartbeat monitoring)
@@ -457,7 +460,7 @@ export class InProcessRuntime
       this.scheduler = new Scheduler(this.taskStore, {
         maxConcurrent: this.config.maxConcurrent,
         maxWorktrees: this.config.maxWorktrees,
-        semaphore: this.globalSemaphore,
+        semaphore: this.projectSemaphore,
         agentStore: this.agentStore,
         hasActiveAgentExecution: (agentId: string) => this.heartbeatMonitor?.getTrackedAgents().includes(agentId) ?? false,
         missionStore,
@@ -572,7 +575,7 @@ export class InProcessRuntime
       const prNodeGithubOps = this.config.prNodeGithubOps;
       const workflowAuthoritativeDriverRef: { current?: WorkflowAuthoritativeDriver } = {};
       const executorOptions: TaskExecutorOptions = {
-        semaphore: this.globalSemaphore,
+        semaphore: this.projectSemaphore,
         pool: this.worktreePool,
         usageLimitPauser: this.usageLimitPauser,
         stuckTaskDetector: this.stuckTaskDetector,
@@ -812,7 +815,7 @@ export class InProcessRuntime
         this.taskStore,
         this.config.workingDirectory,
         {
-          semaphore: this.globalSemaphore,
+          semaphore: this.projectSemaphore,
           stuckTaskDetector: this.stuckTaskDetector,
           agentStore: this.agentStore,
           pluginRunner: this.pluginRunner,
@@ -1190,6 +1193,17 @@ export class InProcessRuntime
       if (finalMetrics.inFlightTasks > 0) {
         runtimeLog.warn(
           `post-abort drain timeout: shutdown reached with ${finalMetrics.inFlightTasks} tasks still in-flight`
+        );
+      }
+
+      /**
+       * FNXC:Scheduler-Concurrency 2026-06-27-20:05:
+       * After stop aborts a project's agents and waits the bounded drain window, any slots still attributed to this runtime are residual leaks from sessions that did not settle their normal finally path. Return only this project's scoped slots so pauseProject/stopAll promptly free shared global capacity without clobbering other projects' active slots.
+       */
+      const returnedResidualSlots = this.projectSemaphore?.returnAllHeldSlots() ?? 0;
+      if (returnedResidualSlots > 0) {
+        runtimeLog.warn(
+          `Returned ${returnedResidualSlots} residual global concurrency slot(s) after project stop drain`,
         );
       }
 

@@ -2,11 +2,137 @@ import { describe, it, expect, vi } from "vitest";
 import type { Task } from "@fusion/core";
 import {
   AgentSemaphore,
+  ScopedAgentSemaphore,
   PRIORITY_MERGE,
   PRIORITY_EXECUTE,
   PRIORITY_SPECIFY,
   recoverIdleSemaphoreLeakCandidate,
 } from "../concurrency.js";
+
+describe("ScopedAgentSemaphore", () => {
+  it("returns only this scope's residual slots without clobbering other scopes", async () => {
+    const shared = new AgentSemaphore(3);
+    const projectA = new ScopedAgentSemaphore(shared);
+    const projectB = new ScopedAgentSemaphore(shared);
+
+    await projectA.acquire(PRIORITY_EXECUTE);
+    await projectA.acquire(PRIORITY_MERGE);
+    await projectB.acquire(PRIORITY_SPECIFY);
+
+    expect(shared.activeCount).toBe(3);
+    expect(projectA.heldCount).toBe(2);
+    expect(projectB.heldCount).toBe(1);
+
+    expect(projectA.returnAllHeldSlots()).toBe(2);
+
+    expect(projectA.heldCount).toBe(0);
+    expect(projectB.heldCount).toBe(1);
+    expect(shared.activeCount).toBe(1);
+    expect(shared.availableCount).toBe(2);
+
+    projectB.release();
+    expect(shared.activeCount).toBe(0);
+  });
+
+  it("is idempotent for zero-held and double residual returns without excess warnings", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    try {
+      const shared = new AgentSemaphore(2);
+      const scope = new ScopedAgentSemaphore(shared);
+
+      expect(scope.returnAllHeldSlots()).toBe(0);
+      expect(scope.tryAcquire()).toBe(true);
+      expect(scope.heldCount).toBe(1);
+      expect(scope.returnAllHeldSlots()).toBe(1);
+      expect(scope.returnAllHeldSlots()).toBe(0);
+      scope.release();
+
+      expect(shared.activeCount).toBe(0);
+      expect(shared.availableCount).toBe(2);
+      expect(warnSpy).not.toHaveBeenCalled();
+    } finally {
+      warnSpy.mockRestore();
+    }
+  });
+
+  it("tracks run and runNested slots, and late finally releases are no-ops after residual return", async () => {
+    const shared = new AgentSemaphore(4);
+    const scope = new ScopedAgentSemaphore(shared);
+    let releaseRun!: () => void;
+    let releaseNested!: () => void;
+
+    const runPromise = scope.run(
+      () => new Promise<void>((resolve) => {
+        releaseRun = resolve;
+      }),
+      PRIORITY_EXECUTE,
+    );
+    await Promise.resolve();
+
+    const nestedPromise = scope.runNested(
+      () => new Promise<void>((resolve) => {
+        releaseNested = resolve;
+      }),
+    );
+    await Promise.resolve();
+
+    expect(scope.heldCount).toBe(2);
+    expect(shared.activeCount).toBe(2);
+    expect(scope.returnAllHeldSlots()).toBe(2);
+    expect(shared.activeCount).toBe(0);
+
+    releaseRun();
+    releaseNested();
+    await Promise.all([runPromise, nestedPromise]);
+
+    expect(scope.heldCount).toBe(0);
+    expect(shared.activeCount).toBe(0);
+  });
+
+  it("delegates queued acquisition priority through the shared pool", async () => {
+    const shared = new AgentSemaphore(1);
+    const low = new ScopedAgentSemaphore(shared);
+    const high = new ScopedAgentSemaphore(shared);
+    const order: string[] = [];
+
+    await low.acquire(PRIORITY_SPECIFY);
+    const lowWaiter = low.acquire(PRIORITY_SPECIFY).then(() => order.push("low"));
+    const highWaiter = high.acquire(PRIORITY_MERGE).then(() => order.push("high"));
+    await Promise.resolve();
+
+    low.release();
+    await highWaiter;
+    expect(order).toEqual(["high"]);
+    expect(high.heldCount).toBe(1);
+
+    high.release();
+    await lowWaiter;
+    expect(order).toEqual(["high", "low"]);
+    low.release();
+    expect(shared.activeCount).toBe(0);
+  });
+
+  it("reconciles only this scope's slots when another project still holds global capacity", async () => {
+    const shared = new AgentSemaphore(3);
+    const idleProject = new ScopedAgentSemaphore(shared);
+    const activeProject = new ScopedAgentSemaphore(shared);
+
+    await idleProject.acquire(PRIORITY_EXECUTE);
+    await idleProject.acquire(PRIORITY_EXECUTE);
+    await activeProject.acquire(PRIORITY_MERGE);
+
+    const result = idleProject.reconcileActiveCount(0);
+
+    expect(result).toEqual({ before: 2, after: 0, changed: true });
+    expect(idleProject.heldCount).toBe(0);
+    expect(activeProject.heldCount).toBe(1);
+    expect(shared.activeCount).toBe(1);
+    expect(shared.availableCount).toBe(2);
+
+    activeProject.release();
+    expect(shared.activeCount).toBe(0);
+  });
+});
 
 describe("AgentSemaphore", () => {
   it("allows immediate acquire when under limit", async () => {
