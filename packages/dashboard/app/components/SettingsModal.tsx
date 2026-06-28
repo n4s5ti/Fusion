@@ -733,6 +733,7 @@ export function SettingsModal({
     merger: { mode: "ai", maxReviewPasses: 3, allowDirtyLocalCheckoutSync: true },
     recycleWorktrees: false,
     showWorktreeGrouping: false,
+    openTasksInRightSidebar: false,
     executorAllowSiblingBranchRename: false,
     worktreeNaming: "random",
     worktreeCopyFiles: [],

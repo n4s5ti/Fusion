@@ -20,6 +20,7 @@ export interface UseAppSettingsResult {
   staleHighFanoutBlockerAgeThresholdMs: number;
   capacityRiskBannerEnabled: boolean;
   capacityRiskTodoThreshold: number;
+  openTasksInRightSidebar: boolean;
   quickChatButtonMode: QuickChatButtonMode;
   showQuickChatFAB: boolean;
   maxTotalRetriesBeforeFail: number;
@@ -58,6 +59,7 @@ export function useAppSettings(projectId?: string): UseAppSettingsResult {
   const [staleHighFanoutBlockerAgeThresholdMs, setStaleHighFanoutBlockerAgeThresholdMs] = useState(2 * 60 * 60 * 1000);
   const [capacityRiskBannerEnabled, setCapacityRiskBannerEnabled] = useState(false);
   const [capacityRiskTodoThreshold, setCapacityRiskTodoThreshold] = useState(20);
+  const [openTasksInRightSidebar, setOpenTasksInRightSidebar] = useState(false);
   const [quickChatButtonMode, setQuickChatButtonMode] = useState<QuickChatButtonMode>("off");
   const [showQuickChatFAB, setShowQuickChatFAB] = useState(false);
   const [maxTotalRetriesBeforeFail, setMaxTotalRetriesBeforeFail] = useState(25);
@@ -113,6 +115,7 @@ export function useAppSettings(projectId?: string): UseAppSettingsResult {
       setMaxTotalRetriesBeforeFail(settings.maxTotalRetriesBeforeFail ?? 25);
       setCapacityRiskBannerEnabled(settings.capacityRiskBannerEnabled === true);
       setCapacityRiskTodoThreshold(settings.capacityRiskTodoThreshold ?? 20);
+      setOpenTasksInRightSidebar(settings.openTasksInRightSidebar === true);
       setExperimentalFeatures(settings.experimentalFeatures ?? {});
       const features = settings.experimentalFeatures ?? {};
       /*
@@ -139,6 +142,7 @@ export function useAppSettings(projectId?: string): UseAppSettingsResult {
     setInsightsEnabled(true);
     setMemoryEnabled(true);
     setDevServerEnabled(false);
+    setOpenTasksInRightSidebar(false);
     setTodosEnabled(true);
     setGoalsEnabled(true);
     void refresh();
@@ -238,6 +242,7 @@ export function useAppSettings(projectId?: string): UseAppSettingsResult {
     staleHighFanoutBlockerAgeThresholdMs,
     capacityRiskBannerEnabled,
     capacityRiskTodoThreshold,
+    openTasksInRightSidebar,
     quickChatButtonMode,
     showQuickChatFAB,
     maxTotalRetriesBeforeFail,

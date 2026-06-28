@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
-import { Maximize2, Pin, PinOff } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from "react";
+import type { Task, TaskDetail } from "@fusion/core";
+import { ArrowLeft, Maximize2, Pin, PinOff } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import {
   findOverflowViewEntry,
@@ -99,6 +100,9 @@ export interface RightDockProps {
   footerVisible?: boolean;
   pinned: boolean;
   onTogglePin: () => void;
+  dockTask?: Task | TaskDetail | null;
+  dockTaskContent?: ReactNode;
+  onCloseDockTask?: () => void;
 }
 
 /*
@@ -122,6 +126,9 @@ export function RightDock({
   footerVisible = false,
   pinned,
   onTogglePin,
+  dockTask = null,
+  dockTaskContent = null,
+  onCloseDockTask,
 }: RightDockProps) {
   const { t } = useTranslation("app");
   const entries = useMemo(() => getVisibleOverflowViewEntries(visibilityOptions), [visibilityOptions]);
@@ -152,9 +159,14 @@ export function RightDock({
       return;
     }
     if (!entry?.render) return;
+    /*
+    FNXC:OpenTasksInRightSidebar 2026-06-28-00:00:
+    Selecting any normal right-dock tab leaves the task-detail overlay surface and restores the last overflow-view body. This avoids stacking task detail over Files/Goals and prevents orphaned task headers after the user intentionally switches dock context.
+    */
+    onCloseDockTask?.();
     setSelectedKey(key);
     persistRightDockView(key);
-  }, [renderProps, visibilityOptions]);
+  }, [onCloseDockTask, renderProps, visibilityOptions]);
 
   const handleResizeStart = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
     event.preventDefault();
@@ -224,8 +236,10 @@ export function RightDock({
   }
 
   const SelectedIcon = selectedEntry.icon;
+  const showingDockTask = Boolean(dockTask && dockTaskContent);
   const dockWidth = `${width}px`;
   const expandSelectedViewLabel = t("rightDock.expandView", "Expand {{label}}", { label: selectedEntry.label });
+  const closeDockTaskLabel = t("rightDock.closeTaskDetail", "Back to right dock views");
   const pinLabel = pinned
     ? t("rightDock.unpin", "Unpin sidebar (overlay content)")
     : t("rightDock.pin", "Pin sidebar (push content)");
@@ -291,7 +305,18 @@ export function RightDock({
           >
             <PinIcon size={16} />
           </button>
-          {open && selectedEntry.render ? (
+          {showingDockTask ? (
+            <button
+              type="button"
+              className="btn-icon right-dock__expand"
+              aria-label={closeDockTaskLabel}
+              title={closeDockTaskLabel}
+              data-testid="right-dock-close-task"
+              onClick={onCloseDockTask}
+            >
+              <ArrowLeft size={16} />
+            </button>
+          ) : open && selectedEntry.render ? (
             <button
               type="button"
               className="btn-icon right-dock__expand"
@@ -308,15 +333,15 @@ export function RightDock({
       {open ? (
         <>
           <div className="right-dock__header">
-            <SelectedIcon size={16} />
-            <div className="right-dock__title" role="heading" aria-level={3}>{selectedEntry.label}</div>
+            {showingDockTask ? <ArrowLeft size={16} /> : <SelectedIcon size={16} />}
+            <div className="right-dock__title" role="heading" aria-level={3}>{showingDockTask ? t("rightDock.taskDetailTitle", "Task detail") : selectedEntry.label}</div>
           </div>
-          <div className="right-dock__body" role="tabpanel" aria-label={selectedEntry.label} data-testid="right-dock-body">
+          <div className="right-dock__body" role="tabpanel" aria-label={showingDockTask ? t("rightDock.taskDetailTitle", "Task detail") : selectedEntry.label} data-testid="right-dock-body">
             {/*
             FNXC:RightDockFiles 2026-06-23-00:50:
             Thread the live dock width down to registry render functions as `dockWidth` (alongside surface="dock") so a view can deterministically choose its wide layout from the actual dock size. The Files entry uses this to force two-pane when the dock is wide enough, sidestepping the @container query that never reliably fired in the narrow-vs-wide dock body.
             */}
-            {selectedEntry.render?.({ ...renderProps, surface: "dock", dockWidth: width })}
+            {showingDockTask ? dockTaskContent : selectedEntry.render?.({ ...renderProps, surface: "dock", dockWidth: width })}
           </div>
         </>
       ) : null}

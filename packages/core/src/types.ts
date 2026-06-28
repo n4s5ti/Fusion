@@ -3679,6 +3679,13 @@ export interface ProjectSettings {
    * This is an explicit show/hide project setting. The default-off state hides worktree grouping and labels in both legacy and workflow-mode WIP columns; when enabled, operators see grouping in every WIP/processing column, including workflow-mode columns flagged as counting toward WIP.
    */
   showWorktreeGrouping?: boolean;
+  /**
+   * When true, board task-card clicks open task detail in the right dock when that dock surface is active; otherwise board clicks keep the full main-panel task detail. Default: false.
+   *
+   * FNXC:OpenTasksInRightSidebar 2026-06-28-00:00:
+   * This project-scoped setting is default-off so current board navigation is unchanged. When enabled, only Board card clicks may route to the tablet/desktop right dock; all non-board task-open paths and dock-inactive/mobile states must preserve the full-panel or existing modal behavior.
+   */
+  openTasksInRightSidebar?: boolean;
   /** When true, restores the legacy behavior of silently creating sibling
    *  branches like `fusion/FN-123-2` when the canonical task branch is already
    *  checked out elsewhere. Default: false. */

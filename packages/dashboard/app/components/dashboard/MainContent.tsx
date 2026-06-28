@@ -36,6 +36,7 @@ export function MainContent({
   taskView,
   modalManager,
   handleChangeTaskView,
+  refreshAppSettings,
   addToast,
   currentProject,
   themeMode,
@@ -112,6 +113,7 @@ export function MainContent({
   showWorktreeGrouping,
   moveTask,
   pauseTask,
+  openBoardTaskDetail,
   openTaskDetailInMainPanel,
   openGroupModalWithNav,
   handleBoardQuickCreate,
@@ -188,11 +190,15 @@ export function MainContent({
   /*
   FNXC:Settings 2026-06-22-00:00:
   Settings renders ahead of the overview branch so the header gear opens the embedded Settings view even when no project is selected (viewMode === "overview"), matching the prior modal which opened regardless of view mode.
+
+  FNXC:OpenTasksInRightSidebar 2026-06-28-00:00:
+  Embedded Settings closes must refresh App-scoped settings before returning to the board. The openTasksInRightSidebar routing hook reads project settings through useAppSettings, so saving the Appearance toggle needs the same refresh path as the modal settings close to make board-card routing change immediately without a reload.
   */
   if (taskView === "settings") {
     const closeSettingsView = () => {
       modalManager.closeSettings();
       handleChangeTaskView("board");
+      void refreshAppSettings();
     };
     return (
       <PageErrorBoundary>
@@ -662,6 +668,9 @@ export function MainContent({
   /*
   FNXC:Navigation 2026-06-22-00:00:
   Board-opened task detail renders as a full main-content view that replaces the board. A Back-to-board button sits above an embedded TaskDetailContent (same props ListView passes to its split-detail pane). The live task is preferred from `tasks` by id so the detail updates on revalidation; the stored snapshot is the fallback. If neither resolves (snapshot cleared), fall back to the board so the panel is never blank.
+
+  FNXC:OpenTasksInRightSidebar 2026-06-28-00:00:
+  Both Board render sites use App's setting-aware board-open handler. That keeps this switch presentational while ensuring only Board card clicks can route into the right dock; deep-tab, list, plugin, and modal task-open paths continue to call their existing handlers.
   */
   if (taskView === "task-detail") {
     const liveDetailTask = mainPanelDetailTask
@@ -677,7 +686,7 @@ export function MainContent({
             showWorktreeGrouping={showWorktreeGrouping}
             onMoveTask={moveTask}
             onPauseTask={pauseTask}
-            onOpenDetail={openTaskDetailInMainPanel}
+            onOpenDetail={openBoardTaskDetail}
             onOpenGroupModal={openGroupModalWithNav}
             addToast={addToast}
             onQuickCreate={handleBoardQuickCreate}
@@ -773,7 +782,7 @@ export function MainContent({
           showWorktreeGrouping={showWorktreeGrouping}
           onMoveTask={moveTask}
           onPauseTask={pauseTask}
-          onOpenDetail={openTaskDetailInMainPanel}
+          onOpenDetail={openBoardTaskDetail}
           onOpenGroupModal={openGroupModalWithNav}
           addToast={addToast}
           onQuickCreate={handleBoardQuickCreate}

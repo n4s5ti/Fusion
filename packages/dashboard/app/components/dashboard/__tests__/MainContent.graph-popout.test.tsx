@@ -51,6 +51,9 @@ const otherTask = {
 } as unknown as Task;
 
 const LazyStub = lazy(async () => ({ default: () => null }));
+const LazySettingsCloseStub = lazy(async () => ({
+  default: ({ onClose }: { onClose: () => void }) => <button type="button" onClick={onClose}>Close settings view</button>,
+}));
 
 function mainContentProps(overrides: Partial<MainContentProps> = {}): MainContentProps {
   return {
@@ -67,6 +70,7 @@ function mainContentProps(overrides: Partial<MainContentProps> = {}): MainConten
       openWorkflowEditor: vi.fn(),
     } as unknown as MainContentProps["modalManager"],
     handleChangeTaskView: vi.fn(),
+    refreshAppSettings: vi.fn(async () => undefined),
     addToast: vi.fn(),
     currentProject: { id: "project-1", name: "Project 1" } as MainContentProps["currentProject"],
     themeMode: "system",
@@ -205,6 +209,31 @@ function mainContentProps(overrides: Partial<MainContentProps> = {}): MainConten
 }
 
 describe("MainContent graph task pop-out wiring", () => {
+  it("refreshes app settings when the embedded Settings view closes", async () => {
+    const closeSettings = vi.fn();
+    const handleChangeTaskView = vi.fn();
+    const refreshAppSettings = vi.fn(async () => undefined);
+
+    render(
+      <MainContent
+        {...mainContentProps({
+          taskView: "settings",
+          modalManager: { closeSettings, settingsInitialSection: undefined, openWorkflowEditor: vi.fn() } as unknown as MainContentProps["modalManager"],
+          handleChangeTaskView,
+          refreshAppSettings,
+          _SettingsView: LazySettingsCloseStub as MainContentProps["_SettingsView"],
+        })}
+      />,
+    );
+
+    await screen.findByText("Close settings view");
+    screen.getByText("Close settings view").click();
+
+    expect(closeSettings).toHaveBeenCalledTimes(1);
+    expect(handleChangeTaskView).toHaveBeenCalledWith("board");
+    expect(refreshAppSettings).toHaveBeenCalledTimes(1);
+  });
+
   it("routes dependency-graph bridge and rendered task-card opens to the shared pop-out", () => {
     hostContexts.length = 0;
     const openDetailTask = vi.fn();

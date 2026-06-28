@@ -14,6 +14,12 @@ import { useRightDockController, type RightDockControllerInput } from "../useRig
 import { DOCK_FILES_CURRENT_KEY } from "../DockFilesView";
 import { setScopedItem } from "../../utils/projectStorage";
 
+vi.mock("../TaskDetailModal", () => ({
+  TaskDetailContent: ({ task }: { task: { id: string; title?: string } }) => (
+    <div data-testid="dock-task-detail">{task.title ?? task.id}</div>
+  ),
+}));
+
 vi.mock("../../api", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../../api")>();
   return {
@@ -151,6 +157,109 @@ describe("RightDock", () => {
     expect(screen.getByTestId("right-dock-expand")).toHaveAttribute("aria-label", "Expand Files");
     expect(screen.getByTestId("right-dock-expand")).toHaveAttribute("title", "Expand Files");
     expect(screen.queryByTestId("right-dock-collapse-toggle")).toBeNull();
+  });
+
+  it("renders dock task detail in the body and returns to overflow views from the close affordance", () => {
+    const onCloseDockTask = vi.fn();
+    const { rerender } = render(
+      <TestRightDock
+        open={true}
+        renderProps={renderProps}
+        dockTask={{ id: "FN-7169", title: "Sidebar task" } as never}
+        dockTaskContent={<div data-testid="dock-task-detail">Sidebar task</div>}
+        onCloseDockTask={onCloseDockTask}
+      />,
+    );
+
+    expect(screen.getByTestId("right-dock-body")).toHaveTextContent("Sidebar task");
+    expect(screen.queryByTestId("right-dock-files-view")).toBeNull();
+
+    fireEvent.click(screen.getByTestId("right-dock-close-task"));
+    expect(onCloseDockTask).toHaveBeenCalledTimes(1);
+
+    rerender(<TestRightDock open={true} renderProps={renderProps} dockTask={null} dockTaskContent={null} onCloseDockTask={onCloseDockTask} />);
+    expect(screen.getByTestId("right-dock-files-view")).toBeInTheDocument();
+    expect(screen.queryByTestId("dock-task-detail")).toBeNull();
+  });
+
+  it("clears dock task detail when a normal right-dock tab is selected", () => {
+    const onCloseDockTask = vi.fn();
+    render(
+      <TestRightDock
+        open={true}
+        renderProps={renderProps}
+        dockTask={{ id: "FN-7169", title: "Sidebar task" } as never}
+        dockTaskContent={<div data-testid="dock-task-detail">Sidebar task</div>}
+        onCloseDockTask={onCloseDockTask}
+      />,
+    );
+
+    fireEvent.click(screen.getByTestId("right-dock-tab-git-manager"));
+
+    expect(onCloseDockTask).toHaveBeenCalledTimes(1);
+  });
+
+  it("controller dock task opens, replaces, and clears on inactive teardown", () => {
+    const firstTask = { id: "FN-1", title: "First task", column: "todo" };
+    const secondTask = { id: "FN-2", title: "Second task", column: "todo" };
+    const controllerInput = {
+      active: true,
+      projectId: "project-1",
+      addToast: vi.fn(),
+      settingsLoaded: true,
+      researchReadinessVersion: 0,
+      tasks: [firstTask, secondTask],
+      workflowSteps: [],
+      subscribePluginEvents: () => () => {},
+      openDetailTask: vi.fn(),
+      openFileInBrowser: vi.fn(),
+      onMoveTask: vi.fn(),
+      onDeleteTask: vi.fn(),
+      onMergeTask: vi.fn(),
+      openSettings: vi.fn(),
+      onSendSelectionToTask: vi.fn(),
+      onCreateTaskFromInsight: vi.fn(),
+      onNavigateToMission: vi.fn(),
+      onTaskCreated: vi.fn(),
+      prAuthAvailable: false,
+      autoMerge: false,
+      visibilityOptions: {},
+      footerVisible: false,
+    } as unknown as RightDockControllerInput;
+
+    function Harness({ active }: { active: boolean }) {
+      const controller = useRightDockController({ ...controllerInput, active });
+      return (
+        <>
+          <button type="button" data-testid="open-first" onClick={() => controller.openTaskInDock(firstTask as never)}>open first</button>
+          <button type="button" data-testid="open-second" onClick={() => controller.openTaskInDock(secondTask as never)}>open second</button>
+          <button type="button" data-testid="close-dock-task" onClick={controller.closeDockTask}>close task</button>
+          {controller.dock}
+        </>
+      );
+    }
+
+    const { rerender } = render(<Harness active={true} />);
+    expect(screen.getByTestId("right-dock-files-view")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId("open-first"));
+    expect(screen.getByTestId("dock-task-detail")).toHaveTextContent("First task");
+
+    fireEvent.click(screen.getByTestId("open-second"));
+    expect(screen.getByTestId("dock-task-detail")).toHaveTextContent("Second task");
+    expect(screen.queryByText("First task")).toBeNull();
+
+    fireEvent.click(screen.getByTestId("close-dock-task"));
+    expect(screen.queryByTestId("dock-task-detail")).toBeNull();
+    expect(screen.getByTestId("right-dock-files-view")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId("open-first"));
+    expect(screen.getByTestId("dock-task-detail")).toHaveTextContent("First task");
+    rerender(<Harness active={false} />);
+    expect(screen.queryByTestId("right-dock")).toBeNull();
+    rerender(<Harness active={true} />);
+    expect(screen.queryByTestId("dock-task-detail")).toBeNull();
+    expect(screen.getByTestId("right-dock-files-view")).toBeInTheDocument();
   });
 
   it("renders the pin affordance for both states and delegates the toggle", () => {

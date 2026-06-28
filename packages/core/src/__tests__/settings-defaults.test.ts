@@ -137,6 +137,19 @@ describe("settings defaults invariants", () => {
     });
   });
 
+  describe("openTasksInRightSidebar default", () => {
+    it("keeps openTasksInRightSidebar explicitly false in project defaults", () => {
+      expect(DEFAULT_PROJECT_SETTINGS.openTasksInRightSidebar).toBe(false);
+      expect("openTasksInRightSidebar" in DEFAULT_PROJECT_SETTINGS).toBe(true);
+      expect(PROJECT_SETTINGS_KEYS).toContain("openTasksInRightSidebar");
+    });
+
+    it("keeps openTasksInRightSidebar project-scoped only", () => {
+      expect("openTasksInRightSidebar" in DEFAULT_GLOBAL_SETTINGS).toBe(false);
+      expect(GLOBAL_SETTINGS_KEYS).not.toContain("openTasksInRightSidebar");
+    });
+  });
+
   describe("mergeIntegrationWorktree default", () => {
     it("defaults project settings to reuse-task-worktree", () => {
       expect(DEFAULT_PROJECT_SETTINGS.mergeIntegrationWorktree).toBe("reuse-task-worktree");

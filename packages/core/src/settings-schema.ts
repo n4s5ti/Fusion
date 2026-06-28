@@ -316,6 +316,7 @@ export const DEFAULT_PROJECT_SETTINGS = {
   buildCommand: undefined,
   recycleWorktrees: false,
   showWorktreeGrouping: false,
+  openTasksInRightSidebar: false,
   executorAllowSiblingBranchRename: false,
   worktreeNaming: "random",
   worktrunk: {

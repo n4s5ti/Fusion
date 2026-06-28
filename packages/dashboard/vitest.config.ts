@@ -172,6 +172,7 @@ const qualityAppComponentTests = [
   "QuickChatFAB.shared-cache",
   "ReliabilityView",
   "ResearchView",
+  "RightDock",
   "SecretsView",
   "SecretsView.mobile",
   "SettingsModal.testMode",

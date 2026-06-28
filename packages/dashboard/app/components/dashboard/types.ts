@@ -69,6 +69,7 @@ export interface MainContentProps {
   taskView: TaskView;
   modalManager: ModalManager;
   handleChangeTaskView: (newView: TaskView) => void;
+  refreshAppSettings: () => Promise<void>;
   addToast: (message: string, type?: ToastType) => void;
   currentProject: ProjectInfo | null;
   themeMode: ThemeMode;
@@ -156,6 +157,7 @@ export interface MainContentProps {
     optionsOrPosition?: { preserveProgress?: boolean } | number,
   ) => Promise<Task>;
   pauseTask: (id: string) => Promise<Task>;
+  openBoardTaskDetail: (task: Task | TaskDetail, initialTab?: DetailTaskTab) => void;
   openTaskDetailInMainPanel: (task: Task | TaskDetail, initialTab?: DetailTaskTab) => void;
   openGroupModalWithNav: (groupId: string) => void;
   handleBoardQuickCreate: (input: TaskCreateInput) => Promise<Task>;

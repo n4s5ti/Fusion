@@ -18,7 +18,7 @@ export interface AppearanceSectionProps extends SectionBaseProps {
     sessionBannersHidden: boolean;
     setSessionBannersHidden: (hidden: boolean) => void;
 }
-export function AppearanceSection({ scopeBanner, setForm, themeMode, colorTheme, dashboardFontScalePct, shadcnCustomColors = {}, resolvedThemeMode, onThemeModeChange, onColorThemeChange, onDashboardFontScaleChange, onShadcnCustomColorsChange, sessionBannersHidden, setSessionBannersHidden, }: AppearanceSectionProps) {
+export function AppearanceSection({ scopeBanner, form, setForm, themeMode, colorTheme, dashboardFontScalePct, shadcnCustomColors = {}, resolvedThemeMode, onThemeModeChange, onColorThemeChange, onDashboardFontScaleChange, onShadcnCustomColorsChange, sessionBannersHidden, setSessionBannersHidden, }: AppearanceSectionProps) {
     const { t } = useTranslation("app");
     return (<>
       {scopeBanner}
@@ -37,6 +37,13 @@ export function AppearanceSection({ scopeBanner, setForm, themeMode, colorTheme,
             onShadcnCustomColorsChange?.(colors);
         }}/>
       <LanguageSelector />
+      <div className="form-group">
+        <label className="checkbox-label">
+          <input type="checkbox" checked={form.openTasksInRightSidebar === true} onChange={(e) => setForm((f) => ({ ...f, openTasksInRightSidebar: e.target.checked }))}/>
+          <span>{t("settings.appearance.openTasksInRightSidebar", "Open tasks in the right sidebar")}</span>
+        </label>
+        <small className="form-text text-muted">{t("settings.appearance.openTasksInRightSidebarHelp", "When enabled, board task cards open detail in the right sidebar when it is available; mobile and hidden-sidebar states keep the full task panel.")}</small>
+      </div>
       <div className="form-group">
         <label className="checkbox-label">
           <input type="checkbox" checked={sessionBannersHidden} onChange={(e) => setSessionBannersHidden(e.target.checked)}/>

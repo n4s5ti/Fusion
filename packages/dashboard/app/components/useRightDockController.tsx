@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
-import type { Task, TaskDetail, WorkflowStep } from "@fusion/core";
+import type { ColumnId, GithubIssueAction, MergeResult, Task, TaskDetail, WorkflowStep } from "@fusion/core";
 import { isNearDuplicateCanonicalInactive } from "../../../core/src/near-duplicate-canonical";
 import type { ToastType } from "../hooks/useToast";
 import type { DetailTaskTab } from "../hooks/useModalManager";
@@ -7,6 +7,7 @@ import { fetchTaskDetail } from "../api";
 import { getScopedItem } from "../utils/projectStorage";
 import { DOCK_FILES_CURRENT_KEY } from "./DockFilesView";
 import { TaskCard } from "./TaskCard";
+import { TaskDetailContent } from "./TaskDetailModal";
 import { RightDock, persistRightDockOpen, persistRightDockPinned, readStoredRightDockOpen, readStoredRightDockPinned } from "./RightDock";
 import { RightDockExpandModal } from "./RightDockExpandModal";
 import type { OverflowViewKey, OverflowViewRenderProps, OverflowViewVisibilityOptions } from "./overflowViewRegistry";
@@ -23,6 +24,14 @@ export interface RightDockControllerInput {
   subscribePluginEvents: (pluginId: string, onEvent: (event: { event: string; payload: unknown }) => void) => () => void;
   openDetailTask: (task: Task | TaskDetail, initialTab?: DetailTaskTab) => void;
   openFileInBrowser: (path: string, opts?: { workspace?: string; line?: number; col?: number }) => void;
+  onMoveTask: (id: string, column: ColumnId, optionsOrPosition?: { preserveProgress?: boolean } | number) => Promise<Task>;
+  onDeleteTask: (id: string, options?: { removeDependencyReferences?: boolean; removeLineageReferences?: boolean; githubIssueAction?: GithubIssueAction; allowResurrection?: boolean }) => Promise<Task>;
+  onArchiveTask?: (id: string, options?: { removeLineageReferences?: boolean }) => Promise<Task>;
+  onMergeTask: (id: string) => Promise<MergeResult>;
+  onRetryTask?: (id: string) => Promise<Task>;
+  onResetTask?: (id: string) => Promise<Task>;
+  onDuplicateTask?: (id: string) => Promise<Task>;
+  onTaskUpdated?: (task: Task) => void;
   openSettings: (section?: string) => void;
   onOpenUsage?: (anchorRect?: DOMRect | null) => void;
   onOpenActivityLog?: () => void;
@@ -46,6 +55,8 @@ export interface RightDockController {
   togglePin: () => void;
   dock: ReactNode;
   modal: ReactNode;
+  openTaskInDock: (task: Task | TaskDetail) => void;
+  closeDockTask: () => void;
 }
 
 /*
@@ -63,6 +74,22 @@ export function useRightDockController(input: RightDockControllerInput): RightDo
   */
   const [pinned, setPinned] = useState(readStoredRightDockPinned);
   const [expandedView, setExpandedView] = useState<OverflowViewKey | null>(null);
+  const [dockTaskSnapshot, setDockTaskSnapshot] = useState<Task | TaskDetail | null>(null);
+
+  const closeDockTask = useCallback(() => {
+    setDockTaskSnapshot(null);
+  }, []);
+
+  const openTaskInDock = useCallback((task: Task | TaskDetail) => {
+    setDockTaskSnapshot(task);
+    setOpen(true);
+    persistRightDockOpen(true);
+  }, []);
+
+  const resolvedDockTask = useMemo(() => {
+    if (!dockTaskSnapshot) return null;
+    return input.tasks.find((candidate) => candidate.id === dockTaskSnapshot.id) ?? dockTaskSnapshot;
+  }, [dockTaskSnapshot, input.tasks]);
 
   const toggle = useCallback(() => {
     setOpen((current) => {
@@ -109,7 +136,10 @@ export function useRightDockController(input: RightDockControllerInput): RightDo
   }, [input]);
 
   useEffect(() => {
-    if (!input.active) setExpandedView(null);
+    if (!input.active) {
+      setExpandedView(null);
+      setDockTaskSnapshot(null);
+    }
   }, [input.active]);
 
   const renderTaskCard = useCallback((task: Task | TaskDetail) => (
@@ -167,12 +197,40 @@ export function useRightDockController(input: RightDockControllerInput): RightDo
     openFile: input.openFileInBrowser,
   }), [input, renderTaskCard]);
 
+  const dockTaskContent = resolvedDockTask ? (
+    /*
+    FNXC:OpenTasksInRightSidebar 2026-06-28-00:00:
+    Board-routed right-sidebar task detail reuses the embedded TaskDetailContent surface so task actions, dependency links, and pop-out semantics stay aligned with the full-panel and list split-detail hosts. The controller resolves a live task row by id and falls back to the clicked snapshot so revalidation never blanks the dock.
+    */
+    <TaskDetailContent
+      task={resolvedDockTask}
+      projectId={input.projectId}
+      tasks={input.tasks as Task[]}
+      embedded
+      onRequestClose={closeDockTask}
+      onOpenDetail={(value) => input.openDetailTask(value, "chat")}
+      onMoveTask={input.onMoveTask}
+      onDeleteTask={input.onDeleteTask}
+      onArchiveTask={input.onArchiveTask}
+      onMergeTask={input.onMergeTask}
+      onRetryTask={input.onRetryTask}
+      onResetTask={input.onResetTask}
+      onDuplicateTask={input.onDuplicateTask}
+      onTaskUpdated={input.onTaskUpdated}
+      addToast={input.addToast}
+      prAuthAvailable={input.prAuthAvailable}
+      autoMergeEnabled={input.autoMerge}
+    />
+  ) : null;
+
   return {
     open,
     toggle,
     pinned,
     togglePin,
-    dock: input.active ? <RightDock open={open} renderProps={renderProps} visibilityOptions={input.visibilityOptions} footerVisible={input.footerVisible} pinned={pinned} onTogglePin={togglePin} onExpand={handleExpand} /> : null,
+    openTaskInDock,
+    closeDockTask,
+    dock: input.active ? <RightDock open={open} renderProps={renderProps} visibilityOptions={input.visibilityOptions} footerVisible={input.footerVisible} pinned={pinned} onTogglePin={togglePin} onExpand={handleExpand} dockTask={resolvedDockTask} dockTaskContent={dockTaskContent} onCloseDockTask={closeDockTask} /> : null,
     modal: input.active ? <RightDockExpandModal viewKey={expandedView} renderProps={renderProps} visibilityOptions={input.visibilityOptions} onClose={() => setExpandedView(null)} /> : null,
   };
 }

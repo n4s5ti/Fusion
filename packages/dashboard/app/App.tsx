@@ -181,6 +181,10 @@ function prefetchLazyViews() {
 
 registerBundledPluginViews();
 
+export function shouldOpenBoardTaskInDock(openTasksInRightSidebar: boolean, rightDockActive: boolean, initialTab?: DetailTaskTab): boolean {
+  return !initialTab && openTasksInRightSidebar && rightDockActive;
+}
+
 function AppInner() {
   const { t } = useTranslation("app");
   const { toasts, addToast, removeToast } = useToast();
@@ -534,6 +538,7 @@ function AppInner() {
     staleHighFanoutBlockerAgeThresholdMs,
     capacityRiskBannerEnabled,
     capacityRiskTodoThreshold,
+    openTasksInRightSidebar,
     quickChatButtonMode,
     maxTotalRetriesBeforeFail,
     prAuthAvailable,
@@ -1104,6 +1109,26 @@ function AppInner() {
 
   // Props for the extracted <MainContent> switch (see components/dashboard/MainContent.tsx).
   // Every value is passed by its App name; the switch renders the same subtrees as before.
+  const rightDock = useRightDockController({ active: rightDockActive, projectId: currentProject?.id, addToast, settingsLoaded, researchReadinessVersion, goalAnchorId, tasks: isRemote && remoteData.tasks.length > 0 ? remoteData.tasks : tasks, workflowSteps, subscribePluginEvents, openDetailTask, openFileInBrowser, onMoveTask: moveTask, onDeleteTask: deleteTask, onArchiveTask: archiveTask, onMergeTask: mergeTask, onRetryTask: retryTask, onResetTask: resetTask, onDuplicateTask: duplicateTask, onTaskUpdated: (task: Task) => ingestCreatedTasks([task]), openSettings: (section?: string) => openSettingsWithNav(section as SectionId), onOpenUsage: openUsageWithNav, onOpenActivityLog: openActivityLogWithNav, onOpenGitHubImport: openGitHubImportWithNav, onOpenGitManager: openGitManagerWithNav, onOpenSchedules: openSchedulesWithNav, onSendSelectionToTask: modalManager.openNewTaskWithDescription, onCreateTaskFromInsight: handleInsightTaskCreate, onNavigateToMission: handleOpenMission, onTaskCreated: (task: Task) => ingestCreatedTasks([task]), prAuthAvailable, autoMerge, visibilityOptions: { experimentalFeatures: { insights: insightsEnabled, memoryView: memoryEnabled, devServerView: devServerEnabled, researchView: researchEnabled, evalsView: evalsEnabled, goalsView: goalsEnabled }, showSkillsTab: skillsEnabled, todosEnabled, pluginDashboardViews }, footerVisible: executorFooterVisible });
+
+  /*
+  FNXC:OpenTasksInRightSidebar 2026-06-28-00:00:
+  Board card clicks are the only task-open path governed by openTasksInRightSidebar. When the project setting is enabled and the tablet/desktop right dock is active, the board keeps its current view and asks the dock controller to render task detail; otherwise the existing full main-panel replacement remains the fallback, including mobile and hidden-footer states.
+  */
+  const openBoardTaskDetail = useCallback((task: Task | TaskDetail, initialTab?: DetailTaskTab) => {
+    if (!shouldOpenBoardTaskInDock(openTasksInRightSidebar, rightDockActive, initialTab)) {
+      openTaskDetailInMainPanel(task, initialTab);
+      return;
+    }
+    rightDock.openTaskInDock(task);
+  }, [openTaskDetailInMainPanel, openTasksInRightSidebar, rightDock, rightDockActive]);
+
+  useEffect(() => {
+    if (!openTasksInRightSidebar) {
+      rightDock.closeDockTask();
+    }
+  }, [openTasksInRightSidebar, rightDock]);
+
   const mainContentProps: MainContentProps = {
     showBackendConnectionErrorPage,
     projectsError,
@@ -1114,6 +1139,7 @@ function AppInner() {
     taskView,
     modalManager,
     handleChangeTaskView,
+    refreshAppSettings,
     addToast,
     currentProject,
     themeMode,
@@ -1190,6 +1216,7 @@ function AppInner() {
     showWorktreeGrouping,
     moveTask,
     pauseTask,
+    openBoardTaskDetail,
     openTaskDetailInMainPanel,
     openGroupModalWithNav,
     handleBoardQuickCreate,
@@ -1303,8 +1330,6 @@ function AppInner() {
     markGitHubStarPromptShown,
     setShowGitHubStarPrompt,
   };
-  const rightDock = useRightDockController({ active: rightDockActive, projectId: currentProject?.id, addToast, settingsLoaded, researchReadinessVersion, goalAnchorId, tasks: isRemote && remoteData.tasks.length > 0 ? remoteData.tasks : tasks, workflowSteps, subscribePluginEvents, openDetailTask, openFileInBrowser, openSettings: (section?: string) => openSettingsWithNav(section as SectionId), onOpenUsage: openUsageWithNav, onOpenActivityLog: openActivityLogWithNav, onOpenGitHubImport: openGitHubImportWithNav, onOpenGitManager: openGitManagerWithNav, onOpenSchedules: openSchedulesWithNav, onSendSelectionToTask: modalManager.openNewTaskWithDescription, onCreateTaskFromInsight: handleInsightTaskCreate, onNavigateToMission: handleOpenMission, onTaskCreated: (task: Task) => ingestCreatedTasks([task]), prAuthAvailable, autoMerge, visibilityOptions: { experimentalFeatures: { insights: insightsEnabled, memoryView: memoryEnabled, devServerView: devServerEnabled, researchView: researchEnabled, evalsView: evalsEnabled, goalsView: goalsEnabled }, showSkillsTab: skillsEnabled, todosEnabled, pluginDashboardViews }, footerVisible: executorFooterVisible });
-
   return (
     <NavigationHistoryProvider value={{ pushNav, replaceCurrent, removeNav }}>
       <FileBrowserProvider openFile={openFileInBrowser}>
