@@ -145,6 +145,11 @@ vi.mock("@fusion/engine", async () => {
   promptWithFallback: vi.fn(async (session: { prompt: (message: string) => Promise<void> }, prompt: string) => {
     await session.prompt(prompt);
   }),
+  /*
+  FNXC:DashboardRouteTests 2026-06-27-00:08:
+  Route tests mock @fusion/engine wholesale, but planning/subtask helpers now resolve MCP servers before creating read-only AI sessions. Keep the default MCP result shaped so unrelated route assertions do not fail on the fallback vi.fn() returning undefined.
+  */
+  resolveMcpServersForStore: vi.fn().mockResolvedValue({ servers: [], errors: [] }),
   AgentReflectionService: class MockAgentReflectionService {
     async generateReflection(): Promise<import("@fusion/core").AgentReflection | null> {
       throw new Error("Reflection service unavailable in route tests");
@@ -1962,7 +1967,7 @@ describe("POST /subtasks/*", () => {
 
     expect(res.status).toBe(200);
     expect(res.body).toEqual({ success: true, sessionId: "session-123" });
-    expect(retrySpy).toHaveBeenCalledWith("session-123", "/fake/root", undefined);
+    expect(retrySpy).toHaveBeenCalledWith("session-123", "/fake/root", undefined, store);
   });
 
   it("returns 404 when subtask retry session does not exist", async () => {
@@ -2604,6 +2609,10 @@ describe("POST /subtasks/*", () => {
 
 describe("POST /tasks/:id/review/address", () => {
   let store: TaskStore;
+  const reviewerBlockTimestamp = "2026-01-02T03:04:05.000Z";
+  const reviewerBlockItemId = "reviewer-code-step-na-revise-2026-01-02T03-04-05-000Z-1";
+  const fallbackTimestamp = "2026-01-03T04:05:06.000Z";
+  const fallbackItemId = "reviewer-plan-step-2-rethink-2026-01-03T04-05-06-000Z-1";
 
   beforeEach(() => {
     store = createMockStore({ updateStep: vi.fn() } as unknown as Partial<TaskStore>);
@@ -2616,45 +2625,116 @@ describe("POST /tasks/:id/review/address", () => {
     return app;
   }
 
-  it("resumes in-review tasks to in-progress using selected review payload", async () => {
-    const taskWithReview = {
+  function mockReviewerBlockLogs() {
+    (store.getAgentLogs as ReturnType<typeof vi.fn>).mockResolvedValue([
+      {
+        timestamp: reviewerBlockTimestamp,
+        agent: "reviewer",
+        type: "text",
+        text: "## Code Review:\n\n### Verdict: REVISE\n\nFix tests before merge.",
+      },
+    ]);
+  }
+
+  function mockPrReviewDetails() {
+    return vi.spyOn(GitHubClient.prototype, "getPrReviewDetails").mockResolvedValue({
+      mode: "pull-request",
+      refreshable: true,
+      fetchedAt: "2026-01-04T05:06:07.000Z",
+      summary: { reviewDecision: "CHANGES_REQUESTED", reviewers: [], blockingReasons: [], checks: [] },
+      items: [
+        {
+          itemId: "ri-1",
+          sourceMode: "pull-request",
+          title: "Fix tests",
+          body: "Fix tests",
+          author: "reviewer",
+          createdAt: "2026-01-04T05:06:07.000Z",
+          updatedAt: "2026-01-04T05:06:07.000Z",
+          filePath: "src/a.ts",
+          line: 4,
+          reviewState: "CHANGES_REQUESTED",
+        },
+      ],
+    });
+  }
+
+  it("resumes reviewer-agent in-review tasks using canonical log-derived review ids when reviewState is absent", async () => {
+    const taskWithoutPersistedItems = {
       ...FAKE_TASK_DETAIL,
       id: "FN-001",
       column: "in-review",
       status: "awaiting-user-review",
       assignedAgentId: null,
+      updatedAt: reviewerBlockTimestamp,
       steps: [{ id: "s1", title: "Step 1", status: "done" }],
-      reviewState: {
-        source: "reviewer-agent",
-        items: [{ id: "ri-1", body: "Fix tests", summary: "Fix tests", author: { login: "reviewer" }, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() }],
-        addressing: [],
-      },
+      reviewState: undefined,
     };
-    const movedTask = { ...taskWithReview, column: "in-progress", status: null, sessionFile: null, assignedAgentId: null };
-    (store.getTask as ReturnType<typeof vi.fn>).mockResolvedValueOnce(taskWithReview).mockResolvedValueOnce({ ...taskWithReview, reviewState: { ...taskWithReview.reviewState, addressing: [{ itemId: "ri-1", status: "queued", selectedAt: new Date().toISOString() }] } });
+    const taskAfterAddressing = {
+      ...taskWithoutPersistedItems,
+      reviewState: { source: "reviewer-agent", items: [], addressing: [{ itemId: reviewerBlockItemId, status: "queued", selectedAt: reviewerBlockTimestamp }] },
+    };
+    const movedTask = { ...taskAfterAddressing, column: "in-progress", status: null, sessionFile: null, assignedAgentId: null };
+    mockReviewerBlockLogs();
+    (store.getTask as ReturnType<typeof vi.fn>).mockResolvedValueOnce(taskWithoutPersistedItems).mockResolvedValueOnce(taskAfterAddressing);
     (store.addSteeringComment as ReturnType<typeof vi.fn>).mockResolvedValue({ id: "sc-1" });
     (store.moveTask as ReturnType<typeof vi.fn>).mockResolvedValue(movedTask);
 
-    const res = await REQUEST(buildApp(), "POST", "/api/tasks/FN-001/review/address", JSON.stringify({ selectedItems: [{ id: "ri-1", source: "reviewer-agent", summary: "Fix tests", body: "Fix tests" }] }), { "Content-Type": "application/json" });
+    const res = await REQUEST(buildApp(), "POST", "/api/tasks/FN-001/review/address", JSON.stringify({ selectedItems: [{ id: reviewerBlockItemId, source: "reviewer-agent", summary: "code review REVISE", body: "Fix tests before merge." }] }), { "Content-Type": "application/json" });
 
     expect(res.status).toBe(200);
+    expect(store.updateTask).toHaveBeenCalledWith("FN-001", {
+      reviewState: expect.objectContaining({
+        source: "reviewer-agent",
+        items: [expect.objectContaining({ id: reviewerBlockItemId, source: "reviewer-agent" })],
+        addressing: [expect.objectContaining({ itemId: reviewerBlockItemId, status: "queued" })],
+      }),
+    });
+    expect(store.addSteeringComment).toHaveBeenCalledWith("FN-001", expect.stringContaining("Fix tests before merge."), "user");
     expect(store.moveTask).toHaveBeenCalledWith("FN-001", "in-progress", { preserveProgress: true });
     expect(store.updateStep).toHaveBeenCalledWith("FN-001", 0, "pending");
   });
 
-  it("for in-progress tasks injects steering without moving task", async () => {
-    const taskWithReview = {
+  it("accepts reviewer-agent fallback log review ids when no reviewer text block exists", async () => {
+    const taskWithFallbackLog = {
       ...FAKE_TASK_DETAIL,
       id: "FN-001",
       column: "in-progress",
       sessionFile: "active.session.json",
+      reviewState: { source: "reviewer-agent", items: [], addressing: [] },
+      log: [{ timestamp: fallbackTimestamp, action: "plan review Step 2: RETHINK - revise the approach" }],
+    };
+    (store.getAgentLogs as ReturnType<typeof vi.fn>).mockResolvedValue([]);
+    (store.getTask as ReturnType<typeof vi.fn>).mockResolvedValueOnce(taskWithFallbackLog).mockResolvedValueOnce(taskWithFallbackLog);
+    (store.addSteeringComment as ReturnType<typeof vi.fn>).mockResolvedValue({ id: "sc-1" });
+
+    const res = await REQUEST(buildApp(), "POST", "/api/tasks/FN-001/review/address", JSON.stringify({ selectedItems: [{ id: fallbackItemId, source: "reviewer-agent", summary: "plan review RETHINK", body: "revise the approach" }] }), { "Content-Type": "application/json" });
+
+    expect(res.status).toBe(200);
+    expect(store.updateTask).toHaveBeenCalledWith("FN-001", {
+      reviewState: expect.objectContaining({
+        items: [expect.objectContaining({ id: fallbackItemId })],
+        addressing: [expect.objectContaining({ itemId: fallbackItemId })],
+      }),
+    });
+    expect(store.moveTask).not.toHaveBeenCalled();
+  });
+
+  it("for PR in-progress tasks validates canonical PR review items without moving task", async () => {
+    mockPrReviewDetails();
+    const taskWithPrReview = {
+      ...FAKE_TASK_DETAIL,
+      id: "FN-001",
+      column: "in-progress",
+      sessionFile: "active.session.json",
+      prInfo: { number: 42, url: "https://github.com/acme/repo/pull/42", head: "feature", base: "main" },
       reviewState: {
         source: "pull-request",
-        items: [{ id: "ri-1", body: "Fix tests", summary: "Fix tests", author: { login: "reviewer" }, createdAt: new Date().toISOString(), path: "src/a.ts", line: 4 }],
+        items: [{ id: "ri-1", body: "Fix tests", summary: "Fix tests", author: { login: "reviewer" }, createdAt: "2026-01-04T05:06:07.000Z", path: "src/a.ts", line: 4 }],
         addressing: [],
       },
     };
-    (store.getTask as ReturnType<typeof vi.fn>).mockResolvedValueOnce(taskWithReview).mockResolvedValueOnce(taskWithReview);
+    (store.getTask as ReturnType<typeof vi.fn>).mockResolvedValueOnce(taskWithPrReview).mockResolvedValueOnce(taskWithPrReview);
     (store.addSteeringComment as ReturnType<typeof vi.fn>).mockResolvedValue({ id: "sc-1" });
 
     const res = await REQUEST(buildApp(), "POST", "/api/tasks/FN-001/review/address", JSON.stringify({ selectedItems: [{ id: "ri-1", source: "pr-review", summary: "Fix tests", body: "Fix tests", filePath: "src/a.ts", lineNumber: 4 }] }), { "Content-Type": "application/json" });
@@ -2671,18 +2751,22 @@ describe("POST /tasks/:id/review/address", () => {
   });
 
   it("rejects unsupported review source", async () => {
-    (store.getTask as ReturnType<typeof vi.fn>).mockResolvedValue({ ...FAKE_TASK_DETAIL, id: "FN-001", reviewState: { source: "reviewer-agent", items: [{ id: "ri-1", body: "x", summary: "x", author: { login: "reviewer" }, createdAt: new Date().toISOString() }], addressing: [] } });
-    const res = await REQUEST(buildApp(), "POST", "/api/tasks/FN-001/review/address", JSON.stringify({ selectedItems: [{ id: "ri-1", source: "other", summary: "x", body: "x" }] }), { "Content-Type": "application/json" });
+    mockReviewerBlockLogs();
+    (store.getTask as ReturnType<typeof vi.fn>).mockResolvedValue({ ...FAKE_TASK_DETAIL, id: "FN-001", updatedAt: reviewerBlockTimestamp, reviewState: { source: "reviewer-agent", items: [], addressing: [] } });
+    const res = await REQUEST(buildApp(), "POST", "/api/tasks/FN-001/review/address", JSON.stringify({ selectedItems: [{ id: reviewerBlockItemId, source: "other", summary: "x", body: "x" }] }), { "Content-Type": "application/json" });
     expect(res.status).toBe(400);
     expect(res.body.error).toContain("Unsupported review source");
   });
 
-  it("rejects source mismatch and unknown item ids", async () => {
-    (store.getTask as ReturnType<typeof vi.fn>).mockResolvedValue({
+  it("rejects source mismatch and unknown item ids against canonical review data", async () => {
+    mockPrReviewDetails();
+    const taskWithPrReview = {
       ...FAKE_TASK_DETAIL,
       id: "FN-001",
-      reviewState: { source: "pull-request", items: [{ id: "ri-1", body: "x", summary: "x", author: { login: "reviewer" }, createdAt: new Date().toISOString() }], addressing: [] },
-    });
+      prInfo: { number: 42, url: "https://github.com/acme/repo/pull/42", head: "feature", base: "main" },
+      reviewState: { source: "pull-request", items: [{ id: "ri-1", body: "x", summary: "x", author: { login: "reviewer" }, createdAt: "2026-01-04T05:06:07.000Z" }], addressing: [] },
+    };
+    (store.getTask as ReturnType<typeof vi.fn>).mockResolvedValue(taskWithPrReview);
 
     const mismatch = await REQUEST(buildApp(), "POST", "/api/tasks/FN-001/review/address", JSON.stringify({ selectedItems: [{ id: "ri-1", source: "reviewer-agent", summary: "x", body: "x" }] }), { "Content-Type": "application/json" });
     expect(mismatch.status).toBe(400);

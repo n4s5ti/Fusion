@@ -3604,28 +3604,64 @@ export function registerTaskWorkflowRoutes(ctx: ApiRoutesContext, deps: TaskWork
       if (unsupportedSource) {
         throw badRequest(`Unsupported review source: ${String(unsupportedSource.source)}`);
       }
-      if (!task.reviewState) {
-        throw badRequest("Task has no reviewState payload");
+      let canonicalReviewData: TaskReviewData;
+      if (task.prInfo) {
+        const badgeParsed = parseGitHubBadgeUrl(task.prInfo.url);
+        const repoInfo = getCurrentRepo(scopedStore.getRootDir());
+        const owner = badgeParsed?.owner ?? repoInfo?.owner;
+        const repo = badgeParsed?.repo ?? repoInfo?.repo;
+        if (!owner || !repo) {
+          throw badRequest("Could not determine GitHub repository for PR review fetch");
+        }
+        canonicalReviewData = await new GitHubClient(options?.githubToken ?? process.env.GITHUB_TOKEN).getPrReviewDetails(owner, repo, task.prInfo.number);
+      } else {
+        canonicalReviewData = await buildDirectTaskReviewData(task, scopedStore);
       }
 
+      const canonicalReviewItems = canonicalReviewData.items.map((item) => ({
+        id: item.itemId,
+        body: item.body,
+        summary: item.title,
+        author: { login: item.author },
+        createdAt: item.createdAt ?? canonicalReviewData.fetchedAt ?? new Date(0).toISOString(),
+        updatedAt: item.updatedAt ?? undefined,
+        path: item.filePath,
+        line: item.line,
+        threadId: item.threadId,
+        htmlUrl: item.url,
+        state: item.reviewState ?? undefined,
+        isResolved: item.isResolved,
+        source: item.sourceMode === "reviewer-agent" ? "reviewer-agent" as const : "github-pr" as const,
+      }));
+      const reviewState = {
+        source: canonicalReviewData.mode,
+        summary: canonicalReviewData.summary ?? task.reviewState?.summary,
+        items: canonicalReviewItems,
+        addressing: task.reviewState?.addressing ?? [],
+        lastRefreshedAt: task.reviewState?.lastRefreshedAt ?? canonicalReviewData.fetchedAt ?? undefined,
+        refreshSource: task.reviewState?.refreshSource,
+        refreshStatus: task.reviewState?.refreshStatus,
+        refreshError: task.reviewState?.refreshError,
+      } satisfies NonNullable<Task["reviewState"]>;
+
+      /*
+      FNXC:TaskReview 2026-06-27-00:00:
+      Revision validation must use the same canonical review source the UI renders. Reviewer-agent ids come from buildReviewerAgentItemId via buildDirectTaskReviewData, not from persisted reviewState.items, because direct executor review addressing persists only addressing snapshots.
+      */
       const now = new Date().toISOString();
       const selectedSet = new Set(selectedItems.map((item: SelectedReviewItem) => item.id));
-      const sourceById = new Map(selectedItems.map((item: SelectedReviewItem) => [item.id, item.source] as const));
-      const reviewSourceMismatch = task.reviewState.items.find((item: NonNullable<typeof task.reviewState>["items"][number]) => {
-        const selectedSource = sourceById.get(item.id);
-        if (!selectedSource || !task.reviewState) return false;
-        const expectedSource = task.reviewState.source === "pull-request" ? "pr-review" : "reviewer-agent";
-        return selectedSource !== expectedSource;
-      });
+      const canonicalIds = new Set(reviewState.items.map((item) => item.id));
+      const expectedSource = canonicalReviewData.mode === "pull-request" ? "pr-review" : "reviewer-agent";
+      const reviewSourceMismatch = selectedItems.find((item) => canonicalIds.has(item.id) && item.source !== expectedSource);
       if (reviewSourceMismatch) {
         throw badRequest("Selected review source does not match task review mode");
       }
-      const matchedItems = task.reviewState.items.filter((item: NonNullable<typeof task.reviewState>["items"][number]) => selectedSet.has(item.id));
-      if (matchedItems.length !== selectedSet.size) {
+      const hasUnknownSelection = selectedItems.some((item) => !canonicalIds.has(item.id));
+      if (hasUnknownSelection) {
         throw badRequest("selectedItems must reference existing review items");
       }
 
-      const modeSummary = `${task.reviewState.source === "pull-request" ? "pull-request" : "reviewer-agent"} · ${selectedItems.length} selected item(s)`;
+      const modeSummary = `${reviewState.source === "pull-request" ? "pull-request" : "reviewer-agent"} · ${selectedItems.length} selected item(s)`;
       const steeringItems = selectedItems.map((item: SelectedReviewItem, index: number) => {
         const location = item.filePath ? `${item.filePath}${typeof item.lineNumber === "number" ? `:${item.lineNumber}` : ""}` : undefined;
         const snippetSource = item.body.trim() || item.summary.trim();
@@ -3635,9 +3671,9 @@ export function registerTaskWorkflowRoutes(ctx: ApiRoutesContext, deps: TaskWork
       });
       const steeringText = ["Selected review feedback to address", modeSummary, ...steeringItems].join("\n");
 
-      const priorAddressingById = new Map(task.reviewState.addressing.map((record) => [record.itemId, record] as const));
+      const priorAddressingById = new Map(reviewState.addressing.map((record) => [record.itemId, record] as const));
       const nextAddressing = [
-        ...task.reviewState.addressing.filter((record) => !selectedSet.has(record.itemId)),
+        ...reviewState.addressing.filter((record) => !selectedSet.has(record.itemId)),
         ...selectedItems.map((item: SelectedReviewItem) => {
           const existing = priorAddressingById.get(item.id);
           return {
@@ -3650,7 +3686,7 @@ export function registerTaskWorkflowRoutes(ctx: ApiRoutesContext, deps: TaskWork
             stale: false,
             snapshot: {
               itemId: item.id,
-              sourceMode: task.reviewState?.source ?? "pull-request",
+              sourceMode: reviewState.source,
               source: item.source,
               summary: item.summary,
               body: item.body,
@@ -3665,12 +3701,12 @@ export function registerTaskWorkflowRoutes(ctx: ApiRoutesContext, deps: TaskWork
         }),
       ];
 
-      const reviewState = {
-        ...task.reviewState,
+      const nextReviewState = {
+        ...reviewState,
         addressing: nextAddressing,
       };
 
-      await scopedStore.updateTask(task.id, { reviewState });
+      await scopedStore.updateTask(task.id, { reviewState: nextReviewState });
 
       let steeringCommentId: string | null = null;
       const steeringComment = await scopedStore.addSteeringComment(task.id, steeringText, "user");
@@ -3704,7 +3740,7 @@ export function registerTaskWorkflowRoutes(ctx: ApiRoutesContext, deps: TaskWork
       }
 
       await scopedStore.logEntry(task.id, "Same-task review revision requested", `${selectedItems.length} item(s) submitted from review tab`);
-      res.json({ task: updatedTask, reviewState });
+      res.json({ task: updatedTask, reviewState: nextReviewState });
     } catch (err: unknown) {
       if (err instanceof ApiError) {
         throw err;
