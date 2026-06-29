@@ -790,7 +790,9 @@ describe("TaskChatTab", () => {
     expect(toolGroup).toHaveClass("task-chat-tool-group");
     expect(summary).toHaveClass("task-chat-tool-group-summary");
     expect(toolGroup).not.toHaveAttribute("open");
+    expect(within(summary as HTMLElement).getByText("1 tool call")).toHaveClass("task-chat-tool-group-count");
     expect(within(summary as HTMLElement).getByText("1 tool call")).toBeVisible();
+    expect(within(summary as HTMLElement).getByText("bash")).toHaveClass("task-chat-tool-group-names");
     expect(within(summary as HTMLElement).getByText("bash")).toBeVisible();
     expect(screen.queryByText("2 tool calls")).not.toBeInTheDocument();
     expect(screen.getByText("pnpm test")).not.toBeVisible();
@@ -834,8 +836,11 @@ describe("TaskChatTab", () => {
     expect(summary).toBeTruthy();
     expect(within(summary as HTMLElement).getByText("7 tool calls")).toBeVisible();
     const names = within(summary as HTMLElement).getByLabelText("Tool names");
+    expect(names).toHaveClass("task-chat-tool-group-names");
     expect(names).toHaveTextContent("bash, read, edit, grep, find, +1 more");
-    expect(within(summary as HTMLElement).getByText(", +1 more")).toBeVisible();
+    const overflow = within(summary as HTMLElement).getByText(", +1 more");
+    expect(overflow).toHaveClass("task-chat-tool-group-overflow");
+    expect(overflow).toBeVisible();
   });
 
   it("surfaces tool errors in the summary and paired expanded body", async () => {
@@ -2548,6 +2553,49 @@ describe("TaskChatTab", () => {
     expect(userHeaderRule).toContain("flex-wrap: wrap");
     expect(mobileUserHeaderRule).toContain("justify-content: flex-end");
     expect(mobileTimestampRule).toContain("white-space: normal");
+  });
+
+  it("keeps task-chat tool summaries compact like regular chat on desktop and mobile", () => {
+    const css = readFileSync(resolve(__dirname, "../TaskChatTab.css"), "utf8");
+    const chatCss = readFileSync(resolve(__dirname, "../ChatView.css"), "utf8");
+    const compactCss = getCssAfter(css, "FN-7215 aligns task-detail tool-call summaries");
+    const summaryRule = getCssRuleBlock(compactCss, ".task-chat-tool-group-summary");
+    const namesRule = getCssRuleBlock(css, ".task-chat-tool-group-names");
+    const countRule = getCssRuleBlock(css, ".task-chat-tool-group-count");
+    const errorRule = getCssRuleBlock(css, ".task-chat-tool-group-error-count");
+    const entriesRule = getCssRuleBlock(getCssAfter(css, ".task-chat-tool-group-entries {\n  gap"), ".task-chat-tool-group-entries");
+    const entryRule = getCssRuleBlock(css, ".task-chat-tool-entry");
+    const detailRule = getCssRuleBlock(getCssAfter(css, ".task-chat-tool-detail {"), ".task-chat-tool-detail");
+    const chatSummaryRule = getCssRuleBlock(chatCss, ".chat-tool-calls-group-summary");
+    const chatNamesRule = getCssRuleBlock(chatCss, ".chat-tool-calls-names");
+    const mobileCss = getCssAfter(css, "@media (max-width: 768px)");
+    const mobileSummaryRule = getCssRuleBlock(mobileCss, ".task-chat-tool-group-summary");
+    const mobileNamesRule = getCssRuleBlock(mobileCss, ".task-chat-tool-group-names");
+    const mobileErrorRule = getCssRuleBlock(mobileCss, ".task-chat-tool-group-error-count");
+
+    expect(summaryRule).toContain("flex-wrap: nowrap");
+    expect(summaryRule).toContain("padding: var(--space-xs)");
+    expect(summaryRule).toContain("font-size: calc(var(--space-md) - (var(--space-xs) + (var(--space-xs) / 4)))");
+    expect(summaryRule).toContain("border-radius: var(--radius-sm)");
+    expect(summaryRule).not.toContain("px");
+    expect(summaryRule).not.toContain("#");
+    expect(namesRule).toContain("font-family: var(--font-mono, monospace)");
+    expect(namesRule).toContain("overflow: hidden");
+    expect(namesRule).toContain("text-overflow: ellipsis");
+    expect(namesRule).toContain("white-space: nowrap");
+    expect(countRule).toContain("white-space: nowrap");
+    expect(errorRule).toContain("color: var(--color-error)");
+    expect(errorRule).toContain("white-space: nowrap");
+    expect(entriesRule).toContain("padding: 0 var(--space-xs) var(--space-xs)");
+    expect(entryRule).toContain("border-radius: var(--radius-sm)");
+    expect(detailRule).toContain("font-size: calc(var(--space-md) - (var(--space-xs) + (var(--space-xs) / 4)))");
+    expect(chatSummaryRule).toContain("padding: var(--space-xs)");
+    expect(chatSummaryRule).toContain("border-radius: var(--radius-sm)");
+    expect(chatNamesRule).toContain("text-overflow: ellipsis");
+    expect(mobileSummaryRule).toContain("flex-direction: row");
+    expect(mobileSummaryRule).toContain("flex-wrap: nowrap");
+    expect(mobileNamesRule).toContain("width: auto");
+    expect(mobileErrorRule).toContain("width: auto");
   });
 
   it("keeps mobile breakpoint scaffolding for the transcript, composer, and collapsible groups", () => {

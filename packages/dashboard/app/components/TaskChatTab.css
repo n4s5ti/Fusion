@@ -260,7 +260,7 @@ FN-7207 makes the right-side dock and narrow desktop detail hosts use the same r
 }
 
 .task-chat-tool-group {
-  background: var(--bg-tertiary);
+  background: color-mix(in srgb, var(--surface) 35%, transparent);
 }
 
 .task-chat-tool-group-summary,
@@ -273,10 +273,18 @@ FN-7207 makes the right-side dock and narrow desktop detail hosts use the same r
   list-style: none;
 }
 
+/*
+FNXC:TaskChat 2026-06-28-00:00:
+FN-7215 aligns task-detail tool-call summaries with regular Chat's compact collapsed treatment. Keep the clickable row token-sized, single-line by default, and ellipsis-friendly so completed tool history does not dominate task transcripts while details remain available through native <details> expansion.
+*/
 .task-chat-tool-group-summary {
-  flex-wrap: wrap;
+  min-width: 0;
+  flex-wrap: nowrap;
   gap: var(--space-xs);
-  padding: var(--space-xs) var(--space-sm);
+  padding: var(--space-xs);
+  color: var(--text-muted);
+  border-radius: var(--radius-sm);
+  font-size: calc(var(--space-md) - (var(--space-xs) + (var(--space-xs) / 4)));
 }
 
 .task-chat-tool-group-summary::-webkit-details-marker,
@@ -298,13 +306,18 @@ FN-7207 makes the right-side dock and narrow desktop detail hosts use the same r
 .task-chat-tool-group-count {
   flex: 0 0 auto;
   font-weight: 600;
+  white-space: nowrap;
 }
 
 .task-chat-tool-group-names {
+  flex: 1 1 auto;
   min-width: 0;
-  color: var(--text-muted);
-  font-size: calc(var(--space-md) - (var(--space-xs) / 2));
-  overflow-wrap: anywhere;
+  color: var(--text-dim);
+  font-family: var(--font-mono, monospace);
+  font-size: inherit;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .task-chat-tool-group-overflow {
@@ -314,9 +327,11 @@ FN-7207 makes the right-side dock and narrow desktop detail hosts use the same r
 
 .task-chat-tool-group-error-count {
   flex: 0 0 auto;
+  margin-left: auto;
   color: var(--color-error);
-  font-size: calc(var(--space-md) - (var(--space-xs) / 2));
+  font-size: inherit;
   font-weight: 600;
+  white-space: nowrap;
 }
 
 .task-chat-tool-group-entries,
@@ -328,15 +343,15 @@ FN-7207 makes the right-side dock and narrow desktop detail hosts use the same r
 
 .task-chat-tool-group-entries {
   gap: var(--space-xs);
-  padding: 0 var(--space-sm) var(--space-sm);
+  padding: 0 var(--space-xs) var(--space-xs);
 }
 
 .task-chat-tool-entry {
   min-width: 0;
-  padding: var(--space-xs) var(--space-sm);
-  border: var(--btn-border-width) solid var(--border);
-  border-radius: var(--radius-md);
-  background: var(--surface);
+  padding: var(--space-xs);
+  border: var(--btn-border-width) solid color-mix(in srgb, var(--border) 85%, transparent);
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--surface) 35%, transparent);
   color: var(--text);
   overflow-wrap: anywhere;
 }
@@ -359,7 +374,7 @@ FN-7207 makes the right-side dock and narrow desktop detail hosts use the same r
 .task-chat-entry-kicker {
   margin-bottom: calc(var(--space-xs) / 2);
   color: var(--text-muted);
-  font-size: calc(var(--space-sm) + (var(--space-xs) / 2));
+  font-size: calc(var(--space-md) - (var(--space-xs) + (var(--space-xs) / 4)));
   font-weight: 600;
   text-transform: none;
   letter-spacing: normal;
@@ -389,7 +404,7 @@ FN-7207 makes the right-side dock and narrow desktop detail hosts use the same r
 
 .task-chat-tool-detail-label {
   color: var(--text-muted);
-  font-size: var(--space-md);
+  font-size: calc(var(--space-md) - (var(--space-xs) + (var(--space-xs) / 4)));
   font-weight: 600;
 }
 
@@ -399,6 +414,7 @@ FN-7207 makes the right-side dock and narrow desktop detail hosts use the same r
   overflow-x: auto;
   white-space: pre-wrap;
   word-break: break-word;
+  font-size: calc(var(--space-md) - (var(--space-xs) + (var(--space-xs) / 4)));
 }
 
 .task-chat-composer {
@@ -508,24 +524,33 @@ FN-6660 corrects the repeated mobile sizing misses from FN-6507, FN-6604, and FN
     max-width: 100%;
   }
 
-  .task-chat-tool-group-summary,
+  .task-chat-tool-group-summary {
+    align-items: center;
+    flex-direction: row;
+    flex-wrap: nowrap;
+  }
+
   .task-chat-thinking-summary {
     align-items: flex-start;
     flex-direction: column;
   }
 
-  .task-chat-tool-group-names,
+  .task-chat-tool-group-names {
+    width: auto;
+  }
+
   .task-chat-tool-group-error-count {
-    width: 100%;
+    width: auto;
+    margin-left: auto;
   }
 
   .task-chat-tool-group-entries,
   .task-chat-thinking-body {
-    padding-inline: var(--space-sm);
+    padding-inline: var(--space-xs);
   }
 
   .task-chat-tool-entry {
-    padding: var(--space-sm);
+    padding: var(--space-xs);
   }
 
   .task-chat-composer {

@@ -414,6 +414,10 @@ function TaskChatToolInvocation({ row }: { row: Extract<TaskChatToolGroupRow, { 
 }
 
 function TaskChatToolGroup({ entries }: { entries: AgentLogEntry[] }) {
+  /*
+  FNXC:TaskChat 2026-06-28-00:00:
+  FN-7215 requires task-detail tool groups to match regular Chat's quiet transcript treatment: keep historical tool calls collapsed by default while the summary preserves count, deduped names, overflow, and error context for quick scanning.
+  */
   const { t } = useTranslation("app");
   const invocationEntries = getToolInvocationEntries(entries);
   const invocationCount = invocationEntries.length;
