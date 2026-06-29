@@ -67,6 +67,9 @@ function clearRebuiltSpecWorkflowPins(store: TaskStore, taskId: string): void {
   /*
   FNXC:WorkflowReplan 2026-06-29-00:33:
   Spec rebuild intentionally invalidates the planned step source, so persisted graph foreach pins from the previous PROMPT.md must be cleared before the next parse-steps node runs. Keeping the stale pins makes rebuilt tasks fail closed with pin-mismatch at parse instead of executing the fresh plan.
+
+  FNXC:WorkflowReset 2026-06-29-10:02:
+  User reset/retry is also a hard graph-run boundary. Clear all persisted foreach step-instance rows for the task, not only rows outside a keep-run id, because stale rows can be written by an old aborting graph after the first cleanup and then make the next parse fail immediately.
   */
   const maybeStore = store as unknown as {
     clearWorkflowRunStepInstances?: (taskId: string) => void;
@@ -1797,6 +1800,10 @@ export function registerTaskWorkflowRoutes(ctx: ApiRoutesContext, deps: TaskWork
 
       const task = await scopedStore.getTask(req.params.id);
 
+      engine?.clearTaskPauseAbortState?.(req.params.id);
+      await releaseExecutionAgentBindings(engine, req.params.id);
+      clearRebuiltSpecWorkflowPins(scopedStore, req.params.id);
+
       // Reset all steps to pending
       for (let i = 0; i < task.steps.length; i++) {
         if (task.steps[i].status !== "pending") {
@@ -1812,7 +1819,7 @@ export function registerTaskWorkflowRoutes(ctx: ApiRoutesContext, deps: TaskWork
       );
 
       await scopedStore.moveTask(req.params.id, "todo");
-      await releaseExecutionAgentBindings(engine, req.params.id);
+      clearRebuiltSpecWorkflowPins(scopedStore, req.params.id);
       let updated = await scopedStore.getTask(req.params.id);
       if (!updated) {
         throw notFound(`Task ${req.params.id} not found after reset`);

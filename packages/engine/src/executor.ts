@@ -7666,6 +7666,9 @@ export class TaskExecutor {
         await this.persistTokenUsage(task.id);
         return;
       }
+      if (failedNode === "parse" && failureValue === "pin-mismatch" && await this.routeResetParsePinMismatchToRetry(live)) {
+        return;
+      }
       if (live.column !== "in-progress") {
         const benignMessage = `Workflow graph run ended after task already advanced to '${live.column}' — no further action needed`;
         executorLog.log(`${task.id}: ${benignMessage}`);
@@ -7725,6 +7728,45 @@ export class TaskExecutor {
         `${task.id}: failed to park graph-failed task: ${err instanceof Error ? err.message : String(err)}`,
       );
     }
+  }
+
+  private async routeResetParsePinMismatchToRetry(live: TaskDetail): Promise<boolean> {
+    /*
+    FNXC:WorkflowReset 2026-06-29-10:04:
+    A user reset/retry can race an aborting graph-owned foreach instance that persists after the route cleared pins. If the next run reaches parse and sees only stale foreach pins while the task has no implementation progress, recover by deleting all graph instance rows and requeueing to todo. Do not hand the task to in-review, because parse has not executed work or produced mergeable output.
+    */
+    if (live.deletedAt) return false;
+    if (live.paused || live.userPaused === true) return false;
+    if (live.column === "done" || live.column === "archived") return false;
+    const hasImplementationProgress =
+      (live.currentStep ?? 0) > 0
+      || (live.steps ?? []).some((step) => step.status === "done" || step.status === "in-progress" || step.status === "skipped");
+    if (hasImplementationProgress) return false;
+
+    const maybeStore = this.store as unknown as {
+      clearWorkflowRunStepInstances?: (taskId: string) => void;
+      clearWorkflowRunBranches?: (taskId: string, keepRunId: string) => void;
+    };
+    try {
+      maybeStore.clearWorkflowRunStepInstances?.(live.id);
+    } catch {
+      // Legacy stores may not persist graph step instances.
+    }
+    this.clearPausedAborted(live.id);
+    this.activeWorktrees.delete(live.id);
+    await this.store.updateTask(live.id, {
+      status: null,
+      error: null,
+      graphResumeRetryCount: 0,
+    }, this.getRunContextFor(live.id));
+    if (live.column !== "todo") {
+      await this.store.moveTask(live.id, "todo", { preserveProgress: false });
+    }
+    const message = "Auto-recovered: cleared stale workflow parse pins after reset/retry — task requeued before execution";
+    executorLog.warn(`${live.id}: ${message}`);
+    await this.store.logEntry(live.id, message, undefined, this.getRunContextFor(live.id));
+    await this.persistTokenUsage(live.id);
+    return true;
   }
 
   private async maybeDispatchWorkflowWorkEngine(task: Task): Promise<boolean> {
