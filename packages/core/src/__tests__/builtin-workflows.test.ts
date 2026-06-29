@@ -113,6 +113,17 @@ describe("built-in workflows", () => {
     }
   });
 
+  it("all built-in workflows generate a task completion summary as a graph node", () => {
+    for (const workflow of BUILTIN_WORKFLOWS) {
+      if (workflow.kind === "fragment") continue;
+      const summaryNodes = workflow.ir.nodes.filter((node) => node.id === "completion-summary");
+      expect(summaryNodes, workflow.id).toHaveLength(1);
+      expect(summaryNodes[0]?.kind, workflow.id).toBe("prompt");
+      expect(summaryNodes[0]?.config?.summaryTarget, workflow.id).toBe("task");
+      expect(summaryNodes[0]?.config?.toolMode, workflow.id).toBe("readonly");
+    }
+  });
+
   it("built-in workflow layouts cover every authored node", () => {
     for (const workflow of BUILTIN_WORKFLOWS) {
       const missingLayoutNodes = workflow.ir.nodes
@@ -144,7 +155,8 @@ describe("built-in workflows", () => {
     expect(ir.nodes.some((n) => n.id === "code-review" && n.kind === "optional-group")).toBe(true);
     expect(ir.edges.some((edge) => edge.from === "steps" && edge.to === "browser-verification" && edge.condition === "success")).toBe(true);
     expect(ir.edges.some((edge) => edge.from === "browser-verification" && edge.to === "code-review" && edge.condition === "success")).toBe(true);
-    expect(ir.edges.some((edge) => edge.from === "code-review" && edge.to === "review" && edge.condition === "success")).toBe(true);
+    expect(ir.edges.some((edge) => edge.from === "code-review" && edge.to === "completion-summary" && edge.condition === "success")).toBe(true);
+    expect(ir.edges.some((edge) => edge.from === "completion-summary" && edge.to === "review" && edge.condition === "success")).toBe(true);
     const foreach = ir.nodes.find((n) => n.kind === "foreach");
     expect(foreach).toBeDefined();
     const template = (
@@ -163,13 +175,14 @@ describe("built-in workflows", () => {
 
     expect(ir.nodes.some((node) => node.kind === "parse-steps")).toBe(true);
     expect(ir.nodes.map((node) => node.id)).toEqual(
-      expect.arrayContaining(["plan", "plan-review", "parse", "steps", "browser-verification", "code-review", "merge-gate", "merge-attempt"]),
+      expect.arrayContaining(["plan", "plan-review", "parse", "steps", "browser-verification", "code-review", "completion-summary", "merge-gate", "merge-attempt"]),
     );
     expect(ir.nodes.some((node) => node.id === "rework-hold")).toBe(false);
     expect(ir.nodes.some((node) => node.id === "review")).toBe(false);
     expect(ir.edges.some((edge) => edge.from === "plan" && edge.to === "plan-review" && edge.condition === "success")).toBe(true);
     expect(ir.edges.some((edge) => edge.from === "plan-review" && edge.to === "parse" && edge.condition === "success")).toBe(true);
-    expect(ir.edges.some((edge) => edge.from === "code-review" && edge.to === "merge-gate" && edge.condition === "success")).toBe(true);
+    expect(ir.edges.some((edge) => edge.from === "code-review" && edge.to === "completion-summary" && edge.condition === "success")).toBe(true);
+    expect(ir.edges.some((edge) => edge.from === "completion-summary" && edge.to === "merge-gate" && edge.condition === "success")).toBe(true);
 
     const foreach = ir.nodes.find((node) => node.kind === "foreach");
     expect(foreach).toBeDefined();
@@ -502,7 +515,7 @@ describe("built-in workflows", () => {
     expect(() => parseWorkflowIr(design!.ir)).not.toThrow();
 
     const authoredNodeIds = design!.ir.nodes.filter((node) => node.id !== "start" && node.id !== "end").map((node) => node.id);
-    expect(authoredNodeIds).toEqual(["plan-review", "execute", "browser-verification", "code-review", "design-review", "review", "merge"]);
+    expect(authoredNodeIds).toEqual(["plan-review", "execute", "browser-verification", "code-review", "design-review", "review", "completion-summary", "merge"]);
 
     const execute = design!.ir.nodes.find((node) => node.id === "execute");
     expect(execute?.config?.seam).toBe("execute");
@@ -730,6 +743,7 @@ describe("built-in workflows", () => {
       "code-review",
       "commit-pr",
       "resolve-feedback",
+      "completion-summary",
       "merge",
       "document",
     ]);
@@ -883,7 +897,8 @@ describe("built-in workflows", () => {
       expect((plan?.config as { prompt?: string } | undefined)?.prompt).toContain("You are a task specification agent");
       expect(steps?.kind).toBe("foreach");
       expect(codeReview?.kind).toBe("optional-group");
-      expect(coding?.ir.edges.some((edge) => edge.from === "code-review" && edge.to === "merge-gate")).toBe(true);
+      expect(coding?.ir.edges.some((edge) => edge.from === "code-review" && edge.to === "completion-summary")).toBe(true);
+      expect(coding?.ir.edges.some((edge) => edge.from === "completion-summary" && edge.to === "merge-gate")).toBe(true);
       expect((legacyExecute?.config as { prompt?: string } | undefined)?.prompt).toContain("You are a task execution agent");
       // No `merge` seam node post-FN-6035 — merge runs as native primitives.
       expect(coding?.ir.nodes.find((node) => node.id === "merge")).toBeUndefined();

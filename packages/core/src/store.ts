@@ -160,7 +160,7 @@ import { CentralCore } from "./central-core.js";
 import { SecretsStore } from "./secrets-store.js";
 import { MasterKeyManager } from "./master-key.js";
 import { hasSyncPassphraseConfigured } from "./secrets-sync-passphrase.js";
-import { getTaskMergeBlocker, resolveTaskMergeTarget } from "./task-merge.js";
+import { getTaskDoneBypassBlocker, getTaskMergeBlocker, resolveTaskMergeTarget } from "./task-merge.js";
 import { getInReviewStallReason } from "./in-review-stall.js";
 import { getInReviewStalledSignal } from "./in-review-stalled.js";
 import { getStalePausedReviewSignal } from "./stale-paused-review.js";
@@ -7020,6 +7020,11 @@ ${TASK_UPSERT_SQL_ASSIGNMENTS}
         (options?.moveSource === "engine" || options?.moveSource === "scheduler" || options?.skipMergeBlocker === true));
   }
 
+  private isWorkflowDoneBypassGuardedTask(id: string, task: Pick<Task, "enabledWorkflowSteps">): boolean {
+    const selection = this.getTaskWorkflowSelection(id);
+    return Boolean(selection) || (task.enabledWorkflowSteps?.length ?? 0) > 0 || this.listWorkflowWorkItemsForTask(id).length > 0;
+  }
+
   private shouldSkipWorkflowMovePolicies(params: {
     fromColumn: string;
     toColumn: string;
@@ -7237,6 +7242,36 @@ ${TASK_UPSERT_SQL_ASSIGNMENTS}
     }
 
     const fromColumn = task.column;
+    const shouldValidateWorkflowDoneBypass =
+      toColumn === "done" &&
+      options?.skipMergeBlocker === true &&
+      this.isWorkflowDoneBypassGuardedTask(id, task);
+    const workflowDoneBypassBlocker = shouldValidateWorkflowDoneBypass
+      ? getTaskDoneBypassBlocker(task)
+      : undefined;
+    if (workflowDoneBypassBlocker) {
+      /*
+      FNXC:WorkflowMerge 2026-06-29-12:02:
+      Engine/recovery callers still need `skipMergeBlocker` for stale status cleanup, but workflow tasks must not use it as a generic "mark done" escape hatch. Require durable merge proof or the explicit decision-only `noCommitsExpected` policy before any workflow-selected task can bypass merge blockers into done.
+      */
+      this.insertRunAuditEventRow({
+        taskId: id,
+        agentId: internal.runContext?.agentId,
+        runId: internal.runContext?.runId,
+        domain: "database",
+        mutationType: "task:finalize-unproven-blocked",
+        target: id,
+        metadata: {
+          from: fromColumn,
+          to: toColumn,
+          moveSource,
+          reason: workflowDoneBypassBlocker,
+          workflowId: this.getTaskWorkflowSelection(id)?.workflowId ?? null,
+          enabledWorkflowSteps: task.enabledWorkflowSteps ?? [],
+        },
+      });
+      throw new Error(`Cannot move ${id} to done: ${workflowDoneBypassBlocker}`);
+    }
 
     if (useWorkflow && workflowIr) {
       // ── Flag-ON validation + sync guards (typed rejections, KTD-3/R13) ─────

@@ -4,6 +4,7 @@ import { BUILTIN_WORKFLOW_SETTINGS } from "./builtin-workflow-settings.js";
 import { builtinPromptConfig } from "./builtin-workflow-prompts.js";
 import { browserVerificationOptionalGroupNode } from "./builtin-browser-verification-group.js";
 import { codeReviewOptionalGroupNode } from "./builtin-code-review-group.js";
+import { completionSummaryNode } from "./builtin-completion-summary-node.js";
 import { planReviewOptionalGroupNode } from "./builtin-plan-review-group.js";
 
 /**
@@ -84,6 +85,7 @@ const RAW_BUILTIN_CODING_WORKFLOW_IR: WorkflowIr = {
     // code-review → review). Runs for every coding task by default (defaultOn:true) but is
     // toggleable off per task; disabled → byte-inert pass-through.
     codeReviewOptionalGroupNode("in-progress"),
+    completionSummaryNode("in-review"),
     { id: "review", kind: "prompt", column: "in-review", config: builtinPromptConfig("review", "Review") },
     { id: "merge-gate", kind: "merge-gate", column: "in-review", config: { gate: "auto-merge" } },
     { id: "merge-retry", kind: "retry-backoff", column: "in-review", config: { policy: "merge", maxAttempts: 3 } },
@@ -114,7 +116,8 @@ const RAW_BUILTIN_CODING_WORKFLOW_IR: WorkflowIr = {
     // browser-verification → code-review → review. Each optional-group passes through with
     // outcome=success when disabled, so a task with both off routes straight to review.
     { from: "browser-verification", to: "code-review", condition: "success" },
-    { from: "code-review", to: "review", condition: "success" },
+    { from: "code-review", to: "completion-summary", condition: "success" },
+    { from: "completion-summary", to: "review", condition: "success" },
     { from: "review", to: "merge-gate", condition: "success" },
     { from: "merge-gate", to: "branch-group-member-integration", condition: "outcome:auto-on" },
     { from: "merge-gate", to: "merge-manual-hold", condition: "outcome:auto-off" },

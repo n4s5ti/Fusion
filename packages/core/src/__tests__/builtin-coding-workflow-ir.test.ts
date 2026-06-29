@@ -83,13 +83,14 @@ describe("builtin coding workflow ir", () => {
       toolMode: "readonly",
       gateMode: "gate",
     });
-    // execute → browser-verification → code-review → review on the success path; the
+    // execute → browser-verification → code-review → completion-summary → review on the success path; the
     // pre-merge code-review optional-group sits next to browser-verification. failure → end.
     expect(BUILTIN_CODING_WORKFLOW_IR.edges).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ from: "execute", to: "browser-verification", condition: "success" }),
         expect.objectContaining({ from: "browser-verification", to: "code-review", condition: "success" }),
-        expect.objectContaining({ from: "code-review", to: "review", condition: "success" }),
+        expect.objectContaining({ from: "code-review", to: "completion-summary", condition: "success" }),
+        expect.objectContaining({ from: "completion-summary", to: "review", condition: "success" }),
         expect.objectContaining({ from: "browser-verification", to: "end", condition: "failure" }),
       ]),
     );

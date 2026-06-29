@@ -60,8 +60,11 @@ const RAW_BUILTIN_STEPWISE_FINAL_REVIEW_CODING_WORKFLOW_IR: WorkflowIr = (() => 
   if (!ir.edges.some((edge) => edge.from === "plan-review" && edge.to === "end" && edge.condition === "failure")) {
     ir.edges.push({ from: "plan-review", to: "end", condition: "failure" });
   }
-  if (!ir.edges.some((edge) => edge.from === "code-review" && edge.to === "merge-gate" && edge.condition === "success")) {
-    ir.edges.push({ from: "code-review", to: "merge-gate", condition: "success" });
+  if (!ir.edges.some((edge) => edge.from === "code-review" && edge.to === "completion-summary" && edge.condition === "success")) {
+    ir.edges.push({ from: "code-review", to: "completion-summary", condition: "success" });
+  }
+  if (!ir.edges.some((edge) => edge.from === "completion-summary" && edge.to === "merge-gate" && edge.condition === "success")) {
+    ir.edges.push({ from: "completion-summary", to: "merge-gate", condition: "success" });
   }
 
   return ir;

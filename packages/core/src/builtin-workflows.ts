@@ -8,6 +8,7 @@ import { BUILTIN_WORKFLOW_SETTINGS } from "./builtin-workflow-settings.js";
 import { builtinPromptConfig } from "./builtin-workflow-prompts.js";
 import { browserVerificationOptionalGroupNode } from "./builtin-browser-verification-group.js";
 import { codeReviewOptionalGroupNode } from "./builtin-code-review-group.js";
+import { completionSummaryNode } from "./builtin-completion-summary-node.js";
 import { planReviewOptionalGroupNode } from "./builtin-plan-review-group.js";
 import type { WorkflowDefinition } from "./workflow-definition-types.js";
 import type { WorkflowIr, WorkflowIrColumn, WorkflowIrNode } from "./workflow-ir-types.js";
@@ -119,9 +120,10 @@ function linear(spec: BuiltinSpec): WorkflowDefinition {
   const specNodes = spec.engineeringOptionalGroups
     ? withEngineeringOptionalGroups(spec.nodes, spec.engineeringOptionalGroups)
     : spec.nodes;
+  const workflowNodes = withCompletionSummaryNode(specNodes);
   const nodes: WorkflowIr["nodes"] = [
     { id: "start", kind: "start" },
-    ...specNodes,
+    ...workflowNodes,
     { id: "end", kind: "end" },
   ];
   const edges: WorkflowIr["edges"] = [];
@@ -129,8 +131,8 @@ function linear(spec: BuiltinSpec): WorkflowDefinition {
     edges.push({ from: nodes[i].id, to: nodes[i + 1].id, condition: "success" });
   }
   // Seam nodes also fail straight to end (mirrors the legacy pipeline).
-  for (const node of specNodes) {
-    if (typeof node.config?.seam === "string" || node.kind === "optional-group") {
+  for (const node of workflowNodes) {
+    if ((typeof node.config?.seam === "string" || node.kind === "optional-group") && node.config?.summaryTarget !== "task") {
       edges.push({ from: node.id, to: "end", condition: "failure" });
     }
   }
@@ -193,6 +195,17 @@ function withEngineeringOptionalGroups(
   ];
 }
 
+function withCompletionSummaryNode(nodes: BuiltinSpec["nodes"]): BuiltinSpec["nodes"] {
+  if (nodes.some((node) => node.id === "completion-summary")) return nodes;
+  const mergeIndex = nodes.findIndex((node) => node.config?.seam === "merge" || node.id === "merge");
+  const insertIndex = mergeIndex >= 0 ? mergeIndex : nodes.length;
+  return [
+    ...nodes.slice(0, insertIndex),
+    completionSummaryNode("in-review"),
+    ...nodes.slice(insertIndex),
+  ];
+}
+
 /**
  * Read-only built-in workflow templates. Selectable like any workflow; they
  * cannot be edited or deleted. In compile mode (flag off) only the custom
@@ -214,14 +227,15 @@ export const BUILTIN_WORKFLOWS: WorkflowDefinition[] = [
       steps: { x: 740, y: 160 },
       "browser-verification": { x: 910, y: 160 },
       "code-review": { x: 1080, y: 160 },
-      "merge-gate": { x: 1250, y: 160 },
-      "branch-group-member-integration": { x: 1420, y: 80 },
-      "branch-group-promotion": { x: 1590, y: 80 },
-      "merge-attempt": { x: 1760, y: 160 },
-      "merge-retry": { x: 1930, y: 80 },
-      "recovery-router": { x: 1930, y: 240 },
-      "merge-manual-hold": { x: 1420, y: 240 },
-      end: { x: 2100, y: 160 },
+      "completion-summary": { x: 1250, y: 160 },
+      "merge-gate": { x: 1420, y: 160 },
+      "branch-group-member-integration": { x: 1590, y: 80 },
+      "branch-group-promotion": { x: 1760, y: 80 },
+      "merge-attempt": { x: 1930, y: 160 },
+      "merge-retry": { x: 2100, y: 80 },
+      "recovery-router": { x: 2100, y: 240 },
+      "merge-manual-hold": { x: 1590, y: 240 },
+      end: { x: 2270, y: 160 },
     },
     createdAt: BUILTIN_TS,
     updatedAt: BUILTIN_TS,
@@ -243,15 +257,16 @@ export const BUILTIN_WORKFLOWS: WorkflowDefinition[] = [
       execute: { x: 570, y: 160 },
       "browser-verification": { x: 740, y: 160 },
       "code-review": { x: 910, y: 160 },
-      review: { x: 1080, y: 160 },
-      "merge-gate": { x: 1250, y: 160 },
-      "branch-group-member-integration": { x: 1420, y: 80 },
-      "branch-group-promotion": { x: 1590, y: 80 },
-      "merge-attempt": { x: 1760, y: 160 },
-      "merge-retry": { x: 1930, y: 80 },
-      "recovery-router": { x: 1930, y: 240 },
-      "merge-manual-hold": { x: 1420, y: 240 },
-      end: { x: 2100, y: 160 },
+      "completion-summary": { x: 1080, y: 160 },
+      review: { x: 1250, y: 160 },
+      "merge-gate": { x: 1420, y: 160 },
+      "branch-group-member-integration": { x: 1590, y: 80 },
+      "branch-group-promotion": { x: 1760, y: 80 },
+      "merge-attempt": { x: 1930, y: 160 },
+      "merge-retry": { x: 2100, y: 80 },
+      "recovery-router": { x: 2100, y: 240 },
+      "merge-manual-hold": { x: 1590, y: 240 },
+      end: { x: 2270, y: 160 },
     },
     createdAt: BUILTIN_TS,
     updatedAt: BUILTIN_TS,
@@ -301,14 +316,15 @@ export const BUILTIN_WORKFLOWS: WorkflowDefinition[] = [
       brief: { x: 230, y: 160 },
       draft: { x: 400, y: 160 },
       editorial: { x: 570, y: 160 },
-      "merge-gate": { x: 740, y: 160 },
-      "branch-group-member-integration": { x: 910, y: 80 },
-      "branch-group-promotion": { x: 1080, y: 80 },
-      "merge-attempt": { x: 1250, y: 160 },
-      "merge-retry": { x: 1420, y: 80 },
-      "recovery-router": { x: 1420, y: 240 },
-      "merge-manual-hold": { x: 910, y: 240 },
-      end: { x: 1590, y: 160 },
+      "completion-summary": { x: 740, y: 160 },
+      "merge-gate": { x: 910, y: 160 },
+      "branch-group-member-integration": { x: 1080, y: 80 },
+      "branch-group-promotion": { x: 1250, y: 80 },
+      "merge-attempt": { x: 1420, y: 160 },
+      "merge-retry": { x: 1590, y: 80 },
+      "recovery-router": { x: 1590, y: 240 },
+      "merge-manual-hold": { x: 1080, y: 240 },
+      end: { x: 1760, y: 160 },
     },
     createdAt: BUILTIN_TS,
     updatedAt: BUILTIN_TS,
@@ -452,15 +468,16 @@ export const BUILTIN_WORKFLOWS: WorkflowDefinition[] = [
       "rework-hold": { x: 740, y: 320 },
       "browser-verification": { x: 910, y: 160 },
       "code-review": { x: 1080, y: 160 },
-      review: { x: 1250, y: 160 },
-      "merge-gate": { x: 1420, y: 160 },
-      "branch-group-member-integration": { x: 1590, y: 80 },
-      "branch-group-promotion": { x: 1760, y: 80 },
-      "merge-attempt": { x: 1930, y: 160 },
-      "merge-retry": { x: 2100, y: 80 },
-      "recovery-router": { x: 2100, y: 240 },
-      "merge-manual-hold": { x: 1590, y: 240 },
-      end: { x: 2270, y: 160 },
+      "completion-summary": { x: 1250, y: 160 },
+      review: { x: 1420, y: 160 },
+      "merge-gate": { x: 1590, y: 160 },
+      "branch-group-member-integration": { x: 1760, y: 80 },
+      "branch-group-promotion": { x: 1930, y: 80 },
+      "merge-attempt": { x: 2100, y: 160 },
+      "merge-retry": { x: 2270, y: 80 },
+      "recovery-router": { x: 2270, y: 240 },
+      "merge-manual-hold": { x: 1760, y: 240 },
+      end: { x: 2440, y: 160 },
     },
     createdAt: BUILTIN_TS,
     updatedAt: BUILTIN_TS,
@@ -551,7 +568,8 @@ export const BUILTIN_WORKFLOWS: WorkflowDefinition[] = [
       "qualification-gate": { x: 570, y: 160 },
       "enrich-lead": { x: 740, y: 160 },
       "draft-outreach": { x: 910, y: 160 },
-      end: { x: 1080, y: 160 },
+      "completion-summary": { x: 1080, y: 160 },
+      end: { x: 1250, y: 160 },
     },
     createdAt: BUILTIN_TS,
     updatedAt: BUILTIN_TS,

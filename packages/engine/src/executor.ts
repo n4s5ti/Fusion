@@ -6980,6 +6980,9 @@ export class TaskExecutor {
       ...(cfg.requiresBrowser === true ? { requiresBrowser: true } : {}),
       ...(modelProvider && modelId ? { modelProvider, modelId } : {}),
     };
+    if (cfg.summaryTarget === "task") {
+      (step as WorkflowStep & { summaryTarget?: "task" }).summaryTarget = "task";
+    }
 
     // (U8a) Thread the plugin-injected runtime env (FUSION_CE_SKILLS_DIR /
     // FUSION_CE_AGENTS_DIR + PATH contribution) into prompt-mode skill/model
@@ -7045,6 +7048,16 @@ export class TaskExecutor {
     const contextPatch: Record<string, unknown> = {};
     if (typeof stepOutput === "string") contextPatch.output = stepOutput;
     if (typeof stepNotes === "string" && stepNotes) contextPatch.notes = stepNotes;
+    if (cfg.summaryTarget === "task" && typeof stepOutput === "string" && stepOutput.trim()) {
+      /*
+       * FNXC:WorkflowCompletion 2026-06-29-11:09:
+       * Built-in completion-summary nodes are agent/model workflow steps. Persist
+       * their generated text through the graph projection path so summaries are
+       * authored during workflow execution, before review/merge, and not only
+       * synthesized later by recovery fallback code.
+       */
+      contextPatch.summary = stepOutput.trim();
+    }
     /*
      * FNXC:PlanReview 2026-06-29-02:05:
      * Advisory graph steps still need a distinct non-pass value when their
@@ -13748,7 +13761,8 @@ CRITICAL SCOPING RULES — read before doing anything else:
     // runs parseAwaitInputSentinel on output regardless, so the await-input
     // sentinel always takes priority when present.
     const isSkillStep = typeof workflowStep.skillName === "string" && workflowStep.skillName.trim().length > 0;
-    const requireVerdict = workflowStep.gateMode === "gate" || !isSkillStep;
+    const isSummaryProjectionStep = (workflowStep as WorkflowStep & { summaryTarget?: string }).summaryTarget === "task";
+    const requireVerdict = !isSummaryProjectionStep && (workflowStep.gateMode === "gate" || !isSkillStep);
     const verdictBlock = requireVerdict
       ? `
 
