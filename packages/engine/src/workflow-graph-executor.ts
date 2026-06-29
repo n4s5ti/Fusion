@@ -55,6 +55,16 @@ export interface WorkflowNodeResult {
   contextPatch?: Record<string, unknown>;
 }
 
+interface PreMergeOptionalStepFailureContext {
+  stepName: string;
+  feedback: string;
+  phase: WorkflowStepResult["phase"];
+  status: WorkflowStepResult["status"];
+  verdict?: string;
+  nodeId?: string;
+  maxRevisions?: unknown;
+}
+
 export interface WorkflowTaskProjection {
   modifiedFiles?: string[];
   mergeDetails?: {
@@ -231,6 +241,10 @@ export const MERGE_REGION_KINDS = new Set<WorkflowIrNodeKind>([
 
 function isMergeRegionKind(kind: WorkflowIrNodeKind): boolean {
   return MERGE_REGION_KINDS.has(kind);
+}
+
+function optionalStepFailureContextKey(stepId: string): string {
+  return `workflow:optional-step-failure:${stepId}`;
 }
 
 function normalizeTouchedFile(value: unknown): string | undefined {
@@ -743,7 +757,7 @@ export class WorkflowGraphExecutor {
               || (node.id === PLAN_REVIEW_GROUP_ID
                 ? "Plan Review failed before execution. Re-run triage to revise PROMPT.md before implementation continues."
                 : "(no feedback captured)");
-            const fixScheduled = await this.deps.requestPreMergeOptionalStepFix?.(task.id, {
+            const failureContext: PreMergeOptionalStepFailureContext = {
               stepName: groupName,
               feedback,
               phase: stepPhase,
@@ -751,13 +765,61 @@ export class WorkflowGraphExecutor {
               verdict: verdict ?? (node.id === PLAN_REVIEW_GROUP_ID ? "REVISE" : undefined),
               nodeId: node.id,
               maxRevisions: node.config?.maxRevisions,
+            };
+            context[optionalStepFailureContextKey(node.id)] = failureContext;
+            /*
+             * FNXC:WorkflowRemediation 2026-06-29-16:22:
+             * New built-in and custom workflows can author an explicit failure edge
+             * from an optional review gate to a remediation/replan node. When such a
+             * node exists, traversal owns the handoff so the workflow definition shows
+             * the lifecycle policy. Older stored specs without that node keep the
+             * compatibility scheduler here.
+             */
+            const remediationRouteSource: WorkflowNodeResult = { outcome: "failure", value: result.value };
+            const explicitWorkflowRemediationRoute = (outgoingMap.get(node.id) ?? []).some((edge) => {
+              if (!this.shouldTraverseEdge(edge, remediationRouteSource)) return false;
+              const target = nodeMap.get(edge.to);
+              const action = target?.config?.workflowAction;
+              return action === "plan-replan" || action === "pre-merge-remediation";
             });
+            if (explicitWorkflowRemediationRoute) {
+              return await traverseChildren(node, remediationRouteSource);
+            }
+            const fixScheduled = await this.deps.requestPreMergeOptionalStepFix?.(task.id, failureContext);
             if (fixScheduled) {
               context[`node:${node.id}:fixScheduled`] = true;
               return { outcome: "success", value: "pre-merge-optional-step-fix-scheduled" };
             }
           }
           return await traverseChildren(node, result);
+        }
+
+        const workflowAction = node.config?.workflowAction;
+        if (workflowAction === "plan-replan" || workflowAction === "pre-merge-remediation") {
+          const stepId = typeof node.config?.forWorkflowStepId === "string"
+            ? node.config.forWorkflowStepId
+            : undefined;
+          const failureContext = stepId
+            ? context[optionalStepFailureContextKey(stepId)] as PreMergeOptionalStepFailureContext | undefined
+            : undefined;
+          if (!failureContext) {
+            return { outcome: "failure", value: "missing-remediation-context" };
+          }
+          const scheduled = await this.deps.requestPreMergeOptionalStepFix?.(task.id, failureContext);
+          if (!scheduled) {
+            return { outcome: "failure", value: "remediation-not-scheduled" };
+          }
+          /*
+           * FNXC:WorkflowRemediation 2026-06-29-16:27:
+           * A remediation/replan node schedules asynchronous task work rather than
+           * fixing the branch inside this graph call. Stop traversal after a successful
+           * handoff so the rerun starts from fresh task state instead of immediately
+           * re-reviewing unchanged PROMPT.md or unchanged code.
+           */
+          if (failureContext.nodeId) context[`node:${failureContext.nodeId}:fixScheduled`] = true;
+          context[`node:${node.id}:outcome`] = "success";
+          context[`node:${node.id}:value`] = "remediation-scheduled";
+          return { outcome: "success", value: "remediation-scheduled" };
         }
 
         const result = await this.executeNodeWithRetries(node, task, settings, context, ir, this.deps.signal);

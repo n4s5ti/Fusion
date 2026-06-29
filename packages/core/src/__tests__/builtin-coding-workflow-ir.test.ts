@@ -84,14 +84,15 @@ describe("builtin coding workflow ir", () => {
       gateMode: "gate",
     });
     // execute → browser-verification → code-review → completion-summary → review on the success path; the
-    // pre-merge code-review optional-group sits next to browser-verification. failure → end.
+    // pre-merge code-review optional-group sits next to browser-verification. failures route to remediation nodes.
     expect(BUILTIN_CODING_WORKFLOW_IR.edges).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ from: "execute", to: "browser-verification", condition: "success" }),
         expect.objectContaining({ from: "browser-verification", to: "code-review", condition: "success" }),
         expect.objectContaining({ from: "code-review", to: "completion-summary", condition: "success" }),
         expect.objectContaining({ from: "completion-summary", to: "review", condition: "success" }),
-        expect.objectContaining({ from: "browser-verification", to: "end", condition: "failure" }),
+        expect.objectContaining({ from: "browser-verification", to: "browser-verification-remediation", condition: "failure" }),
+        expect.objectContaining({ from: "code-review", to: "code-review-remediation", condition: "failure" }),
       ]),
     );
     // The legacy optionalSteps declaration is gone (the group replaces it).

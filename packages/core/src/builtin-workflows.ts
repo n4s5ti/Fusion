@@ -10,6 +10,11 @@ import { browserVerificationOptionalGroupNode } from "./builtin-browser-verifica
 import { codeReviewOptionalGroupNode } from "./builtin-code-review-group.js";
 import { completionSummaryNode } from "./builtin-completion-summary-node.js";
 import { planReviewOptionalGroupNode } from "./builtin-plan-review-group.js";
+import {
+  browserVerificationRemediationNode,
+  codeReviewRemediationNode,
+  planReplanNode,
+} from "./builtin-workflow-remediation-nodes.js";
 import type { WorkflowDefinition } from "./workflow-definition-types.js";
 import type { WorkflowIr, WorkflowIrColumn, WorkflowIrNode } from "./workflow-ir-types.js";
 import { parseWorkflowIr } from "./workflow-ir.js";
@@ -121,19 +126,39 @@ function linear(spec: BuiltinSpec): WorkflowDefinition {
     ? withEngineeringOptionalGroups(spec.nodes, spec.engineeringOptionalGroups)
     : spec.nodes;
   const workflowNodes = withCompletionSummaryNode(specNodes);
+  const hasPlanReview = workflowNodes.some((node) => node.id === "plan-review");
+  const hasBrowserVerification = workflowNodes.some((node) => node.id === "browser-verification");
+  const hasCodeReview = workflowNodes.some((node) => node.id === "code-review");
+  const remediationNodes = hasPlanReview || hasBrowserVerification || hasCodeReview
+    ? [
+        ...(hasPlanReview ? [planReplanNode("triage")] : []),
+        ...(hasBrowserVerification ? [browserVerificationRemediationNode("in-progress")] : []),
+        ...(hasCodeReview ? [codeReviewRemediationNode("in-progress")] : []),
+      ]
+    : [];
   const nodes: WorkflowIr["nodes"] = [
     { id: "start", kind: "start" },
     ...workflowNodes,
+    ...remediationNodes,
     { id: "end", kind: "end" },
   ];
   const edges: WorkflowIr["edges"] = [];
-  for (let i = 0; i < nodes.length - 1; i += 1) {
-    edges.push({ from: nodes[i].id, to: nodes[i + 1].id, condition: "success" });
+  const successPathNodes: WorkflowIr["nodes"] = [{ id: "start", kind: "start" }, ...workflowNodes, { id: "end", kind: "end" }];
+  for (let i = 0; i < successPathNodes.length - 1; i += 1) {
+    edges.push({ from: successPathNodes[i].id, to: successPathNodes[i + 1].id, condition: "success" });
   }
   // Seam nodes also fail straight to end (mirrors the legacy pipeline).
   for (const node of workflowNodes) {
     if ((typeof node.config?.seam === "string" || node.kind === "optional-group") && node.config?.summaryTarget !== "task") {
-      edges.push({ from: node.id, to: "end", condition: "failure" });
+      const failureTarget =
+        node.id === "plan-review"
+          ? "plan-replan"
+          : node.id === "browser-verification"
+          ? "browser-verification-remediation"
+          : node.id === "code-review"
+          ? "code-review-remediation"
+          : "end";
+      edges.push({ from: node.id, to: failureTarget, condition: "failure" });
     }
   }
   const layout: Record<string, { x: number; y: number }> = {};
@@ -223,10 +248,13 @@ export const BUILTIN_WORKFLOWS: WorkflowDefinition[] = [
       start: { x: 60, y: 160 },
       plan: { x: 230, y: 160 },
       "plan-review": { x: 400, y: 160 },
+      "plan-replan": { x: 400, y: 320 },
       parse: { x: 570, y: 160 },
       steps: { x: 740, y: 160 },
       "browser-verification": { x: 910, y: 160 },
+      "browser-verification-remediation": { x: 910, y: 320 },
       "code-review": { x: 1080, y: 160 },
+      "code-review-remediation": { x: 1080, y: 320 },
       "completion-summary": { x: 1250, y: 160 },
       "merge-gate": { x: 1420, y: 160 },
       "branch-group-member-integration": { x: 1590, y: 80 },
@@ -254,9 +282,12 @@ export const BUILTIN_WORKFLOWS: WorkflowDefinition[] = [
       start: { x: 60, y: 160 },
       planning: { x: 230, y: 160 },
       "plan-review": { x: 400, y: 160 },
+      "plan-replan": { x: 400, y: 320 },
       execute: { x: 570, y: 160 },
       "browser-verification": { x: 740, y: 160 },
+      "browser-verification-remediation": { x: 740, y: 320 },
       "code-review": { x: 910, y: 160 },
+      "code-review-remediation": { x: 910, y: 320 },
       "completion-summary": { x: 1080, y: 160 },
       review: { x: 1250, y: 160 },
       "merge-gate": { x: 1420, y: 160 },
@@ -463,11 +494,14 @@ export const BUILTIN_WORKFLOWS: WorkflowDefinition[] = [
       start: { x: 60, y: 160 },
       plan: { x: 230, y: 160 },
       "plan-review": { x: 400, y: 160 },
+      "plan-replan": { x: 400, y: 320 },
       parse: { x: 570, y: 160 },
       steps: { x: 740, y: 160 },
       "rework-hold": { x: 740, y: 320 },
       "browser-verification": { x: 910, y: 160 },
+      "browser-verification-remediation": { x: 910, y: 320 },
       "code-review": { x: 1080, y: 160 },
+      "code-review-remediation": { x: 1080, y: 320 },
       "completion-summary": { x: 1250, y: 160 },
       review: { x: 1420, y: 160 },
       "merge-gate": { x: 1590, y: 160 },

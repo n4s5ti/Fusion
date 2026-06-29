@@ -6,6 +6,11 @@ import { browserVerificationOptionalGroupNode } from "./builtin-browser-verifica
 import { codeReviewOptionalGroupNode } from "./builtin-code-review-group.js";
 import { completionSummaryNode } from "./builtin-completion-summary-node.js";
 import { planReviewOptionalGroupNode } from "./builtin-plan-review-group.js";
+import {
+  browserVerificationRemediationNode,
+  codeReviewRemediationNode,
+  planReplanNode,
+} from "./builtin-workflow-remediation-nodes.js";
 
 /**
  * The built-in **stepwise** coding workflow (KTD-9) — the demonstration of step
@@ -76,6 +81,7 @@ const RAW_BUILTIN_STEPWISE_CODING_WORKFLOW_IR: WorkflowIr = {
     // Planning seam: produces PROMPT.md (the declared step-source artifact).
     { id: "plan", kind: "prompt", column: "in-progress", config: builtinPromptConfig("planning", "Plan") },
     planReviewOptionalGroupNode("in-progress"),
+    planReplanNode("triage"),
     // KTD-12: parse the planned PROMPT.md into the task step list. This node must
     // dominate the foreach (validator-enforced).
     {
@@ -143,6 +149,7 @@ const RAW_BUILTIN_STEPWISE_CODING_WORKFLOW_IR: WorkflowIr = {
     // disabled the group passes through inert. Both the normal foreach-success path
     // and the rework-exhausted manual-release path flow through this node.
     browserVerificationOptionalGroupNode("in-progress"),
+    browserVerificationRemediationNode("in-progress"),
     // FNXC:CodeReviewStep 2026-06-25-15:00:
     // Pre-merge Code Review as a DEFAULT-ON optional-group (blocking gate), on the post-foreach
     // success path between browser-verification and review (steps → browser-verification →
@@ -151,6 +158,7 @@ const RAW_BUILTIN_STEPWISE_CODING_WORKFLOW_IR: WorkflowIr = {
     // release paths flow through it. Runs for every task by default (defaultOn:true) but is
     // toggleable off per task; disabled → byte-inert pass-through.
     codeReviewOptionalGroupNode("in-progress"),
+    codeReviewRemediationNode("in-progress"),
     completionSummaryNode("in-review"),
     { id: "review", kind: "prompt", column: "in-review", config: builtinPromptConfig("review", "Review") },
     { id: "merge-gate", kind: "merge-gate", column: "in-review", config: { gate: "auto-merge" } },
@@ -177,7 +185,7 @@ const RAW_BUILTIN_STEPWISE_CODING_WORKFLOW_IR: WorkflowIr = {
     { from: "plan", to: "plan-review", condition: "success" },
     { from: "plan", to: "end", condition: "failure" },
     { from: "plan-review", to: "parse", condition: "success" },
-    { from: "plan-review", to: "end", condition: "failure" },
+    { from: "plan-review", to: "plan-replan", condition: "failure" },
     { from: "parse", to: "steps", condition: "success" },
     // parse-steps no-steps defaults to success; route it explicitly to the foreach
     // (zero steps → foreach no-ops through its success edge, KTD-8/R8).
@@ -197,8 +205,8 @@ const RAW_BUILTIN_STEPWISE_CODING_WORKFLOW_IR: WorkflowIr = {
     { from: "browser-verification", to: "code-review", condition: "success" },
     { from: "code-review", to: "completion-summary", condition: "success" },
     { from: "completion-summary", to: "review", condition: "success" },
-    { from: "browser-verification", to: "end", condition: "failure" },
-    { from: "code-review", to: "end", condition: "failure" },
+    { from: "browser-verification", to: "browser-verification-remediation", condition: "failure" },
+    { from: "code-review", to: "code-review-remediation", condition: "failure" },
     { from: "steps", to: "end", condition: "failure" },
     { from: "review", to: "merge-gate", condition: "success" },
     { from: "review", to: "end", condition: "failure" },

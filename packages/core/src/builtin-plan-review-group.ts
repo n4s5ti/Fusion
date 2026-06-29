@@ -60,7 +60,7 @@ export function planReviewOptionalGroupNode(
               description: PLAN_REVIEW_DESCRIPTION,
               prompt: PLAN_REVIEW_PROMPT,
               toolMode: "readonly",
-              gateMode: "advisory",
+              gateMode: "gate",
             },
           },
         ],

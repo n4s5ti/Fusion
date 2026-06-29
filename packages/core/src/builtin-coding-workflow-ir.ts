@@ -6,6 +6,11 @@ import { browserVerificationOptionalGroupNode } from "./builtin-browser-verifica
 import { codeReviewOptionalGroupNode } from "./builtin-code-review-group.js";
 import { completionSummaryNode } from "./builtin-completion-summary-node.js";
 import { planReviewOptionalGroupNode } from "./builtin-plan-review-group.js";
+import {
+  browserVerificationRemediationNode,
+  codeReviewRemediationNode,
+  planReplanNode,
+} from "./builtin-workflow-remediation-nodes.js";
 
 /**
  * The built-in default workflow as a v2 IR. Its six columns have ids that are
@@ -71,6 +76,7 @@ const RAW_BUILTIN_CODING_WORKFLOW_IR: WorkflowIr = {
       config: builtinPromptConfig("planning", "Plan / specify"),
     },
     planReviewOptionalGroupNode("in-progress"),
+    planReplanNode("triage"),
     {
       id: "execute",
       kind: "prompt",
@@ -79,12 +85,14 @@ const RAW_BUILTIN_CODING_WORKFLOW_IR: WorkflowIr = {
     },
     // Pre-merge optional browser-verification (optional-group, default OFF).
     browserVerificationOptionalGroupNode("in-progress"),
+    browserVerificationRemediationNode("in-progress"),
     // FNXC:CodeReviewStep 2026-06-25-15:00:
     // Pre-merge Code Review as a DEFAULT-ON optional-group (blocking gate), on the success path
     // between browser-verification and review (execute → browser-verification →
     // code-review → review). Runs for every coding task by default (defaultOn:true) but is
     // toggleable off per task; disabled → byte-inert pass-through.
     codeReviewOptionalGroupNode("in-progress"),
+    codeReviewRemediationNode("in-progress"),
     completionSummaryNode("in-review"),
     { id: "review", kind: "prompt", column: "in-review", config: builtinPromptConfig("review", "Review") },
     { id: "merge-gate", kind: "merge-gate", column: "in-review", config: { gate: "auto-merge" } },
@@ -132,10 +140,10 @@ const RAW_BUILTIN_CODING_WORKFLOW_IR: WorkflowIr = {
     { from: "merge-attempt", to: "merge-manual-hold", condition: "outcome:manual-required" },
     { from: "recovery-router", to: "merge-attempt", condition: "outcome:wake-merge", kind: "rework" },
     { from: "planning", to: "end", condition: "failure" },
-    { from: "plan-review", to: "end", condition: "failure" },
+    { from: "plan-review", to: "plan-replan", condition: "failure" },
     { from: "execute", to: "end", condition: "failure" },
-    { from: "browser-verification", to: "end", condition: "failure" },
-    { from: "code-review", to: "end", condition: "failure" },
+    { from: "browser-verification", to: "browser-verification-remediation", condition: "failure" },
+    { from: "code-review", to: "code-review-remediation", condition: "failure" },
     { from: "review", to: "end", condition: "failure" },
     { from: "merge-attempt", to: "end", condition: "failure" },
   ],

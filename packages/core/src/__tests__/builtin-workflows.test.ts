@@ -431,7 +431,7 @@ describe("built-in workflows", () => {
     expect(byId.get("plan-review")?.column).toBe("in-progress");
     expect(planReviewInnerConfig(ir)).toMatchObject({
       toolMode: "readonly",
-      gateMode: "advisory",
+      gateMode: "gate",
     });
     expect(byId.get("parse")?.column).toBe("in-progress");
     expect(byId.get("steps")?.column).toBe("in-progress");
@@ -515,7 +515,19 @@ describe("built-in workflows", () => {
     expect(() => parseWorkflowIr(design!.ir)).not.toThrow();
 
     const authoredNodeIds = design!.ir.nodes.filter((node) => node.id !== "start" && node.id !== "end").map((node) => node.id);
-    expect(authoredNodeIds).toEqual(["plan-review", "execute", "browser-verification", "code-review", "design-review", "review", "completion-summary", "merge"]);
+    expect(authoredNodeIds).toEqual([
+      "plan-review",
+      "execute",
+      "browser-verification",
+      "code-review",
+      "design-review",
+      "review",
+      "completion-summary",
+      "merge",
+      "plan-replan",
+      "browser-verification-remediation",
+      "code-review-remediation",
+    ]);
 
     const execute = design!.ir.nodes.find((node) => node.id === "execute");
     expect(execute?.config?.seam).toBe("execute");
@@ -746,6 +758,9 @@ describe("built-in workflows", () => {
       "completion-summary",
       "merge",
       "document",
+      "plan-replan",
+      "browser-verification-remediation",
+      "code-review-remediation",
     ]);
     expect(ce.ir.nodes.some((node) => node.config?.seam === "review")).toBe(false);
 

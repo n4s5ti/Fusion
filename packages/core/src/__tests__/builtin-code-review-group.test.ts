@@ -76,12 +76,12 @@ describe("built-in coding + stepwise workflows wire code-review as a default-ON 
     expect(group?.config?.defaultOn).toBe(true);
     expect(group?.column).toBe("in-progress");
 
-    // Pre-merge wiring: ... → browser-verification → code-review → completion-summary; failure → end.
+    // Pre-merge wiring: ... → browser-verification → code-review → completion-summary; failure → remediation node.
     expect(ir.edges).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ from: "browser-verification", to: "code-review", condition: "success" }),
         expect.objectContaining({ from: "code-review", to: "completion-summary", condition: "success" }),
-        expect.objectContaining({ from: "code-review", to: "end", condition: "failure" }),
+        expect.objectContaining({ from: "code-review", to: "code-review-remediation", condition: "failure" }),
       ]),
     );
 

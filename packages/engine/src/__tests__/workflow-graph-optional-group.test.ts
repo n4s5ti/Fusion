@@ -758,7 +758,11 @@ describe("WorkflowGraphExecutor optional-group", () => {
         expect(node?.config?.phase).toBeUndefined();
         expect(ir.edges).toEqual(expect.arrayContaining([
           expect.objectContaining({ from: groupId, to: groupId === "browser-verification" ? "code-review" : "completion-summary", condition: "success" }),
-          expect.objectContaining({ from: groupId, to: "end", condition: "failure" }),
+          expect.objectContaining({
+            from: groupId,
+            to: groupId === "browser-verification" ? "browser-verification-remediation" : "code-review-remediation",
+            condition: "failure",
+          }),
         ]));
       }
     }
