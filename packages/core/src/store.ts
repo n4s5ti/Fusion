@@ -16135,10 +16135,11 @@ ${stepsSection}`;
       this._archiveDb = null;
     }
     if (this.secretsCentralCore) {
-      // Await the secrets central core close: CentralCore.close() is async, so a
-      // fire-and-forget call would let close() resolve while the secrets SQLite
-      // handle is still draining on a later microtask, racing temp-root cleanup
-      // under the loaded package test lane. Await it like the other handles above.
+      /**
+       * FNXC:TaskStoreShutdown 2026-06-29-13:04:
+       * TaskStore.close() must deterministically await the cached secrets CentralCore close before temp-root cleanup and test teardown continue.
+       * CentralCore.close() is currently synchronous internally, but awaiting the async contract prevents unhandled rejections and preserves shutdown safety if the central secrets handle gains asynchronous cleanup.
+       */
       const secretsCentralCore = this.secretsCentralCore;
       this.secretsCentralCore = null;
       try {
