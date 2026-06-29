@@ -41,7 +41,7 @@ const cleanupDirs: string[] = [];
 function makeGitCheckout(): string {
   const dir = mkdtempSync(join(tmpdir(), "fusion-review-checkout-"));
   cleanupDirs.push(dir);
-  execFileSync("git", ["init", "-b", "main"], { cwd: dir, stdio: "ignore" });
+  execFileSync("git", ["init"], { cwd: dir, stdio: "ignore" });
   return dir;
 }
 
@@ -235,7 +235,7 @@ describe("U2 KTD3 — in-session fn_review_step (createReviewStepTool) loops per
     const task = makeTask({ customFields: { reviewCheckoutPath: externalCheckout } } as any);
     const store = makeStore(task);
     const executor = new TaskExecutor(store, ROOT);
-    const seen = scriptReviewByCwd({ [externalCheckout]: { verdict: "APPROVE", review: "external ok", summary: "external" } });
+    const seen = scriptReviewByCwd({ [expectedCheckout]: { verdict: "APPROVE", review: "external ok", summary: "external" } });
     const tool = (executor as any).createReviewStepTool(
       task.id,
       WT_A,
@@ -288,7 +288,7 @@ describe("U2 KTD3 — step-inversion review seam (executor.ts:5668) loops per su
     const task = makeTask({ worktree: WT_A, customFields: { reviewCheckoutPath: externalCheckout } } as any);
     const store = makeStore(task);
     const executor = new TaskExecutor(store, ROOT);
-    const seen = scriptReviewByCwd({ [externalCheckout]: { verdict: "APPROVE", review: "external", summary: "external" } });
+    const seen = scriptReviewByCwd({ [expectedCheckout]: { verdict: "APPROVE", review: "external", summary: "external" } });
     const seams = executor.createAuthoritativeWorkflowSeams({ autoMerge: false } as any);
     const context = { [FOREACH_ACTIVE_CONTEXT_KEY]: { stepIndex: 1, worktreePath: WT_A, baselineSha: "base" } } as any;
     await seams.stepReview!(task as any, context, { type: "code", advisory: true } as any);
