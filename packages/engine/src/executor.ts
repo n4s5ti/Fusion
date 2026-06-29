@@ -1678,20 +1678,16 @@ export class TaskExecutor {
     }
     if (task.paused === true || task.userPaused === true || globalPause) return;
     /*
-     * FNXC:WorkflowLifecycle 2026-06-29-00:57:
+     * FNXC:WorkflowLifecycle 2026-06-29-10:35:
      * A stale pause-abort marker must not survive into a fresh unpaused dispatch.
-     * FN-7225 showed graph-owned Plan Review and execution failures being logged
-     * as "engine pause/resume" even though the task row was not paused. Clear the
-     * volatile marker at dispatch entry so real workflow/execution failures keep
-     * their actual cause and do not loop through pause recovery.
+     * FN-7225/FN-7226 showed graph-owned execution failures being narrated as
+     * pause/resume cleanup even though the task row was not paused. Clear the
+     * volatile marker silently at dispatch entry so the task log names the real
+     * workflow failure (`step-execute`, parse, review, etc.) instead of implying
+     * the engine actually paused.
      */
     this.clearPausedAborted(task.id);
-    await this.store.logEntry(
-      task.id,
-      "Cleared stale pause-abort marker before unpaused execution dispatch",
-      undefined,
-      this.getRunContextFor(task.id),
-    ).catch(() => undefined);
+    executorLog.log(`${task.id}: cleared stale pause-abort marker before unpaused execution dispatch`);
   }
 
   clearPauseAbortStateForManualRetry(taskId: string): void {

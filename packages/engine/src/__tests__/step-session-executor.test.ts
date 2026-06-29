@@ -719,7 +719,7 @@ Some freeform text without checkboxes.`;
   it("does not ask graph-owned step sessions to call task lifecycle tools", () => {
     const task = makeTaskDetail({ prompt: fullPrompt });
     const result = buildStepPrompt(task, 1);
-    expect(result).toContain("the workflow graph records completion");
+    expect(result).toContain("The workflow graph records step status, ordering, review, and completion.");
     expect(result).not.toContain("fn_task_done()");
   });
 
@@ -1690,10 +1690,16 @@ describe("StepSessionExecutor", () => {
       const session = makeMockSession();
       mockedCreateFnAgent.mockResolvedValue({ session } as any);
 
-      // Make git log return commits, but cherry-pick fails
+      // Make the merge-base bounded commit list return a step commit, but cherry-pick fails.
       mockedExecSync.mockImplementation((cmd: string) => {
-        if (typeof cmd === "string" && cmd.includes("git log")) {
-          return "abc123def Some commit";
+        if (typeof cmd === "string" && cmd.includes("git rev-parse HEAD")) {
+          return "primary-head";
+        }
+        if (typeof cmd === "string" && cmd.includes("git merge-base HEAD primary-head")) {
+          return "merge-base-sha";
+        }
+        if (typeof cmd === "string" && cmd.includes("git rev-list --reverse merge-base-sha..HEAD")) {
+          return "abc123def";
         }
         if (typeof cmd === "string" && cmd.includes("git cherry-pick") && !cmd.includes("--abort")) {
           throw new Error("Merge conflict");
@@ -1737,8 +1743,14 @@ describe("StepSessionExecutor", () => {
       mockedCreateFnAgent.mockResolvedValue({ session } as any);
 
       mockedExecSync.mockImplementation((cmd: string) => {
-        if (typeof cmd === "string" && cmd.includes("git log")) {
-          return "abc123def Some commit";
+        if (typeof cmd === "string" && cmd.includes("git rev-parse HEAD")) {
+          return "primary-head";
+        }
+        if (typeof cmd === "string" && cmd.includes("git merge-base HEAD primary-head")) {
+          return "merge-base-sha";
+        }
+        if (typeof cmd === "string" && cmd.includes("git rev-list --reverse merge-base-sha..HEAD")) {
+          return "abc123def";
         }
         if (typeof cmd === "string" && cmd.includes("git cherry-pick") && cmd.includes("--abort")) {
           throw new Error("abort failed");
@@ -1775,7 +1787,13 @@ describe("StepSessionExecutor", () => {
       });
 
       mockedExecSync.mockImplementation((cmd: string) => {
-        if (cmd.includes("git log")) {
+        if (cmd.includes("git rev-parse HEAD")) {
+          return "primary-head";
+        }
+        if (cmd.includes("git merge-base HEAD primary-head")) {
+          return "merge-base-sha";
+        }
+        if (cmd.includes("git rev-list --reverse merge-base-sha..HEAD")) {
           return "abc123";
         }
         if (cmd.includes("git cherry-pick") && cmd.includes("--abort")) {
@@ -2022,7 +2040,13 @@ describe("StepSessionExecutor", () => {
               throw new Error("step 2 worktree failed");
             }
           }
-          if (cmd.includes("git log")) {
+          if (cmd.includes("git rev-parse HEAD")) {
+            return "primary-head";
+          }
+          if (cmd.includes("git merge-base HEAD primary-head")) {
+            return "merge-base-sha";
+          }
+          if (cmd.includes("git rev-list --reverse merge-base-sha..HEAD")) {
             return "abc123";
           }
           return "";

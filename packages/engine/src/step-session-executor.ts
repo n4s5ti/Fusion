@@ -1525,11 +1525,24 @@ Follow instructions precisely and avoid unrelated changes.`,
   private async cherryPickCommits(stepIndex: number, worktreePath: string): Promise<void> {
     const { worktreePath: primaryPath, taskDetail } = this.options;
 
-    // Get commits made in the parallel worktree since it was created
+    /*
+     * FNXC:WorkflowStepControl 2026-06-29-10:31:
+     * Parallel step-session worktrees must land their step commits back into the primary task worktree before modifiedFiles capture runs. Use the actual merge-base with the primary worktree HEAD; the old time/HEAD~10 range could include already-present ancestors, hit an empty cherry-pick first, and leave the task branch with no files changed.
+     */
     let commits: string;
     try {
+      const { stdout: primaryHeadRaw } = await execAsync("git rev-parse HEAD", {
+        cwd: primaryPath,
+        encoding: "utf-8",
+      });
+      const primaryHead = primaryHeadRaw.trim();
+      const { stdout: mergeBaseRaw } = await execAsync(`git merge-base HEAD ${primaryHead}`, {
+        cwd: worktreePath,
+        encoding: "utf-8",
+      });
+      const mergeBase = mergeBaseRaw.trim();
       const { stdout } = await execAsync(
-        `git log --oneline --format="%H" HEAD...HEAD~10 --since="1 hour ago"`,
+        `git rev-list --reverse ${mergeBase}..HEAD`,
         { cwd: worktreePath, encoding: "utf-8" },
       );
       commits = stdout.trim();
@@ -1544,18 +1557,30 @@ Follow instructions precisely and avoid unrelated changes.`,
       return;
     }
 
-    const shas = commits.split("\n").filter(Boolean);
+    const shas = commits.split("\n").map((line) => line.trim()).filter(Boolean);
     stepExecLog.log(
       `Cherry-picking ${shas.length} commit(s) from step ${stepIndex} ` +
       `into primary worktree for task ${taskDetail.id}`,
     );
 
-    for (const sha of shas.reverse()) {
+    for (const sha of shas) {
       try {
         await execAsync(`git cherry-pick "${sha}"`, {
           cwd: primaryPath,
         });
       } catch (err) {
+        const errText = `${err instanceof Error ? err.message : String(err)} ${String((err as { stdout?: unknown; stderr?: unknown })?.stdout ?? "")} ${String((err as { stderr?: unknown })?.stderr ?? "")}`;
+        if (
+          errText.includes("The previous cherry-pick is now empty") ||
+          errText.includes("nothing to commit") ||
+          errText.includes("is empty")
+        ) {
+          await execAsync("git cherry-pick --skip", { cwd: primaryPath }).catch(async () => {
+            await execAsync("git cherry-pick --abort", { cwd: primaryPath }).catch(() => undefined);
+          });
+          stepExecLog.warn(`Skipped empty cherry-pick for step ${stepIndex}: ${sha}`);
+          continue;
+        }
         // Cherry-pick conflict — abort and log
         try {
           await execAsync("git cherry-pick --abort", { cwd: primaryPath });

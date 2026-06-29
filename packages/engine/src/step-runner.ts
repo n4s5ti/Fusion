@@ -136,12 +136,11 @@ export async function runTaskStep(
 
   // 1. Projection: step → in-progress (KTD-7). updateStep's own guards apply.
   try {
-    await store.updateStep(
-      task.id,
-      stepIndex,
-      "in-progress",
-      opts.projectionSource ? { source: opts.projectionSource } : undefined,
-    );
+    if (opts.projectionSource) {
+      await store.updateStep(task.id, stepIndex, "in-progress", { source: opts.projectionSource });
+    } else {
+      await store.updateStep(task.id, stepIndex, "in-progress");
+    }
   } catch (err) {
     executorLog.warn(
       `${task.id}: runTaskStep failed to mark step ${stepIndex} in-progress: ${errMsg(err)}`,
@@ -175,12 +174,11 @@ export async function runTaskStep(
   if (result.success) {
     if (markDoneOnSuccess) {
       try {
-        await store.updateStep(
-          task.id,
-          stepIndex,
-          "done",
-          opts.projectionSource ? { source: opts.projectionSource } : undefined,
-        );
+        if (opts.projectionSource) {
+          await store.updateStep(task.id, stepIndex, "done", { source: opts.projectionSource });
+        } else {
+          await store.updateStep(task.id, stepIndex, "done");
+        }
       } catch (err) {
         executorLog.warn(
           `${task.id}: runTaskStep failed to mark step ${stepIndex} done: ${errMsg(err)}`,

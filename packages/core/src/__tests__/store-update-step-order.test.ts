@@ -63,6 +63,7 @@ describe("TaskStore.updateStep step-order guard", () => {
     // runnable; TaskStore must not invent a hidden previous-step dependency.
     const store = harness.store();
     const task = await harness.createTaskWithSteps();
+    await store.updateStep(task.id, 0, "pending");
 
     await store.updateStep(task.id, 1, "in-progress", { source: "graph" });
     const updated = await store.updateStep(task.id, 2, "done", { source: "graph" });
@@ -75,7 +76,9 @@ describe("TaskStore.updateStep step-order guard", () => {
   it("graph source: explicit dependsOn still suppresses completion until dependencies finish", async () => {
     const store = harness.store();
     const task = await harness.createTaskWithSteps();
-    const steps = task.steps.map((s, i) => (i === 2 ? { ...s, dependsOn: [1] } : { ...s }));
+    await store.updateStep(task.id, 0, "pending");
+    const primed = await store.getTask(task.id);
+    const steps = primed.steps.map((s, i) => (i === 2 ? { ...s, dependsOn: [1] } : { ...s }));
     await store.updateTask(task.id, { steps });
 
     await store.updateStep(task.id, 1, "in-progress", { source: "graph" });
@@ -90,7 +93,9 @@ describe("TaskStore.updateStep step-order guard", () => {
   it("graph source: out-of-order done (unmet dependency) is suppressed AND audited loudly", async () => {
     const store = harness.store();
     const task = await harness.createTaskWithSteps();
-    const steps = task.steps.map((s, i) => (i === 1 ? { ...s, dependsOn: [0] } : { ...s }));
+    await store.updateStep(task.id, 0, "pending");
+    const primed = await store.getTask(task.id);
+    const steps = primed.steps.map((s, i) => (i === 1 ? { ...s, dependsOn: [0] } : { ...s }));
     await store.updateTask(task.id, { steps });
     await store.updateStep(task.id, 1, "in-progress");
 
