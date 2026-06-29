@@ -216,6 +216,7 @@ function createMockStore(overrides: Partial<TaskStore> = {}): TaskStore {
     getWorkflowStep: vi.fn(),
     updateWorkflowStep: vi.fn(),
     deleteWorkflowStep: vi.fn(),
+    clearWorkflowRunStepInstances: vi.fn(),
     getMissionStore: vi.fn().mockReturnValue({
       listMissions: vi.fn().mockReturnValue([]),
       createMission: vi.fn(),
@@ -808,6 +809,7 @@ describe("POST /tasks/:id/retry", () => {
       baseCommitSha: null,
       ...buildManualRetryResetPatch({ resetMergeRetries: true }),
     });
+    expect(store.clearWorkflowRunStepInstances).toHaveBeenCalledWith("KB-001");
     expect(store.moveTask).toHaveBeenCalledWith("KB-001", "todo");
   });
 
@@ -896,6 +898,7 @@ describe("POST /tasks/:id/retry", () => {
       error: null,
       ...buildManualRetryResetPatch(),
     });
+    expect(store.clearWorkflowRunStepInstances).toHaveBeenCalledWith("KB-001");
     expect(store.moveTask).toHaveBeenCalledWith("KB-001", "todo", { preserveProgress: true });
     expect(store.logEntry).toHaveBeenCalledWith(
       "KB-001",
@@ -927,6 +930,7 @@ describe("POST /tasks/:id/retry", () => {
       error: null,
       ...buildManualRetryResetPatch(),
     });
+    expect(store.clearWorkflowRunStepInstances).toHaveBeenCalledWith("KB-001");
     expect(store.moveTask).toHaveBeenCalledWith("KB-001", "todo", { preserveProgress: true });
     expect(store.logEntry).toHaveBeenCalledWith(
       "KB-001",
@@ -963,6 +967,7 @@ describe("POST /tasks/:id/retry", () => {
       error: null,
       ...buildManualRetryResetPatch(),
     });
+    expect(store.clearWorkflowRunStepInstances).toHaveBeenCalledWith("KB-001");
     expect(store.moveTask).toHaveBeenCalledWith("KB-001", "todo", { preserveProgress: true });
     expect(store.logEntry).toHaveBeenCalledWith(
       "KB-001",

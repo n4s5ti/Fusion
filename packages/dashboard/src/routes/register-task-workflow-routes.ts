@@ -1683,6 +1683,11 @@ export function registerTaskWorkflowRoutes(ctx: ApiRoutesContext, deps: TaskWork
       // and merge failures (all steps done).
       if (isInReviewRetry) {
         if (isExecutionFailureInReview) {
+          /*
+          FNXC:WorkflowRetry 2026-06-29-02:18:
+          Dashboard retry for an in-review execution failure re-enters the workflow graph from parse/execution, so it must clear persisted foreach step-instance pins. Otherwise a stale pin from the failed run makes the retry hit the same parse pin-mismatch immediately.
+          */
+          clearRebuiltSpecWorkflowPins(scopedStore, req.params.id);
           await scopedStore.updateTask(req.params.id, {
             status: null,
             error: null,
@@ -1733,6 +1738,12 @@ export function registerTaskWorkflowRoutes(ctx: ApiRoutesContext, deps: TaskWork
         res.json(updated);
         return;
       }
+
+      /*
+      FNXC:WorkflowRetry 2026-06-29-02:18:
+      Non-planning manual retry is also a fresh execution boundary. Clear graph step-instance rows before moving back to todo so parse-steps can repin the current PROMPT.md instead of inheriting failed foreach state.
+      */
+      clearRebuiltSpecWorkflowPins(scopedStore, req.params.id);
 
       // Reset steps if the branch has no unique commits (work was lost with worktree)
       const completedSteps = task.steps.filter(
