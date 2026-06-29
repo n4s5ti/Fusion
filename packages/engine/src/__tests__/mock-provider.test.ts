@@ -152,6 +152,68 @@ describe("MockAgentRuntime", () => {
     expect(updateExecute).toHaveBeenCalledWith(expect.any(String), { step: 1, status: "done" }, undefined, undefined, expect.anything());
   });
 
+  it("treats graph-owned executor step sessions as successful without lifecycle tools", async () => {
+    const runtime = new MockAgentRuntime();
+    const { cwd, taskId } = await createWorkspace("FN-7228");
+    const onText = vi.fn();
+    const taskShowExecute = vi.fn();
+
+    const { session } = await runtime.createSession({
+      cwd,
+      systemPrompt: "system",
+      runtimeContext: { sessionPurpose: "executor" },
+      customTools: [createTool("fn_task_show", taskShowExecute)],
+      onText,
+      taskId,
+    });
+
+    await expect(runtime.promptWithFallback(session, "run graph-owned step")).resolves.toBeUndefined();
+    expect(taskShowExecute).not.toHaveBeenCalled();
+    expect(onText).toHaveBeenCalledWith(expect.stringContaining("graph-owned step session"));
+  });
+
+  it("emits mock text through session subscription events for workflow-step parsers", async () => {
+    const runtime = new MockAgentRuntime();
+    const { cwd, taskId } = await createWorkspace("FN-7228-SUBSCRIBE");
+    const deltas: string[] = [];
+
+    const { session } = await runtime.createSession({
+      cwd,
+      systemPrompt: "system",
+      runtimeContext: { sessionPurpose: "reviewer" },
+      taskId,
+    });
+    (session as any).subscribe((event: any) => {
+      if (event.type === "message_update" && event.assistantMessageEvent?.type === "text_delta") {
+        deltas.push(event.assistantMessageEvent.delta);
+      }
+    });
+
+    await runtime.promptWithFallback(session, "review");
+    expect(deltas.join("")).toContain("Verdict: APPROVE");
+  });
+
+  it("emits an approval verdict for executor-backed workflow steps without lifecycle tools", async () => {
+    const runtime = new MockAgentRuntime();
+    const { cwd, taskId } = await createWorkspace("FN-7228-WORKFLOW-STEP");
+    const deltas: string[] = [];
+
+    const { session } = await runtime.createSession({
+      cwd,
+      systemPrompt: "system",
+      runtimeContext: { sessionPurpose: "executor" },
+      taskId,
+    });
+    (session as any).subscribe((event: any) => {
+      if (event.type === "message_update" && event.assistantMessageEvent?.type === "text_delta") {
+        deltas.push(event.assistantMessageEvent.delta);
+      }
+    });
+
+    await runtime.promptWithFallback(session, "Execute the workflow step \"Code Review\" for task FN-7228-WORKFLOW-STEP.");
+    expect(deltas.join("")).toContain("\"verdict\":\"APPROVE\"");
+  });
+
   it("accumulates synthetic token usage once per session baseline", async () => {
     const runtime = new MockAgentRuntime();
     const { cwd, taskId } = await createWorkspace();

@@ -3130,7 +3130,7 @@ export class TaskExecutor {
     logMessage: string,
     options?: { preserveVerificationFailureCount?: boolean },
   ): Promise<Task> {
-    const preservedWorkflowStepResults = preservePreExecutionWorkflowStepResults(task.workflowStepResults);
+    const preservedWorkflowStepResults = preservePreExecutionWorkflowStepResults(task);
     await this.store.updateTask(task.id, {
       mergeDetails: null,
       mergeRetries: 0,
@@ -3836,42 +3836,54 @@ export class TaskExecutor {
 
         // Run workflow steps before transitioning — skip in fast mode
         if (task.executionMode !== "fast") {
-          if (await this.shouldDeferCompletionForGlobalPause(task.id, "before workflow-graph re-entry during completed-task recovery")) {
-            return false;
+          if (areEnabledPreMergeWorkflowStepsSatisfied(liveForCompletenessCheck)) {
+            /*
+            FNXC:WorkflowLifecycle 2026-06-29-04:37:
+            Completed graph-owned tasks can be observed briefly as in-progress after
+            the main graph already recorded every enabled pre-merge gate. Recovery
+            must not restart the graph from parse in that state; foreach pins from
+            the completed run make parse fail with pin-mismatch. Hand off to review
+            instead, which is the same terminal seam the completed graph reached.
+            */
+            executorLog.log(`${task.id}: completed recovery found satisfied workflow gates — skipping graph re-entry`);
+          } else {
+            if (await this.shouldDeferCompletionForGlobalPause(task.id, "before workflow-graph re-entry during completed-task recovery")) {
+              return false;
+            }
+            /*
+            FNXC:WorkflowExecution 2026-06-25-00:00:
+            U4 (KTD-2) watchdog re-entry. The legacy `runWorkflowSteps` recovery path
+            was deleted; the workflow graph is the sole executor. A stranded completed
+            task is recovered by RE-ENTERING the graph via `maybeExecuteWorkflowGraph`
+            (the same entry execute() uses), which: (1) re-runs any pending
+            optional-group / gate nodes, (2) records their outcomes into
+            `task.workflowStepResults` (U2) and emits the `[pre-merge]` logs, and
+            (3) OWNS the in-review vs back-for-fix transition. The graph's execute seam
+            registers the normal completion interceptor, so a task whose implementation
+            already completed resumes at the post-implementation nodes (it does not
+            re-run the agent from scratch). RECOVERY POLICY mapping (per plan U4): the
+            old "any failure including REVISE is hard" recovery rule now maps onto the
+            graph's gate semantics — a GATE node REVISE/failure routes the task back for
+            fix, while an ADVISORY REVISE is non-blocking and proceeds to review. KTD-5:
+            for a store lacking `getTaskWorkflowSelection` that has enabled steps,
+            `maybeExecuteWorkflowGraph` itself fails closed (parks) rather than letting
+            recovery silently skip the gates.
+            */
+            const graphOwned = await this.maybeExecuteWorkflowGraph(task);
+            if (graphOwned) {
+              this.clearCompletedTaskWatchdog(task.id);
+              await this.store.logEntry(
+                task.id,
+                `Auto-recovered: stranded completed task re-dispatched through the workflow graph — the graph re-ran pending workflow steps (recording results) and owns the in-review / back-for-fix transition`,
+              ).catch(() => undefined);
+              executorLog.log(`✓ ${task.id} auto-recovered completed task via workflow-graph re-entry`);
+              return true;
+            }
+            // Graph declined (minimal store WITHOUT the workflow-selection API and no
+            // enabled gates to run — a store WITH enabled steps would have been parked
+            // fail-closed above): there is nothing to gate, so fall through to the
+            // legacy in-review handoff below.
           }
-          /*
-          FNXC:WorkflowExecution 2026-06-25-00:00:
-          U4 (KTD-2) watchdog re-entry. The legacy `runWorkflowSteps` recovery path
-          was deleted; the workflow graph is the sole executor. A stranded completed
-          task is recovered by RE-ENTERING the graph via `maybeExecuteWorkflowGraph`
-          (the same entry execute() uses), which: (1) re-runs any pending
-          optional-group / gate nodes, (2) records their outcomes into
-          `task.workflowStepResults` (U2) and emits the `[pre-merge]` logs, and
-          (3) OWNS the in-review vs back-for-fix transition. The graph's execute seam
-          registers the normal completion interceptor, so a task whose implementation
-          already completed resumes at the post-implementation nodes (it does not
-          re-run the agent from scratch). RECOVERY POLICY mapping (per plan U4): the
-          old "any failure including REVISE is hard" recovery rule now maps onto the
-          graph's gate semantics — a GATE node REVISE/failure routes the task back for
-          fix, while an ADVISORY REVISE is non-blocking and proceeds to review. KTD-5:
-          for a store lacking `getTaskWorkflowSelection` that has enabled steps,
-          `maybeExecuteWorkflowGraph` itself fails closed (parks) rather than letting
-          recovery silently skip the gates.
-          */
-          const graphOwned = await this.maybeExecuteWorkflowGraph(task);
-          if (graphOwned) {
-            this.clearCompletedTaskWatchdog(task.id);
-            await this.store.logEntry(
-              task.id,
-              `Auto-recovered: stranded completed task re-dispatched through the workflow graph — the graph re-ran pending workflow steps (recording results) and owns the in-review / back-for-fix transition`,
-            ).catch(() => undefined);
-            executorLog.log(`✓ ${task.id} auto-recovered completed task via workflow-graph re-entry`);
-            return true;
-          }
-          // Graph declined (minimal store WITHOUT the workflow-selection API and no
-          // enabled gates to run — a store WITH enabled steps would have been parked
-          // fail-closed above): there is nothing to gate, so fall through to the
-          // legacy in-review handoff below.
         } else {
           executorLog.log(`${task.id}: fast mode — skipping workflow steps on auto-recovery`);
         }
@@ -16707,7 +16719,34 @@ function hasNonTerminalWorkflowSteps(task: Pick<TaskDetail, "steps">): boolean {
   return task.steps.length > 0 && task.steps.some((step) => step.status !== "done" && step.status !== "skipped");
 }
 
-function preservePreExecutionWorkflowStepResults(results: Task["workflowStepResults"]): CoreWorkflowStepResult[] {
+function areEnabledPreMergeWorkflowStepsSatisfied(
+  task: Pick<Task, "enabledWorkflowSteps" | "workflowStepResults"> | undefined,
+): boolean {
+  const preMergeGateIds = new Set(["plan-review", "browser-verification", "code-review"]);
+  const enabled = task?.enabledWorkflowSteps;
+  /*
+   * FNXC:WorkflowLifecycle 2026-06-29-04:46:
+   * Older/default coding tasks may not persist an explicit enabledWorkflowSteps
+   * list even though default-on Plan Review and Code Review have already run.
+   * Treat those two passed rows as satisfied defaults; keep explicit arrays
+   * strict so custom/unknown enabled gates still re-enter the graph.
+   */
+  const enabledPreMerge = Array.isArray(enabled) && enabled.length > 0
+    ? enabled.filter((id) => preMergeGateIds.has(id))
+    : ["plan-review", "code-review"];
+  if (enabledPreMerge.length === 0) return false;
+  if (Array.isArray(enabled) && enabledPreMerge.length !== enabled.length) return false;
+  const results = task?.workflowStepResults ?? [];
+  return enabledPreMerge.every((id) =>
+    results.some((result) =>
+      result.workflowStepId === id
+      && result.phase === "pre-merge"
+      && result.status === "passed",
+    ),
+  );
+}
+
+function preservePreExecutionWorkflowStepResults(task: Pick<Task, "workflowStepResults" | "log">): CoreWorkflowStepResult[] {
   /*
    * FNXC:WorkflowLifecycle 2026-06-29-03:50:
    * Reverification cleanup must clear post-implementation verification residue
@@ -16715,8 +16754,37 @@ function preservePreExecutionWorkflowStepResults(results: Task["workflowStepResu
    * Review, then stale merge-state cleanup reset `workflowStepResults` to `[]`;
    * the dashboard showed Plan Review with no status while execution continued and
    * the graph no longer had durable proof to skip duplicate plan review.
+   *
+   * FNXC:WorkflowLifecycle 2026-06-29-04:19:
+   * The durable Plan Review row may already be missing when stale merge cleanup
+   * runs, while the task log still has the authoritative terminal Plan Review
+   * entry. Reconstruct the passed row from that log so execution can continue
+   * with a visible pre-execution review status instead of showing an active task
+   * card with Plan Review blank.
    */
-  return (results ?? []).filter((result) => result.workflowStepId === "plan-review");
+  const preserved = (task.workflowStepResults ?? []).filter((result) => result.workflowStepId === "plan-review");
+  if (preserved.length > 0) return preserved;
+
+  let latest: { timestamp?: string; outcome?: string; status: "passed" | "failed" } | undefined;
+  for (const entry of task.log ?? []) {
+    if (entry.action === "[pre-merge] Workflow step completed: Plan Review") {
+      latest = { timestamp: entry.timestamp, outcome: entry.outcome, status: "passed" };
+    } else if (entry.action === "[pre-merge] Workflow step failed: Plan Review") {
+      latest = { timestamp: entry.timestamp, outcome: entry.outcome, status: "failed" };
+    }
+  }
+  if (latest?.status !== "passed") return [];
+  return [
+    {
+      workflowStepId: "plan-review",
+      workflowStepName: "Plan Review",
+      phase: "pre-merge",
+      status: "passed",
+      verdict: "APPROVE",
+      ...(latest.outcome ? { output: latest.outcome, notes: latest.outcome } : {}),
+      ...(latest.timestamp ? { startedAt: latest.timestamp, completedAt: latest.timestamp } : {}),
+    },
+  ];
 }
 
 /**

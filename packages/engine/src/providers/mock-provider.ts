@@ -99,12 +99,37 @@ interface MockToolCallResult {
 export class MockAgentSession {
   readonly __mock: MockAgentSessionState;
   readonly state: { errorMessage?: string; error?: string } = {};
+  private readonly listeners = new Set<(event: unknown) => void>();
 
   constructor(options: AgentRuntimeOptions, sessionPurpose: MockSessionPurpose) {
     this.__mock = { options, sessionPurpose };
   }
 
   dispose(): void {}
+
+  subscribe(listener: (event: unknown) => void): { unsubscribe?: () => void } {
+    this.listeners.add(listener);
+    return {
+      unsubscribe: () => {
+        this.listeners.delete(listener);
+      },
+    };
+  }
+
+  emitText(delta: string): void {
+    const event = {
+      type: "message_update",
+      assistantMessageEvent: {
+        type: "text_delta",
+        partial: delta,
+        contentIndex: 0,
+        delta,
+      },
+    };
+    for (const listener of this.listeners) {
+      listener(event);
+    }
+  }
 
   getSessionStats(): { tokens: typeof MOCK_SYNTHETIC_TOKEN_USAGE } {
     return { tokens: MOCK_SYNTHETIC_TOKEN_USAGE };
@@ -179,6 +204,18 @@ async function loadTaskSteps(options: AgentRuntimeOptions): Promise<Array<{ stat
 const DEFAULT_SCRIPTS: Record<MockSessionPurpose, MockScript> = {
   executor: {
     async run(ctx) {
+      /*
+      FNXC:WorkflowTestMode 2026-06-29-03:58:
+      Step-session execution is graph-owned and intentionally withholds fn_task_update/fn_task_done so agents cannot mutate task lifecycle directly. Test mode must mirror that contract: use fn_task_update only for legacy full-task executor sessions, and otherwise return success so the graph projection marks the scoped step.
+      */
+      if (!ctx.tools.some((tool) => tool.name === "fn_task_update")) {
+        if (/Execute the workflow step/i.test(ctx.prompt)) {
+          ctx.options.onText?.("{\"verdict\":\"APPROVE\",\"notes\":\"Mock workflow step approved scripted output.\"}");
+          return;
+        }
+        ctx.options.onText?.("Mock executor completed graph-owned step session without lifecycle tool calls.");
+        return;
+      }
       let steps: Array<{ status?: string }> = [];
       if (ctx.taskId && ctx.tools.some((tool) => tool.name === "fn_task_show")) {
         const taskDetails = await ctx.invokeTool("fn_task_show", { id: ctx.taskId });
@@ -249,19 +286,30 @@ export class MockAgentRuntime implements AgentRuntime {
   async promptWithFallback(session: AgentSession, prompt: string, _promptOptions?: unknown): Promise<void> {
     const mockSession = session as unknown as MockAgentSession;
     const { options, sessionPurpose } = mockSession.__mock;
+    /*
+    FNXC:WorkflowTestMode 2026-06-29-04:02:
+    Workflow-step gates collect verdict text from AgentSession subscription events, while reviewer lanes also use onText callbacks. Test mode must emit both surfaces so Plan Review and final Code Review exercise the same parsing contract as real runtimes.
+    */
+    const effectiveOptions: AgentRuntimeOptions = {
+      ...options,
+      onText: (text) => {
+        options.onText?.(text);
+        mockSession.emitText(text);
+      },
+    };
     const tools = options.customTools ?? [];
     const script = mockScriptRegistry.resolveMockScript({
       sessionPurpose,
-      taskId: options.taskId,
+      taskId: effectiveOptions.taskId,
     });
     await script.run({
       sessionPurpose,
       prompt,
-      options,
+      options: effectiveOptions,
       tools,
-      taskId: options.taskId,
-      taskTitle: options.taskTitle,
-      invokeTool: (name, args) => executeTool(tools, options, name, args),
+      taskId: effectiveOptions.taskId,
+      taskTitle: effectiveOptions.taskTitle,
+      invokeTool: (name, args) => executeTool(tools, effectiveOptions, name, args),
     });
   }
 

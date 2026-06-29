@@ -830,6 +830,80 @@ describe("In-progress task resume after restart", () => {
     expect(store.moveTask).not.toHaveBeenCalledWith("FN-963", "in-review");
   });
 
+  it("recoverCompletedTask() skips graph re-entry when enabled pre-merge gates already passed", async () => {
+    const store = createMockStore();
+    const task = makeTask("FN-7228", "in-progress", {
+      worktree: "/tmp/wt/FN-7228",
+      steps: makeSteps("done"),
+      enabledWorkflowSteps: ["plan-review", "code-review"],
+      workflowStepResults: [
+        {
+          workflowStepId: "plan-review",
+          workflowStepName: "Plan Review",
+          phase: "pre-merge",
+          status: "passed",
+        },
+        {
+          workflowStepId: "code-review",
+          workflowStepName: "Code Review",
+          phase: "pre-merge",
+          status: "passed",
+        },
+      ],
+    });
+    store.getTask.mockResolvedValue(makeTaskDetail("FN-7228", "in-progress", {
+      worktree: "/tmp/wt/FN-7228",
+      steps: makeSteps("done"),
+      enabledWorkflowSteps: ["plan-review", "code-review"],
+      workflowStepResults: task.workflowStepResults,
+    }));
+
+    const executor = new TaskExecutor(store, "/tmp/test");
+    vi.spyOn(executor as any, "captureModifiedFiles").mockResolvedValue([]);
+    const graphEntry = vi
+      .spyOn(executor as any, "maybeExecuteWorkflowGraph")
+      .mockResolvedValue(true);
+
+    const recovered = await executor.recoverCompletedTask(task);
+
+    expect(recovered).toBe(true);
+    expect(graphEntry).not.toHaveBeenCalled();
+    expect(store.handoffToReview).toHaveBeenCalledWith("FN-7228", expect.objectContaining({
+      evidence: expect.objectContaining({ reason: "completed-task-recovered" }),
+    }));
+  });
+
+  it("recoverCompletedTask() treats passed default review rows as satisfied when enabled steps are absent", async () => {
+    const store = createMockStore();
+    const task = makeTask("FN-7228-DEFAULT", "in-progress", {
+      worktree: "/tmp/wt/FN-7228-DEFAULT",
+      steps: makeSteps("done"),
+      workflowStepResults: [
+        { workflowStepId: "plan-review", workflowStepName: "Plan Review", phase: "pre-merge", status: "passed" },
+        { workflowStepId: "code-review", workflowStepName: "Code Review", phase: "pre-merge", status: "passed" },
+      ],
+    });
+    store.getTask.mockResolvedValue(makeTaskDetail("FN-7228-DEFAULT", "in-progress", {
+      worktree: "/tmp/wt/FN-7228-DEFAULT",
+      steps: makeSteps("done"),
+      workflowStepResults: task.workflowStepResults,
+    }));
+
+    const executor = new TaskExecutor(store, "/tmp/test");
+    vi.spyOn(executor as any, "captureModifiedFiles").mockResolvedValue([]);
+    const graphEntry = vi
+      .spyOn(executor as any, "maybeExecuteWorkflowGraph")
+      .mockResolvedValue(true);
+
+    const recovered = await executor.recoverCompletedTask(task);
+
+    expect(recovered).toBe(true);
+    expect(graphEntry).not.toHaveBeenCalled();
+    expect(store.handoffToReview).toHaveBeenCalledWith("FN-7228-DEFAULT", expect.objectContaining({
+      evidence: expect.objectContaining({ reason: "completed-task-recovered" }),
+    }));
+  });
+
   it("recoverCompletedTask() fails closed (KTD-5) when the store lacks getTaskWorkflowSelection and the task has enabled workflow steps", async () => {
     // createMockStore does NOT expose getTaskWorkflowSelection, so the workflow
     // graph cannot resolve a selection — and the legacy runWorkflowSteps path was
