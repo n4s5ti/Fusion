@@ -851,7 +851,21 @@ Expanded chat must also cover the task metadata row — priority, execution mode
 
 
 .detail-spec-edit-trigger {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-sm);
   margin-bottom: var(--space-md);
+}
+
+@media (max-width: 768px) {
+  .detail-spec-edit-trigger {
+    align-items: stretch;
+  }
+
+  .detail-spec-edit-trigger .btn {
+    flex: 1 1 auto;
+  }
 }
 
 .detail-attachments-grid {

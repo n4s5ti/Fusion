@@ -66,6 +66,7 @@ import { getTaskLogEntryAction, getTaskLogEntryOutcome } from "../utils/taskLogE
 import { getRelativeTimeBucket } from "../utils/relativeTimeAgo";
 import { ACTIVE_STATUSES, resolveEffectiveExecutor, resolveEffectivePlanning, resolveEffectiveValidator, type ModelSelection } from "./effective-model-resolution";
 import { TaskContextMenu, buildTaskActionMenuModel, getTaskPrAutomationLabel } from "./TaskContextMenu";
+import { useFileBrowser } from "../context/FileBrowserContext";
 
 const STALE_PAUSED_REVIEW_LOG_REGEX = /^Stale paused review surfaced \[([^\]]+)\]/;
 const EMPTY_MARKDOWN_CHILD_SEPARATOR = "";
@@ -513,6 +514,7 @@ export function TaskDetailContent({
 }: TaskDetailContentProps) {
   const { t } = useTranslation("app");
   const columnLabel = useColumnLabel();
+  const fileBrowser = useFileBrowser();
   const [activeTab, setActiveTab] = useState<TabId>(() => resolveDefaultTab(initialTab, task.column));
   const [chatExpanded, setChatExpanded] = useState(false);
 
@@ -607,6 +609,9 @@ export function TaskDetailContent({
     () => getUnifiedTaskProgress(workingTask),
     [workingTask.steps, workingTask.enabledWorkflowSteps, workingTask.workflowStepResults],
   );
+  const openPromptFile = useCallback(() => {
+    fileBrowser?.openFile(`.fusion/tasks/${workingTask.id}/PROMPT.md`, { workspace: "project" });
+  }, [fileBrowser, workingTask.id]);
   const canRetryTask =
     task.status === "failed" ||
     task.status === "stuck-killed" ||
@@ -3155,7 +3160,7 @@ export function TaskDetailContent({
               className={`detail-tab${activeTab === "definition" ? " detail-tab-active" : ""}`}
               onClick={() => setActiveTab("definition")}
             >
-              {t("taskDetail.tabs.definition", "Definition")}
+              {t("taskDetail.tabs.definition", "Plan")}
             </button>
             <button
               className={`detail-tab${activeTab === "logs" ? " detail-tab-active" : ""}`}
@@ -3775,6 +3780,19 @@ export function TaskDetailContent({
           <div className="detail-section">
             {!isEditingSpec && (
               <div className="detail-spec-edit-trigger">
+                {/*
+                FNXC:TaskDetailPlan 2026-06-30-00:00:
+                The Plan tab keeps the internal definition route for stable links, while exposing a direct PROMPT.md editor action so operators can comment on the executable task plan file without replacing the inline AI revision flow.
+                */}
+                {fileBrowser && (
+                  <button
+                    className="btn btn-sm"
+                    onClick={openPromptFile}
+                    title={t("taskDetail.spec.openPromptTitle", "Open this task's PROMPT.md in the file editor")}
+                  >
+                    {t("taskDetail.spec.openPromptBtn", "Open PROMPT.md")}
+                  </button>
+                )}
                 <button className="btn btn-sm" onClick={enterSpecEditMode}>
                   {t("taskDetail.spec.editBtn", "Edit")}
                 </button>
