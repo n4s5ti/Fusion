@@ -213,6 +213,24 @@ describe("FileBrowserModal", () => {
     expect(mockUseWorkspaceFileEditor).toHaveBeenLastCalledWith("project", "packages/dashboard/app/App.tsx", true, undefined);
   });
 
+  it("opens root-level absolute initial files at filesystem root", async () => {
+    render(
+      <FileBrowserModal
+        initialWorkspace="project"
+        initialFile="/README.md"
+        isOpen={true}
+        onClose={mockOnClose}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(screen.getAllByText("/README.md").length).toBeGreaterThan(0);
+    });
+
+    expect(mockSetPath).toHaveBeenCalledWith("/");
+    expect(mockUseWorkspaceFileEditor).toHaveBeenLastCalledWith("project", "/README.md", true, undefined);
+  });
+
   it("switches workspace and notifies parent", async () => {
     const user = userEvent.setup();
     render(

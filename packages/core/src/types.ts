@@ -3562,6 +3562,11 @@ export interface ProjectSettings {
    *  When set, matching paths are excluded from overlap checks for both
    *  active in-progress tasks and in-review tasks with unmerged worktrees. */
   overlapIgnorePaths?: string[];
+  /**
+   * FNXC:FileBrowser 2026-06-29-00:00:
+   * Project owners can opt the workspace file browser into slash-prefixed absolute paths for local admin workflows. Default false keeps browsing confined to the selected project/task workspace; this does not apply to task-local file APIs, memory, plugin bundles, worktree-copy validation, or Windows drive-letter paths.
+   */
+  allowAbsoluteFileBrowserPaths?: boolean;
   autoMerge: boolean;
   /** When true, force every AI lane onto the deterministic mock provider regardless
    *  of per-task or per-lane overrides. No network calls, zero token cost. */

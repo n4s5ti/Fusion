@@ -283,6 +283,11 @@ export const DEFAULT_PROJECT_SETTINGS = {
   groupOverlappingFiles: true,
   ignoreHiddenOverlapPaths: true,
   overlapIgnorePaths: [],
+  /*
+  FNXC:FileBrowser 2026-06-29-00:00:
+  Absolute file-browser paths are disabled unless a project explicitly opts in, preserving the workspace boundary for normal installs while allowing local admin browsing through the same file-size, binary, type, and permission checks.
+  */
+  allowAbsoluteFileBrowserPaths: false,
   autoMerge: true,
   planApprovalMode: "workflow",
   // U18 (R15): the Review-response loop is default-on. Independent of `autoMerge` —
