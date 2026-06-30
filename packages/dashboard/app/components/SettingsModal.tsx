@@ -734,6 +734,7 @@ export function SettingsModal({
     recycleWorktrees: false,
     showWorktreeGrouping: false,
     openTasksInRightSidebar: false,
+    openMobileTasksInPopup: false,
     executorAllowSiblingBranchRename: false,
     worktreeNaming: "random",
     worktreeCopyFiles: [],

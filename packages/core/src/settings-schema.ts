@@ -317,6 +317,11 @@ export const DEFAULT_PROJECT_SETTINGS = {
   recycleWorktrees: false,
   showWorktreeGrouping: false,
   openTasksInRightSidebar: false,
+  /*
+  FNXC:MobileTaskPopups 2026-06-29-00:00:
+  Default off preserves current mobile board-card task detail behavior. The dashboard only consults this project setting for mobile board-card clicks without a deep tab, and reuses the existing task pop-out surface without changing desktop/right-dock routing.
+  */
+  openMobileTasksInPopup: false,
   executorAllowSiblingBranchRename: false,
   worktreeNaming: "random",
   worktrunk: {
