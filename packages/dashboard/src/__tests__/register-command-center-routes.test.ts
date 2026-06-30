@@ -65,15 +65,15 @@ function seedCompletedTaskDuration(db: Database, opts: { id: string; cumulativeA
   ).run(opts.id, opts.cumulativeActiveMs, opts.completedAt, opts.completedAt, opts.completedAt);
 }
 
-function seedAgentRun(db: Database, opts: { id: string; agentId: string; startedAt: string; status: string }): void {
+function seedAgentRun(db: Database, opts: { id: string; agentId: string; startedAt: string; status: string; taskId?: string }): void {
   db.prepare(
     `INSERT OR IGNORE INTO agents (id, name, role, state, createdAt, updatedAt)
      VALUES (?, ?, 'executor', 'idle', ?, ?)`,
   ).run(opts.agentId, opts.agentId, opts.startedAt, opts.startedAt);
   db.prepare(
     `INSERT INTO agentRuns (id, agentId, data, startedAt, endedAt, status)
-     VALUES (?, ?, '{}', ?, NULL, ?)`,
-  ).run(opts.id, opts.agentId, opts.startedAt, opts.status);
+     VALUES (?, ?, ?, ?, NULL, ?)`,
+  ).run(opts.id, opts.agentId, JSON.stringify({ taskId: opts.taskId ?? `task-${opts.id}` }), opts.startedAt, opts.status);
 }
 
 function seedTeamMetrics(db: Database, opts: { agentId: string; name: string; tokens: number; taskId: string }): void {
@@ -572,6 +572,12 @@ describe("register-command-center-routes", () => {
     expect(activity.body).toHaveProperty("mttr");
     expect(activity.body).toHaveProperty("agentRuns");
     expect((activity.body as { agentRuns: { total: number; active: number } }).agentRuns).toMatchObject({ total: 1, active: 1 });
+    expect((activity.body as { activeAgents: number; daily: Array<{ day: string; activeAgents: number; agentRuns: number }> }).activeAgents).toBe(2);
+    expect((activity.body as { daily: Array<{ day: string; activeAgents: number; agentRuns: number }> }).daily).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ day: "2026-03-02", activeAgents: 1, agentRuns: 1 }),
+      ]),
+    );
 
     const prod = await request(app, "GET", `/api/command-center/productivity?${range}&projectId=proj-a`);
     expect(prod.status).toBe(200);
@@ -761,6 +767,41 @@ describe("register-command-center-routes", () => {
     // A's task had 100 input tokens (total 200); B's had 999 (total 1998).
     expect((a.body as { totals: { totalTokens: number } }).totals.totalTokens).toBe(200);
     expect((b.body as { totals: { totalTokens: number } }).totals.totalTokens).toBe(1998);
+  });
+
+  it("activity route counts project-scoped run-only task workers as active agents", async () => {
+    seedAgentRun(dbA, {
+      id: "run-ephemeral-a",
+      agentId: "executor-FN-7297",
+      taskId: "FN-7297",
+      startedAt: "2026-03-02T00:00:00.000Z",
+      status: "completed",
+    });
+    seedAgentRun(dbB, {
+      id: "run-ephemeral-b",
+      agentId: "executor-FN-other",
+      taskId: "FN-other",
+      startedAt: "2026-03-03T00:00:00.000Z",
+      status: "completed",
+    });
+    const range = "from=2026-02-01T00:00:00.000Z&to=2026-04-01T00:00:00.000Z";
+
+    const a = await request(app, "GET", `/api/command-center/activity?${range}&projectId=proj-a`);
+    const b = await request(app, "GET", `/api/command-center/activity?${range}&projectId=proj-b`);
+
+    expect(a.status).toBe(200);
+    expect((a.body as { activeAgents: number; daily: Array<{ day: string; activeAgents: number; agentRuns: number }> }).activeAgents).toBe(2);
+    expect((a.body as { daily: Array<{ day: string; activeAgents: number; agentRuns: number }> }).daily).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ day: "2026-03-02", activeAgents: 1, agentRuns: 1 }),
+      ]),
+    );
+    expect((b.body as { activeAgents: number; daily: Array<{ day: string; activeAgents: number; agentRuns: number }> }).activeAgents).toBe(2);
+    expect((b.body as { daily: Array<{ day: string; activeAgents: number; agentRuns: number }> }).daily).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ day: "2026-03-03", activeAgents: 1, agentRuns: 1 }),
+      ]),
+    );
   });
 
   it("plugin activation endpoint returns scoped JSON and preserves unavailable for empty ranges", async () => {

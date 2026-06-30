@@ -92,14 +92,17 @@ function insertAgentRun(
     startedAt: string;
     endedAt?: string | null;
     status: string;
+    createAgent?: boolean;
   },
 ): string {
   const id = `run-${agentRunSeq++}`;
   const agentId = fields.agentId ?? "agent-1";
-  db.prepare(
-    `INSERT OR IGNORE INTO agents (id, name, role, state, createdAt, updatedAt)
-     VALUES (?, ?, 'executor', 'idle', ?, ?)`,
-  ).run(agentId, agentId, fields.startedAt, fields.startedAt);
+  if (fields.createAgent !== false) {
+    db.prepare(
+      `INSERT OR IGNORE INTO agents (id, name, role, state, createdAt, updatedAt)
+       VALUES (?, ?, 'executor', 'idle', ?, ?)`,
+    ).run(agentId, agentId, fields.startedAt, fields.startedAt);
+  }
   db.prepare(
     `INSERT INTO agentRuns (id, agentId, data, startedAt, endedAt, status)
      VALUES (?, ?, ?, ?, ?, ?)`,
@@ -178,18 +181,71 @@ describe("activity-analytics", () => {
 
     expect(result.daily).toEqual([
       { day: "2026-03-01", activeNodes: 1, activeAgents: 1, messages: 1, agentRuns: 0 },
-      { day: "2026-03-02", activeNodes: 0, activeAgents: 0, messages: 0, agentRuns: 1 },
-      { day: "2026-03-03", activeNodes: 1, activeAgents: 1, messages: 1, agentRuns: 2 },
+      { day: "2026-03-02", activeNodes: 0, activeAgents: 1, messages: 0, agentRuns: 1 },
+      { day: "2026-03-03", activeNodes: 1, activeAgents: 2, messages: 1, agentRuns: 2 },
+    ]);
+  });
+
+  it("counts run-only ephemeral task workers as active agents", () => {
+    insertAgentRun(db, {
+      agentId: "executor-FN-7297",
+      startedAt: "2026-03-02T12:00:00.000Z",
+      endedAt: "2026-03-02T12:05:00.000Z",
+      status: "completed",
+    });
+
+    const result = aggregateActivityAnalytics(db, { from: "2026-03-01T00:00:00.000Z", to: "2026-03-31T23:59:59.999Z" });
+
+    expect(result.activeAgents).toBe(1);
+    expect(result.daily).toEqual([
+      { day: "2026-03-02", activeNodes: 0, activeAgents: 1, messages: 0, agentRuns: 1 },
+    ]);
+    expect(result.stickiness).toBe(1);
+  });
+
+  it("counts the same agent once when usage and runs occur on the same day", () => {
+    emitUsageEvent(db, { kind: "tool_call", agentId: "agent-dup", nodeId: "node-1", ts: "2026-03-02T09:00:00.000Z" });
+    insertAgentRun(db, { agentId: "agent-dup", startedAt: "2026-03-02T10:00:00.000Z", status: "completed" });
+
+    const result = aggregateActivityAnalytics(db, { from: "2026-03-01T00:00:00.000Z", to: "2026-03-31T23:59:59.999Z" });
+
+    expect(result.activeAgents).toBe(1);
+    expect(result.daily).toEqual([
+      { day: "2026-03-02", activeNodes: 1, activeAgents: 1, messages: 0, agentRuns: 1 },
+    ]);
+  });
+
+  it("merges mixed durable and ephemeral run activity", () => {
+    emitUsageEvent(db, { kind: "tool_call", agentId: "durable-usage", nodeId: "node-1", ts: "2026-03-01T09:00:00.000Z" });
+    insertAgentRun(db, { agentId: "durable-run", startedAt: "2026-03-01T10:00:00.000Z", status: "completed" });
+    insertAgentRun(db, {
+      agentId: "executor-FN-7297",
+      startedAt: "2026-03-02T10:00:00.000Z",
+      status: "active",
+    });
+    insertAgentRun(db, { agentId: "executor-FN-7298", startedAt: "2026-03-02T11:00:00.000Z", status: "failed" });
+
+    const result = aggregateActivityAnalytics(db, { from: "2026-03-01T00:00:00.000Z", to: "2026-03-31T23:59:59.999Z" });
+
+    expect(result.activeAgents).toBe(4);
+    expect(result.agentRuns).toEqual({ total: 3, active: 1, completed: 1, failed: 1 });
+    expect(result.daily).toEqual([
+      { day: "2026-03-01", activeNodes: 1, activeAgents: 2, messages: 0, agentRuns: 1 },
+      { day: "2026-03-02", activeNodes: 0, activeAgents: 2, messages: 0, agentRuns: 2 },
     ]);
   });
 
   it("returns zero agent-run metrics when the agentRuns table is absent", () => {
+    emitUsageEvent(db, { kind: "tool_call", agentId: "legacy-agent", nodeId: "legacy-node", ts: "2026-03-02T08:00:00.000Z" });
     db.prepare("DROP TABLE agentRuns").run();
 
     const result = aggregateActivityAnalytics(db, { from: "2026-03-01T00:00:00.000Z", to: "2026-03-31T00:00:00.000Z" });
 
+    expect(result.activeAgents).toBe(1);
     expect(result.agentRuns).toEqual({ total: 0, active: 0, completed: 0, failed: 0 });
-    expect(result.daily).toEqual([]);
+    expect(result.daily).toEqual([
+      { day: "2026-03-02", activeNodes: 1, activeAgents: 1, messages: 0, agentRuns: 0 },
+    ]);
   });
 
   it("computes stickiness = DAU/MAU", () => {
