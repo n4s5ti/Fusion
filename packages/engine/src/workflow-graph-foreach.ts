@@ -289,10 +289,15 @@ function resolveForeachConfig(node: WorkflowIrNode): {
 
 /** The 0-indexed predecessor step indices instance `stepIndex` depends on. A step
  *  with no annotation implicitly depends on the previous step (KTD-3), so an
- *  unannotated plan is fully sequential regardless of mode. */
+ *  unannotated plan is fully sequential regardless of mode. An explicit empty
+ *  array means no dependencies. */
 function resolveDependsOn(steps: TaskStep[], stepIndex: number): number[] {
   const deps = steps[stepIndex]?.dependsOn;
-  if (Array.isArray(deps) && deps.length > 0) return deps;
+  /*
+  FNXC:WorkflowSteps 2026-06-29-22:51:
+  Empty dependency arrays are planner-authored independence, while missing `dependsOn` remains legacy sequential fallback. The scheduler must branch on array presence rather than length to avoid serializing explicit roots.
+  */
+  if (Array.isArray(deps)) return deps;
   return stepIndex > 0 ? [stepIndex - 1] : [];
 }
 

@@ -23,8 +23,13 @@ import type { TaskStep } from "./types.js";
 
 // ── Parser contract ──────────────────────────────────────────────────────────
 
-/** A parsed step as produced by a parser. `dependsOn` is 0-indexed (same
- *  convention as the headings `(depends: …)` annotation). */
+/**
+ * A parsed step as produced by a parser. `dependsOn` is 0-indexed (same
+ * convention as the headings `(depends: …)` annotation).
+ *
+ * FNXC:WorkflowSteps 2026-06-29-17:55:
+ * Parser output must preserve array presence: omitted `dependsOn` means legacy previous-step fallback, while explicit `dependsOn: []` means an independent parallel root.
+ */
 export interface ParsedStep {
   name: string;
   dependsOn?: number[];
@@ -165,7 +170,10 @@ export class StepParserRegistry {
  * The annotation `### Step N (depends: 1,2): Title` is parsed explicitly (the
  * legacy regex breaks on the colon inside `depends:`): depends values are
  * 1-indexed step numbers in the document and are stored as 0-indexed indices on
- * `dependsOn` (deduped, sorted, dropping values <= 0).
+ * `dependsOn` (deduped, sorted, dropping values <= 0). An empty `(depends:)`
+ * annotation is preserved as `dependsOn: []` so planners can explicitly mark a
+ * non-first step as independent; an absent annotation remains implicit previous-step
+ * dependency.
  *
  * Malformed `(depends: …)` annotations fall back deterministically: the heading
  * is treated as `### Step N:` with the name starting after the FIRST colon
@@ -198,8 +206,11 @@ export function parseStepHeadings(content: string): TaskStep[] {
       const parsed = parseDependsList(annotated[1]);
       const name = annotated[2].trim();
       if (parsed !== null) {
-        if (parsed.length > 0) steps.push({ name, status: "pending", dependsOn: parsed });
-        else steps.push({ name, status: "pending" });
+        /*
+        FNXC:WorkflowSteps 2026-06-29-22:49:
+        Empty depends annotations are explicit planner intent, not missing metadata. Preserve `dependsOn: []` so parallel foreach scheduling treats this step as an independent root while unannotated headings still fall back to previous-step ordering.
+        */
+        steps.push({ name, status: "pending", dependsOn: parsed });
         continue;
       }
     }
@@ -242,8 +253,9 @@ function parseDependsList(raw: string): number[] | null {
  * Parse a JSON document: an array of `{ name: string, depends?: number[] }`.
  * `depends` values are 1-indexed step numbers in the document (same convention
  * as the headings annotation), converted to 0-indexed `dependsOn` (deduped,
- * sorted). Throws a descriptive error on any malformed input (not JSON, not an
- * array, missing/blank name, bad depends).
+ * sorted). Omitted `depends` means implicit previous-step dependency; explicit
+ * `depends: []` is preserved as no dependencies. Throws a descriptive error on
+ * any malformed input (not JSON, not an array, missing/blank name, bad depends).
  */
 export function parseJsonSteps(content: string): StepParseResult {
   let doc: unknown;
@@ -290,7 +302,7 @@ export function parseJsonSteps(content: string): StepParseResult {
         out.add(raw - 1);
       }
       const dependsOn = [...out].sort((a, b) => a - b);
-      if (dependsOn.length > 0) step.dependsOn = dependsOn;
+      step.dependsOn = dependsOn;
     }
 
     steps.push(step);
@@ -309,7 +321,7 @@ const BUILTIN_STEP_PARSERS: StepParser[] = [
       // (dropping the `status` field, which the caller re-applies).
       const steps = parseStepHeadings(content).map((s) => {
         const out: ParsedStep = { name: s.name };
-        if (s.dependsOn) out.dependsOn = s.dependsOn;
+        if (Array.isArray(s.dependsOn)) out.dependsOn = s.dependsOn;
         return out;
       });
       return { steps };

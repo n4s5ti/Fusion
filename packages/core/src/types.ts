@@ -1057,10 +1057,15 @@ export type StepStatus = "pending" | "in-progress" | "done" | "skipped";
 export interface TaskStep {
   name: string;
   status: StepStatus;
-  /** Step-inversion (KTD-11): 0-indexed indices of steps this step depends on,
-   *  parsed from the PROMPT.md `### Step N (depends: 1,2): Title` annotation
-   *  (1-indexed step numbers in the doc → 0-indexed indices here). Absent for
-   *  unannotated steps. */
+  /**
+   * Step-inversion (KTD-11): 0-indexed indices of steps this step depends on,
+   * parsed from the PROMPT.md `### Step N (depends: 1,2): Title` annotation
+   * or structured parser output (1-indexed step numbers in authored content →
+   * 0-indexed indices here).
+   *
+   * FNXC:WorkflowSteps 2026-06-29-17:52:
+   * Absence and emptiness are different planner contracts. Absent means unannotated and therefore implicitly depends on the previous step; an explicit empty array means this step has no dependencies and may run as a parallel root.
+   */
   dependsOn?: number[];
 }
 

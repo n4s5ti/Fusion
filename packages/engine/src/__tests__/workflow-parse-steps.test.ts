@@ -103,6 +103,18 @@ describe("parse-steps node handler (U12, KTD-12)", () => {
     ]);
   });
 
+  it("preserves explicit empty dependsOn arrays through parse-step projection", async () => {
+    const { deps, written } = makeDeps({
+      readArtifact: async () => JSON.stringify([{ name: "x" }, { name: "y", depends: [] }]),
+    });
+    const result = await runParse(parseIr("json-steps"), deps);
+    expect(result.outcome).toBe("success");
+    expect(written[0]).toEqual([
+      { name: "x", status: "pending" },
+      { name: "y", status: "pending", dependsOn: [] },
+    ]);
+  });
+
   it("unknown parser → parse-error (audited), no write", async () => {
     const { deps, written, audits } = makeDeps();
     // Route outcome:parse-error so the run does not just propagate failure off end.

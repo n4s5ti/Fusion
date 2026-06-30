@@ -77,9 +77,9 @@ describe("step-parsers registry (U12, KTD-12)", () => {
       ]);
     });
 
-    it("empty depends list yields no dependsOn", () => {
+    it("empty depends list preserves explicit independent dependsOn", () => {
       expect(headings().parse("### Step 2 (depends: ): T").steps).toEqual([
-        { name: "T" },
+        { name: "T", dependsOn: [] },
       ]);
     });
 
@@ -130,9 +130,9 @@ describe("step-parsers registry (U12, KTD-12)", () => {
       ]);
     });
 
-    it("trims names and omits dependsOn when depends is empty", () => {
+    it("trims names and preserves explicit empty dependsOn when depends is empty", () => {
       const content = JSON.stringify([{ name: "  Spaced  ", depends: [] }]);
-      expect(json().parse(content).steps).toEqual([{ name: "Spaced" }]);
+      expect(json().parse(content).steps).toEqual([{ name: "Spaced", dependsOn: [] }]);
     });
 
     it("parseJsonSteps is exported directly and matches the registry parser", () => {

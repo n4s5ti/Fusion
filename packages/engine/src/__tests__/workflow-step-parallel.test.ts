@@ -26,7 +26,7 @@ function taskWithSteps(specs: Array<{ dependsOn?: number[] }> | number): TaskDet
   const steps: TaskStep[] = list.map((s, i) => ({
     name: `Step ${i + 1}`,
     status: "pending" as const,
-    ...(s.dependsOn ? { dependsOn: s.dependsOn } : {}),
+    ...(Array.isArray(s.dependsOn) ? { dependsOn: s.dependsOn } : {}),
   }));
   return { id: "FN-PAR", steps } as unknown as TaskDetail;
 }
@@ -334,6 +334,34 @@ describe("WorkflowGraphExecutor parallel/worktree foreach (U10)", () => {
       "fusion/fn-par-step-1",
       "fusion/fn-par-step-2",
     ]);
+    expect(backend.integrationOrder).toEqual([0, 1, 2]);
+  });
+
+  it("explicit empty dependsOn steps run as independent parallel roots", async () => {
+    const task = taskWithSteps([{ dependsOn: [] }, { dependsOn: [] }, { dependsOn: [] }]);
+    const backend = makeFakeBackend();
+    const concurrentPeak = { value: 0 };
+    const order: number[] = [];
+    let active = 0;
+    const { result } = await runScenario(
+      task,
+      { mode: "parallel", isolation: "worktree", concurrency: 3 },
+      backend,
+      {
+        stepExecute: async (_t, ctx) => {
+          const a = ctx[FOREACH_ACTIVE_CONTEXT_KEY] as ForeachActiveContext;
+          order.push(a.stepIndex);
+          active += 1;
+          concurrentPeak.value = Math.max(concurrentPeak.value, active);
+          await Promise.resolve();
+          active -= 1;
+          return { outcome: "success", value: "step-done" };
+        },
+      },
+    );
+    expect(result.outcome).toBe("success");
+    expect(new Set(order)).toEqual(new Set([0, 1, 2]));
+    expect(concurrentPeak.value).toBeGreaterThan(1);
     expect(backend.integrationOrder).toEqual([0, 1, 2]);
   });
 

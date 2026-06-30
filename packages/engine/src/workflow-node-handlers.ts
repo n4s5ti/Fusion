@@ -721,7 +721,11 @@ export function createParseStepsHandler(deps: ParseStepsHandlerDeps): WorkflowNo
     // preserved. This is the single graph-side step-list write (KTD-12).
     const steps: TaskStep[] = parsedSteps.map((s) => {
       const step: TaskStep = { name: s.name, status: "pending" };
-      if (s.dependsOn && s.dependsOn.length > 0) step.dependsOn = s.dependsOn;
+      /*
+      FNXC:WorkflowSteps 2026-06-29-22:50:
+      A parser returning `dependsOn: []` is an explicit no-dependency declaration. Preserve array presence through the projection so scheduling can distinguish it from omitted `dependsOn`, which keeps the previous-step fallback.
+      */
+      if (Array.isArray(s.dependsOn)) step.dependsOn = s.dependsOn;
       return step;
     });
     try {
