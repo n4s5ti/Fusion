@@ -16,6 +16,13 @@ export type {
   EntryPointBranchAssignment,
 } from "./branch-assignment.js";
 export { customProviderRegistryKey } from "./custom-provider-key.js";
+export {
+  ANTHROPIC_PROVIDER_ID,
+  CLAUDE_SONNET_5_MODEL_ID,
+  SUPPLEMENTAL_ANTHROPIC_PROVIDER_REGISTRATION,
+  mergeSupplementalAnthropicModels,
+} from "./anthropic-models.js";
+export type { AnthropicProviderRegistration } from "./anthropic-models.js";
 export { detectImageMimeFromBytes } from "./image-mime.js";
 export type { DetectedImageMime } from "./image-mime.js";
 export { redactSecrets } from "./redact-secrets.js";

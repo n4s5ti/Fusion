@@ -43,6 +43,7 @@ import {
   reconcileClaudeCliPaths,
   reconcileDroidCliPaths,
   mergeBuiltInZaiProviderModels,
+  mergeSupplementalAnthropicModels,
   registerBuiltInZaiProvider,
   resolvePiExtensionProjectRoot,
 } from "@fusion/core";
@@ -2039,6 +2040,7 @@ export async function createFnAgent(options: AgentOptions): Promise<AgentResult>
     }
   }
   modelRegistry.refresh();
+  mergeSupplementalAnthropicModels(modelRegistry, (message) => extensionsLog.warn(message));
 
   // Build the pi built-in tool set. We deliberately do NOT use the bundled
   // `createCodingTools` / `createReadOnlyTools` presets — they're missing

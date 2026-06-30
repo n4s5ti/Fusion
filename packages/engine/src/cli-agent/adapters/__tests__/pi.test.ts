@@ -58,6 +58,22 @@ describe("piAdapter — buildLaunch", () => {
     ]);
   });
 
+  it("forwards direct Anthropic Claude Sonnet 5 without Claude CLI routing", () => {
+    const spec = piAdapter.buildLaunch({
+      settings: { provider: "anthropic", model: "claude-sonnet-5", sessionDir: "/tmp/sess/pi" },
+      posture: null,
+    });
+    expect(spec.command).toBe("pi");
+    expect(spec.args).toEqual([
+      "--provider",
+      "anthropic",
+      "--model",
+      "claude-sonnet-5",
+      "--session-dir",
+      "/tmp/sess/pi",
+    ]);
+  });
+
   it("widens tool access ONLY when posture.autoApprove is true", () => {
     const off = piAdapter.buildLaunch({ settings: {}, posture: { autoApprove: false } });
     expect(off.args).not.toContain("--tools");
