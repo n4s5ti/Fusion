@@ -39,6 +39,10 @@ export function useWorkspaceFileBrowser(
     setError(null);
   }, []);
 
+  /*
+  FNXC:FileBrowser 2026-06-29-19:35:
+  Workspace file pickers must start each workspace at root so SettingsModal directory/file pickers do not inherit editor selection state. FileBrowserModal restores its selected file path at the modal layer when it needs editor persistence across worktree switches.
+  */
   useEffect(() => {
     setCurrentPath(".");
     setError(null);

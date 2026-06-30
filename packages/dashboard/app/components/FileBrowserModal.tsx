@@ -228,12 +228,27 @@ export function FileBrowserModal({
     setContent(originalContent);
   }, [originalContent, setContent]);
 
+  /*
+  FNXC:FileBrowser 2026-06-29-00:00:
+  Worktree switches must keep the last selected file path so users can recover from a load error caused by viewing the right path in the wrong workspace. The raw browser hook still resets each new workspace to root, so the modal re-points the sidebar to the selected file's parent directory after that reset while mobile keeps the editor pane active.
+  */
+  const previousWorkspaceRef = useRef(currentWorkspace);
+  useEffect(() => {
+    const workspaceChanged = previousWorkspaceRef.current !== currentWorkspace;
+    if (workspaceChanged && selectedFile) {
+      setPath(getParentDirectory(selectedFile));
+      if (isMobile) {
+        setMobileView("editor");
+      }
+    }
+    previousWorkspaceRef.current = currentWorkspace;
+  }, [currentWorkspace, isMobile, selectedFile, setPath]);
+
   const handleWorkspaceSelect = useCallback((workspace: string) => {
     setCurrentWorkspace(workspace);
-    setSelectedFile(null);
-    setMobileView("list");
+    setMobileView(selectedFile ? "editor" : "list");
     onWorkspaceChange?.(workspace);
-  }, [onWorkspaceChange]);
+  }, [onWorkspaceChange, selectedFile]);
 
   const persistSidebarWidth = useCallback((width: number) => {
     try {
