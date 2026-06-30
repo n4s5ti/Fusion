@@ -17,6 +17,8 @@ The installed mobile/PWA home-screen icons are generated from `packages/dashboar
 The dashboard now handles browser back navigation consistently on desktop and mobile.
 Using Back will first dismiss open modals and then step back through in-app view changes before leaving the app.
 When task detail is open from a board card, mobile list row, right-dock/activity/onboarding link, deep link, or another task detail link, one browser/Android Back action closes the current detail first and restores the prior dashboard context (for example, nested task detail → previous task detail, or task detail → board).
+On mobile board-card detail, **Back to board** also restores the prior board/card scroll position so the same lane context remains visible.
+<!-- FNXC:BoardNavigationDocs 2026-06-29-20:45: Mobile full-panel task detail temporarily replaces the board, so the user-facing navigation guide must document that Back to board restores the board/card scroll context instead of returning to the top of the board. -->
 This behavior used to be mobile-only, and now applies across all viewports.
 Task Detail modal opens from onboarding, activity log, and task-to-task navigation now all register navigation history entries, so Android back swipe/button dismisses them consistently.
 
