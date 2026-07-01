@@ -3923,13 +3923,16 @@ export function TaskDetailContent({
               <div className="step-progress-empty">{t("taskDetail.progress.noSteps", "(no steps defined)")}</div>
             )}
           </div>
-          <div className="detail-section">
+          <div className="detail-section detail-section--plan-prompt">
             {!isEditingSpec && (
               <div className="detail-spec-edit-trigger">
-                {/*
-                FNXC:TaskDetailPlan 2026-06-30-00:00:
-                The Plan tab keeps the internal definition route for stable links, while exposing a direct PROMPT.md editor action so operators can comment on the executable task plan file without replacing the inline AI revision flow.
-                */}
+                {/**
+                 * FNXC:TaskDetailPlan 2026-06-30-00:00:
+                 * The Plan tab keeps the internal definition route for stable links, while exposing a direct PROMPT.md editor action so operators can comment on the executable task plan file without replacing the inline AI revision flow.
+                 *
+                 * FNXC:TaskDetailPlan 2026-06-30-00:00:
+                 * The Plan prompt surfaces must span the task-detail card body in modal and embedded renderings. Keep the scoped wrapper around markdown, no-prompt fallback, inline edit, and AI revision controls so width fixes do not alter unrelated detail sections.
+                 */}
                 {fileBrowser && (
                   <button
                     className="btn btn-sm"

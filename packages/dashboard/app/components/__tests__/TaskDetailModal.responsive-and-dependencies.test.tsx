@@ -283,6 +283,50 @@ describe("TaskDetailModal", () => {
       expect(tabletModalBlock).not.toContain("16px");
     });
 
+    it("keeps Plan prompt surfaces full-width across modal, embedded, and mobile task-detail layouts", () => {
+      const css = readDashboardStylesSource();
+      const planBlock = getExactCssRuleBlock(css, ".detail-section--plan-prompt");
+      const planSurfaceBlock = getExactCssRuleBlock(css, ".detail-section--plan-prompt .markdown-body,\n.detail-section--plan-prompt .detail-prompt,\n.detail-section--plan-prompt .spec-loading,\n.detail-section--plan-prompt .spec-editor-edit-mode,\n.detail-section--plan-prompt .spec-editor-revision,\n.detail-section--plan-prompt .spec-editor-textarea,\n.detail-section--plan-prompt .spec-editor-feedback");
+      const embeddedPlanBlock = getExactCssRuleBlock(css, ".task-detail-content--embedded .detail-section--plan-prompt");
+      const editModeBlock = getExactCssRuleBlock(css, ".spec-editor-edit-mode");
+      const textareaBlock = getExactCssRuleBlock(css, ".spec-editor-textarea");
+      const feedbackBlock = getExactCssRuleBlock(css, ".spec-editor-feedback");
+      const actionsBlock = getExactCssRuleBlock(css, ".spec-editor-actions-row");
+      const revisionActionsBlock = getExactCssRuleBlock(css, ".spec-editor-revision-actions");
+      const mobileBlock = getCssAtRuleBlockContaining(css, "@media (max-width: 768px)", ".detail-section--plan-prompt .spec-editor-actions-row");
+
+      for (const [surface, block] of [
+        ["Plan wrapper", planBlock],
+        ["Plan prompt descendants", planSurfaceBlock],
+        ["embedded Plan wrapper", embeddedPlanBlock],
+        ["edit mode", editModeBlock],
+        ["textarea", textareaBlock],
+        ["feedback", feedbackBlock],
+        ["save/cancel actions", actionsBlock],
+        ["AI revision actions", revisionActionsBlock],
+      ] as const) {
+        expect(block, `${surface} width`).toContain("width: 100%;");
+        expect(block, `${surface} min-width`).toContain("min-width: 0;");
+        expect(block, `${surface} max-width`).toContain("max-width: 100%;");
+      }
+
+      expect(planBlock).toContain("display: flex;");
+      expect(planBlock).toContain("flex-direction: column;");
+      expect(planSurfaceBlock).toContain("box-sizing: border-box;");
+      expect(textareaBlock).toContain("box-sizing: border-box;");
+      expect(feedbackBlock).toContain("box-sizing: border-box;");
+      expect(actionsBlock).toContain("flex-wrap: wrap;");
+      expect(revisionActionsBlock).toContain("flex-wrap: wrap;");
+      expect(mobileBlock).toContain(".detail-section--plan-prompt .spec-editor-actions-row,");
+      expect(mobileBlock).toContain(".detail-section--plan-prompt .spec-editor-revision-actions");
+      expect(mobileBlock).toContain("align-items: stretch;");
+      expect(mobileBlock).toContain("flex-wrap: wrap;");
+      expect(mobileBlock).toContain(".detail-section--plan-prompt .spec-editor-actions-row .btn,");
+      expect(mobileBlock).toContain(".detail-section--plan-prompt .spec-editor-revision-actions .btn");
+      expect(mobileBlock).toContain("flex: 1 1 auto;");
+      expect(css).not.toMatch(/\.detail-section\s*\{[^}]*width:\s*100%;/);
+    });
+
     it("keeps task-detail tabs as horizontal scrollers across modal, embedded, mobile, and tablet surfaces", () => {
       const css = readDashboardStylesSource();
       const baseTabsBlock = getExactCssRuleBlock(css, ".detail-tabs");

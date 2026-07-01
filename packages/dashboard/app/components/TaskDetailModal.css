@@ -2007,6 +2007,42 @@ The desktop table needs a token-scale min-width and non-anywhere model-name wrap
   margin-top: 0;
 }
 
+/*
+FNXC:TaskDetailPlan 2026-06-30-00:00:
+The Plan prompt editor is a task-detail body surface, not a narrow prose inset. Scope full-width guards to the Plan prompt section so modal and embedded cards align markdown, empty fallback, inline edit, and AI revision controls without changing unrelated detail sections.
+*/
+.detail-section--plan-prompt {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.detail-section--plan-prompt .markdown-body,
+.detail-section--plan-prompt .detail-prompt,
+.detail-section--plan-prompt .spec-loading,
+.detail-section--plan-prompt .spec-editor-edit-mode,
+.detail-section--plan-prompt .spec-editor-revision,
+.detail-section--plan-prompt .spec-editor-textarea,
+.detail-section--plan-prompt .spec-editor-feedback {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.detail-section--plan-prompt .markdown-body,
+.detail-section--plan-prompt .detail-prompt {
+  overflow-wrap: anywhere;
+}
+
+.task-detail-content--embedded .detail-section--plan-prompt {
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+}
+
 /* Back button for changed-files modal - hidden on desktop */
 .changed-files-back-button {
   display: none;
@@ -2196,6 +2232,26 @@ The desktop table needs a token-scale min-width and non-anywhere model-name wrap
     flex: 1;
     min-height: 0;
   }
+
+  .detail-section--plan-prompt .detail-spec-edit-trigger,
+  .detail-section--plan-prompt .spec-editor-actions-row,
+  .detail-section--plan-prompt .spec-editor-revision-actions {
+    align-items: stretch;
+  }
+
+  .detail-section--plan-prompt .spec-editor-actions-row,
+  .detail-section--plan-prompt .spec-editor-revision-actions {
+    flex-wrap: wrap;
+  }
+
+  .detail-section--plan-prompt .spec-editor-actions-row .btn,
+  .detail-section--plan-prompt .spec-editor-revision-actions .btn {
+    flex: 1 1 auto;
+  }
+
+  .detail-section--plan-prompt .spec-editor-char-count {
+    flex: 1 1 auto;
+  }
 }
 
 .detail-section h4 {
@@ -2222,7 +2278,7 @@ The desktop table needs a token-scale min-width and non-anywhere model-name wrap
   color: var(--text-muted);
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--space-sm);
 }
 
 .spec-loading::before {
