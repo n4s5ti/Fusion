@@ -20,7 +20,7 @@ vi.mock("@earendil-works/pi-ai", () => ({
 }));
 import { PluginStore } from "../plugin-store.js";
 import { setCreateAiSessionFactory } from "../ai-engine-loader.js";
-import type { CreateAiSessionOptions, FusionPlugin, PluginManifest } from "../plugin-types.js";
+import type { CreateAiSessionOptions, FusionPlugin, PluginContext, PluginManifest } from "../plugin-types.js";
 
 // Test plugin manifest
 function makeManifest(overrides: Partial<PluginManifest> = {}): PluginManifest {
@@ -82,6 +82,8 @@ async function writePluginWithHooks(
     onLoad?: string;
     onUnload?: string;
     onTaskCreated?: string;
+    onTaskMoved?: string;
+    onTaskCompleted?: string;
     onError?: string;
   },
   manifest: PluginManifest,
@@ -1133,6 +1135,54 @@ export default plugin;
 
       expect(hookA).toHaveBeenCalledTimes(1);
       expect(hookB).toHaveBeenCalledTimes(1);
+    });
+
+    it("passes PluginContext to task lifecycle hooks invoked through the loader", async () => {
+      await pluginStore.init();
+      await pluginStore.registerPlugin({
+        manifest: makeManifest({ id: "context-hook" }),
+        path: "/virtual/context-hook.js",
+        settings: { mode: "runtime" },
+      });
+
+      const onTaskCreated = vi.fn();
+      const onTaskMoved = vi.fn();
+      const onTaskCompleted = vi.fn();
+      const loader = new PluginLoader({
+        pluginStore,
+        taskStore: mockTaskStore,
+      });
+      (loader as any).plugins.set("context-hook", {
+        manifest: makeManifest({ id: "context-hook" }),
+        state: "started",
+        hooks: { onTaskCreated, onTaskMoved, onTaskCompleted },
+        tools: [],
+        routes: [],
+      } as FusionPlugin);
+
+      const task = { id: "FN-001" } as any;
+      await loader.invokeHook("onTaskCreated", task);
+      await loader.invokeHook("onTaskMoved", task, "todo", "done");
+      await loader.invokeHook("onTaskCompleted", task);
+
+      const createdCtx = onTaskCreated.mock.calls[0]?.[1] as PluginContext | undefined;
+      const movedCtx = onTaskMoved.mock.calls[0]?.[3] as PluginContext | undefined;
+      const completedCtx = onTaskCompleted.mock.calls[0]?.[1] as PluginContext | undefined;
+
+      for (const hookCtx of [createdCtx, movedCtx, completedCtx]) {
+        expect(hookCtx).toMatchObject({
+          pluginId: "context-hook",
+          taskStore: mockTaskStore,
+          settings: { mode: "runtime" },
+        });
+        expect(hookCtx?.logger).toEqual(expect.objectContaining({
+          info: expect.any(Function),
+          warn: expect.any(Function),
+          error: expect.any(Function),
+          debug: expect.any(Function),
+        }));
+        expect(hookCtx?.emitEvent).toEqual(expect.any(Function));
+      }
     });
 
     it("continues when one plugin's hook fails", async () => {

@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { InteractiveAiSessionEvent, PluginContext, Task } from "@fusion/core";
-import { TaskStore } from "@fusion/core";
+import { PluginLoader, PluginStore, TaskStore } from "@fusion/core";
 import plugin, {
   CeOrchestrator,
   CE_PLUGIN_ID,
@@ -136,6 +136,33 @@ describe("U8 inbound hooks (board → pipeline)", () => {
     await plugin.hooks.onTaskMoved!(task, "in-progress", "done", ctx);
     // The hook awaits NOTHING heavy; it returns synchronously-ish.
     expect(Date.now() - start).toBeLessThan(1000);
+  });
+
+  it("runtime loader invocation gives onTaskCompleted a context and enqueues task_completed sync", async () => {
+    const pluginStore = new PluginStore(rootDir, { inMemoryDb: true, centralGlobalDir: rootDir });
+    await pluginStore.init();
+    await pluginStore.registerPlugin({
+      manifest: plugin.manifest,
+      path: join(rootDir, "compound-engineering.js"),
+      settings: { reconcileOnHooks: false },
+    });
+    const loader = new PluginLoader({ pluginStore, taskStore });
+    (loader as unknown as { plugins: Map<string, typeof plugin> }).plugins.set(CE_PLUGIN_ID, plugin);
+
+    const { task } = await landPipeline("plan");
+    await moveTo(task.id, "done");
+    await expect(loader.invokeHook("onTaskCompleted", { ...task, column: "done" })).resolves.toBeUndefined();
+
+    const installed = await pluginStore.getPlugin(CE_PLUGIN_ID);
+    expect(installed.state).not.toBe("error");
+    const pending = getCePipelineStore(ctx).listPendingSync();
+    expect(pending).toContainEqual(expect.objectContaining({
+      taskId: task.id,
+      reason: "task_completed",
+      fromColumn: null,
+      toColumn: "done",
+      processedAt: null,
+    }));
   });
 });
 
