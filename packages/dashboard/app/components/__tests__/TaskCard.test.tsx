@@ -2270,7 +2270,8 @@ describe("TaskCard", () => {
   // FNXC:WorkflowSteps 2026-06-25-00:00 — graph-written results drive the card progress; names come from
   // result.workflowStepName (with raw-id fallback), and advisory_failure (amber) is visually distinct
   // from failed (red). No board-level name lookup is involved.
-  it("renders workflow checks after normal steps with graph-written statuses and phase badges", () => {
+  // FNXC:WorkflowSteps 2026-06-30-12:00 — expanded task-card rows deliberately omit the redundant workflow text badge; tests preserve mixed implementation/workflow visibility through names, status dots, and the active badge instead.
+  it("renders workflow checks after normal steps with graph-written statuses and no workflow text badges", () => {
     const { container } = render(
       <TaskCard
         task={makeTask({
@@ -2278,7 +2279,7 @@ describe("TaskCard", () => {
             { name: "Step 0", status: "done" },
             { name: "Step 1", status: "failed" as any },
           ],
-          enabledWorkflowSteps: ["WS-001", "WS-002", "WS-003", "WS-004"],
+          enabledWorkflowSteps: ["WS-001", "WS-002", "WS-003", "WS-004", "WS-005"],
           workflowStepResults: [
             {
               workflowStepId: "WS-001",
@@ -2296,6 +2297,12 @@ describe("TaskCard", () => {
               workflowStepName: "Code Review Gate",
               status: "failed",
             },
+            {
+              workflowStepId: "WS-005",
+              workflowStepName: "Merge Validation",
+              status: "pending",
+              startedAt: "2026-06-25T00:00:00.000Z",
+            },
           ],
         })}
         onOpenDetail={noop}
@@ -2312,6 +2319,7 @@ describe("TaskCard", () => {
       "Frontend UX Design",
       "WS 003",
       "Code Review Gate",
+      "Merge Validation",
     ]);
 
     const dots = container.querySelectorAll(".card-step-dot");
@@ -2333,18 +2341,15 @@ describe("TaskCard", () => {
     expect(dots[5]?.className).toContain("card-step-dot--failed");
     expect(dots[5]?.className).not.toContain("card-step-dot--advisory_failure");
 
+    // Started-but-not-finished workflow step → running with the same active badge as implementation steps.
+    expect(dots[6]?.className).toContain("card-step-dot--running");
+    expect(dots[6]?.className).not.toContain("card-step-dot--pending");
+    expect(container.querySelector(".card-step-active-badge")?.textContent).toBe("active");
+
     const workflowBadgeElements = container.querySelectorAll(".card-step-workflow-badge");
-    const workflowBadges = Array.from(workflowBadgeElements).map((el) => el.textContent);
-    expect(workflowBadges).toEqual(["workflow", "workflow", "workflow", "workflow"]);
-
-    expect(workflowBadgeElements[0]?.className).toContain("card-step-workflow-badge--pre-merge");
-    expect(workflowBadgeElements[1]?.className).toContain("card-step-workflow-badge--post-merge");
-    expect(workflowBadgeElements[2]?.className).toContain("card-step-workflow-badge--pre-merge");
-    expect(workflowBadgeElements[3]?.className).toContain("card-step-workflow-badge--pre-merge");
-
-    workflowBadgeElements.forEach((badge) => {
-      expect(badge.getAttribute("title")).toBe("Workflow check");
-    });
+    expect(workflowBadgeElements).toHaveLength(0);
+    expect(container.querySelector('[title="Workflow check"]')).toBeNull();
+    expect(Array.from(container.querySelectorAll(".card-step-item")).some((item) => item.textContent === "workflow")).toBe(false);
   });
 
   it("renders the running state for a started-but-not-completed workflow step", () => {

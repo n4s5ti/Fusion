@@ -1153,30 +1153,6 @@ executing. These map 1:1 to the unified progress status so the dot color encodes
   text-transform: uppercase;
 }
 
-.card-step-workflow-badge {
-  margin-left: auto;
-  padding: 0 var(--space-xs);
-  border-radius: var(--radius-pill);
-  border: 1px solid var(--border);
-  font-size: 0.5625rem;
-  color: var(--text-muted);
-  background: var(--surface);
-  white-space: nowrap;
-}
-
-.card-step-workflow-badge--pre-merge {
-  color: var(--in-review);
-  background: var(--status-in-review-bg);
-  border-color: color-mix(in srgb, var(--in-review) 35%, var(--border));
-}
-
-.card-step-workflow-badge--post-merge {
-  color: var(--done);
-  background: var(--status-done-bg);
-  border-color: color-mix(in srgb, var(--done) 35%, var(--border));
-}
-
-
 /* Animation for initializing spinner */
 @keyframes task-card-initializing-spinner-spin {
   from {

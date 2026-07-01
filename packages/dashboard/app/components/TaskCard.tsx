@@ -2788,6 +2788,9 @@ function TaskCardComponent({
                   `failed` (blocking gate failure → red/error). `running` shows the in-progress color.
                   No `card-step-dot--workflow-failed` override is needed — the status class carries the
                   distinction directly.
+
+                  FNXC:WorkflowSteps 2026-06-30-12:00:
+                  Workflow-sourced rows remain visible through their step names and status dots, but task cards intentionally omit the redundant `workflow` text badge so expanded step lists stay focused on progress.
                   */
                   return (
                     <div key={step.id} className="card-step-item">
@@ -2801,14 +2804,6 @@ function TaskCardComponent({
                       {(step.status === "in-progress" || step.status === "running") && (
                         <span className="card-step-active-badge">
                           {t("tasks.active", "active")}
-                        </span>
-                      )}
-                      {step.source === "workflow" && (
-                        <span
-                          className={`card-step-workflow-badge card-step-workflow-badge--${step.phase}`}
-                          title={t("tasks.workflowCheck", "Workflow check")}
-                        >
-                          {t("tasks.workflow", "workflow")}
                         </span>
                       )}
                     </div>
