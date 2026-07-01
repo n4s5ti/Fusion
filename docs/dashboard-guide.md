@@ -511,8 +511,10 @@ Use the terminal on mobile:
 
 1. Open the bottom navigation **More** sheet and select **Terminal**.
    Expected outcome: the terminal opens as a full-screen, keyboard-aware modal rather than the desktop/tablet docked or floating surface.
-2. Use the mobile terminal controls and close the modal when finished.
-   Expected outcome: terminal sessions reconnect/recover normally without desktop dock state affecting the mobile layout.
+2. Use the **Terminal tab** selector to switch between terminal tabs, or use the adjacent **+** action to open another Project Root terminal.
+   Expected outcome: every terminal tab appears in the dropdown, switching preserves the active session, and the desktop horizontal tab strip is not shown on mobile.
+3. When multiple tabs are open, use **Close current tab** beside the selector, then close the modal when finished.
+   Expected outcome: mobile can close the active terminal tab without exposing a cramped horizontal tab strip, and terminal sessions reconnect/recover normally without desktop dock state affecting the mobile layout.
 
 Open a terminal in a specific workspace:
 
@@ -523,7 +525,7 @@ Open a terminal in a specific workspace:
 3. If a task is listed without a live worktree, the task remains visible but disabled and marked **No worktree**.
    Expected outcome: no empty action button or arbitrary path field is shown; create or restore the task worktree first, then refresh/open the terminal again.
 
-The picker follows the same workspace metadata as the Files modal. The server accepts terminal working directories only for the project root or registered project worktrees; rejected, missing, or unsafe explicit worktree paths fail the new-tab request rather than opening a mislabeled Project Root shell or an arbitrary location. The existing **+** new-tab action remains a fast Project Root terminal, and reconnect, restart, resize, scrollback, initial-command, and tab-persistence flows continue to use server-confirmed session metadata.
+The picker follows the same workspace metadata as the Files modal. The server accepts terminal working directories only for the project root or registered project worktrees; rejected, missing, or unsafe explicit worktree paths fail the new-tab request rather than opening a mislabeled Project Root shell or an arbitrary location. The existing **+** new-tab action remains a fast Project Root terminal on both desktop and mobile, and reconnect, restart, resize, scrollback, initial-command, and tab-persistence flows continue to use server-confirmed session metadata.
 
 Features:
 

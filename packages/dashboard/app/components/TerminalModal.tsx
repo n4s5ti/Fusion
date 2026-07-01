@@ -2119,44 +2119,97 @@ export function TerminalModal({ isOpen, onClose, initialCommand, initialCommandG
             onPointerDown={(event) => handleFloatingResizePointerDown(event, direction)}
           />
         ))}
-        {/* Header — on mobile (≤768px) keep tabs and actions on one row;
+        {/* Header — on mobile (≤768px) use compact selector/actions;
             .terminal-title is hidden; action button labels are hidden (icons only) */}
         <div className={`terminal-header${isFloatingMode ? " terminal-header--draggable" : ""}`} onPointerDown={handleFloatingDragPointerDown}>
           {/* Tab Bar */}
-          <div className="terminal-tabs" data-testid="terminal-tabs">
-            {tabs.map((tab) => (
-              <div
-                key={tab.id}
-                className={`terminal-tab ${tab.isActive ? "terminal-tab--active" : ""}`}
-                onClick={() => setActiveTab(tab.id)}
-                title={tab.title}
-                role="tab"
-                aria-selected={tab.isActive}
+          {!isMobileTerminal && (
+            <div className="terminal-tabs" data-testid="terminal-tabs">
+              {tabs.map((tab) => (
+                <div
+                  key={tab.id}
+                  className={`terminal-tab ${tab.isActive ? "terminal-tab--active" : ""}`}
+                  onClick={() => setActiveTab(tab.id)}
+                  title={tab.title}
+                  role="tab"
+                  aria-selected={tab.isActive}
+                >
+                  <span className="terminal-tab-label">{tab.title}</span>
+                  {tabs.length > 1 && (
+                    <button
+                      className="terminal-tab-close"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        closeTab(tab.id);
+                      }}
+                      title={t("terminal.closeTab", "Close tab")}
+                    >
+                      ×
+                    </button>
+                  )}
+                </div>
+              ))}
+              <button
+                className="terminal-tab terminal-tab--new"
+                onClick={() => void createTab()}
+                title={t("terminal.newTerminal", "New terminal")}
+                aria-label={t("terminal.newTerminal", "New terminal")}
               >
-                <span className="terminal-tab-label">{tab.title}</span>
-                {tabs.length > 1 && (
-                  <button
-                    className="terminal-tab-close"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      closeTab(tab.id);
-                    }}
-                    title={t("terminal.closeTab", "Close tab")}
-                  >
-                    ×
-                  </button>
+                +
+              </button>
+            </div>
+          )}
+
+          {/*
+          FNXC:TerminalTabs 2026-07-01-00:00:
+          Mobile terminal headers use a native tab dropdown because horizontal tab strips crowd worktree, session, and close controls on narrow screens. Desktop and floating layouts keep the existing tab buttons so fast tab switching, per-tab close, and the + action stay unchanged.
+          */}
+          {isMobileTerminal && (
+            <div className="terminal-mobile-tabs" data-testid="terminal-mobile-tabs">
+              <label className="terminal-mobile-tabs-label" htmlFor="terminal-mobile-tab-select">
+                {t("terminal.selectTab", "Terminal tab")}
+              </label>
+              <select
+                id="terminal-mobile-tab-select"
+                className="input terminal-mobile-tab-select"
+                data-testid="terminal-mobile-tab-select"
+                value={activeTab?.id ?? ""}
+                onChange={(event) => {
+                  if (event.currentTarget.value) setActiveTab(event.currentTarget.value);
+                }}
+                disabled={tabs.length === 0}
+                aria-label={t("terminal.selectTab", "Terminal tab")}
+              >
+                {tabs.length === 0 && (
+                  <option value="">{t("terminal.noTabs", "No terminal tabs")}</option>
                 )}
-              </div>
-            ))}
-            <button
-              className="terminal-tab terminal-tab--new"
-              onClick={() => void createTab()}
-              title={t("terminal.newTerminal", "New terminal")}
-              aria-label={t("terminal.newTerminal", "New terminal")}
-            >
-              +
-            </button>
-          </div>
+                {tabs.map((tab) => (
+                  <option key={tab.id} value={tab.id}>{tab.title}</option>
+                ))}
+              </select>
+              <button
+                type="button"
+                className="terminal-mobile-tab-action terminal-mobile-tab-action--new"
+                onClick={() => void createTab()}
+                aria-label={t("terminal.newTerminal", "New terminal")}
+                data-testid="terminal-mobile-new-tab"
+              >
+                <Plus size={14} />
+              </button>
+              {tabs.length > 1 && activeTab && (
+                <button
+                  type="button"
+                  className="terminal-mobile-tab-action terminal-mobile-tab-action--close"
+                  onClick={() => closeTab(activeTab.id)}
+                  title={t("terminal.closeCurrentTab", "Close current tab")}
+                  aria-label={t("terminal.closeCurrentTab", "Close current tab")}
+                  data-testid="terminal-mobile-close-tab"
+                >
+                  <Trash2 size={14} />
+                </button>
+              )}
+            </div>
+          )}
 
           {shouldShowTerminalWorkspacePicker && (
             <div
