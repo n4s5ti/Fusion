@@ -543,15 +543,16 @@ describe("TaskDetailModal Chat task merge", () => {
     );
 
     expect(screen.getByRole("tab", { name: "Live" })).toHaveAttribute("aria-selected", "true");
-    expect(screen.getAllByRole("form", { name: "Steering comment" })).toHaveLength(1);
-    expect(screen.getByText("Send operational guidance to the active task through steering comments.")).toBeInTheDocument();
+    expect(screen.getAllByRole("form", { name: "Task activity composer" })).toHaveLength(1);
+    expect(screen.queryByText(/^Steering comment$/)).not.toBeInTheDocument();
+    expect(screen.queryByText("Send operational guidance to the active task through steering comments.")).not.toBeInTheDocument();
 
     await user.click(screen.getByRole("tab", { name: "Feed" }));
-    expect(screen.queryByRole("form", { name: "Steering comment" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("form", { name: "Task activity composer" })).not.toBeInTheDocument();
     expect(screen.getByText("Started work")).toBeInTheDocument();
 
     await user.click(screen.getByRole("tab", { name: "Raw Logs" }));
-    expect(screen.queryByRole("form", { name: "Steering comment" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("form", { name: "Task activity composer" })).not.toBeInTheDocument();
     expect(screen.getByTestId("agent-log-viewer")).toBeInTheDocument();
 
     await user.click(screen.getByRole("tab", { name: "Live" }));
@@ -582,15 +583,15 @@ describe("TaskDetailModal Chat task merge", () => {
       />,
     );
 
-    expect(screen.getAllByRole("form", { name: "Steering comment" })).toHaveLength(1);
+    expect(screen.getAllByRole("form", { name: "Task activity composer" })).toHaveLength(1);
     expect(screen.getByText("No agent output yet. Live messages from Planner, Executor, Reviewer, and Merger agents will appear here.")).toBeInTheDocument();
 
     await user.click(screen.getByRole("tab", { name: "Feed" }));
-    expect(screen.queryByRole("form", { name: "Steering comment" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("form", { name: "Task activity composer" })).not.toBeInTheDocument();
     expect(screen.getByText("(no activity)")).toBeInTheDocument();
 
     await user.click(screen.getByRole("tab", { name: "Raw Logs" }));
-    expect(screen.queryByRole("form", { name: "Steering comment" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("form", { name: "Task activity composer" })).not.toBeInTheDocument();
   });
 
   it("forwards full-detail agent fields to Chat when a sparse parent task has undefined live fields", async () => {
