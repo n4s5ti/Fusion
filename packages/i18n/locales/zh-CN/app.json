@@ -7297,7 +7297,10 @@
       "ariaLabel": "执行模式：{{mode}}",
       "fast": "快速",
       "standard": "标准",
-      "updated": "执行模式已更新为 {{mode}}"
+      "updated": "执行模式已更新为 {{mode}}",
+      "replanMessage": "更改此任务的执行模式会将其移回规划，以便 Fusion 可以为 {{mode}} 模式重新生成计划。",
+      "replanTitle": "更改执行模式并重新规划？",
+      "replanning": "执行模式已更新为 {{mode}} — {{id}} 已返回规划以重新规划"
     },
     "executionModeFast": "快速",
     "executionModeStandard": "标准",

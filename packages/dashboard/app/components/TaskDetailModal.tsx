@@ -398,6 +398,14 @@ function normalizeExecutionModeValue(executionMode: Task["executionMode"]): "sta
   return executionMode === "fast" ? "fast" : "standard";
 }
 
+function requiresExecutionModeReplan(column: Task["column"]): boolean {
+  /*
+   FNXC:ExecutionModeReplan 2026-06-30-00:00:
+   Todo and in-progress tasks can already hold a generated plan or active execution context. Changing Standard/Fast mode invalidates that plan, so the dashboard must confirm the change and send the task back through the existing replanning path instead of silently patching executionMode in place.
+   */
+  return column === "todo" || column === "in-progress";
+}
+
 interface ProvenanceDisplay {
   label: string;
   parentTaskId?: string;
@@ -896,6 +904,10 @@ export function TaskDetailContent({
   const [isSavingInlineExecutionMode, setIsSavingInlineExecutionMode] = useState(false);
   const [inlineNoCommitsExpected, setInlineNoCommitsExpected] = useState<boolean>(task.noCommitsExpected === true);
   const [isSavingInlineNoCommitsExpected, setIsSavingInlineNoCommitsExpected] = useState(false);
+  const { confirm, confirmWithChoice, confirmWithCheckbox } = useConfirm();
+  const requestClose = useCallback(() => {
+    onRequestClose?.();
+  }, [onRequestClose]);
   const mountedRef = useRef(false);
   const activeTaskIdRef = useRef(task.id);
 
@@ -1508,6 +1520,7 @@ export function TaskDetailContent({
   const [editAutoSaveStatus, setEditAutoSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const editAutoSaveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const editAutoSaveRevisionRef = useRef(0);
+  const editSaveTriggeredReplanRef = useRef(false);
 
   const buildEditUpdates = useCallback((includeDescription: boolean) => {
     const updates: Record<string, unknown> = {};
@@ -1601,8 +1614,23 @@ export function TaskDetailContent({
       }
       return false;
     }
+    const replanAfterExecutionModeChange = Object.prototype.hasOwnProperty.call(updates, "executionMode") && requiresExecutionModeReplan(task.column);
+    if (replanAfterExecutionModeChange && !includeDescription) {
+      delete updates.executionMode;
+    }
     if (Object.keys(updates).length === 0) {
       return true;
+    }
+    if (replanAfterExecutionModeChange && includeDescription) {
+      const nextMode = normalizeExecutionModeValue(updates.executionMode as Task["executionMode"]);
+      const shouldChangeMode = await confirm({
+        title: t("taskDetail.executionMode.replanTitle", "Change execution mode and replan?"),
+        message: t("taskDetail.executionMode.replanMessage", "Changing execution mode for this task will move it back to Planning so Fusion can rebuild the plan for {{mode}} mode.", { mode: nextMode }),
+      });
+      if (!shouldChangeMode) {
+        setEditExecutionMode(normalizeExecutionModeValue(task.executionMode));
+        return false;
+      }
     }
     const revision = ++editAutoSaveRevisionRef.current;
     setIsSaving(true);
@@ -1610,11 +1638,23 @@ export function TaskDetailContent({
     try {
       const updatedTask = await updateTask(task.id, updates as never, projectId);
       if (revision !== editAutoSaveRevisionRef.current) return;
+      if (replanAfterExecutionModeChange && includeDescription) {
+        const normalizedUpdatedMode = normalizeExecutionModeValue(updatedTask.executionMode);
+        await rebuildTaskSpec(task.id, projectId);
+        editSaveTriggeredReplanRef.current = true;
+        setEditAutoSaveStatus("saved");
+        requestClose();
+        addToast(t("taskDetail.executionMode.replanning", "Execution mode updated to {{mode}} — {{id}} returned to Planning for replanning", { mode: normalizedUpdatedMode, id: task.id }), "info");
+        return true;
+      }
       onTaskUpdated?.(updatedTask);
       setEditAutoSaveStatus("saved");
       return true;
     } catch (err) {
       if (revision === editAutoSaveRevisionRef.current) {
+        if (replanAfterExecutionModeChange) {
+          setEditExecutionMode(normalizeExecutionModeValue(task.executionMode));
+        }
         setEditAutoSaveStatus("error");
         addToast(t("taskDetail.updateFailed", "Failed to update {{id}}: {{error}}", { id: task.id, error: getErrorMessage(err) }), "error");
       }
@@ -1624,15 +1664,16 @@ export function TaskDetailContent({
         setIsSaving(false);
       }
     }
-  }, [addToast, buildEditUpdates, onTaskUpdated, projectId, task.id]);
+  }, [addToast, buildEditUpdates, confirm, onTaskUpdated, projectId, requestClose, task.column, task.executionMode, task.id]);
 
   const handleAutoSaveDescription = useCallback(async (_description: string) => {
     await persistEditChanges(true);
   }, [persistEditChanges]);
 
   const handleSave = useCallback(async () => {
+    editSaveTriggeredReplanRef.current = false;
     const didSave = await persistEditChanges(true);
-    if (!didSave) {
+    if (!didSave || editSaveTriggeredReplanRef.current) {
       return;
     }
     addToast(t("taskDetail.updateSuccess", "Updated {{id}}", { id: task.id }), "success");
@@ -1710,6 +1751,18 @@ export function TaskDetailContent({
     const currentMode = normalizeExecutionModeValue(task.executionMode);
     const nextMode = currentMode === "fast" ? "standard" : "fast";
     const previousMode = inlineExecutionMode;
+    const shouldReplan = requiresExecutionModeReplan(task.column);
+
+    if (shouldReplan) {
+      const shouldChangeMode = await confirm({
+        title: t("taskDetail.executionMode.replanTitle", "Change execution mode and replan?"),
+        message: t("taskDetail.executionMode.replanMessage", "Changing execution mode for this task will move it back to Planning so Fusion can rebuild the plan for {{mode}} mode.", { mode: nextMode }),
+      });
+      if (!shouldChangeMode) {
+        setInlineExecutionMode(previousMode);
+        return;
+      }
+    }
 
     setInlineExecutionMode(nextMode);
     setIsSavingInlineExecutionMode(true);
@@ -1717,6 +1770,12 @@ export function TaskDetailContent({
     try {
       const updatedTask = await updateTask(task.id, { executionMode: nextMode === "fast" ? "fast" : null }, projectId);
       const normalizedUpdatedMode = normalizeExecutionModeValue(updatedTask.executionMode);
+      if (shouldReplan) {
+        await rebuildTaskSpec(task.id, projectId);
+        requestClose();
+        addToast(t("taskDetail.executionMode.replanning", "Execution mode updated to {{mode}} — {{id}} returned to Planning for replanning", { mode: normalizedUpdatedMode, id: task.id }), "info");
+        return;
+      }
       setInlineExecutionMode(normalizedUpdatedMode);
       onTaskUpdated?.(updatedTask);
       addToast(t("taskDetail.executionMode.updated", "Execution mode updated to {{mode}}", { mode: normalizedUpdatedMode }), "success");
@@ -1728,7 +1787,7 @@ export function TaskDetailContent({
         setIsSavingInlineExecutionMode(false);
       }
     }
-  }, [task.id, task.executionMode, projectId, inlineExecutionMode, onTaskUpdated, addToast]);
+  }, [task.id, task.column, task.executionMode, projectId, inlineExecutionMode, onTaskUpdated, addToast, confirm, requestClose]);
 
   const handleInlineNoCommitsExpectedToggle = useCallback(async () => {
     const nextValue = !inlineNoCommitsExpected;
@@ -1775,7 +1834,6 @@ export function TaskDetailContent({
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { nodes } = useNodes();
-  const { confirm, confirmWithChoice, confirmWithCheckbox } = useConfirm();
 
   const handleUnlinkGithubIssue = useCallback(async () => {
     if (!canEdit || !githubTrackedIssue || isSavingGithubTracking) return;
@@ -1811,10 +1869,6 @@ export function TaskDetailContent({
     activeTab === "chat" && activitySegment === "raw-logs",
     projectId,
   );
-  const requestClose = useCallback(() => {
-    onRequestClose?.();
-  }, [onRequestClose]);
-
   useEffect(() => {
     if (embedded) return;
     const handleKey = (e: KeyboardEvent) => {

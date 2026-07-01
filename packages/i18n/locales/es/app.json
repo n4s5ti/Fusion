@@ -7297,7 +7297,10 @@
       "ariaLabel": "Modo de ejecución: {{mode}}",
       "fast": "Rápido",
       "standard": "Estándar",
-      "updated": "Modo de ejecución actualizado a {{mode}}"
+      "updated": "Modo de ejecución actualizado a {{mode}}",
+      "replanMessage": "Cambiar el modo de ejecución de esta tarea la devolverá a Planificación para que Fusion reconstruya el plan para el modo {{mode}}.",
+      "replanTitle": "¿Cambiar el modo de ejecución y replanificar?",
+      "replanning": "Modo de ejecución actualizado a {{mode}} — {{id}} volvió a Planificación para replanificación"
     },
     "executionModeFast": "Rápido",
     "executionModeStandard": "Estándar",

@@ -7345,6 +7345,9 @@ export default interface Resources {
       "executionMode": {
         "ariaLabel": "Execution mode: {{mode}}",
         "fast": "Fast",
+        "replanMessage": "Changing execution mode for this task will move it back to Planning so Fusion can rebuild the plan for {{mode}} mode.",
+        "replanTitle": "Change execution mode and replan?",
+        "replanning": "Execution mode updated to {{mode}} — {{id}} returned to Planning for replanning",
         "standard": "Standard",
         "updated": "Execution mode updated to {{mode}}"
       },
