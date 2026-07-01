@@ -1,8 +1,11 @@
 import { build } from "esbuild";
 import { cp, mkdir, rm, stat } from "node:fs/promises";
 import { join } from "node:path";
-import { buildDashboardClient, packageRoot, workspaceRoot } from "./workspace-tools";
-const dashboardClientDir = join(workspaceRoot, "packages", "dashboard", "dist", "client");
+import { buildDashboard, buildDashboardClient, packageRoot, workspaceRoot } from "./workspace-tools";
+const dashboardRoot = join(workspaceRoot, "packages", "dashboard");
+const dashboardClientDir = join(dashboardRoot, "dist", "client");
+const dashboardRegistryManifestSource = join(dashboardRoot, "src", "registry-manifest.json");
+const dashboardRegistryManifestDist = join(dashboardRoot, "dist", "registry-manifest.json");
 const desktopDistDir = join(packageRoot, "dist");
 const desktopClientDistDir = join(desktopDistDir, "client");
 // FNXC:DesktopBuild 2026-06-25-09:45:
@@ -23,13 +26,27 @@ const mainExternals = sharedExternals;
 const preloadExternals = sharedExternals;
 
 async function ensureDashboardBuild(): Promise<void> {
-  console.log("[desktop:build] Building dashboard client...");
+  // FNXC:DesktopBuild 2026-07-01-11:35:
+  // Windows release packaging invokes only `@fusion/desktop build` before electron-builder.
+  // Build the dashboard server dist and copy registry-manifest.json here so the packaged
+  // embedded runtime never depends on a separate `@fusion/dashboard build` workflow step.
+  console.log("[desktop:build] Building dashboard server runtime...");
+  await buildDashboard();
+  await cp(dashboardRegistryManifestSource, dashboardRegistryManifestDist);
+
+  console.log("[desktop:build] Building dashboard client for file:// desktop loading...");
   await buildDashboardClient();
 
   try {
     await stat(dashboardClientDir);
   } catch {
     throw new Error(`Dashboard client assets not found: ${dashboardClientDir}`);
+  }
+
+  try {
+    await stat(dashboardRegistryManifestDist);
+  } catch {
+    throw new Error(`Dashboard registry manifest not found: ${dashboardRegistryManifestDist}`);
   }
 }
 
@@ -45,6 +62,12 @@ async function buildElectronEntrypoints(): Promise<void> {
       platform: "node",
       target: "node22",
       sourcemap: true,
+      // FNXC:DesktopBuild 2026-07-01-07:31:
+      // Windows Electron main output is ESM, but electron-updater loads CJS deps
+      // such as fs-extra/graceful-fs that dynamically require built-ins. Keep all
+      // npm packages external so Node/Electron evaluates those CJS modules natively
+      // instead of esbuild emitting a __require("fs") trap in dist/main.js.
+      packages: "external",
       external: mainExternals,
       logLevel: "info",
     }),

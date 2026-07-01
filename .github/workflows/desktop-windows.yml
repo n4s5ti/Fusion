@@ -58,6 +58,27 @@ jobs:
             if ($sig.Status -ne 'Valid') { Write-Error "Signature invalid: $($exe.Name) ($($sig.Status))"; exit 1 }
           }
 
+      - name: Verify Windows runtime resources
+        shell: pwsh
+        run: |
+          # FNXC:WindowsDesktopPackaging 2026-07-01-08:08:
+          # The Windows app must install Electron's root .pak runtime resources;
+          # missing chrome_100_percent.pak, chrome_200_percent.pak, or resources.pak
+          # leaves Fusion.exe unable to start even when the NSIS installer succeeds.
+          $requiredResources = @('chrome_100_percent.pak', 'chrome_200_percent.pak', 'resources.pak')
+          $unpackedRoots = Get-ChildItem packages/desktop/dist-electron -Directory -Filter 'win*-unpacked'
+          if ($unpackedRoots.Count -eq 0) { Write-Error "No win-unpacked directory produced"; exit 1 }
+          foreach ($root in $unpackedRoots) {
+            foreach ($resource in $requiredResources) {
+              $resourcePath = Join-Path $root.FullName $resource
+              if (!(Test-Path $resourcePath)) { Write-Error "Missing Electron runtime resource: $resourcePath"; exit 1 }
+            }
+          }
+          $nsis = Get-ChildItem packages/desktop/dist-electron -Filter 'Fusion-*-win-*.exe' | Where-Object { $_.Name -notmatch '-portable\.exe$' }
+          $portable = Get-ChildItem packages/desktop/dist-electron -Filter 'Fusion-*-win-*-portable.exe'
+          if ($nsis.Count -eq 0) { Write-Error "No NSIS installer artifact produced"; exit 1 }
+          if ($portable.Count -eq 0) { Write-Error "No portable EXE artifact produced"; exit 1 }
+
       # Automated publish is intentionally deferred to FN-5593.
       # Keep a single artifact; filenames include -x64 / -arm64 so both arches are captured.
       - name: Upload Windows artifacts

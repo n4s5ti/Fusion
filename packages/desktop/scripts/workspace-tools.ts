@@ -1,6 +1,7 @@
 import { spawn } from "node:child_process";
 import { dirname, resolve } from "node:path";
 import { existsSync } from "node:fs";
+import { cp } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -64,6 +65,9 @@ export async function buildDashboard(): Promise<void> {
   await buildDashboardRuntimePlugins();
   await runWorkspaceBin("vite", ["build"], dashboardRoot);
   await runWorkspaceBin("tsc", [], dashboardRoot);
+  // FNXC:DesktopBuild 2026-07-01-11:45:
+  // Desktop release and test paths call this helper directly instead of the dashboard package script, so copy the Node-read registry manifest beside server dist here as the shared build invariant.
+  await cp(resolve(dashboardRoot, "src", "registry-manifest.json"), resolve(dashboardRoot, "dist", "registry-manifest.json"));
 }
 
 export async function buildDashboardClient(): Promise<void> {
