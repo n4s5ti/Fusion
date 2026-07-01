@@ -461,6 +461,45 @@ describe("TaskCard", () => {
     }
   });
 
+  it("suppresses native text selection when touch long-press opens the board card context menu", async () => {
+    vi.useFakeTimers();
+    const cleanupGeometry = mockBoardContextMenuGeometry();
+    const onOpenDetail = vi.fn();
+    const onPauseTask = vi.fn(async () => makeTask({ paused: true }));
+    try {
+      render(
+        <div className="column" style={{ overflow: "hidden" }}>
+          <div className="column-body" style={{ overflowX: "hidden", overflowY: "auto" }}>
+            <TaskCard
+              task={makeTask({ title: "Long selectable title", column: "in-progress", status: "executing" as any })}
+              onOpenDetail={onOpenDetail}
+              addToast={noop}
+              onPauseTask={onPauseTask}
+            />
+          </div>
+        </div>,
+      );
+
+      const title = screen.getByText("Long selectable title");
+      const pointerDownWasNotCanceled = fireEvent.pointerDown(title, {
+        pointerType: "touch",
+        pointerId: 9,
+        clientX: 180,
+        clientY: 160,
+        cancelable: true,
+      });
+      expect(pointerDownWasNotCanceled).toBe(false);
+
+      act(() => vi.advanceTimersByTime(550));
+
+      expectBoardContextMenuPortaled();
+      expect(onOpenDetail).not.toHaveBeenCalled();
+      fireEvent.pointerUp(title, { pointerType: "touch", pointerId: 9, clientX: 180, clientY: 160 });
+    } finally {
+      cleanupGeometry();
+    }
+  });
+
   it("cancels board card long-press when touch moves before the delay", () => {
     vi.useFakeTimers();
     render(

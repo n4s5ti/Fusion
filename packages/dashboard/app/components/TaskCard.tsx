@@ -2019,6 +2019,11 @@ function TaskCardComponent({
 
   const handlePointerDown = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
     if (!hasContextMenuActions || e.pointerType === "mouse" || isInteractiveTarget(e.target)) return;
+    /*
+    FNXC:TaskCardMobileSelection 2026-07-01-00:00:
+    Touch/pen long-press is reserved for the Board task context menu. Prevent the native selection/copy callout before the timer starts while leaving mouse right-click, keyboard menu access, and editable descendants on their normal paths.
+    */
+    e.preventDefault();
     clearLongPressTimer();
     longPressStartRef.current = { x: e.clientX, y: e.clientY, pointerId: e.pointerId };
     longPressTimerRef.current = setTimeout(() => {
