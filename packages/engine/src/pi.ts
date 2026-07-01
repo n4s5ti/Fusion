@@ -31,6 +31,7 @@ import {
   ModelRegistry,
   SessionManager,
   SettingsManager,
+  type AuthStorage,
   type AgentSession,
   type ToolDefinition,
 } from "@earendil-works/pi-coding-agent";
@@ -82,6 +83,8 @@ const RTK_ACCEPTED_REWRITE_EXIT_CODES = new Set([0, 3]);
 const RTK_EXPECTED_PASSTHROUGH_EXIT_CODES = new Set([1, 2]);
 const RTK_EXPECTED_FAIL_OPEN_ERROR_CODES = new Set(["ABORT_ERR", "ENOENT", "ETIMEDOUT"]);
 const RTK_REWRITE_MAX_BUFFER_BYTES = 64 * 1024;
+const ANTHROPIC_PROVIDER_ID = "anthropic";
+const CLAUDE_CLI_PROVIDER_ID = "pi-claude-cli";
 
 export type RtkRewriteMode = "off" | "rewrite";
 
@@ -1171,6 +1174,51 @@ function readJsonObject(path: string): Record<string, any> {
   }
 }
 
+function resolveClaudeCliModelForAnthropicSelection(
+  modelRegistry: ModelRegistry,
+  kind: "primary" | "fallback",
+  modelId: string,
+) {
+  const cliModel = modelRegistry.find(CLAUDE_CLI_PROVIDER_ID, modelId);
+  if (cliModel) {
+    return cliModel;
+  }
+
+  const providerModels = modelRegistry.getAll().filter((model) => model.provider === CLAUDE_CLI_PROVIDER_ID);
+  if (providerModels.length > 0) {
+    const baseModel = providerModels[0]!;
+    piLog.warn(`${kind} model ${CLAUDE_CLI_PROVIDER_ID}/${modelId} not in registry; using Claude CLI provider base model as template`);
+    return { ...baseModel, id: modelId, name: modelId };
+  }
+
+  throw new Error(
+    `Anthropic subscription/OAuth model ${ANTHROPIC_PROVIDER_ID}/${modelId} requires the Claude CLI provider, but ${CLAUDE_CLI_PROVIDER_ID} is not available. `
+    + "Enable Settings → Model Providers → Claude CLI and ensure the Claude Code CLI is installed, or configure a raw ANTHROPIC_API_KEY for the direct Anthropic API provider.",
+  );
+}
+
+async function routeAnthropicSelectionForAvailableAuth(
+  authStorage: AuthStorage,
+  modelRegistry: ModelRegistry,
+  kind: "primary" | "fallback",
+  model: ReturnType<typeof resolveConfiguredModel>,
+) {
+  if (!model || model.provider !== ANTHROPIC_PROVIDER_ID) {
+    return model;
+  }
+
+  const rawApiKey = await authStorage.getApiKey(ANTHROPIC_PROVIDER_ID);
+  if (rawApiKey) {
+    return model;
+  }
+
+  /*
+  FNXC:ProviderAuth 2026-07-01-12:00:
+  Persisted `anthropic/<model>` selections from subscription users must be re-routed at runtime, not merely hidden from the picker. With no raw Anthropic API key, `pi-claude-cli` is the compliant OAuth surface; direct `/v1` remains raw-key-only. Preserve the pre-0.52 working behavior by using the vendored CLI provider whenever it is registered, even if `useClaudeCli` was not explicitly toggled on for picker visibility; if the CLI provider is unavailable, fail before any OAuth token can reach `api.anthropic.com/v1`.
+  */
+  return resolveClaudeCliModelForAnthropicSelection(modelRegistry, kind, model.id);
+}
+
 function normalizeSessionHistoryEntries(sessionManager: SessionManagerLike): void {
   const entries = sessionManager.fileEntries;
   if (!Array.isArray(entries) || entries.length === 0) {
@@ -2163,6 +2211,19 @@ export async function createFnAgent(options: AgentOptions): Promise<AgentResult>
       options.fallbackModelId,
     );
   }
+
+  selectedModel = await routeAnthropicSelectionForAvailableAuth(
+    authStorage,
+    modelRegistry,
+    "primary",
+    selectedModel,
+  );
+  fallbackModel = await routeAnthropicSelectionForAvailableAuth(
+    authStorage,
+    modelRegistry,
+    "fallback",
+    fallbackModel,
+  );
 
   // Resolve skill selection: explicit skillSelection wins over convenience `skills`
   let effectiveSkillSelection: SkillSelectionContext | undefined = options.skillSelection;

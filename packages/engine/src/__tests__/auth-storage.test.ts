@@ -165,7 +165,7 @@ describe("createFusionAuthStorage", () => {
 
     const authStorage = createFusionAuthStorage();
 
-    expect(await authStorage.getApiKey("anthropic")).toBe("claude-access-token");
+    expect(await authStorage.getApiKey("anthropic")).toBeUndefined();
     expect(authStorage.get("anthropic")).toEqual({
       type: "oauth",
       access: "claude-access-token",
@@ -216,7 +216,7 @@ describe("createFusionAuthStorage", () => {
       expect(authStorage.hasAuth("anthropic")).toBe(true);
     });
 
-    it("uses Anthropic subscription OAuth for model runtime auth when no raw API key exists", async () => {
+    it("does not use Anthropic subscription OAuth for direct model runtime auth when no raw API key exists", async () => {
       writeFusionAuth(homeDir, {
         "anthropic-subscription": {
           type: "oauth",
@@ -228,7 +228,8 @@ describe("createFusionAuthStorage", () => {
 
       const authStorage = createFusionAuthStorage();
 
-      expect(await authStorage.getApiKey("anthropic")).toBe("subscription-access-token");
+      expect(await authStorage.getApiKey("anthropic")).toBeUndefined();
+      expect(await authStorage.getApiKey("anthropic-subscription")).toBe("subscription-access-token");
       expect(authStorage.hasAuth("anthropic")).toBe(true);
       expect(authStorage.list()).toEqual(expect.arrayContaining(["anthropic", "anthropic-subscription"]));
     });
@@ -297,7 +298,8 @@ describe("createFusionAuthStorage", () => {
 
       const authStorage = createFusionAuthStorage();
 
-      expect(await authStorage.getApiKey("anthropic")).toBe("refreshed-subscription-access-token");
+      expect(await authStorage.getApiKey("anthropic")).toBeUndefined();
+      expect(await authStorage.getApiKey("anthropic-subscription")).toBe("refreshed-subscription-access-token");
       expect(fetchMock).toHaveBeenCalledWith(
         "https://platform.claude.com/v1/oauth/token",
         expect.objectContaining({
@@ -366,7 +368,8 @@ describe("createFusionAuthStorage", () => {
       expect(authStorage.has("anthropic")).toBe(true);
       expect(authStorage.hasAuth("anthropic")).toBe(true);
       expect(authStorage.list()).toEqual(expect.arrayContaining(["anthropic", "anthropic-subscription"]));
-      expect(await authStorage.getApiKey("anthropic")).toBe("subscription-access-token");
+      expect(await authStorage.getApiKey("anthropic")).toBeUndefined();
+      expect(await authStorage.getApiKey("anthropic-subscription")).toBe("subscription-access-token");
     });
 
     it("uses a newly set subscription credential for runtime auth after raw Anthropic logout", async () => {
@@ -386,7 +389,8 @@ describe("createFusionAuthStorage", () => {
       });
 
       expect(authStorage.get("anthropic")).toBeUndefined();
-      expect(await authStorage.getApiKey("anthropic")).toBe("subscription-access-token");
+      expect(await authStorage.getApiKey("anthropic")).toBeUndefined();
+      expect(await authStorage.getApiKey("anthropic-subscription")).toBe("subscription-access-token");
     });
 
     it("keeps raw Anthropic API keys visible when subscription logout suppresses OAuth aliases", async () => {
@@ -419,7 +423,7 @@ describe("createFusionAuthStorage", () => {
       });
 
       const authStorage = createFusionAuthStorage();
-      expect(await authStorage.getApiKey("anthropic")).toBe("legacy-subscription-access-token");
+      expect(await authStorage.getApiKey("anthropic")).toBeUndefined();
 
       authStorage.logout("anthropic-subscription");
 
@@ -521,11 +525,12 @@ describe("createFusionAuthStorage", () => {
       });
       authStorage.reload();
 
-      expect(await authStorage.getApiKey("anthropic")).toBe("subscription-access-token");
+      expect(await authStorage.getApiKey("anthropic")).toBeUndefined();
+      expect(await authStorage.getApiKey("anthropic-subscription")).toBe("subscription-access-token");
     });
   });
 
-  it("refreshes and persists expired Claude OAuth credentials from Claude credential files", async () => {
+  it("does not refresh Claude OAuth credentials as direct Anthropic API keys", async () => {
     const claudeDir = join(homeDir, ".claude");
     mkdirSync(claudeDir, { recursive: true });
 
@@ -541,43 +546,24 @@ describe("createFusionAuthStorage", () => {
       }),
     );
 
-    const fetchMock = vi.fn().mockResolvedValue({
-      ok: true,
-      json: async () => ({
-        access_token: "refreshed-claude-access-token",
-        refresh_token: "rotated-claude-refresh-token",
-        expires_in: 3600,
-        scope: "user:profile org:create_api_key",
-      }),
-    } as Response);
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true } as Response);
     globalThis.fetch = fetchMock as typeof fetch;
 
     const authStorage = createFusionAuthStorage();
 
-    expect(await authStorage.getApiKey("anthropic")).toBe("refreshed-claude-access-token");
-    expect(fetchMock).toHaveBeenCalledWith(
-      "https://platform.claude.com/v1/oauth/token",
-      expect.objectContaining({
-        method: "POST",
-        body: expect.stringContaining("\"scope\":\"user:profile org:create_api_key\""),
-      }),
-    );
+    expect(await authStorage.getApiKey("anthropic")).toBeUndefined();
+    expect(fetchMock).not.toHaveBeenCalled();
     expect(authStorage.get("anthropic")).toEqual({
       type: "oauth",
-      access: "refreshed-claude-access-token",
-      refresh: "rotated-claude-refresh-token",
+      access: "expired-claude-access-token",
+      refresh: "claude-refresh-token",
       expires: expect.any(Number),
       scopes: ["user:profile", "org:create_api_key"],
     });
-
-    const persisted = JSON.parse(readFileSync(getFusionAuthPath(homeDir), "utf-8"));
-    expect(persisted.anthropic).toEqual({
-      type: "oauth",
-      access: "refreshed-claude-access-token",
-      refresh: "rotated-claude-refresh-token",
-      expires: expect.any(Number),
-      scopes: ["user:profile", "org:create_api_key"],
-    });
+    const persisted = existsSync(getFusionAuthPath(homeDir))
+      ? JSON.parse(readFileSync(getFusionAuthPath(homeDir), "utf-8"))
+      : {};
+    expect(persisted.anthropic?.access).not.toBe("refreshed-claude-access-token");
   });
 
   it("does not persist an invalid Claude OAuth refresh response", async () => {
@@ -629,8 +615,8 @@ describe("createFusionAuthStorage", () => {
 
     expect(await authStorage.getApiKey("anthropic")).toBeUndefined();
     expect(await authStorage.getApiKey("anthropic")).toBeUndefined();
-    expect(fetchMock).toHaveBeenCalledTimes(1);
-    const persisted = JSON.parse(readFileSync(getFusionAuthPath(homeDir), "utf-8"));
+    expect(fetchMock).not.toHaveBeenCalled();
+    const persisted = existsSync(getFusionAuthPath(homeDir)) ? JSON.parse(readFileSync(getFusionAuthPath(homeDir), "utf-8")) : {};
     expect(persisted.anthropic).toBeUndefined();
   });
 
@@ -665,14 +651,14 @@ describe("createFusionAuthStorage", () => {
       authStorage.getApiKey("anthropic"),
       authStorage.getApiKey("anthropic"),
     ])).resolves.toEqual([
-      "refreshed-claude-access-token",
-      "refreshed-claude-access-token",
-      "refreshed-claude-access-token",
+      undefined,
+      undefined,
+      undefined,
     ]);
-    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  it("does not let a stale Claude OAuth refresh overwrite a newer login", async () => {
+  it("does not refresh stale Claude OAuth material for direct Anthropic API auth", async () => {
     const claudeDir = join(homeDir, ".claude");
     mkdirSync(claudeDir, { recursive: true });
 
@@ -687,39 +673,13 @@ describe("createFusionAuthStorage", () => {
       }),
     );
 
-    let resolveJson: ((value: unknown) => void) | undefined;
-    const fetchMock = vi.fn().mockResolvedValue({
-      ok: true,
-      json: () => new Promise((resolve) => {
-        resolveJson = resolve;
-      }),
-    } as Response);
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true } as Response);
     globalThis.fetch = fetchMock as typeof fetch;
 
     const authStorage = createFusionAuthStorage();
-    const pendingRefresh = authStorage.getApiKey("anthropic");
-    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
 
-    authStorage.set("anthropic", {
-      type: "oauth",
-      access: "fresh-login-access-token",
-      refresh: "fresh-login-refresh-token",
-      expires: Date.now() + 3_600_000,
-    });
-
-    resolveJson?.({
-      access_token: "stale-refresh-access-token",
-      refresh_token: "stale-refresh-refresh-token",
-      expires_in: 3600,
-    });
-
-    await expect(pendingRefresh).resolves.toBe("fresh-login-access-token");
-    expect(authStorage.get("anthropic")).toEqual({
-      type: "oauth",
-      access: "fresh-login-access-token",
-      refresh: "fresh-login-refresh-token",
-      expires: expect.any(Number),
-    });
+    await expect(authStorage.getApiKey("anthropic")).resolves.toBeUndefined();
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it("hydrates newer Codex CLI OAuth credentials into Fusion auth on reload", async () => {
@@ -974,7 +934,7 @@ describe("createFusionAuthStorage", () => {
       // Before logout, supplemental credentials are visible
       expect(authStorage.has("anthropic")).toBe(true);
       expect(authStorage.hasAuth("anthropic")).toBe(true);
-      expect(await authStorage.getApiKey("anthropic")).toBe("claude-access-token");
+      expect(await authStorage.getApiKey("anthropic")).toBeUndefined();
 
       // Log out
       authStorage.logout("anthropic");

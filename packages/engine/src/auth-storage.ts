@@ -496,35 +496,14 @@ export function createFusionAuthStorage(): AuthStorage {
       if (anthropicApiKeyCredential) {
         return resolveStoredCredentialApiKey(ANTHROPIC_PROVIDER_ID, anthropicApiKeyCredential);
       }
-    }
 
-    const subscriptionLoggedOut = loggedOutProviders.has(ANTHROPIC_SUBSCRIPTION_PROVIDER_ID);
-    const legacyAnthropicOAuthCredential = rawProviderLoggedOut
-      ? undefined
-      : selectStoredCredentialByType(ANTHROPIC_PROVIDER_ID, "oauth");
-    if (!subscriptionLoggedOut && legacyAnthropicOAuthCredential) {
-      const legacyKey = await resolveRefreshableCredentialApiKey(ANTHROPIC_PROVIDER_ID, legacyAnthropicOAuthCredential);
-      if (legacyKey) return legacyKey;
-    }
-
-    if (!subscriptionLoggedOut) {
-      const subscriptionCredential = selectStoredCredential(ANTHROPIC_SUBSCRIPTION_PROVIDER_ID);
-      if (subscriptionCredential?.type === "oauth") {
-        /*
-        FNXC:ProviderAuth 2026-06-30-11:26:
-        Anthropic model execution still requests provider `anthropic`, but the separated subscription login now stores OAuth material under `anthropic-subscription` so the API-key card can remain raw-key-only.
-        Resolve and refresh the subscription credential with the upstream Anthropic OAuth provider id while persisting rotated tokens back to `anthropic-subscription`.
-        */
-        const subscriptionKey = await resolveRefreshableCredentialApiKey(ANTHROPIC_SUBSCRIPTION_PROVIDER_ID, subscriptionCredential);
-        if (subscriptionKey) return subscriptionKey;
-      }
-    }
-
-    if (!rawProviderLoggedOut) {
       /*
+      FNXC:ProviderAuth 2026-07-01-11:55:
+      Subscription/OAuth Anthropic tokens must never authenticate the direct `api.anthropic.com/v1` provider because Anthropic blocks Claude Pro/Max OAuth material on that public API surface. Keep provider `anthropic` raw-key-only here; the `anthropic-subscription` OAuth getter below remains available for Claude CLI and usage endpoints that intentionally consume subscription OAuth.
+
       FNXC:ProviderAuth 2026-06-30-13:28:
       Logging out of the raw Anthropic provider must suppress raw-key sources consistently across status and runtime resolution.
-      Treat models.json Anthropic keys and ModelRegistry fallback resolver keys as raw-key fallback material, while subscription OAuth remains governed by the separate `anthropic-subscription` logout state above.
+      Treat models.json Anthropic keys and ModelRegistry fallback resolver keys as raw-key fallback material, while subscription OAuth remains governed by the separate `anthropic-subscription` logout state.
       */
       const modelsJsonApiKey = modelsJsonApiKeys.get(ANTHROPIC_PROVIDER_ID);
       if (modelsJsonApiKey) return modelsJsonApiKey;
@@ -573,6 +552,12 @@ export function createFusionAuthStorage(): AuthStorage {
         };
       }
 
+      if (prop === "setFallbackResolver") {
+        return (resolver: (provider: string) => string | undefined) => {
+          (target as unknown as { fallbackResolver?: (provider: string) => string | undefined }).fallbackResolver = resolver;
+        };
+      }
+
       if (prop === "set") {
         return (provider: string, credential: AuthCredential) => {
           target.set(provider, credential);
@@ -602,7 +587,7 @@ export function createFusionAuthStorage(): AuthStorage {
           if (loggedOutProviders.has(provider)) {
             return false;
           }
-          return target.has(provider) || provider in supplementalCredentials || modelsJsonApiKeys.has(provider);
+          return target.has(provider) || provider in supplementalCredentials || modelsJsonApiKeys.has(provider) || hasTargetFallbackAuth(provider);
         };
       }
 
@@ -614,7 +599,7 @@ export function createFusionAuthStorage(): AuthStorage {
           if (loggedOutProviders.has(provider)) {
             return false;
           }
-          return target.hasAuth(provider) || Boolean(supplementalCredentials[provider]) || modelsJsonApiKeys.has(provider);
+          return target.hasAuth(provider) || Boolean(supplementalCredentials[provider]) || modelsJsonApiKeys.has(provider) || hasTargetFallbackAuth(provider);
         };
       }
 
@@ -698,7 +683,11 @@ export function createFusionAuthStorage(): AuthStorage {
           if (supplementalKey) return supplementalKey;
 
           // 3. models.json provider API keys (e.g., kimi-coding, lmstudio)
-          return modelsJsonApiKeys.get(provider);
+          const modelsJsonApiKey = modelsJsonApiKeys.get(provider);
+          if (modelsJsonApiKey) return modelsJsonApiKey;
+
+          // 4. ModelRegistry fallback resolver (env-backed provider configs)
+          return resolveTargetFallbackApiKey(provider);
         };
       }
 

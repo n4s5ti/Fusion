@@ -498,6 +498,80 @@ describe("GET /models", () => {
       const providers = res.body.models.map((m: { provider: string }) => m.provider);
       expect(providers).toEqual(expect.arrayContaining(["anthropic", "openai", "pi-claude-cli"]));
     });
+
+    it("hides direct Anthropic rows for OAuth-only subscription auth while showing distinct Claude CLI rows", async () => {
+      await vi.mocked(fsPromises.readFile).withImplementation(async (path: unknown) => {
+        const value = String(path);
+        if (value.endsWith("auth.json")) {
+          return JSON.stringify({
+            anthropic: { type: "oauth", access: "legacy-oauth", refresh: "refresh", expires: Date.now() + 60_000 },
+            "anthropic-subscription": { type: "oauth", access: "subscription-oauth", refresh: "refresh", expires: Date.now() + 60_000 },
+            openai: { type: "api_key", key: "openai-key" },
+          });
+        }
+        if (value.endsWith("models.json")) {
+          return JSON.stringify({ providers: { openai: { apiKey: "openai-key" } } });
+        }
+        return "{}";
+      }, async () => {
+        const registry = createMockModelRegistry({
+          getAvailable: vi.fn().mockReturnValue([
+            { id: "claude-sonnet-4-5", name: "Claude Sonnet 4.5", provider: "anthropic", reasoning: true, contextWindow: 200000 },
+            { id: "claude-sonnet-4-5", name: "Claude Sonnet 4.5 OAuth", provider: "anthropic-subscription", reasoning: true, contextWindow: 200000 },
+            { id: "claude-sonnet-4-5", name: "Claude Sonnet 4.5 (CLI)", provider: "pi-claude-cli", reasoning: true, contextWindow: 200000 },
+            { id: "gpt-4o", name: "GPT-4o", provider: "openai", reasoning: false, contextWindow: 128000 },
+          ]),
+        });
+        const res = await GET(buildAppWithSetting(true, registry), "/api/models");
+        expect(res.status).toBe(200);
+        const providers = res.body.models.map((m: { provider: string }) => m.provider);
+        expect(providers).toContain("pi-claude-cli");
+        expect(providers).toContain("openai");
+        expect(providers).not.toContain("anthropic");
+        expect(providers).not.toContain("anthropic-subscription");
+      });
+    });
+
+    it("hides all Anthropic model rows for OAuth-only auth when Claude CLI picker visibility is disabled", async () => {
+      await vi.mocked(fsPromises.readFile).withImplementation(async (path: unknown) => {
+        const value = String(path);
+        if (value.endsWith("auth.json")) {
+          return JSON.stringify({
+            "anthropic-subscription": { type: "oauth", access: "subscription-oauth", refresh: "refresh", expires: Date.now() + 60_000 },
+          });
+        }
+        if (value.endsWith("models.json")) {
+          return JSON.stringify({ providers: {} });
+        }
+        return "{}";
+      }, async () => {
+        const res = await GET(buildAppWithSetting(false, registryWithCli()), "/api/models");
+        expect(res.status).toBe(200);
+        const providers = res.body.models.map((m: { provider: string }) => m.provider);
+        expect(providers).not.toContain("anthropic");
+        expect(providers).not.toContain("anthropic-subscription");
+        expect(providers).not.toContain("pi-claude-cli");
+      });
+    });
+
+    it("shows direct Anthropic rows when a raw API key exists", async () => {
+      await vi.mocked(fsPromises.readFile).withImplementation(async (path: unknown) => {
+        const value = String(path);
+        if (value.endsWith("auth.json")) {
+          return JSON.stringify({ anthropic: { type: "api_key", key: "sk-ant-api03-direct" } });
+        }
+        if (value.endsWith("models.json")) {
+          return JSON.stringify({ providers: {} });
+        }
+        return "{}";
+      }, async () => {
+        const res = await GET(buildAppWithSetting(false, registryWithCli()), "/api/models");
+        expect(res.status).toBe(200);
+        const providers = res.body.models.map((m: { provider: string }) => m.provider);
+        expect(providers).toContain("anthropic");
+        expect(providers).not.toContain("pi-claude-cli");
+      });
+    });
   });
 });
 

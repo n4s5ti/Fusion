@@ -6,6 +6,9 @@ import type { CustomProvider } from "@fusion/core";
 import { ApiError } from "../api-error.js";
 import type { ApiRouteRegistrar } from "./types.js";
 
+const ANTHROPIC_PROVIDER_ID = "anthropic";
+const ANTHROPIC_SUBSCRIPTION_PROVIDER_ID = "anthropic-subscription";
+
 /**
  * Read provider names from Fusion's own auth stores (primary + legacy .pi).
  * These represent providers the user has explicitly configured in Fusion,
@@ -27,12 +30,32 @@ async function getConfiguredProviderNames(): Promise<Set<string>> {
     try {
       await access(authPath);
       const parsed = JSON.parse(await readFile(authPath, "utf-8")) as Record<string, unknown>;
-      for (const key of Object.keys(parsed)) {
-        providers.add(key);
+      for (const [key, credential] of Object.entries(parsed)) {
+        if (key === ANTHROPIC_SUBSCRIPTION_PROVIDER_ID) {
+          continue;
+        }
+        if (key !== ANTHROPIC_PROVIDER_ID) {
+          providers.add(key);
+          continue;
+        }
+        if (credential && typeof credential === "object" && (credential as { type?: unknown }).type === "api_key") {
+          providers.add(key);
+        }
       }
     } catch {
       // Ignore missing or invalid auth files
     }
+  }
+
+  /*
+  FNXC:ProviderAuth 2026-07-01-12:06:
+  The model picker must not advertise direct `anthropic` rows for OAuth-only Claude subscription setups. Only raw API-key material (auth.json `type: api_key`, models.json apiKey, or ANTHROPIC_API_KEY) configures the direct api.anthropic.com/v1 provider.
+
+  FNXC:ProviderAuth 2026-07-01-12:18:
+  Keep Anthropic's three surfaces distinct in discovery: raw API-key auth configures direct `anthropic`, subscription OAuth stays an auth/usage credential (`anthropic-subscription`) and is not a model provider row, and Claude CLI models appear only as `pi-claude-cli` when the CLI picker toggle is enabled.
+  */
+  if (process.env.ANTHROPIC_API_KEY) {
+    providers.add(ANTHROPIC_PROVIDER_ID);
   }
 
   // Check models.json for providers with inline API keys
