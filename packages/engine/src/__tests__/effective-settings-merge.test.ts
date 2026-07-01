@@ -10,6 +10,7 @@ function baseSettings(): Settings {
   return {
     workflowStepTimeoutMs: 900_000,
     requirePrApproval: false,
+    requirePlanApproval: false,
     runStepsInNewSessions: false,
     // A real project value for an absent-default lane — must NOT be clobbered.
     executionProvider: "project-anthropic",
@@ -81,6 +82,17 @@ describe("mergeEffectiveSettings (engine entry merge, U3/KTD-3)", () => {
     expect(merged.executionProvider).toBe("wf-openai");
     // Untouched lane keeps the project value.
     expect(merged.executionModelId).toBe("claude-project");
+  });
+
+  it("preserves project planApprovalMode while applying stored workflow requirePlanApproval", async () => {
+    const store = makeStore({
+      workflowId: "builtin:coding",
+      values: { requirePlanApproval: true },
+    });
+    const base = { ...baseSettings(), planApprovalMode: "auto-approve-all", requirePlanApproval: false } as unknown as Settings;
+    const merged = await mergeEffectiveSettings(store as any, { id: "t1" }, base);
+    expect(merged.planApprovalMode).toBe("auto-approve-all");
+    expect(merged.requirePlanApproval).toBe(true);
   });
 
   it("returns a NEW object; the base is not mutated", async () => {
