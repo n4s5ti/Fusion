@@ -89,6 +89,7 @@ describe("CLI package.json publishing config", () => {
     expect(pkg.files).toContain("dist/**/*.d.ts.map");
     expect(pkg.files).toContain("dist/**/*.js.map");
     expect(pkg.files).toContain("dist/client/**");
+    expect(pkg.files).toContain("dist/desktop/**");
     expect(pkg.files).toContain("README.md");
   });
 
@@ -111,6 +112,16 @@ describe("CLI package.json publishing config", () => {
       // No wildcard like "dist/fn*" that would match binaries
       expect(entry).not.toMatch(/^dist\/fn/);
     }
+  });
+
+  it("stages packaged desktop runtime assets without publishing raw workspace manifests", () => {
+    const tsupRaw = readFileSync(join(workspaceRoot, "packages", "cli", "tsup.config.ts"), "utf-8");
+
+    expect(pkg.files).toContain("dist/desktop/**");
+    expect(tsupRaw).toContain("desktopRuntimeSrc");
+    expect(tsupRaw).toContain("ensureDesktopRuntimeAssetsBuilt");
+    expect(tsupRaw).toContain("Copied desktop runtime assets to dist/desktop/");
+    expect(tsupRaw).not.toContain("join(desktopRuntimeSrc, \"package.json\")");
   });
 
   it("excludes runtime directory from npm package (GitHub Releases only)", () => {

@@ -480,12 +480,18 @@ fn daemon [--port <port>] [--host <host>] [--token <token>] [--paused] [--intera
 FNXC:DesktopCLI 2026-06-21-12:00:
 `fn desktop` now starts the same local AI engine lifecycle as CLI dashboard mode by default.
 Document `--paused` as automation-paused startup and explicitly note that desktop does not expose a `--no-engine` mode so users do not infer dashboard-only flags exist here.
+
+FNXC:DesktopCLI 2026-07-01-21:12:
+Installed `fn desktop` / `fusion desktop` must launch packaged desktop runtime assets instead of treating the shell cwd as a Fusion source checkout. This keeps unrelated invalid JSON in user directories from blocking desktop startup; `--dev` is the explicit source-checkout path.
 -->
 
-Launch the Fusion desktop app (Electron) with a local AI engine running by default, mirroring `fn dashboard` engine-on startup.
+Launch the Fusion desktop app (Electron) with a local AI engine running by default, mirroring `fn dashboard` engine-on startup. In normal installed usage, both `fn desktop` and `fusion desktop` resolve the packaged desktop runtime from the installed `@runfusion/fusion` package; they do not build `@fusion/desktop`, inspect a source workspace, or validate `package.json` files from the current directory or its ancestors.
+
+Use `--dev` only from a Fusion source checkout after building the desktop entrypoint. It points Electron at the checkout's `packages/desktop/dist/main.js` and Vite dev server.
 
 ```bash
 fn desktop
+fusion desktop --no-auth
 fn desktop --dev
 fn desktop --paused
 fn desktop --interactive
@@ -493,9 +499,10 @@ fn desktop --interactive
 
 | Option | Description |
 |---|---|
-| `--dev` | Launch with hot-reload (connects to Vite dev server). |
+| `--dev` | Launch from a source checkout with hot-reload (connects to Vite dev server). |
 | `--paused` | Launch with the AI engine paused (automation disabled). |
 | `--interactive` | Interactive port selection. |
+| `--no-auth` | Disable bearer-token auth for the embedded local dashboard server. This matches `fn dashboard --no-auth` for local desktop compatibility and does not change runtime asset resolution. |
 
 `fn desktop` does not support `--no-engine`. Unlike `fn dashboard`, which can run in dashboard/API-only mode, desktop always starts the local AI engine; use `--paused` when you want the engine process running without automation doing work.
 
@@ -1152,6 +1159,7 @@ Subcommands: `search`, `install`.
 | `--interactive` | `fn dashboard`, `fn serve`, `fn daemon`, `fn desktop`, `fn task import`, `fn project add` |
 | `--paused` | `fn dashboard`, `fn serve`, `fn daemon`, `fn desktop` |
 | `--dev` | `fn dashboard`, `fn desktop` |
+| `--no-auth` | `fn dashboard`, `fn desktop`, `fn chat` |
 | `--no-engine` | `fn dashboard` |
 | `--attach` | `fn task create` |
 | `--depends` | `fn task create` |

@@ -34,6 +34,7 @@
     "dist/**/*.d.ts.map",
     "dist/**/*.js.map",
     "dist/client/**",
+    "dist/desktop/**",
     "dist/pi-claude-cli/**",
     "dist/droid-cli/**",
     "dist/plugins/**",
