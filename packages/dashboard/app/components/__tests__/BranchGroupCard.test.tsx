@@ -1,12 +1,22 @@
 import React from "react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { BranchGroupCard } from "../BranchGroupCard";
 import { loadAllAppCssBaseOnly } from "../../test/cssFixture";
 
 const apiGetBranchGroup = vi.fn();
 const apiPromoteBranchGroup = vi.fn();
 const apiAbandonBranchGroup = vi.fn();
+
+type SseSubscription = {
+  url: string;
+  options: {
+    events?: Record<string, (event: MessageEvent) => void>;
+    onReconnect?: () => void;
+  };
+};
+
+const sseSubscriptions: SseSubscription[] = [];
 
 vi.mock("../../api", () => ({
   apiGetBranchGroup: (...args: unknown[]) => apiGetBranchGroup(...args),
@@ -15,7 +25,10 @@ vi.mock("../../api", () => ({
 }));
 
 vi.mock("../../sse-bus", () => ({
-  subscribeSse: () => () => {},
+  subscribeSse: (url: string, options: SseSubscription["options"]) => {
+    sseSubscriptions.push({ url, options });
+    return () => {};
+  },
 }));
 
 vi.mock("lucide-react", () => ({
@@ -61,6 +74,7 @@ describe("BranchGroupCard", () => {
     apiGetBranchGroup.mockReset();
     apiPromoteBranchGroup.mockReset();
     apiAbandonBranchGroup.mockReset();
+    sseSubscriptions.length = 0;
   });
 
   it("hides promote control while incomplete", async () => {
@@ -191,6 +205,125 @@ describe("BranchGroupCard", () => {
     expect(screen.getByRole("button", { name: /collapse branch group/i })).toHaveAttribute("aria-expanded", "true");
     expect(screen.getByText("FN-1 · one")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /open pr/i })).toBeInTheDocument();
+  });
+
+
+  it("refetches on task:moved and updates completion, progress, member landed state, and completion-gated actions", async () => {
+    apiGetBranchGroup
+      .mockResolvedValueOnce({ group: makeGroup() })
+      .mockResolvedValueOnce({
+        group: makeGroup({
+          completion: { landed: 2, total: 2, complete: true },
+          members: [
+            { taskId: "FN-1", title: "one", column: "done", landed: true },
+            { taskId: "FN-2", title: "two", column: "done", landed: true },
+          ],
+        }),
+      });
+
+    render(<BranchGroupCard groupId="BG-1" />);
+    await screen.findByText("1 of 2 members finished");
+    await expandBranchGroup();
+
+    expect(screen.getByRole("progressbar")).toHaveAttribute("aria-valuenow", "1");
+    expect(screen.queryByRole("button", { name: /open pr/i })).toBeNull();
+
+    await act(async () => {
+      sseSubscriptions.at(-1)?.options.events?.["task:moved"]?.(new MessageEvent("task:moved", { data: JSON.stringify({ task: { id: "FN-2" } }) }));
+    });
+
+    expect(await screen.findByText("2 of 2 members finished")).toBeInTheDocument();
+    expect(screen.getByRole("progressbar")).toHaveAttribute("aria-valuenow", "2");
+    expect(screen.getByRole("progressbar")).toHaveAttribute("aria-valuemax", "2");
+    expect(screen.getByText("FN-2 · two").closest("li")?.querySelector(".status-dot")).toHaveClass("status-dot--online");
+    expect(screen.getByRole("button", { name: /open pr/i })).toBeInTheDocument();
+  });
+
+  it("refetches on membership lifecycle events and updates member rows without remounting", async () => {
+    apiGetBranchGroup
+      .mockResolvedValueOnce({ group: makeGroup() })
+      .mockResolvedValueOnce({
+        group: makeGroup({
+          completion: { landed: 1, total: 1, complete: true },
+          members: [{ taskId: "FN-1", title: "one", column: "done", landed: true }],
+        }),
+      });
+
+    render(<BranchGroupCard groupId="BG-1" projectId="proj-a" />);
+    await screen.findByText("1 of 2 members finished");
+    await expandBranchGroup();
+    expect(screen.getByText("FN-2 · two")).toBeInTheDocument();
+
+    await act(async () => {
+      sseSubscriptions.at(-1)?.options.events?.["task:deleted"]?.(new MessageEvent("task:deleted", { data: JSON.stringify({ id: "FN-2", projectId: "proj-a" }) }));
+    });
+
+    expect(await screen.findByText("1 of 1 members finished")).toBeInTheDocument();
+    expect(screen.getByRole("progressbar")).toHaveAttribute("aria-valuemax", "1");
+    expect(screen.queryByText("FN-2 · two")).toBeNull();
+  });
+
+  it("ignores task lifecycle events for another project when payloads include a project id", async () => {
+    apiGetBranchGroup.mockResolvedValue({ group: makeGroup() });
+
+    render(<BranchGroupCard groupId="BG-1" projectId="proj-a" />);
+    await screen.findByText("1 of 2 members finished");
+
+    await act(async () => {
+      sseSubscriptions.at(-1)?.options.events?.["task:updated"]?.(new MessageEvent("task:updated", { data: JSON.stringify({ id: "FN-2", projectId: "proj-b" }) }));
+    });
+
+    expect(apiGetBranchGroup).toHaveBeenCalledTimes(1);
+  });
+
+  it("refetches on reconnect", async () => {
+    apiGetBranchGroup
+      .mockResolvedValueOnce({ group: makeGroup() })
+      .mockResolvedValueOnce({ group: makeGroup({ completion: { landed: 2, total: 2, complete: true }, members: completeMembers }) });
+
+    render(<BranchGroupCard groupId="BG-1" />);
+    await screen.findByText("1 of 2 members finished");
+
+    await act(async () => {
+      sseSubscriptions.at(-1)?.options.onReconnect?.();
+    });
+
+    expect(await screen.findByText("2 of 2 members finished")).toBeInTheDocument();
+  });
+
+  it("preserves user expansion state across live refreshes", async () => {
+    apiGetBranchGroup
+      .mockResolvedValueOnce({ group: makeGroup() })
+      .mockResolvedValueOnce({ group: makeGroup({ completion: { landed: 2, total: 2, complete: true }, members: completeMembers }) })
+      .mockResolvedValueOnce({ group: makeGroup() })
+      .mockResolvedValueOnce({ group: makeGroup({ completion: { landed: 2, total: 2, complete: true }, members: completeMembers }) });
+
+    const { unmount } = render(<BranchGroupCard groupId="BG-1" />);
+    await screen.findByText("1 of 2 members finished");
+    await expandBranchGroup();
+
+    await act(async () => {
+      sseSubscriptions.at(-1)?.options.events?.["task:updated"]?.(new MessageEvent("task:updated", { data: "{}" }));
+    });
+
+    expect(await screen.findByText("2 of 2 members finished")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /collapse branch group/i })).toHaveAttribute("aria-expanded", "true");
+    expect(screen.getByText("FN-1 · one")).toBeInTheDocument();
+
+    unmount();
+    sseSubscriptions.length = 0;
+
+    render(<BranchGroupCard groupId="BG-1" />);
+    await screen.findByText("1 of 2 members finished");
+    expect(screen.getByRole("button", { name: /expand branch group/i })).toHaveAttribute("aria-expanded", "false");
+
+    await act(async () => {
+      sseSubscriptions.at(-1)?.options.events?.["task:moved"]?.(new MessageEvent("task:moved", { data: "{}" }));
+    });
+
+    expect(await screen.findByText("2 of 2 members finished")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /expand branch group/i })).toHaveAttribute("aria-expanded", "false");
+    expect(screen.queryByText("FN-1 · one")).toBeNull();
   });
 
   it("keeps collapsed branch-group styling tokenized and compact", () => {

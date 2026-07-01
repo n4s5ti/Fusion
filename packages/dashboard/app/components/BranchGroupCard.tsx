@@ -1,10 +1,11 @@
 import "./BranchGroupCard.css";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { CheckCircle2, ChevronDown, ChevronRight, CircleDashed, ExternalLink, GitBranch, GitPullRequest, Loader2 } from "lucide-react";
 import type { BranchGroupSummary } from "../api";
 import { apiAbandonBranchGroup, apiGetBranchGroup, apiPromoteBranchGroup } from "../api";
 import { subscribeSse } from "../sse-bus";
+import { BRANCH_GROUP_REFRESH_TASK_EVENTS, shouldRefreshBranchGroupForTaskEvent } from "../utils/branchGroupSse";
 
 interface BranchGroupCardProps {
   groupId: string;
@@ -37,25 +38,35 @@ export function BranchGroupCard({ groupId, projectId }: BranchGroupCardProps) {
     }
   }, [groupId, projectId, t]);
 
+  const loadGroupRef = useRef(loadGroup);
+
+  useEffect(() => {
+    loadGroupRef.current = loadGroup;
+  }, [loadGroup]);
+
   useEffect(() => {
     setLoading(true);
     void loadGroup();
   }, [loadGroup]);
 
-
   useEffect(() => {
     const query = projectId ? `?projectId=${encodeURIComponent(projectId)}` : "";
+    const refreshFromCurrentGroup = (event?: MessageEvent) => {
+      if (event && !shouldRefreshBranchGroupForTaskEvent(event, projectId)) {
+        return;
+      }
+      void loadGroupRef.current();
+    };
+    /*
+    FNXC:BranchGroupDetails 2026-06-30-18:04:
+    Task-detail branch group refreshes use the current loader callback so live SSE updates do not reset the local collapsed/expanded state.
+    */
+    const events = Object.fromEntries(BRANCH_GROUP_REFRESH_TASK_EVENTS.map((eventName) => [eventName, refreshFromCurrentGroup]));
     return subscribeSse(`/api/events${query}`, {
-      events: {
-        "task:updated": () => {
-          void loadGroup();
-        },
-      },
-      onReconnect: () => {
-        void loadGroup();
-      },
+      events,
+      onReconnect: () => refreshFromCurrentGroup(),
     });
-  }, [loadGroup, projectId]);
+  }, [projectId]);
 
   const completionText = useMemo(() => {
     if (!group) return "";
