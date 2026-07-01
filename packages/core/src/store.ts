@@ -7798,6 +7798,28 @@ ${TASK_UPSERT_SQL_ASSIGNMENTS}
         }
       }
 
+      /*
+      FNXC:WorkflowCapacity 2026-07-01-00:00:
+      maxWorktrees is an operator resource cap for active execution checkouts, not a workflow WIP policy. Re-check it inside the move transaction before committing an allocated in-progress worktree so maxConcurrent, stale scheduler snapshots, or racing releases cannot create a fifth active holder.
+      */
+      if (fromColumn !== toColumn && toColumn === "in-progress" && task.worktree) {
+        const maxWorktrees = typeof mergedSettingsForMove.maxWorktrees === "number" && Number.isFinite(mergedSettingsForMove.maxWorktrees)
+          ? mergedSettingsForMove.maxWorktrees
+          : 4;
+        const activeHolders = this.countActiveExecutionWorktreeHoldersSync({ excludeTaskId: id });
+        if (activeHolders >= maxWorktrees) {
+          throw new TransitionRejectionError(
+            makeTransitionRejection(
+              "capacity-exhausted",
+              "transition.rejected.capacityExhausted",
+              true,
+              `Active worktree cap exhausted (${activeHolders}/${maxWorktrees})`,
+            ),
+            `Cannot move ${id} to '${toColumn}': active worktree cap exhausted (${activeHolders}/${maxWorktrees})`,
+          );
+        }
+      }
+
       this.upsertTaskWithFtsRecovery(task);
       this.insertRunAuditEventRow({
         taskId: id,
@@ -15989,6 +16011,34 @@ ${stepsSection}`;
         // Corrupt marker — treat as not holding this slot.
       }
       if (toColumn === targetColumn) count += 1;
+    }
+    return count;
+  }
+
+  private countActiveExecutionWorktreeHoldersSync(params: { excludeTaskId: string }): number {
+    const rows = this.db
+      .prepare(
+        `SELECT id, "column" AS col, transitionPending AS tp
+         FROM tasks
+         WHERE deletedAt IS NULL
+           AND id != ?
+           AND ("column" = 'in-progress' OR (transitionPending IS NOT NULL AND transitionPending != ''))`,
+      )
+      .all(params.excludeTaskId) as Array<{ id: string; col: string; tp: string | null }>;
+
+    let count = 0;
+    for (const row of rows) {
+      if (row.col === "in-progress") {
+        count += 1;
+        continue;
+      }
+      if (!row.tp) continue;
+      try {
+        const parsed = JSON.parse(row.tp) as { toColumn?: unknown };
+        if (parsed.toColumn === "in-progress") count += 1;
+      } catch {
+        // Corrupt marker — do not inflate active worktree usage.
+      }
     }
     return count;
   }

@@ -6,7 +6,7 @@ import { existsSync } from "node:fs";
 import * as projectMemory from "../project-memory.js";
 import { AgentStore } from "../agent-store.js";
 import { CentralDatabase } from "../central-db.js";
-import { TaskStore, TaskHasDependentsError } from "../store.js";
+import { TaskStore, TaskHasDependentsError, TransitionRejectionError } from "../store.js";
 import { TASK_DONE_BYPASS_BLOCKER_MESSAGE, allowsAutoMergeProcessing, resolveEffectiveAutoMerge } from "../task-merge.js";
 import { buildResearchDocumentKey, type Task } from "../types.js";
 import { createSharedTaskStoreTestHarness, makeTmpDir } from "./store-test-helpers.js";
@@ -63,6 +63,84 @@ describe("TaskStore", () => {
     });
   });
 
+  describe("moveTask — maxWorktrees hard active-worktree cap", () => {
+    async function createActiveHolder(index: number): Promise<Task> {
+      const task = await store.createTask({ description: `active holder ${index}` });
+      await store.moveTask(task.id, "todo");
+      return store.moveTask(task.id, "in-progress", {
+        moveSource: "scheduler",
+        allocateWorktree: () => `/tmp/fn-7373-holder-${index}`,
+      });
+    }
+
+    it("rejects a fifth allocated in-progress move when maxWorktrees is 4 and maxConcurrent is higher", async () => {
+      await store.updateSettings({ maxWorktrees: 4, maxConcurrent: 10 });
+      for (let i = 0; i < 4; i += 1) {
+        await createActiveHolder(i);
+      }
+      const fifth = await store.createTask({ description: "fifth holder" });
+      await store.moveTask(fifth.id, "todo");
+
+      await expect(store.moveTask(fifth.id, "in-progress", {
+        moveSource: "scheduler",
+        allocateWorktree: () => "/tmp/fn-7373-holder-5",
+      })).rejects.toMatchObject({
+        rejection: expect.objectContaining({ code: "capacity-exhausted", retryable: true }),
+      } satisfies Partial<TransitionRejectionError>);
+
+      const active = (await store.listTasks({ includeArchived: false })).filter((task) => task.column === "in-progress");
+      expect(active).toHaveLength(4);
+      expect((await store.getTask(fifth.id))?.column).toBe("todo");
+    });
+
+    it("serializes racing allocated moves so only one final maxWorktrees slot is committed", async () => {
+      await store.updateSettings({ maxWorktrees: 4, maxConcurrent: 10 });
+      for (let i = 0; i < 3; i += 1) {
+        await createActiveHolder(i);
+      }
+      const contenders = await Promise.all([
+        store.createTask({ description: "race contender a" }),
+        store.createTask({ description: "race contender b" }),
+      ]);
+      for (const contender of contenders) {
+        await store.moveTask(contender.id, "todo");
+      }
+
+      const results = await Promise.allSettled(contenders.map((contender, index) =>
+        store.moveTask(contender.id, "in-progress", {
+          moveSource: "scheduler",
+          allocateWorktree: () => `/tmp/fn-7373-race-${index}`,
+        }),
+      ));
+
+      expect(results.filter((result) => result.status === "fulfilled")).toHaveLength(1);
+      expect(results.filter((result) => result.status === "rejected")).toHaveLength(1);
+      const active = (await store.listTasks({ includeArchived: false })).filter((task) => task.column === "in-progress");
+      expect(active).toHaveLength(4);
+      const activeContenders = contenders.filter((contender) => active.some((task) => task.id === contender.id));
+      expect(activeContenders).toHaveLength(1);
+    });
+
+    it("does not count idle in-review worktrees against maxWorktrees active allocation", async () => {
+      await store.updateSettings({ maxWorktrees: 1, maxConcurrent: 10 });
+      for (let i = 0; i < 3; i += 1) {
+        const reviewing = await createActiveHolder(i);
+        await store.moveTask(reviewing.id, "in-review", { moveSource: "engine", allowDirectInReviewMove: true });
+        await store.updateTask(reviewing.id, { worktree: `/tmp/fn-7373-review-${i}` });
+      }
+      const next = await store.createTask({ description: "next active holder" });
+      await store.moveTask(next.id, "todo");
+
+      const moved = await store.moveTask(next.id, "in-progress", {
+        moveSource: "scheduler",
+        allocateWorktree: () => "/tmp/fn-7373-next-active",
+      });
+
+      expect(moved.column).toBe("in-progress");
+      expect(moved.worktree).toBe("/tmp/fn-7373-next-active");
+      expect((await store.listTasks({ includeArchived: false })).filter((task) => task.column === "in-progress")).toHaveLength(1);
+    });
+  });
 
   describe("moveTask — autoMerge follows live settings on in-review", () => {
     async function createInProgressTask(description: string): Promise<Task> {

@@ -370,6 +370,58 @@ describe("hold-release sweep (U6)", () => {
     expect((await store.getTask(held))?.column).toBe("todo");
   });
 
+  it("does not release a fifth active worktree when maxWorktrees is 4 and maxConcurrent is higher", async () => {
+    await store.updateSettings({ maxWorktrees: 4, maxConcurrent: 10 } as Parameters<typeof store.updateSettings>[0]);
+    for (let i = 0; i < 4; i += 1) {
+      const occupant = await store.createTask({ description: `maxWorktrees occupant ${i}` });
+      setColumn(store, occupant.id, "in-progress");
+      await store.updateTask(occupant.id, { worktree: `/tmp/fn-7373-occupant-${i}` });
+    }
+    const held = await seedTodoCard();
+    const release = vi.fn();
+
+    const result = await runHoldReleaseSweep(store, {
+      now: () => Date.now(),
+      reserveSlot: () => ({ release }),
+      allocateWorktree: () => "/tmp/fn-7373-fifth",
+    });
+
+    expect(result.released).not.toContain(held);
+    expect((await store.getTask(held))?.column).toBe("todo");
+    expect((await store.listTasks({ includeArchived: false })).filter((task) => task.column === "in-progress")).toHaveLength(4);
+    expect(release).toHaveBeenCalledTimes(1);
+  });
+
+  it("racing held releases cannot commit more than one final maxWorktrees slot", async () => {
+    await store.updateSettings({ maxWorktrees: 4, maxConcurrent: 10 } as Parameters<typeof store.updateSettings>[0]);
+    for (let i = 0; i < 3; i += 1) {
+      const occupant = await store.createTask({ description: `race occupant ${i}` });
+      setColumn(store, occupant.id, "in-progress");
+      await store.updateTask(occupant.id, { worktree: `/tmp/fn-7373-race-occupant-${i}` });
+    }
+    const heldA = await seedTodoCard();
+    const heldB = await seedTodoCard();
+    let reserveCount = 0;
+    let releaseCount = 0;
+
+    const result = await runHoldReleaseSweep(store, {
+      now: () => Date.now(),
+      reserveSlot: () => {
+        reserveCount += 1;
+        return { release: () => { releaseCount += 1; } };
+      },
+      allocateWorktree: (_task, reservedNames) => `/tmp/fn-7373-race-${reservedNames.size}`,
+    });
+
+    const releasedHeldTasks = result.released.filter((taskId) => taskId === heldA || taskId === heldB);
+    expect(releasedHeldTasks).toHaveLength(1);
+    const active = (await store.listTasks({ includeArchived: false })).filter((task) => task.column === "in-progress");
+    expect(active).toHaveLength(4);
+    expect([heldA, heldB].filter((taskId) => active.some((task) => task.id === taskId))).toHaveLength(1);
+    expect(reserveCount).toBe(2);
+    expect(releaseCount).toBe(1);
+  });
+
   it("capacity release respects cards mid-transitionPending (they hold the slot from commit time)", async () => {
     await store.updateSettings({ maxConcurrent: 1 } as Parameters<typeof store.updateSettings>[0]);
     // Occupant has committed into in-progress AND is mid-transitionPending — it
