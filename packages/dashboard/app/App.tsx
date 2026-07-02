@@ -230,7 +230,7 @@ function AppInner() {
   const { currentNode, currentNodeId, isRemote, setCurrentNode, clearCurrentNode } = useNodeContext();
 
   // Current project with node-aware persistence
-  const { currentProject, setCurrentProject, clearCurrentProject, loading: currentProjectLoading } = useCurrentProject(projects, { nodeId: currentNodeId });
+  const { currentProject, setCurrentProject, clearCurrentProject, loading: currentProjectLoading } = useCurrentProject(projects, { nodeId: currentNodeId, projectsLoading });
 
   const {
     hasAiProvider,

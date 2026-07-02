@@ -98,6 +98,8 @@ Use deep links to open a specific task directly from notifications, chat, or ext
 
 - `/tasks/<TASK_ID>` (for example, `/tasks/FN-1234`) opens that task, and can include `?project=<project-id>` for multi-project routing.
 - `/?task=<TASK_ID>[&project=<project-id>]` is the canonical in-app form and opens the task detail modal on load.
+- Selecting a project from the dashboard project switcher writes `?project=<project-id>` into the URL and preserves unrelated query parameters/hash fragments, so refreshing the browser keeps the same selected project instead of returning to the default project.
+<!-- FNXC:ProjectUrlState 2026-07-02-00:00: The project switcher now uses the same `?project=` URL contract as task deep links so non-default project selections survive browser refresh and can be shared/bookmarked. -->
 - Legacy path-style links (including trailing-slash forms like `/tasks/<TASK_ID>/` and older hash-style entry points that resolve to that path) are normalized client-side to the canonical query form with `history.replaceState`, so the URL updates without a full reload.
 - In non-headless dashboard mode, the server also issues an HTTP 301 redirect from `/tasks/<TASK_ID>` to `/?task=<TASK_ID>` and preserves `?project=` when present.
 - Theme assets resolve `theme-data.css` against the current document base (HTTP/HTTPS, `file://`, and Electron fallback paths), so non-default themes still load correctly when you land on deep-linked or sub-path URLs.

@@ -2,6 +2,7 @@ import { useCallback } from "react";
 import { useTranslation } from "react-i18next";
 import { pauseProject, resumeProject, unregisterProject } from "../api";
 import type { ProjectInfo } from "../api";
+import { replaceProjectIdInUrl } from "../utils/projectUrlState";
 import type { ViewMode } from "./useViewState";
 import type { ToastType } from "./useToast";
 
@@ -52,11 +53,13 @@ export function useProjectActions(options: UseProjectActionsOptions): UseProject
   } = options;
 
   const handleSelectProject = useCallback((project: ProjectInfo) => {
+    replaceProjectIdInUrl(project.id);
     setCurrentProject(project);
     setViewMode("project");
   }, [setCurrentProject, setViewMode]);
 
   const handleViewAllProjects = useCallback(() => {
+    replaceProjectIdInUrl(null);
     clearCurrentProject();
     setViewMode("overview");
   }, [clearCurrentProject, setViewMode]);
@@ -71,6 +74,7 @@ export function useProjectActions(options: UseProjectActionsOptions): UseProject
 
   const handleSetupComplete = useCallback((project: ProjectInfo) => {
     closeSetupWizard();
+    replaceProjectIdInUrl(project.id);
     setCurrentProject(project);
     setViewMode("project");
     addToast(t("projects.setup.success", "Project {{name}} registered successfully", { name: project.name }), "success");
@@ -107,6 +111,7 @@ export function useProjectActions(options: UseProjectActionsOptions): UseProject
       addToast(t("projects.actions.removeSuccess", "Project {{name}} removed", { name: project.name }), "success");
 
       if (currentProject?.id === project.id) {
+        replaceProjectIdInUrl(null);
         clearCurrentProject();
         setViewMode("overview");
       }
