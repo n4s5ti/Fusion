@@ -86,7 +86,7 @@ import {
 import { buildSessionSkillContext } from "./session-skill-context.js";
 import type { SkillSelectionContext } from "./skill-resolver.js";
 import { resolveMcpServersForStore } from "./mcp-resolution.js";
-import { reviewStep, type ReviewVerdict, type ReviewResult } from "./reviewer.js";
+import { reviewStep, proseSignalsClearApproval, extractJsonObjectCandidates, type ReviewVerdict, type ReviewResult } from "./reviewer.js";
 import { buildUserCommentsPromptSection, selectUserCommentsForAgentContext } from "./agent-user-comments.js";
 import { resolveSandboxBackend } from "./sandbox/index.js";
 import type { SandboxBackend } from "./sandbox/types.js";
@@ -1139,8 +1139,6 @@ export type WorkflowStepResult =
   | { allPassed: false; revisionRequested: false; feedback: string; stepName: string }
   | { allPassed: false; revisionRequested: true; feedback: string; stepName: string };
 
-const WORKFLOW_STEP_VERDICTS = new Set(["APPROVE", "APPROVE_WITH_NOTES", "REVISE"] as const);
-
 export function parseWorkflowStepVerdict(rawOutput: string): { verdict: "APPROVE" | "APPROVE_WITH_NOTES" | "REVISE"; notes: string } | null {
   const trimmed = rawOutput.trim();
   const candidates: string[] = [];
@@ -1148,19 +1146,30 @@ export function parseWorkflowStepVerdict(rawOutput: string): { verdict: "APPROVE
   for (const match of fencedMatches) {
     candidates.push(match[1].trim());
   }
-  const jsonObjectMatches = trimmed.match(/\{[\s\S]*\}/g);
-  if (jsonObjectMatches) {
-    candidates.push(...jsonObjectMatches.map((value) => value.trim()));
-  }
+  /*
+  FNXC:ReviewLeniency 2026-07-01-23:30:
+  Prefer a balanced, string-aware object scan over a greedy `\{[\s\S]*\}` match: models that emit reasoning PROSE (which may itself contain braces) followed by a trailing `{"verdict":...}` payload broke the greedy span into invalid JSON. extractJsonObjectCandidates returns each top-level object in document order; iterating last→first prefers the trailing verdict payload.
+  */
+  candidates.push(...extractJsonObjectCandidates(trimmed));
 
   for (let i = candidates.length - 1; i >= 0; i -= 1) {
     try {
-      const parsed = JSON.parse(candidates[i]) as { verdict?: string; notes?: unknown };
-      if (!parsed || typeof parsed.verdict !== "string" || !WORKFLOW_STEP_VERDICTS.has(parsed.verdict as "APPROVE")) {
-        continue;
+      const parsed = JSON.parse(candidates[i]) as { verdict?: unknown; notes?: unknown };
+      if (!parsed || typeof parsed.verdict !== "string") continue;
+      /*
+      FNXC:ReviewLeniency 2026-07-01-23:30:
+      "Any approved" — accept approval-family verdict variants (APPROVE, APPROVED, APPROVE_WITH_NOTES, approve_with_verdict, …), not just the exact WORKFLOW_STEP_VERDICTS strings. A token starting with APPROVE maps to APPROVE_WITH_NOTES when it mentions notes, else APPROVE; REVISE-family → REVISE; anything else (e.g. "PASS") is not a verdict and the candidate is skipped.
+      */
+      const token = parsed.verdict.trim().toUpperCase();
+      let verdict: "APPROVE" | "APPROVE_WITH_NOTES" | "REVISE" | null = null;
+      if (token.startsWith("APPROVE") || token.startsWith("APPROVAL")) {
+        verdict = token.includes("NOTE") ? "APPROVE_WITH_NOTES" : "APPROVE";
+      } else if (token.startsWith("REVISE") || token.startsWith("REQUEST_REVISION") || token.startsWith("REJECT")) {
+        verdict = "REVISE";
       }
+      if (!verdict) continue;
       return {
-        verdict: parsed.verdict as "APPROVE" | "APPROVE_WITH_NOTES" | "REVISE",
+        verdict,
         notes: typeof parsed.notes === "string" ? parsed.notes : "",
       };
     } catch {
@@ -1191,7 +1200,11 @@ export function inferWorkflowStepVerdictFromProse(rawOutput: string): { verdict:
       notes: "",
     };
   }
-  if (/\b(approve|approved|looks good|no issues|out of scope)\b/i.test(trimmed)) {
+  /*
+  FNXC:ReviewLeniency 2026-07-01-22:15:
+  A gate review (code-review, browser-verification) whose text clearly approves must PASS even when it is not perfectly structured. Delegate to the shared proseSignalsClearApproval detector so this parser and the reviewer/plan-review parser agree on what "clearly approved" means, and so a prose rejection ("not approved", "please revise", "reject") is never promoted to APPROVE. Replaces the prior narrow approve/approved/looks good/no issues/out of scope regex (now a subset of the shared detector).
+  */
+  if (proseSignalsClearApproval(trimmed)) {
     return { verdict: "APPROVE", notes: "" };
   }
   return null;
@@ -3427,6 +3440,19 @@ export class TaskExecutor {
    *   this as a successful retry, since the original bounce may itself be
    *   stuck.
    */
+  /*
+  FNXC:ReviewLeniency 2026-07-02-02:10:
+  Clear prior terminal failure results (failed/advisory_failure — incl. optional gate nodes like code-review) so a retry starts clean. Call this ONLY once the task has left the mergeable in-review column (i.e. it is in `todo`): clearing while still in-review drops the merge blocker during the rerun-bounce window and could let a concurrent auto-merge sweep merge an empty-`steps` graph-native task with its gate failure unaddressed. `moveTask(in-review→todo)` already clears ALL results (applyReopenFieldClears), so this is chiefly for the in-progress→todo bounce path where the move does not. Passed/skipped/pending evidence is kept.
+  */
+  private async clearTerminalStepFailuresForRetry(taskId: string): Promise<void> {
+    const live = await this.store.getTask(taskId).catch(() => null);
+    if (!live) return;
+    const cleared = clearTerminalWorkflowStepFailures(live.workflowStepResults);
+    if (cleared !== live.workflowStepResults) {
+      await this.store.updateTask(taskId, { workflowStepResults: cleared }, this.getRunContextFor(taskId));
+    }
+  }
+
   private async performWorkflowRerunBounce(
     taskId: string,
     worktreePath: string,
@@ -3508,6 +3534,8 @@ export class TaskExecutor {
           executorLog.log(`${taskId}: workflow rerun parked in todo — ${pauseLabelAfterTodo} became active during bounce`);
           return "deferred-paused";
         }
+        // Now in `todo` (non-mergeable) — safe to clear prior gate failures.
+        await this.clearTerminalStepFailuresForRetry(taskId);
         await this.store.moveTask(taskId, "in-progress");
         return "bounced";
       }
@@ -3519,6 +3547,8 @@ export class TaskExecutor {
           executorLog.log(`${taskId}: workflow rerun parked in todo — ${pauseLabelBeforeResume} became active before resume`);
           return "deferred-paused";
         }
+        // Already in `todo` (non-mergeable) — safe to clear prior gate failures.
+        await this.clearTerminalStepFailuresForRetry(taskId);
         await this.store.moveTask(taskId, "in-progress");
         return "bounced";
       }
@@ -7436,9 +7466,14 @@ export class TaskExecutor {
      * recovery synthesize a Plan Review REVISE even when no reviewer requested
      * one; `advisory_failure` preserves visibility without inventing feedback.
      */
-    const advisoryFailureValue = (outcome as { malformed?: boolean }).malformed ? "advisory_failure" : "failed";
+    const malformed = (outcome as { malformed?: boolean }).malformed === true;
+    const advisoryFailureValue = malformed ? "advisory_failure" : "failed";
+    /*
+    FNXC:ReviewLeniency 2026-07-02-00:30:
+    Malformed review output (no parseable verdict, even after the fallback-model retry in executeWorkflowStep) is treated as a NON-BLOCKING advisory rather than a hard gate failure. Operators asked that an unparseable reviewer response not block a task in review — a genuine REVISE (parsed verdict) still blocks, and the advisory_failure value keeps the malformed result visible on the Workflow tab. Only `malformed` relaxes a gate; every parsed non-pass verdict continues to block exactly as before.
+    */
     return {
-      outcome: outcome.success || !blocking ? "success" : "failure",
+      outcome: outcome.success || !blocking || malformed ? "success" : "failure",
       value: verdict ?? (outcome.success ? "passed" : advisoryFailureValue),
       ...(Object.keys(contextPatch).length > 0 ? { contextPatch } : {}),
     };
@@ -8561,6 +8596,12 @@ export class TaskExecutor {
         recoveryRehome: true,
       });
     }
+    // FNXC:ReviewLeniency 2026-07-02-02:10: clear prior terminal failure results
+    // (incl. optional gate nodes like code-review) AFTER the task is in `todo`
+    // (non-mergeable) so the resumed run re-evaluates gates from a clean slate
+    // without dropping the in-review merge blocker mid-flight. (in-review→todo
+    // moveTask already clears all results; this covers the already-`todo` path.)
+    await this.clearTerminalStepFailuresForRetry(live.id);
     await this.persistTokenUsage(live.id);
     return true;
   }
@@ -13704,7 +13745,14 @@ ${failureContext.output.slice(0, VERIFICATION_LOG_MAX_CHARS)}
     const updatedTask = await this.store.getTask(taskId);
     await this.reopenLastStepForRevision(taskId, updatedTask);
 
-    // 5. Clear error/status/session fields and reset workflow step retries
+    // 5. Clear error/status/session fields and reset workflow step retries.
+    //    FNXC:ReviewLeniency 2026-07-02-02:10: prior terminal failure results
+    //    (incl. optional gate nodes like code-review) are cleared by the rerun
+    //    bounce AFTER the task leaves the mergeable in-review column (see
+    //    clearTerminalStepFailuresForRetry), NOT here — clearing them while the
+    //    task is still in-review would drop the merge blocker during the async
+    //    bounce window and let a concurrent auto-merge sweep merge an
+    //    empty-`steps` graph-native task with the gate failure unaddressed.
     await this.store.updateTask(taskId, {
       status: mergeVerificationFailure ? "merging-fix" : null,
       error: null,
@@ -14750,9 +14798,12 @@ You have access to the file system to review changes.${inlineFixBlock}${verdictB
         }
 
         if (parsed.malformed) {
+          // FNXC:ReviewLeniency 2026-07-02-00:30: malformed output (after the
+          // fallback-model retry) is recorded as a NON-BLOCKING advisory, not a
+          // hard gate block — see runGraphCustomNode's outcome mapping.
           await this.store.logEntry(
             task.id,
-            `[pre-merge] Workflow step '${workflowStep.name}' produced malformed output — blocking gate success`,
+            `[pre-merge] Workflow step '${workflowStep.name}' produced malformed output (no parseable verdict) — recorded as non-blocking advisory`,
           );
           if (workflowStep.requiresBrowser === true) {
             await logBrowserVerificationActivity(`[browser-verification] finished browser verification for task ${task.id}: malformed output`);
@@ -14802,18 +14853,24 @@ You have access to the file system to review changes.${inlineFixBlock}${verdictB
     };
 
     const primaryOutcome = await runOnce(primaryProvider, primaryModelId, "primary");
-    if (!primaryOutcome.timedOut) return primaryOutcome;
+    /*
+    FNXC:ReviewLeniency 2026-07-02-00:30:
+    Retry the fallback model on a MALFORMED (unparseable-verdict) primary response, not only on a timeout. A single fumbled response — reasoning with no trailing verdict — should get one more attempt on the fallback model before the gate result is recorded, mirroring the reviewer path's UNAVAILABLE retry. If no fallback is configured the malformed primary is returned as-is (and is treated as a non-blocking advisory downstream, see runGraphCustomNode).
+    */
+    const primaryMalformed = (primaryOutcome as { malformed?: boolean }).malformed === true;
+    if (!primaryOutcome.timedOut && !primaryMalformed) return primaryOutcome;
 
     if (!fallback) {
-      executorLog.warn(`${task.id}: workflow step '${workflowStep.name}' timed out and no fallback model is configured`);
+      const reason = primaryOutcome.timedOut ? "timed out" : "produced malformed output";
+      executorLog.warn(`${task.id}: workflow step '${workflowStep.name}' ${reason} and no fallback model is configured`);
       await this.store.logEntry(
         task.id,
-        `Workflow step '${workflowStep.name}' timed out — no fallback model configured (set settings.validatorFallbackProvider/Id or fallbackProvider/Id)`,
+        `Workflow step '${workflowStep.name}' ${reason} — no fallback model configured (set settings.validatorFallbackProvider/Id or fallbackProvider/Id)`,
       );
       return primaryOutcome;
     }
 
-    executorLog.log(`${task.id}: retrying workflow step '${workflowStep.name}' with fallback ${fallback.provider}/${fallback.modelId} (label=${fallback.label})`);
+    executorLog.log(`${task.id}: retrying workflow step '${workflowStep.name}' with fallback ${fallback.provider}/${fallback.modelId} (label=${fallback.label}) after primary ${primaryOutcome.timedOut ? "timeout" : "malformed output"}`);
     return runOnce(fallback.provider, fallback.modelId, "fallback");
   }
 
@@ -17828,6 +17885,18 @@ export interface PseudoPauseResult {
 
 function hasNonTerminalWorkflowSteps(task: Pick<TaskDetail, "steps">): boolean {
   return task.steps.length > 0 && task.steps.some((step) => step.status !== "done" && step.status !== "skipped");
+}
+
+/*
+FNXC:ReviewLeniency 2026-07-02-01:00:
+Retrying a task must clear PRIOR FAILURE states so the retry starts clean — including on optional gate nodes like code-review / browser-verification. Results are upserted by node id, so a re-running node overwrites its own stale entry, but a send-back-for-fix leaves the failed entry in place until (and unless) that node re-runs; meanwhile self-healing's failed-pre-merge scan and the dashboard both see a stale failure, and a node that is skipped/relaxed on the retry never clears it. Drop every terminal failure result (`failed`/`advisory_failure`) on retry while keeping `passed`/`skipped`/`pending` evidence (so a previously-passed Plan Review is not re-run). Returns the same array reference when nothing changed so callers can skip a no-op write.
+*/
+export function clearTerminalWorkflowStepFailures(
+  results: CoreWorkflowStepResult[] | undefined,
+): CoreWorkflowStepResult[] {
+  const current = results ?? [];
+  const kept = current.filter((result) => result.status !== "failed" && result.status !== "advisory_failure");
+  return kept.length === current.length ? current : kept;
 }
 
 function workflowStepResultPassed(task: Pick<Task, "workflowStepResults"> | undefined, workflowStepId: string): boolean {
