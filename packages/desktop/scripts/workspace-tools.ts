@@ -46,6 +46,18 @@ export async function buildCore(): Promise<void> {
   await runWorkspaceBin("tsc", [], resolve(workspaceRoot, "packages", "core"));
 }
 
+// FNXC:DesktopBuild 2026-07-01-19:45:
+// The packaged desktop "Local" runtime dynamically imports @fusion/engine
+// (local-runtime.ts createDashboardServerDefault). Engine's runtime code is
+// tsc-emitted into packages/engine/dist and gitignored, so a workflow that runs
+// only `@fusion/desktop build` (e.g. desktop-windows.yml, which lacked the root
+// `pnpm build`) shipped an empty engine/dist. The packaged app then crashed on
+// Local mode with `ERR_MODULE_NOT_FOUND ...app.asar/node_modules/@fusion/engine`.
+// Engine depends on @fusion/core, so callers must build core first.
+export async function buildEngine(): Promise<void> {
+  await runWorkspaceBin("tsc", [], resolve(workspaceRoot, "packages", "engine"));
+}
+
 async function buildPackage(relativePath: string): Promise<void> {
   await runWorkspaceBin("tsc", [], resolve(workspaceRoot, relativePath));
 }

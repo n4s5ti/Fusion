@@ -1,7 +1,7 @@
 import { build } from "esbuild";
 import { cp, mkdir, rm, stat } from "node:fs/promises";
 import { join } from "node:path";
-import { buildDashboard, buildDashboardClient, packageRoot, workspaceRoot } from "./workspace-tools";
+import { buildCore, buildDashboard, buildDashboardClient, buildEngine, packageRoot, workspaceRoot } from "./workspace-tools";
 const dashboardRoot = join(workspaceRoot, "packages", "dashboard");
 const dashboardClientDir = join(dashboardRoot, "dist", "client");
 const dashboardRegistryManifestSource = join(dashboardRoot, "src", "registry-manifest.json");
@@ -97,10 +97,27 @@ async function copyDashboardClient(): Promise<void> {
   await cp(dashboardClientDir, desktopClientDistDir, { recursive: true });
 }
 
+// FNXC:DesktopBuild 2026-07-01-19:45:
+// Compile the workspace @fusion/* packages the embedded "Local" runtime imports
+// at runtime (@fusion/core, @fusion/engine) so `@fusion/desktop build` alone
+// produces a complete, packageable tree — no separate root `pnpm build` required.
+// engine/dist and core/dist are tsc-emitted + gitignored; without this the
+// desktop-windows.yml workflow_dispatch build shipped an empty engine/dist and
+// the packaged app crashed on Local mode with ERR_MODULE_NOT_FOUND for
+// ...app.asar/node_modules/@fusion/engine. Core must build before engine
+// (engine depends on @fusion/core). Dashboard + its runtime plugins + plugin-sdk
+// are already built by ensureDashboardBuild().
+async function ensureEmbeddedRuntimeBuild(): Promise<void> {
+  console.log("[desktop:build] Building @fusion/core and @fusion/engine runtime dist...");
+  await buildCore();
+  await buildEngine();
+}
+
 async function main(): Promise<void> {
   await rm(desktopDistDir, { recursive: true, force: true });
   await mkdir(desktopDistDir, { recursive: true });
 
+  await ensureEmbeddedRuntimeBuild();
   await ensureDashboardBuild();
   await buildElectronEntrypoints();
   await copyDashboardClient();
