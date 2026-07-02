@@ -1858,6 +1858,112 @@ export default function kbExtension(pi: ExtensionAPI) {
     },
   });
 
+  async function createGitLabClient(ctx: { cwd: string }) {
+    const store = await getStore(ctx.cwd);
+    const projectSettings = await store.getSettings();
+    const globalSettings = await store.getGlobalSettingsStore().getSettings();
+    const auth = dashboard.resolveGitlabAuth({ projectSettings, globalSettings });
+    if (!auth.ok) throw new Error(auth.message);
+    return { store, client: new dashboard.GitLabClient(auth.auth) };
+  }
+
+  async function importGitLabItems(ctx: { cwd: string }, resourceType: dashboard.GitLabResourceType, target: string, items: Array<dashboard.GitLabIssue | dashboard.GitLabMergeRequest>) {
+    const { store, client } = await createGitLabClient(ctx);
+    const existingTasks = await store.listTasks({ slim: false, includeArchived: false });
+    const createdTasks: Array<{ id: string; title: string }> = [];
+    for (const item of items) {
+      const provenance = dashboard.buildGitLabTaskProvenance({ auth: client.auth, resourceType, item, projectInput: resourceType !== "group_issue" ? target : undefined, groupInput: resourceType === "group_issue" ? target : undefined });
+      if (existingTasks.some((task) => dashboard.isGitLabAlreadyImported(task, provenance))) continue;
+      const title = resourceType === "merge_request" ? `Review MR !${item.iid}: ${item.title.slice(0, 180)}` : item.title.slice(0, 200);
+      const task = await store.createTask({ title: title || undefined, description: dashboard.buildGitLabTaskDescription(item), column: "triage", dependencies: [], sourceIssue: provenance.sourceIssue, source: { sourceType: "gitlab_import", sourceMetadata: provenance.sourceMetadata } });
+      await store.logEntry(task.id, resourceType === "merge_request" ? "Imported merge request from GitLab" : "Imported from GitLab", item.webUrl);
+      existingTasks.push(task);
+      createdTasks.push({ id: task.id, title: task.title || item.title });
+    }
+    return createdTasks;
+  }
+
+  pi.registerTool({
+    name: "fn_task_browse_gitlab_project_issues",
+    label: "fn: Browse GitLab Project Issues",
+    description: "List GitLab project issues from the configured GitLab instance.",
+    promptSnippet: "Browse GitLab project issues",
+    parameters: Type.Object({ project: Type.String({ description: "GitLab project path or numeric ID" }), limit: Type.Optional(Type.Number({ minimum: 1, maximum: 100 })), labels: Type.Optional(Type.Array(Type.String())) }),
+    async execute(_id, params, _signal, _onUpdate, ctx) {
+      const { client } = await createGitLabClient(ctx);
+      const issues = await client.listProjectIssues(params.project, { limit: params.limit, labels: params.labels });
+      return { content: [{ type: "text", text: issues.map((issue) => `#${issue.iid}: ${issue.title}\n${issue.webUrl}`).join("\n") || `No GitLab project issues found in ${params.project}.` }], details: { count: issues.length, issues } };
+    },
+  });
+
+  pi.registerTool({
+    name: "fn_task_import_gitlab_project_issues",
+    label: "fn: Import GitLab Project Issues",
+    description: "Import GitLab project issues as Fusion tasks using configured GitLab HTTP API auth.",
+    promptSnippet: "Import GitLab project issues",
+    parameters: Type.Object({ project: Type.String({ description: "GitLab project path or numeric ID" }), limit: Type.Optional(Type.Number({ minimum: 1, maximum: 100 })), labels: Type.Optional(Type.Array(Type.String())) }),
+    async execute(_id, params, _signal, _onUpdate, ctx) {
+      const { client } = await createGitLabClient(ctx);
+      const issues = await client.listProjectIssues(params.project, { limit: params.limit, labels: params.labels });
+      const createdTasks = await importGitLabItems(ctx, "project_issue", params.project, issues);
+      return { content: [{ type: "text", text: `Imported ${createdTasks.length} GitLab project issue tasks.` }], details: { createdTasks } };
+    },
+  });
+
+  pi.registerTool({
+    name: "fn_task_browse_gitlab_group_issues",
+    label: "fn: Browse GitLab Group Issues",
+    description: "List GitLab group issues while preserving each issue's originating project identity.",
+    promptSnippet: "Browse GitLab group issues",
+    parameters: Type.Object({ group: Type.String({ description: "GitLab group path or numeric ID" }), limit: Type.Optional(Type.Number({ minimum: 1, maximum: 100 })), labels: Type.Optional(Type.Array(Type.String())) }),
+    async execute(_id, params, _signal, _onUpdate, ctx) {
+      const { client } = await createGitLabClient(ctx);
+      const issues = await client.listGroupIssues(params.group, { limit: params.limit, labels: params.labels });
+      return { content: [{ type: "text", text: issues.map((issue) => `#${issue.iid}: ${issue.projectPath ?? issue.projectId} — ${issue.title}\n${issue.webUrl}`).join("\n") || `No GitLab group issues found in ${params.group}.` }], details: { count: issues.length, issues } };
+    },
+  });
+
+  pi.registerTool({
+    name: "fn_task_import_gitlab_group_issues",
+    label: "fn: Import GitLab Group Issues",
+    description: "Import GitLab group issues as Fusion tasks using each issue's originating project identity.",
+    promptSnippet: "Import GitLab group issues",
+    parameters: Type.Object({ group: Type.String({ description: "GitLab group path or numeric ID" }), limit: Type.Optional(Type.Number({ minimum: 1, maximum: 100 })), labels: Type.Optional(Type.Array(Type.String())) }),
+    async execute(_id, params, _signal, _onUpdate, ctx) {
+      const { client } = await createGitLabClient(ctx);
+      const issues = await client.listGroupIssues(params.group, { limit: params.limit, labels: params.labels });
+      const createdTasks = await importGitLabItems(ctx, "group_issue", params.group, issues);
+      return { content: [{ type: "text", text: `Imported ${createdTasks.length} GitLab group issue tasks.` }], details: { createdTasks } };
+    },
+  });
+
+  pi.registerTool({
+    name: "fn_task_browse_gitlab_merge_requests",
+    label: "fn: Browse GitLab Merge Requests",
+    description: "List GitLab project merge requests from the configured GitLab instance.",
+    promptSnippet: "Browse GitLab merge requests",
+    parameters: Type.Object({ project: Type.String({ description: "GitLab project path or numeric ID" }), limit: Type.Optional(Type.Number({ minimum: 1, maximum: 100 })), labels: Type.Optional(Type.Array(Type.String())) }),
+    async execute(_id, params, _signal, _onUpdate, ctx) {
+      const { client } = await createGitLabClient(ctx);
+      const mergeRequests = await client.listMergeRequests(params.project, { limit: params.limit, labels: params.labels });
+      return { content: [{ type: "text", text: mergeRequests.map((mr) => `!${mr.iid}: ${mr.title}\n${mr.webUrl}`).join("\n") || `No GitLab merge requests found in ${params.project}.` }], details: { count: mergeRequests.length, mergeRequests } };
+    },
+  });
+
+  pi.registerTool({
+    name: "fn_task_import_gitlab_merge_requests",
+    label: "fn: Import GitLab Merge Requests",
+    description: "Import GitLab project merge requests as Fusion review tasks using configured GitLab HTTP API auth.",
+    promptSnippet: "Import GitLab merge requests",
+    parameters: Type.Object({ project: Type.String({ description: "GitLab project path or numeric ID" }), limit: Type.Optional(Type.Number({ minimum: 1, maximum: 100 })), labels: Type.Optional(Type.Array(Type.String())) }),
+    async execute(_id, params, _signal, _onUpdate, ctx) {
+      const { client } = await createGitLabClient(ctx);
+      const mergeRequests = await client.listMergeRequests(params.project, { limit: params.limit, labels: params.labels });
+      const createdTasks = await importGitLabItems(ctx, "merge_request", params.project, mergeRequests);
+      return { content: [{ type: "text", text: `Imported ${createdTasks.length} GitLab merge request tasks.` }], details: { createdTasks } };
+    },
+  });
+
   // ── fn_task_plan ────────────────────────────────────────────────
   // Create a task via AI-guided planning mode
 

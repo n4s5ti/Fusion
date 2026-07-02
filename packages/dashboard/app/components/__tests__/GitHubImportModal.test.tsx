@@ -9,6 +9,8 @@ import {
   apiFetchGitHubIssueDetail,
   apiCloseGitHubIssue,
   apiImportGitHubPull,
+  apiFetchGitLabProjectIssues,
+  apiImportGitLabProjectIssue,
   fetchGitRemotes,
 } from "../../api";
 import type { Task } from "@fusion/core";
@@ -28,6 +30,12 @@ vi.mock("../../api", async (importOriginal) => {
     apiFetchGitHubIssueDetail: vi.fn(),
     apiCloseGitHubIssue: vi.fn(),
     apiImportGitHubPull: vi.fn(),
+    apiFetchGitLabProjectIssues: vi.fn(),
+    apiFetchGitLabGroupIssues: vi.fn(),
+    apiFetchGitLabMergeRequests: vi.fn(),
+    apiImportGitLabProjectIssue: vi.fn(),
+    apiImportGitLabGroupIssue: vi.fn(),
+    apiImportGitLabMergeRequest: vi.fn(),
     fetchGitRemotes: vi.fn(),
   };
 });
@@ -150,12 +158,16 @@ describe("GitHubImportModal", () => {
     vi.mocked(apiFetchGitHubIssueDetail).mockReset();
     vi.mocked(apiCloseGitHubIssue).mockReset();
     vi.mocked(apiImportGitHubPull).mockReset();
+    vi.mocked(apiFetchGitLabProjectIssues).mockReset();
+    vi.mocked(apiImportGitLabProjectIssue).mockReset();
     // Set default mock for apiFetchGitHubIssues to return empty array (prevents undefined issues state)
     vi.mocked(apiFetchGitHubIssues).mockResolvedValue([]);
     vi.mocked(apiFetchGitHubPulls).mockResolvedValue([]);
     vi.mocked(apiFetchGitHubPullDetail).mockResolvedValue({ comments: [], checks: [] });
     vi.mocked(apiFetchGitHubIssueDetail).mockResolvedValue({ comments: [] });
     vi.mocked(apiCloseGitHubIssue).mockResolvedValue(undefined);
+    vi.mocked(apiFetchGitLabProjectIssues).mockResolvedValue([]);
+    vi.mocked(apiImportGitLabProjectIssue).mockResolvedValue(mockTask);
     onClose.mockReset();
     onImport.mockReset();
   });
@@ -167,6 +179,27 @@ describe("GitHubImportModal", () => {
     await waitFor(() => {
       expect(screen.getByText("Import from GitHub")).toBeTruthy();
     });
+  });
+
+  it("fetches, previews, and imports GitLab project issues", async () => {
+    vi.mocked(fetchGitRemotes).mockResolvedValueOnce([]);
+    vi.mocked(apiFetchGitLabProjectIssues).mockResolvedValueOnce([
+      { resourceKind: "project_issue", id: 1, iid: 2, projectId: 3, projectPath: "group/project", title: "GitLab bug", description: "Body", webUrl: "https://gitlab.example.com/group/project/-/issues/2", state: "opened", labels: ["bug"] },
+    ]);
+    vi.mocked(apiImportGitLabProjectIssue).mockResolvedValueOnce({ ...mockTask, id: "FN-099", title: "GitLab bug", description: "Body\n\nSource: https://gitlab.example.com/group/project/-/issues/2" });
+
+    render(<GitHubImportModal isOpen={true} onClose={onClose} onImport={onImport} tasks={[]} />);
+    fireEvent.click(await screen.findByRole("button", { name: "GitLab" }));
+    fireEvent.change(screen.getByLabelText("GitLab project path or ID"), { target: { value: "group/project" } });
+    fireEvent.click(screen.getByRole("button", { name: /Load/ }));
+
+    expect(await screen.findByText(/#2 GitLab bug/)).toBeTruthy();
+    fireEvent.click(screen.getByText(/#2 GitLab bug/));
+    expect(await screen.findByTestId("gitlab-import-preview-body")).toHaveTextContent("Body");
+    fireEvent.click(screen.getAllByRole("button", { name: "Import" })[0]);
+
+    await waitFor(() => expect(apiImportGitLabProjectIssue).toHaveBeenCalledWith("group/project", 2, undefined));
+    expect(onImport).toHaveBeenCalledWith(expect.objectContaining({ id: "FN-099" }));
   });
 
   it("does not render when isOpen is false", () => {

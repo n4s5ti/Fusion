@@ -1,0 +1,99 @@
+// @vitest-environment node
+
+import express from "express";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { registerGitLabRoutes } from "../routes/register-gitlab.js";
+import { GITLAB_AUTH_HEADER_NAME } from "../gitlab-auth.js";
+import type { ApiRoutesContext } from "../routes/types.js";
+import { request } from "../test-request.js";
+
+function jsonResponse(body: unknown, status = 200) {
+  return new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
+}
+
+function buildApp(fetchImpl = vi.fn()) {
+  const tasks: any[] = [];
+  const store: any = {
+    getSettings: vi.fn().mockResolvedValue({ gitlabAuthToken: "token", gitlabInstanceUrl: "https://gitlab.example.com" }),
+    getGlobalSettingsStore: () => ({ getSettings: vi.fn().mockResolvedValue({}) }),
+    listTasks: vi.fn().mockResolvedValue(tasks),
+    createTask: vi.fn(async (input) => {
+      const task = { id: `FN-${String(tasks.length + 1).padStart(3, "0")}`, ...input, log: [] };
+      tasks.push(task);
+      return task;
+    }),
+    logEntry: vi.fn(),
+  };
+  const app = express();
+  app.use(express.json());
+  const ctx: ApiRoutesContext = {
+    router: express.Router(),
+    store,
+    runtimeLogger: {} as any,
+    planningLogger: {} as any,
+    chatLogger: {} as any,
+    getProjectIdFromRequest: () => undefined,
+    getScopedStore: async () => store,
+    getProjectContext: async () => ({ store, engine: undefined, projectId: undefined }),
+    prioritizeProjectsForCurrentDirectory: (projects) => projects,
+    emitRemoteRouteDiagnostic: () => {},
+    emitAuthSyncAuditLog: () => {},
+    parseScopeParam: () => undefined,
+    resolveAutomationStore: () => ({} as any),
+    resolveRoutineStore: () => ({} as any),
+    resolveRoutineRunner: () => ({} as any),
+    registerDispose: () => {},
+    dispose: () => {},
+    rethrowAsApiError: (error) => { throw error; },
+  };
+  vi.stubGlobal("fetch", fetchImpl);
+  registerGitLabRoutes(ctx);
+  app.use("/api", ctx.router);
+  app.use((err: any, _req: any, res: any, _next: any) => res.status(err.statusCode ?? err.status ?? 500).json({ error: err.message, ...err.details }));
+  return { app, store, tasks, fetchImpl };
+}
+
+describe("GitLab import routes", () => {
+  beforeEach(() => vi.unstubAllGlobals());
+
+  it("fetches project issues with encoded path IDs and token auth", async () => {
+    const fetchImpl = vi.fn().mockResolvedValue(jsonResponse([{ id: 1, iid: 2, project_id: 3, title: "Bug", description: null, web_url: "https://gitlab.example.com/g/p/-/issues/2", state: "opened", labels: [] }]));
+    const { app } = buildApp(fetchImpl);
+    const res = await request(app, "POST", "/api/gitlab/project/issues/fetch", JSON.stringify({ project: "g/p", limit: 1 }), { "Content-Type": "application/json" });
+    expect(res.status).toBe(200);
+    expect((res.body as any[])[0]).toMatchObject({ resourceKind: "project_issue", iid: 2 });
+    expect(fetchImpl.mock.calls[0][0]).toContain("/projects/g%2Fp/issues?");
+    expect(fetchImpl.mock.calls[0][1].headers[GITLAB_AUTH_HEADER_NAME]).toBe("token");
+  });
+
+  it("imports project issues with gitlab provenance and rejects duplicates", async () => {
+    const fetchImpl = vi.fn().mockImplementation(() => Promise.resolve(jsonResponse({ id: 1, iid: 2, project_id: 3, title: "Bug", description: "Body", web_url: "https://gitlab.example.com/g/p/-/issues/2", state: "opened", labels: [] })));
+    const { app, store } = buildApp(fetchImpl);
+    const first = await request(app, "POST", "/api/gitlab/project/issues/import", JSON.stringify({ project: 3, iid: 2 }), { "Content-Type": "application/json" });
+    expect(first.status).toBe(201);
+    const created = store.createTask.mock.calls[0][0];
+    expect(created.source).toMatchObject({ sourceType: "gitlab_import", sourceMetadata: { provider: "gitlab", resourceType: "project_issue", iid: 2 } });
+    expect(created.sourceIssue).toMatchObject({ provider: "gitlab", issueNumber: 2, url: "https://gitlab.example.com/g/p/-/issues/2" });
+    const dup = await request(app, "POST", "/api/gitlab/project/issues/import", JSON.stringify({ project: 3, iid: 2 }), { "Content-Type": "application/json" });
+    expect(dup.status).toBe(409);
+    expect((dup.body as any).existingTaskId).toBe("FN-001");
+  });
+
+  it("imports group issues from selected row and merge requests", async () => {
+    const { app, store } = buildApp(vi.fn().mockResolvedValue(jsonResponse({ id: 9, iid: 5, project_id: 4, title: "MR", description: null, web_url: "https://gitlab.example.com/g/p/-/merge_requests/5", state: "opened", labels: [], source_branch: "feat", target_branch: "main" })));
+    const group = await request(app, "POST", "/api/gitlab/group/issues/import", JSON.stringify({ group: "g", issue: { resourceKind: "group_issue", id: 2, iid: 7, projectId: 8, projectPath: "g/p", title: "Group", description: null, webUrl: "https://gitlab.example.com/g/p/-/issues/7", state: "opened", labels: [] } }), { "Content-Type": "application/json" });
+    expect(group.status).toBe(201);
+    const mr = await request(app, "POST", "/api/gitlab/merge-requests/import", JSON.stringify({ project: "g/p", iid: 5 }), { "Content-Type": "application/json" });
+    expect(mr.status).toBe(201);
+    expect(store.createTask.mock.calls[1][0].source.sourceMetadata).toMatchObject({ resourceType: "merge_request", mergeRequestIid: 5 });
+  });
+
+  it("returns actionable auth/config errors without token values", async () => {
+    const { app, store } = buildApp(vi.fn());
+    store.getSettings.mockResolvedValueOnce({ gitlabAuthToken: "" });
+    const res = await request(app, "POST", "/api/gitlab/project/issues/fetch", JSON.stringify({ project: "g/p" }), { "Content-Type": "application/json" });
+    expect(res.status).toBe(401);
+    expect(JSON.stringify(res.body)).toContain("GitLab auth requires");
+    expect(JSON.stringify(res.body)).not.toContain("token123");
+  });
+});

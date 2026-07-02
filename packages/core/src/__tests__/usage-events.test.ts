@@ -135,6 +135,8 @@ describe("usage_events", () => {
       ["fn_task_import_github", "github"],
       ["fn_task_import_github_issue", "github"],
       ["fn_task_browse_github_issues", "github"],
+      ["fn_task_import_gitlab_project_issues", "gitlab"],
+      ["fn_task_browse_gitlab_merge_requests", "gitlab"],
       ["fn_workflow_create", "workflow"],
       ["fn_review_spec", "workflow"],
       ["mcp__server__search", "read"],

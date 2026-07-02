@@ -1865,6 +1865,7 @@ export type SourceType =
   | "cron"
   | "workflow_step"
   | "github_import"
+  | "gitlab_import"
   | "task_refine"
   | "task_duplicate"
   | "cli"
@@ -6376,6 +6377,12 @@ export const AGENT_PERMISSION_POLICY_CATEGORY_TOOL_EXAMPLES: Record<
     "fn_delegate_task",
     "fn_task_import_github",
     "fn_task_import_github_issue",
+    "fn_task_import_gitlab_project_issues",
+    "fn_task_import_gitlab_group_issues",
+    "fn_task_import_gitlab_merge_requests",
+    "fn_task_browse_gitlab_project_issues",
+    "fn_task_browse_gitlab_group_issues",
+    "fn_task_browse_gitlab_merge_requests",
     "fn_spawn_agent",
     "fn_update_agent_config",
     "fn_task_update",

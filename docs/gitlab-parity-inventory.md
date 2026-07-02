@@ -95,12 +95,18 @@ Merge request review-task metadata should use `mergeRequestId` and `mergeRequest
 - Do not add a GitLab-star prompt or any GitHub-star-equivalent promotional prompt.
 - Do not auto-merge or auto-close merge requests as a side effect of task completion unless a later, explicit MR lifecycle task defines that policy.
 
+## FN-7424 implemented import slice
+
+FN-7424 implements the runtime import rows for dashboard/API, CLI, extension tools, source provenance, duplicate detection, and Import Tasks navigation for GitLab project issues, group issues, and project merge requests. Implemented surfaces are HTTP API only, use configured GitLab.com/self-managed URL and `PRIVATE-TOKEN` auth, require read-only `read_api`/`api` scope for list/import, persist `sourceType: "gitlab_import"` with `sourceMetadata.provider: "gitlab"`, and preserve originating project identity for group issue rows.
+
+Still deferred to later parity tasks: linked GitLab tracking issue creation/adoption and Task Detail/List chips, GitLab notes/comments on completion, source issue close/reopen and exact closed-at backfill, merge request lifecycle actions, Command Center GitLab analytics/signals, GitLab research/search provider support, and any GitLab-star or promotional prompt.
+
 ## Downstream handoff: FN-7422 through FN-7428
 
 - **FN-7422 — GitLab core URL configuration:** implemented GitLab.com/self-managed instance and API URL settings/resolution. Preserve GitHub settings untouched.
 - **FN-7423 — GitLab access-token settings/auth contract:** implemented personal/project/group token settings, `GITLAB_TOKEN` fallback, `PRIVATE-TOKEN` auth metadata, and required scope documentation. Preserve GitHub settings untouched and do not add `glab`.
-- **FN-7424 — GitLab HTTP client and import routes:** implement dashboard/API issue and merge-request fetch/detail/import rows. Support GitLab.com and self-managed instances, project and group issue discovery, project issue comments, and MR detail previews.
-- **FN-7425 — CLI and extension tools:** implement GitLab CLI import/browse commands and `fn_task_import_gitlab*` tools with permission classification matching GitHub import tools. Use HTTP token auth, not `glab`.
+- **FN-7424 — GitLab import runtime:** implemented dashboard/API fetch/import rows, Import Tasks provider controls, CLI `fn task import-gitlab`, and `fn_task_*_gitlab_*` browse/import extension tools for project issues, group issues, and merge requests. GitLab comments, close/reopen, linked tracking, Command Center, research/search, and star prompts remain deferred.
+- **FN-7425 — GitLab tracking lifecycle:** implement provider-specific tracking issue creation/adoption, post-create hooks, Task Detail/List chips and controls, lifecycle notes, close/reopen/delete/unlink behavior, stale state, and batch status refresh.
 - **FN-7426 — Completion comments and auto-close:** implement `gitlabCommentOnDone`, `gitlabCommentTemplate`, `gitlabCloseSourceIssueOnDone`, source issue reconciliation, and exact closed-at backfill for project issues. Keep MR close/merge behavior out unless explicitly scoped.
 - **FN-7427 — Command Center GitLab analytics and signals:** add local-task-store-only GitLab analytics with CSV export and optional manual exact-time backfill. Add GitLab webhook/system-hook Signals connector only after the signed verification and normalization contract is defined.
 - **FN-7428 — Documentation, migration, and parity QA:** update user docs, settings reference, dashboard guide, task-management docs, extension skill docs, and add contract tests covering included surfaces and the explicit research/star prompt exclusions.

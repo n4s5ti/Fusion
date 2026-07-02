@@ -127,6 +127,66 @@ Soft-delete a task from active Fusion board views. The task row and artifacts ar
 | `id` | string | ✓ | Task ID to delete (e.g. FN-001) |
 | `allowResurrection` | boolean | — | When true, mark this tombstone as explicitly reusable for future recreation. |
 
+### fn_task_browse_gitlab_project_issues
+
+List GitLab project issues from the configured GitLab instance.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `project` | string | ✓ | GitLab project path or numeric ID |
+| `limit` | number | — |  |
+| `labels` | array | — |  |
+
+### fn_task_import_gitlab_project_issues
+
+Import GitLab project issues as Fusion tasks using configured GitLab HTTP API auth.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `project` | string | ✓ | GitLab project path or numeric ID |
+| `limit` | number | — |  |
+| `labels` | array | — |  |
+
+### fn_task_browse_gitlab_group_issues
+
+List GitLab group issues while preserving each issue's originating project identity.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `group` | string | ✓ | GitLab group path or numeric ID |
+| `limit` | number | — |  |
+| `labels` | array | — |  |
+
+### fn_task_import_gitlab_group_issues
+
+Import GitLab group issues as Fusion tasks using each issue's originating project identity.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `group` | string | ✓ | GitLab group path or numeric ID |
+| `limit` | number | — |  |
+| `labels` | array | — |  |
+
+### fn_task_browse_gitlab_merge_requests
+
+List GitLab project merge requests from the configured GitLab instance.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `project` | string | ✓ | GitLab project path or numeric ID |
+| `limit` | number | — |  |
+| `labels` | array | — |  |
+
+### fn_task_import_gitlab_merge_requests
+
+Import GitLab project merge requests as Fusion review tasks using configured GitLab HTTP API auth.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `project` | string | ✓ | GitLab project path or numeric ID |
+| `limit` | number | — |  |
+| `labels` | array | — |  |
+
 ### fn_task_plan
 
 Create a task via AI-guided planning mode — interactive conversation to refine your idea into a well-specified task.
