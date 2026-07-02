@@ -674,7 +674,7 @@ Artifacts view aggregates project markdown files, task documents, and registered
 
 Features:
 
-- Group task documents by task ID (with revision history metadata)
+- Group task documents by task ID (with revision history metadata) and show the parent task status badge in each task group header when status metadata is available
 - Search documents across tasks
 - Open project markdown files with inline preview
 - Browse the **Artifacts** tab for registry media registered by any agent, dashboard chat/user action, or system tool across tasks
