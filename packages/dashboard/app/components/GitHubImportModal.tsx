@@ -842,6 +842,16 @@ export function GitHubImportModal({ isOpen, onClose, onImport, tasks, projectId,
     setMobileView('list');
   }, []);
 
+  /**
+   * FNXC:GitHubImport 2026-07-02-00:00:
+   * Successful GitHub issue import/close actions must return users to the main issue list instead of leaving a completed issue's preview, action buttons, or selected radio active.
+   * Failures intentionally do not call this helper so the selected preview remains available for retry with the existing error affordance.
+   */
+  const returnToIssueListAfterSuccess = useCallback(() => {
+    setSelectedIssueNumber(null);
+    setMobileView("list");
+  }, []);
+
   const handleImport = useCallback(async () => {
     if (activeTab === "issues") {
       if (selectedIssueNumber === null) return;
@@ -852,10 +862,7 @@ export function GitHubImportModal({ isOpen, onClose, onImport, tasks, projectId,
       try {
         const task = await apiImportGitHubIssue(owner.trim(), repo.trim(), selectedIssueNumber, projectId);
         onImport(task);
-        setSelectedIssueNumber(null);
-        if (isMobile && mobileView === "preview") {
-          setMobileView("list");
-        }
+        returnToIssueListAfterSuccess();
       } catch (err) {
         const msg = getErrorMessage(err);
         if (msg?.includes("already imported")) {
@@ -890,7 +897,7 @@ export function GitHubImportModal({ isOpen, onClose, onImport, tasks, projectId,
         setImporting(false);
       }
     }
-  }, [activeTab, selectedIssueNumber, selectedPullNumber, owner, repo, projectId, onImport, isMobile, mobileView]);
+  }, [activeTab, selectedIssueNumber, selectedPullNumber, owner, repo, projectId, onImport, isMobile, mobileView, returnToIssueListAfterSuccess]);
 
   /*
   FNXC:GitHubImport 2026-06-23-01:00:
@@ -995,13 +1002,14 @@ export function GitHubImportModal({ isOpen, onClose, onImport, tasks, projectId,
         return next;
       });
       setCloseToast({ type: "success", message: t("git.issueClosedToast", "Issue #{{number}} closed", { number: issueNumber }) });
+      returnToIssueListAfterSuccess();
     } catch (err: unknown) {
       setCloseToast({ type: "error", message: getErrorMessage(err) });
     } finally {
       setClosingIssue(false);
       closeToastTimerRef.current = setTimeout(() => setCloseToast(null), 4000);
     }
-  }, [selectedIssueNumber, owner, repo, t]);
+  }, [selectedIssueNumber, owner, repo, t, returnToIssueListAfterSuccess]);
 
   const selectedIssue = issues.find((i) => i.number === selectedIssueNumber);
   const selectedPull = pulls.find((p) => p.number === selectedPullNumber);

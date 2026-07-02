@@ -207,7 +207,7 @@ Use Import Tasks on desktop/tablet:
 4. Select an issue or pull request row.
    Expected outcome: the preview pane shows its title, source link, body excerpt/content, labels or PR metadata, and import availability.
 5. Select the import action.
-   Expected outcome: Fusion creates a task (or review task for a pull request) on the board and preserves GitHub provenance/tracking metadata.
+   Expected outcome: Fusion creates a task (or review task for a pull request) on the board and preserves GitHub provenance/tracking metadata. After a successful issue import, the issue selection clears and the view returns to the main issue list/no-selection preview so completed issue actions do not leave stale buttons active.
 
 Use GitHub import on mobile:
 
