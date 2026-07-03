@@ -1830,7 +1830,15 @@ export function ModelOnboardingModal({
   const githubStatus = getGitHubStatus();
 
   const aiProviders = authProviders.filter((provider) => provider.id !== "github");
-  const showShellConnectionSetup = shellState.host !== "web" && !shellState.activeProfileId;
+  /*
+   * FNXC:Onboarding 2026-07-03-07:20:
+   * Show the "Connect remote Fusion server" card ONLY when not already connected to a remote server
+   * (no active remote profile) — on any host, web included. Never show it in LOCAL desktop mode: a
+   * local runtime is already the connected backend, so prompting for a remote server URL just confuses
+   * first-run setup (the original report).
+   */
+  const showShellConnectionSetup =
+    !shellState.activeProfileId && shellState.desktopMode !== "local";
   const orderedAiProviders = [...aiProviders].sort(compareOnboardingProviders);
   const hasOauthProviders = orderedAiProviders.some((provider) => !provider.type || provider.type === "oauth");
   const providerSupportsApiKey = (provider: AuthProvider) => provider.type === "api_key";
@@ -2352,9 +2360,6 @@ export function ModelOnboardingModal({
               </p>
               <p className="onboarding-helper-text model-onboarding-primary-helper">
                 {t("setup.onlyNeedOneProvider", "You only need one provider to get started.")}
-              </p>
-              <p className="onboarding-helper-text">
-                {t("setup.researchRunsNote", "Research runs require provider credentials and an enabled Research View. After onboarding, verify these in Settings → Authentication and Settings → Experimental Features.")}
               </p>
 
               {showShellConnectionSetup && (
