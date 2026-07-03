@@ -642,6 +642,12 @@ If the OAuth credential has no refresh token, the refresh request fails, or the 
 
 Anthropic also supports a raw `ANTHROPIC_API_KEY` from a separate **Anthropic API Key** card in **Settings → Authentication** and Model Onboarding. Claude subscription OAuth remains on the **Anthropic Subscription** card for auth status, usage/subscription checks, and banner clearing; it also drives direct agent execution on the `anthropic` provider — a subscription/OAuth token runs `anthropic/*` selections against `https://api.anthropic.com/v1` with Claude Code identity headers, no API key required. CLI-backed execution remains the distinct, explicit **Claude CLI** provider (`pi-claude-cli`); subscription OAuth does not require it. When Anthropic Subscription is expired but Anthropic API Key or Anthropic — via Claude CLI is already authenticated, the global banner suppresses only the urgent subscription re-login entry so it does not imply agents are blocked; Settings still shows the subscription OAuth card as expired/not connected and re-login remains available. A configured API key takes precedence over OAuth on the direct provider. Saving or clearing an API key does not affect the OAuth sign-in path or turn OAuth tokens into raw API-key material. The dashboard only displays masked key hints after a key is saved.
 
+## Setup Warning Banner
+
+The dashboard and New Task modal show setup warnings only after readiness checks finish. AI-provider warnings appear immediately because agents cannot work without a provider. GitHub warnings are delayed per project: Fusion records the first time GitHub OAuth and authenticated `gh` CLI are both missing, waits one day, and then shows **GitHub not connected** if GitHub is still unavailable. Reconnecting GitHub clears the timer so a later disconnect starts a fresh one-day grace period.
+
+When the dashboard GitHub warning is visible, its **Connect GitHub** action opens **Settings → Authentication**. The New Task modal keeps immediate AI-provider warnings but suppresses the GitHub warning because that modal does not own the Settings navigation callback required for an actionable GitHub setup control.
+
 ## Smart Pull
 
 Smart Pull is a one-shot pull workflow that keeps local work safe while advancing your checked-out integration branch.

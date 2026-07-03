@@ -6776,7 +6776,7 @@
     "noAiProviderConnected": "No AI provider connected",
     "noAiProviderDesc": "AI agents won't be able to work on tasks until you connect a provider. Set one up in Settings → AI Setup.",
     "noGithub": "GitHub not connected",
-    "noGithubDesc": "You won't be able to import issues from GitHub, but you can still create tasks manually.",
+    "noGithubDesc": "GitHub imports stay optional. If GitHub remains disconnected for one day, connect it from Settings → Authentication to import issues and PRs.",
     "noModelsAvailable": "No models available yet. Connect a provider above to see model options.",
     "noProvidersConfigured": "No AI providers are configured. Please check your Fusion configuration.",
     "noProvidersConnectedYet": "No providers connected yet",
@@ -6925,7 +6925,8 @@
     "projectSetupModeAriaLabel": "Project setup mode",
     "repositorySetupDescription": "Choose how Fusion should prepare the project directory before registration.",
     "repositorySetupTitle": "Repository setup",
-    "useExistingDirectoryHint": "Register a folder that is already a git repository or workspace root."
+    "useExistingDirectoryHint": "Register a folder that is already a git repository or workspace root.",
+    "connectGithub": "Connect GitHub"
   },
   "shell": {
     "activePill": "Active",

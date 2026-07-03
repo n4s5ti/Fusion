@@ -47,6 +47,7 @@ import { useMobileKeyboard } from "./hooks/useMobileKeyboard";
 import { isIOS, useMobileKeyboardViewportLock, useMobileViewportRestoreReset } from "./hooks/useMobileScrollLock";
 import { computeMobileBarKeyboardFlags } from "./utils/mobileBarKeyboardFlags";
 import { useSetupReadiness } from "./hooks/useSetupReadiness";
+import { useGithubSetupWarningDelay } from "./hooks/useGithubSetupWarningDelay";
 import { useUpdateCheck } from "./hooks/useUpdateCheck";
 import { useViewState, type TaskView } from "./hooks/useViewState";
 import { NavigationHistoryProvider, useNavigationHistory } from "./hooks/useNavigationHistory";
@@ -237,8 +238,13 @@ function AppInner() {
     hasAiProvider,
     hasGithub,
     loading: setupReadinessLoading,
-    hasWarnings,
   } = useSetupReadiness(currentProject?.id);
+  const showGithubSetupWarning = useGithubSetupWarningDelay({
+    projectId: currentProject?.id,
+    hasGithub,
+    loading: setupReadinessLoading,
+  });
+  const visibleSetupHasWarnings = !hasAiProvider || (!hasGithub && showGithubSetupWarning);
   const {
     updateAvailable,
     latestVersion,
@@ -1369,11 +1375,12 @@ function AppInner() {
     dbCorruptionRefreshing,
     dbCorruptionRefreshError,
     setupReadinessLoading,
-    hasWarnings,
+    hasWarnings: visibleSetupHasWarnings,
     setupWarningDismissed,
     handleDismissSetupWarning,
     hasAiProvider,
     hasGithub,
+    showGithubSetupWarning,
     approvalBannerCandidate,
     dismissApproval,
     mailboxPendingApprovalCount,

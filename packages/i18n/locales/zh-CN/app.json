@@ -6766,7 +6766,7 @@
     "noAiProviderConnected": "未连接任何 AI 提供商",
     "noAiProviderDesc": "在连接提供商之前，AI 智能体将无法处理任务。在设置 → AI 设置中进行配置。",
     "noGithub": "未连接 GitHub",
-    "noGithubDesc": "您将无法从 GitHub 导入问题，但仍然可以手动创建任务。",
+    "noGithubDesc": "GitHub imports stay optional. If GitHub remains disconnected for one day, connect it from Settings → Authentication to import issues and PRs.",
     "noModelsAvailable": "暂无可用模型，请在上方连接提供商以查看模型选项。",
     "noProvidersConfigured": "未配置任何 AI 提供商，请检查您的 Fusion 配置。",
     "noProvidersConnectedYet": "尚未连接任何提供商",
@@ -6915,7 +6915,8 @@
     "projectSetupModeAriaLabel": "Project setup mode",
     "repositorySetupDescription": "Choose how Fusion should prepare the project directory before registration.",
     "repositorySetupTitle": "Repository setup",
-    "useExistingDirectoryHint": "Register a folder that is already a git repository or workspace root."
+    "useExistingDirectoryHint": "Register a folder that is already a git repository or workspace root.",
+    "connectGithub": "Connect GitHub"
   },
   "shell": {
     "activePill": "活跃",
