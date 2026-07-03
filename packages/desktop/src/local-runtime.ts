@@ -67,7 +67,7 @@ async function createStoreDefault(rootDir: string): Promise<TaskStoreLike> {
 async function createDashboardServerDefault(store: TaskStoreLike, rootDir: string): Promise<{ server: Server; cleanup: RuntimeCleanup }> {
   const { CentralCore } = await import("@fusion/core");
   const { createServer } = await import("@fusion/dashboard");
-  const { ProjectEngineManager } = await import("@fusion/engine");
+  const { ProjectEngineManager, createFusionAuthStorage } = await import("@fusion/engine");
 
   /*
    * FNXC:DesktopRuntime 2026-06-20-23:39:
@@ -99,11 +99,22 @@ async function createDashboardServerDefault(store: TaskStoreLike, rootDir: strin
     const rootProject = await resolveDesktopRuntimePrimaryProject(centralCore);
     strace(`createDashboardServer: primaryProject=${rootProject?.id ?? "none"}`);
     const primaryEngine = rootProject ? await engineManager.ensureEngine(rootProject.id) : undefined;
+    /*
+     * FNXC:DesktopRuntime 2026-07-03-06:20:
+     * Wire an auth storage into the embedded server. Without it, GET /api/auth/status throws 500
+     * "Authentication is not configured", the dashboard's first-run onboarding hook (useAuthOnboarding
+     * -> fetchAuthStatus) hits its silent catch and NEVER opens the AI/GitHub onboarding wizard, and
+     * providers can't be authenticated at all. The CLI wires the same storage (createFusionAuthStorage);
+     * the desktop must too so operators can set up AI accounts. (API-key provider wrapping remains
+     * CLI-only for now; OAuth + CLI providers are available here.)
+     */
+    const authStorage = createFusionAuthStorage();
     strace("createDashboardServer: createServer");
     const app = createServer(store as never, {
       ...(primaryEngine ? { engine: primaryEngine } : {}),
       engineManager,
       centralCore,
+      authStorage,
       onProjectFirstAccessed: (projectId: string) => engineManager.onProjectAccessed(projectId),
     });
 
