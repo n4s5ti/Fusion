@@ -88,7 +88,7 @@ import { fetchTaskDetail, fetchWorkflowSteps } from "./api";
 import {
   SETUP_WARNING_DISMISSED_KEY,
   RETRY_WARNING_RATIO,
-  buildRemoteDashboardUrl,
+  resolveDesktopShellRedirectTarget,
   requiresNativeShellOnboarding,
   shouldShowFirstEverBootLoader,
   isSessionNeedingInputForBanner,
@@ -1190,39 +1190,23 @@ function AppInner() {
     };
   }, [shellHost.host, shellState.activeProfileId, shellState.desktopMode, shellState.host, shellState.profiles]);
 
+  /*
+   * FNXC:DesktopSwitchServer 2026-07-04-13:20:
+   * Single shared decision path for the in-dashboard "Switch server" navigation, covering BOTH directions
+   * (remote -> local and local -> remote). This mirrors the working native-menu / desktopLaunchMode flow by
+   * navigating the renderer to the selected server's origin, since the in-dashboard switch does not route
+   * through the Electron main-process launch-mode handlers. See resolveDesktopShellRedirectTarget in
+   * appLifecycle.ts for the pure decision logic and negative-state guards (not-running runtime, already-on-
+   * target origin, non-desktop hosts, missing active profile).
+   */
   useEffect(() => {
-    if (shellState.host !== "desktop-shell") {
+    if (typeof window === "undefined") {
       return;
     }
 
-    if (shellState.desktopMode !== "local") {
-      return;
-    }
-
-    if (shellState.localServer?.status !== "ready" || !shellState.localServer.port) {
-      return;
-    }
-
-    if (window.location.port === String(shellState.localServer.port)) {
-      return;
-    }
-
-    window.location.href = `http://localhost:${shellState.localServer.port}`;
-  }, [shellState]);
-
-  useEffect(() => {
-    if (shellState.host !== "desktop-shell" || shellState.desktopMode !== "remote") {
-      return;
-    }
-
-    const activeProfile = shellState.profiles.find((profile) => profile.id === shellState.activeProfileId);
-    if (!activeProfile || typeof window === "undefined") {
-      return;
-    }
-
-    const nextUrl = buildRemoteDashboardUrl(activeProfile.serverUrl, activeProfile.authToken ?? null);
-    if (window.location.href !== nextUrl) {
-      window.location.href = nextUrl;
+    const target = resolveDesktopShellRedirectTarget(shellState, window.location.href);
+    if (target) {
+      window.location.href = target;
     }
   }, [shellState]);
 

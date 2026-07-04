@@ -221,7 +221,6 @@ const mockShellConnectionState = {
   desktopMode: "local" as const,
   profiles: [],
   activeProfileId: null,
-  localServer: null,
 };
 
 const mockGetShellConnectionNativeResult = vi.fn(async () => ({
