@@ -1,6 +1,7 @@
 import {
   useCallback,
   useEffect,
+  useLayoutEffect,
   useRef,
   useState,
   type CSSProperties,
@@ -9,7 +10,7 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 import { X } from "lucide-react";
-import { nextFloatingZ, currentFloatingZ } from "./floatingWindowStack";
+import { currentFloatingZ, currentTaskDetailFloatingZ, nextFloatingZ, nextTaskDetailFloatingZ } from "./floatingWindowStack";
 import "./FloatingWindow.css";
 
 /*
@@ -52,6 +53,8 @@ export interface FloatingWindowProps {
    * Persistent task/terminal pop-outs must omit this so page clicks do not close them.
    */
   closeOnOutsidePointerDown?: boolean;
+  /** Layer band for z-index claiming. Task details stay with the board/task-detail surface; utilities use the global floating stack. */
+  layer?: "utility" | "task-detail";
 }
 
 const DEFAULT_WIDTH = 720;
@@ -67,6 +70,7 @@ Z-index now comes from the SHARED `floatingWindowStack` module (`nextFloatingZ`/
 
 type ResizeDirection = "n" | "s" | "e" | "w" | "ne" | "nw" | "se" | "sw";
 const RESIZE_DIRECTIONS: ResizeDirection[] = ["n", "s", "e", "w", "ne", "nw", "se", "sw"];
+export const FLOATING_WINDOW_GEOMETRY_CHANGE_EVENT = "fusion:floating-window-geometry-change";
 
 /** Hash a windowKey into a small bounded cascade index so stacked default windows do not perfectly overlap. */
 function cascadeIndexFor(windowKey: string): number {
@@ -153,6 +157,7 @@ export function FloatingWindow({
   className,
   persistGeometryKey,
   closeOnOutsidePointerDown = false,
+  layer = "utility",
 }: FloatingWindowProps) {
   const resolvedMinSize: FloatingWindowSize = minSize ?? { width: DEFAULT_MIN_WIDTH, height: DEFAULT_MIN_HEIGHT };
   const initialGeometry = useRef<{ size: FloatingWindowSize; position: FloatingWindowPosition } | null>(null);
@@ -166,8 +171,13 @@ export function FloatingWindow({
     initialGeometry.current!.size
   );
   const [position, setPosition] = useState<FloatingWindowPosition>(() => initialGeometry.current!.position);
-  // FNXC:FloatingWindow 2026-06-22-21:30: Each window owns its z-index; mounting claims the front of the SHARED cross-type stack.
-  const [zIndex, setZIndex] = useState<number>(() => nextFloatingZ());
+  const claimFrontZ = useCallback(() => (layer === "task-detail" ? nextTaskDetailFloatingZ() : nextFloatingZ()), [layer]);
+  const readCurrentZ = useCallback(() => (layer === "task-detail" ? currentTaskDetailFloatingZ() : currentFloatingZ()), [layer]);
+  /*
+  FNXC:TaskPopupLayer 2026-07-04-18:36:
+  Task-detail popups intentionally claim the lower board/task-detail band, while utility FloatingWindow callers keep the higher global stack. This preserves raise/focus among multiple task popups without making ordinary board popups cover utility surfaces like Terminal or Quick Chat.
+  */
+  const [zIndex, setZIndex] = useState<number>(() => claimFrontZ());
   const panelRef = useRef<HTMLDivElement | null>(null);
 
   /*
@@ -180,10 +190,10 @@ export function FloatingWindow({
   const bringToFront = useCallback(() => {
     setZIndex((current) => {
       // Only claim a new z if we are not already on top, to avoid needless counter churn on every move.
-      if (current >= currentFloatingZ()) return current;
-      return nextFloatingZ();
+      if (current >= readCurrentZ()) return current;
+      return claimFrontZ();
     });
-  }, []);
+  }, [claimFrontZ, readCurrentZ]);
 
   const handleDragPointerDown = useCallback(
     (event: ReactPointerEvent<HTMLDivElement>) => {
@@ -324,6 +334,15 @@ export function FloatingWindow({
 
   // FNXC:FloatingWindow 2026-06-22-20:45: Run any active drag/resize teardown on unmount so captured-element listeners + a pending rAF never outlive the window.
   useEffect(() => () => dragTeardownRef.current?.(), []);
+
+  /*
+  FNXC:TaskDetailActivity 2026-07-04-18:37:
+  Root-portaled Activity menus cannot inherit movement from a dragged/resized task popup. Emit a bounded geometry-change signal after FloatingWindow commits new geometry so owning task-detail content can recompute fixed menu coordinates from the live Activity trigger rect.
+  */
+  useLayoutEffect(() => {
+    if (typeof window === "undefined") return;
+    window.dispatchEvent(new CustomEvent(FLOATING_WINDOW_GEOMETRY_CHANGE_EVENT, { detail: { windowKey, layer } }));
+  }, [layer, position, size, windowKey]);
 
   /*
   FNXC:FloatingWindow 2026-06-27-00:00:

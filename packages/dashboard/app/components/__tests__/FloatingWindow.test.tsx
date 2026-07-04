@@ -102,7 +102,7 @@ describe("FloatingWindow", () => {
     expect(taskRuleIndex).not.toBe(chatRuleIndex);
   });
 
-  it("focus-to-front: interacting with an older window raises its z-index above the newest", () => {
+  it("focus-to-front: interacting with an older utility window raises its z-index above the newest utility window", () => {
     render(
       <>
         <FloatingWindow windowKey="first" title="First" onClose={() => {}}>
@@ -120,6 +120,36 @@ describe("FloatingWindow", () => {
     // Clicking the first panel raises it above the second.
     fireEvent.pointerDown(first);
     expect(Number(first.style.zIndex)).toBeGreaterThan(Number(second.style.zIndex));
+  });
+
+  it("keeps task-detail popups in the board layer while allowing raise among task popups", () => {
+    render(
+      <>
+        <FloatingWindow windowKey="task-a" title="Task A" onClose={() => {}} layer="task-detail" className="floating-window--task-detail">
+          <div>task a</div>
+        </FloatingWindow>
+        <FloatingWindow windowKey="task-b" title="Task B" onClose={() => {}} layer="task-detail" className="floating-window--task-detail">
+          <div>task b</div>
+        </FloatingWindow>
+        <FloatingWindow windowKey="utility" title="Utility" onClose={() => {}}>
+          <div>utility</div>
+        </FloatingWindow>
+      </>,
+    );
+
+    const taskA = screen.getByTestId("floating-window-task-a");
+    const taskB = screen.getByTestId("floating-window-task-b");
+    const utility = screen.getByTestId("floating-window-utility");
+    const taskAOverlay = screen.getByTestId("floating-window-overlay-task-a");
+    const utilityOverlay = screen.getByTestId("floating-window-overlay-utility");
+
+    expect(Number(taskB.style.zIndex)).toBeGreaterThan(Number(taskA.style.zIndex));
+    expect(Number(utility.style.zIndex)).toBeGreaterThan(Number(taskB.style.zIndex));
+    expect(Number(utilityOverlay.style.zIndex)).toBeGreaterThan(Number(taskAOverlay.style.zIndex));
+
+    fireEvent.pointerDown(taskA);
+    expect(Number(taskA.style.zIndex)).toBeGreaterThan(Number(taskB.style.zIndex));
+    expect(Number(taskA.style.zIndex)).toBeLessThan(Number(utility.style.zIndex));
   });
 
   it("close button removes the window via onClose", () => {

@@ -13,6 +13,7 @@ import {
   setupTaskDetailModalHooks,
 } from "./TaskDetailModal.test-helpers";
 import { TaskDetailContent, TaskDetailModal } from "../TaskDetailModal";
+import { FLOATING_WINDOW_GEOMETRY_CHANGE_EVENT, FloatingWindow } from "../FloatingWindow";
 import { useAgentLogs } from "../../hooks/useAgentLogs";
 
 setupTaskDetailModalHooks();
@@ -341,6 +342,73 @@ describe("TaskDetailModal Activity and planner Chat tab integration", () => {
   // diverging window.visualViewport (pinch-zoom / open mobile keyboard: smaller width, nonzero
   // offsetLeft) must NOT shift the menu away from the trigger. Symptom was the popup rendering
   // detached to the far left of the modal instead of under the "Activity" tab.
+  it("keeps the Activity menu above and anchored to a moving task-detail popup", () => {
+    const originalGetBoundingClientRect = HTMLElement.prototype.getBoundingClientRect;
+    const rafSpy = vi.spyOn(window, "requestAnimationFrame").mockImplementation((callback: FrameRequestCallback) => {
+      callback(0);
+      return 1;
+    });
+    const cancelRafSpy = vi.spyOn(window, "cancelAnimationFrame").mockImplementation(() => {});
+    let triggerRect = { left: 144, top: 90, right: 236, bottom: 126, width: 92, height: 36 };
+
+    HTMLElement.prototype.getBoundingClientRect = function getBoundingClientRect() {
+      if (this.classList.contains("detail-tab--activity")) {
+        return { x: triggerRect.left, y: triggerRect.top, ...triggerRect, toJSON: () => ({}) } as DOMRect;
+      }
+      return originalGetBoundingClientRect.call(this);
+    };
+
+    try {
+      mockRawLogs([]);
+      render(
+        <FloatingWindow
+          windowKey="task-detail-FN-7493"
+          title="FN-7493"
+          onClose={noop}
+          hideHeader
+          dragHandleSelector=".task-detail-content--embedded > .modal-header"
+          className="floating-window--task-detail"
+          layer="task-detail"
+        >
+          <TaskDetailContent
+            task={makeTask({ id: "FN-7493", column: "in-progress" as any, log: [], steeringComments: [] })}
+            embedded
+            onRequestClose={noop}
+            onMoveTask={noopMove}
+            onDeleteTask={noopDelete}
+            onMergeTask={noopMerge}
+            onOpenDetail={noopOpenDetail}
+            addToast={noop}
+          />
+        </FloatingWindow>,
+      );
+
+      const popup = screen.getByTestId("floating-window-task-detail-FN-7493");
+      const menu = openActivityViewMenu();
+      expect(menu.parentElement).toBe(document.body);
+      expect(Number(getComputedStyle(menu).zIndex)).toBeGreaterThan(Number(popup.style.zIndex));
+      expect(menu.style.left).toBe("144px");
+      expect(menu.style.top).toBe("130px");
+
+      triggerRect = { left: 260, top: 140, right: 352, bottom: 176, width: 92, height: 36 };
+      act(() => {
+        window.dispatchEvent(new CustomEvent(FLOATING_WINDOW_GEOMETRY_CHANGE_EVENT, { detail: { windowKey: "task-detail-FN-7493", layer: "task-detail" } }));
+      });
+
+      expect(menu.style.left).toBe("260px");
+      expect(menu.style.top).toBe("180px");
+      expect(document.querySelectorAll(".activity-view-menu")).toHaveLength(1);
+      expect(document.querySelectorAll(".detail-tab--activity")).toHaveLength(1);
+      fireEvent.keyDown(menu, { key: "Escape" });
+      expect(screen.queryByRole("menu", { name: "Activity views" })).not.toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Activity" })).toHaveAttribute("aria-expanded", "false");
+    } finally {
+      HTMLElement.prototype.getBoundingClientRect = originalGetBoundingClientRect;
+      rafSpy.mockRestore();
+      cancelRafSpy.mockRestore();
+    }
+  });
+
   it("anchors the Activity menu under the trigger regardless of a diverging visual viewport", () => {
     const originalInnerWidth = window.innerWidth;
     const originalInnerHeight = window.innerHeight;

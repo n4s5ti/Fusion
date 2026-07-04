@@ -13,6 +13,7 @@ function renderTaskDetailPopup(taskId: string) {
       dragHandleSelector=".task-detail-content--embedded > .modal-header"
       className="floating-window--task-detail"
       persistGeometryKey={TASK_DETAIL_FLOATING_GEOMETRY_KEY}
+      layer="task-detail"
     >
       <div className="task-detail-content--embedded">
         <div className="modal-header">{taskId}</div>
@@ -58,7 +59,44 @@ describe("task-detail FloatingWindow geometry", () => {
     expect(secondPanel).toHaveClass("floating-window--task-detail");
   });
 
-  it("keeps task-detail geometry isolated from non-task FloatingWindow keys", () => {
+  it("raises multiple task-detail popups within the board layer below utility windows", () => {
+    render(
+      <>
+        <FloatingWindow
+          windowKey="task-detail-FN-7493-A"
+          title="FN-7493-A"
+          onClose={() => {}}
+          className="floating-window--task-detail"
+          persistGeometryKey={TASK_DETAIL_FLOATING_GEOMETRY_KEY}
+          layer="task-detail"
+        >
+          <div>task a body</div>
+        </FloatingWindow>
+        <FloatingWindow
+          windowKey="task-detail-FN-7493-B"
+          title="FN-7493-B"
+          onClose={() => {}}
+          className="floating-window--task-detail"
+          persistGeometryKey={TASK_DETAIL_FLOATING_GEOMETRY_KEY}
+          layer="task-detail"
+        >
+          <div>task b body</div>
+        </FloatingWindow>
+        <FloatingWindow windowKey="utility-FN-7493" title="Utility" onClose={() => {}}>
+          <div>utility body</div>
+        </FloatingWindow>
+      </>,
+    );
+
+    const firstTask = screen.getByTestId("floating-window-task-detail-FN-7493-A");
+    const secondTask = screen.getByTestId("floating-window-task-detail-FN-7493-B");
+    const utility = screen.getByTestId("floating-window-utility-FN-7493");
+
+    expect(Number(secondTask.style.zIndex)).toBeGreaterThan(Number(firstTask.style.zIndex));
+    expect(Number(secondTask.style.zIndex)).toBeLessThan(Number(utility.style.zIndex));
+  });
+
+  it("keeps task-detail geometry and layer isolated from non-task FloatingWindow keys", () => {
     localStorage.setItem(
       TASK_DETAIL_FLOATING_GEOMETRY_KEY,
       JSON.stringify({
@@ -82,6 +120,7 @@ describe("task-detail FloatingWindow geometry", () => {
           onClose={() => {}}
           className="floating-window--task-detail"
           persistGeometryKey={TASK_DETAIL_FLOATING_GEOMETRY_KEY}
+          layer="task-detail"
         >
           <div>task detail body</div>
         </FloatingWindow>
@@ -97,12 +136,16 @@ describe("task-detail FloatingWindow geometry", () => {
     );
 
     const taskPanel = screen.getByTestId("floating-window-task-detail-FN-7459");
+    const taskOverlay = screen.getByTestId("floating-window-overlay-task-detail-FN-7459");
     expect(taskPanel.style.width).toBe("650px");
     expect(taskPanel.style.height).toBe("490px");
     expect(taskPanel.style.left).toBe("118px");
     expect(taskPanel.style.top).toBe("76px");
 
     const missionPanel = screen.getByTestId("floating-window-mission");
+    const missionOverlay = screen.getByTestId("floating-window-overlay-mission");
+    expect(Number(taskPanel.style.zIndex)).toBeLessThan(Number(missionPanel.style.zIndex));
+    expect(Number(taskOverlay.style.zIndex)).toBeLessThan(Number(missionOverlay.style.zIndex));
     expect(missionPanel.style.width).toBe("540px");
     expect(missionPanel.style.height).toBe("420px");
     expect(missionPanel.style.left).toBe("210px");

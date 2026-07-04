@@ -2510,6 +2510,9 @@ The Activity tab itself is the Live/Feed/Raw dropdown trigger. Keep it in the `.
 
 FNXC:TaskDetailActivity 2026-07-01-00:00:
 The Activity view menu is portaled to the document body and fixed-positioned because `.detail-tabs` uses overflow scrolling on mobile. Keep overflow containment on the tab strip and move only the menu overlay out of that clipping chain.
+
+FNXC:TaskDetailActivity 2026-07-04-18:37:
+The body-portaled menu must paint above the owning task-detail modal/popup while task-detail FloatingWindow shells sit in the board-layer band. Keep this below global utility overlays but above normal task-detail/modal chrome so Activity never hides behind its own moving popup.
 */
 .detail-tab-dropdown {
   position: relative;

@@ -1645,6 +1645,9 @@ function AppInner() {
 
       FNXC:TaskPopupGeometry 2026-07-03-00:00:
       Every task-detail FloatingWindow keeps its per-task windowKey for DOM identity, dedupe, cascade fallback, and z-index independence, but all task-detail popups share one persisted geometry key so operators do not resize or reposition the popup between tasks.
+
+      FNXC:TaskPopupLayer 2026-07-04-18:36:
+      Ordinary task-detail popups belong to the board/task-detail layer, not the global floating-utility stack. Pass the task-detail layer so board/right-dock task opens preserve the visible board context while utility windows keep the higher app-wide raise/focus contract.
       */}
       {poppedOutTasks.map((snapshot) => {
         const liveTask = tasks.find((candidate) => candidate.id === snapshot.id) ?? snapshot;
@@ -1659,6 +1662,7 @@ function AppInner() {
             dragHandleSelector=".task-detail-content--embedded > .modal-header"
             className="floating-window--task-detail"
             persistGeometryKey={TASK_DETAIL_FLOATING_GEOMETRY_KEY}
+            layer="task-detail"
           >
             <TaskDetailContent
               task={liveTask}

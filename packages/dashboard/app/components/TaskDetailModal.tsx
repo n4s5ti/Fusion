@@ -68,6 +68,7 @@ import { getTaskLogEntryAction, getTaskLogEntryOutcome } from "../utils/taskLogE
 import { getRelativeTimeBucket } from "../utils/relativeTimeAgo";
 import { ACTIVE_STATUSES, resolveEffectiveExecutor, resolveEffectivePlanning, resolveEffectiveValidator, type ModelSelection } from "./effective-model-resolution";
 import { TaskContextMenu, buildTaskActionMenuModel, getTaskPrAutomationLabel } from "./TaskContextMenu";
+import { FLOATING_WINDOW_GEOMETRY_CHANGE_EVENT } from "./FloatingWindow";
 import { useFileBrowser } from "../context/FileBrowserContext";
 import type { DetailTaskInitialActionRequest } from "../hooks/useModalManager";
 
@@ -2914,6 +2915,9 @@ export function TaskDetailContent({
     FNXC:TaskDetailActivity 2026-07-01-12:20:
     The Activity view menu is `position: fixed` and portaled to <body>, so it is anchored to the LAYOUT viewport, and `getBoundingClientRect()` returns layout-viewport-relative coordinates that a fixed element consumes directly.
     Position it purely from the layout viewport (`document.documentElement.clientWidth/clientHeight`) and never mix in `window.visualViewport` width/height/offset: under pinch-zoom or an open mobile keyboard the visual viewport diverges from the layout viewport (smaller width, nonzero offsetLeft/Top), and combining a shrunken visual-viewport width with a layout-viewport `getBoundingClientRect()` clamped `left` far off the trigger, so the popup rendered detached to the left of the modal instead of under the "Activity" tab.
+
+    FNXC:TaskDetailActivity 2026-07-04-18:37:
+    The menu is root-portaled so it can escape `.detail-tabs` and `.floating-window__body` clipping, but that means it must actively follow a dragged/resized task-detail popup. Recompute from the live Activity trigger rect after FloatingWindow geometry commits and pointer movement, keeping the menu above and attached to its owning modal instead of behind or detached on a stale fixed coordinate.
   */
   const updateActivityViewMenuPosition = useCallback(() => {
     const trigger = activityViewButtonRef.current;
@@ -2946,7 +2950,12 @@ export function TaskDetailContent({
       ? Math.max(verticalPadding, rect.top - maxHeight - gap)
       : Math.min(rect.bottom + gap, viewportHeight - verticalPadding - maxHeight);
 
-    setActivityViewMenuPosition({ top, left, minWidth: width, maxHeight });
+    setActivityViewMenuPosition((current) => {
+      if (current?.top === top && current.left === left && current.minWidth === width && current.maxHeight === maxHeight) {
+        return current;
+      }
+      return { top, left, minWidth: width, maxHeight };
+    });
   }, []);
 
   const activityViewOptions = useMemo<Array<{ value: ActivitySegment; label: string }>>(() => [
@@ -3029,17 +3038,33 @@ export function TaskDetailContent({
       closeForViewportChange();
     };
 
+    let positionFrame = 0;
+    const schedulePositionUpdate = () => {
+      if (positionFrame) return;
+      positionFrame = requestAnimationFrame(() => {
+        positionFrame = 0;
+        updateActivityViewMenuPosition();
+      });
+    };
+
     window.addEventListener("resize", closeForViewportChange);
     window.addEventListener("orientationchange", closeForViewportChange);
     window.addEventListener("scroll", closeForViewportChange, true);
+    window.addEventListener(FLOATING_WINDOW_GEOMETRY_CHANGE_EVENT, schedulePositionUpdate);
+    document.addEventListener("pointermove", schedulePositionUpdate, true);
+    document.addEventListener("pointerup", schedulePositionUpdate, true);
     const visualViewport = window.visualViewport;
     visualViewport?.addEventListener("resize", handleVisualViewportChange);
     visualViewport?.addEventListener("scroll", handleVisualViewportChange);
 
     return () => {
+      if (positionFrame) cancelAnimationFrame(positionFrame);
       window.removeEventListener("resize", closeForViewportChange);
       window.removeEventListener("orientationchange", closeForViewportChange);
       window.removeEventListener("scroll", closeForViewportChange, true);
+      window.removeEventListener(FLOATING_WINDOW_GEOMETRY_CHANGE_EVENT, schedulePositionUpdate);
+      document.removeEventListener("pointermove", schedulePositionUpdate, true);
+      document.removeEventListener("pointerup", schedulePositionUpdate, true);
       visualViewport?.removeEventListener("resize", handleVisualViewportChange);
       visualViewport?.removeEventListener("scroll", handleVisualViewportChange);
     };
