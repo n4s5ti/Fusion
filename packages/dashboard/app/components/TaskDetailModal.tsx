@@ -79,6 +79,7 @@ const ACTIVITY_VIEW_MENU_TRIGGER_GAP = 4;
 const ACTIVITY_VIEW_MENU_MIN_WIDTH = 160;
 const ACTIVITY_VIEW_MENU_MIN_HEIGHT = 120;
 const ACTIVITY_VIEW_MENU_MAX_HEIGHT = 320;
+const ACTIVITY_VIEW_MENU_OPEN_VIEWPORT_GUARD_MS = 350;
 
 type ActivityViewMenuPosition = {
   top: number;
@@ -963,6 +964,7 @@ export function TaskDetailContent({
   const activityViewDropdownRef = useRef<HTMLDivElement>(null);
   const activityViewMenuRef = useRef<HTMLDivElement>(null);
   const activityViewButtonRef = useRef<HTMLButtonElement>(null);
+  const activityViewMenuViewportGuardUntilRef = useRef(0);
 
   // Plugin UI slots for task-detail-tab
   const { getSlotsForId: getPluginSlots } = usePluginUiSlots(projectId);
@@ -1314,7 +1316,9 @@ export function TaskDetailContent({
         setShowActionsMenu(false);
       }
       if (!inActivityViewMenu && showActivityViewMenu) {
+        activityViewMenuViewportGuardUntilRef.current = 0;
         setShowActivityViewMenu(false);
+        setActivityViewMenuPosition(null);
       }
     };
 
@@ -1332,7 +1336,11 @@ export function TaskDetailContent({
         e.stopPropagation(); // Prevent modal from closing
         if (showMoveMenu) setShowMoveMenu(false);
         if (showActionsMenu) setShowActionsMenu(false);
-        if (showActivityViewMenu) setShowActivityViewMenu(false);
+        if (showActivityViewMenu) {
+          activityViewMenuViewportGuardUntilRef.current = 0;
+          setShowActivityViewMenu(false);
+          setActivityViewMenuPosition(null);
+        }
       }
     };
 
@@ -2891,9 +2899,15 @@ export function TaskDetailContent({
   }, [closeMoveMenuAndFocusTrigger]);
 
   const closeActivityViewMenuAndFocusTrigger = useCallback(() => {
+    activityViewMenuViewportGuardUntilRef.current = 0;
     setShowActivityViewMenu(false);
     setActivityViewMenuPosition(null);
     activityViewButtonRef.current?.focus();
+  }, []);
+
+  const markActivityViewMenuOpening = useCallback(() => {
+    const now = typeof performance !== "undefined" ? performance.now() : Date.now();
+    activityViewMenuViewportGuardUntilRef.current = now + ACTIVITY_VIEW_MENU_OPEN_VIEWPORT_GUARD_MS;
   }, []);
 
   /*
@@ -2943,6 +2957,7 @@ export function TaskDetailContent({
   const selectedActivityViewLabel = activityViewOptions.find((option) => option.value === activitySegment)?.label ?? activityViewOptions[0]?.label ?? "Live";
 
   const selectActivityView = useCallback((value: ActivitySegment) => {
+    activityViewMenuViewportGuardUntilRef.current = 0;
     setActiveTab("chat");
     setActivitySegment(value);
     setShowActivityViewMenu(false);
@@ -2957,9 +2972,10 @@ export function TaskDetailContent({
     }
 
     event.preventDefault();
+    markActivityViewMenuOpening();
     setActiveTab("chat");
     setShowActivityViewMenu(true);
-  }, []);
+  }, [markActivityViewMenuOpening]);
 
   const handleActivityViewMenuKeyDown = useCallback((event: React.KeyboardEvent<HTMLElement>) => {
     if (event.key !== "Escape") {
@@ -2994,28 +3010,43 @@ export function TaskDetailContent({
       return;
     }
 
-    const handleViewportChange = () => {
+    const closeForViewportChange = () => {
+      activityViewMenuViewportGuardUntilRef.current = 0;
       setShowActivityViewMenu(false);
       setActivityViewMenuPosition(null);
     };
 
-    window.addEventListener("resize", handleViewportChange);
-    window.addEventListener("orientationchange", handleViewportChange);
-    window.addEventListener("scroll", handleViewportChange, true);
+    /*
+      FNXC:TaskDetailActivity 2026-07-03-18:00:
+      Mobile iOS can emit visualViewport scroll/resize as part of the same tap sequence that opens the root-portaled Activity menu. Ignore only that short opening echo and keep the layout-viewport position fresh; later viewport, orientation, outside, Escape, task-change, and selection closes still clean up the menu.
+    */
+    const handleVisualViewportChange = () => {
+      const now = typeof performance !== "undefined" ? performance.now() : Date.now();
+      if (now <= activityViewMenuViewportGuardUntilRef.current) {
+        updateActivityViewMenuPosition();
+        return;
+      }
+      closeForViewportChange();
+    };
+
+    window.addEventListener("resize", closeForViewportChange);
+    window.addEventListener("orientationchange", closeForViewportChange);
+    window.addEventListener("scroll", closeForViewportChange, true);
     const visualViewport = window.visualViewport;
-    visualViewport?.addEventListener("resize", handleViewportChange);
-    visualViewport?.addEventListener("scroll", handleViewportChange);
+    visualViewport?.addEventListener("resize", handleVisualViewportChange);
+    visualViewport?.addEventListener("scroll", handleVisualViewportChange);
 
     return () => {
-      window.removeEventListener("resize", handleViewportChange);
-      window.removeEventListener("orientationchange", handleViewportChange);
-      window.removeEventListener("scroll", handleViewportChange, true);
-      visualViewport?.removeEventListener("resize", handleViewportChange);
-      visualViewport?.removeEventListener("scroll", handleViewportChange);
+      window.removeEventListener("resize", closeForViewportChange);
+      window.removeEventListener("orientationchange", closeForViewportChange);
+      window.removeEventListener("scroll", closeForViewportChange, true);
+      visualViewport?.removeEventListener("resize", handleVisualViewportChange);
+      visualViewport?.removeEventListener("scroll", handleVisualViewportChange);
     };
-  }, [showActivityViewMenu]);
+  }, [showActivityViewMenu, updateActivityViewMenuPosition]);
 
   useEffect(() => {
+    activityViewMenuViewportGuardUntilRef.current = 0;
     setShowActivityViewMenu(false);
     setActivityViewMenuPosition(null);
   }, [task.id]);
@@ -3080,8 +3111,15 @@ export function TaskDetailContent({
         type="button"
         className={`detail-tab detail-tab--activity${activeTab === "chat" ? " detail-tab-active" : ""}`}
         onClick={() => {
+          const shouldOpen = !showActivityViewMenu;
           setActiveTab("chat");
-          setShowActivityViewMenu((value) => !value);
+          if (shouldOpen) {
+            markActivityViewMenuOpening();
+          } else {
+            activityViewMenuViewportGuardUntilRef.current = 0;
+            setActivityViewMenuPosition(null);
+          }
+          setShowActivityViewMenu(shouldOpen);
         }}
         onKeyDown={handleActivityTabKeyDown}
         aria-haspopup="menu"
