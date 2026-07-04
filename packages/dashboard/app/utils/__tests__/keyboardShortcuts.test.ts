@@ -44,6 +44,7 @@ describe("keyboard shortcut utilities", () => {
     expect(shortcutMatchesEvent("Escape", keydown({ key: "Escape" }))).toBe(true);
     expect(shortcutMatchesEvent("Ctrl+`", keydown({ key: "`", ctrlKey: true }))).toBe(true);
     expect(shortcutMatchesEvent("Meta+K", keydown({ key: "k", metaKey: true }))).toBe(true);
+    expect(shortcutMatchesEvent("Alt+T", keydown({ key: "t", altKey: true }))).toBe(true);
     expect(shortcutMatchesEvent("Ctrl+K", keydown({ key: "k" }))).toBe(false);
     expect(shortcutMatchesEvent("", keydown({ key: " " }))).toBe(false);
   });

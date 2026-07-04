@@ -208,6 +208,46 @@ export function getBoardTaskOpenRoute(options: {
   return "main-panel";
 }
 
+export interface DashboardShortcutPopupState {
+  poppedOutTaskIds: string[];
+  quickChatOpen: boolean;
+  terminalOpen: boolean;
+  modalClosers: Array<[boolean, () => void]>;
+}
+
+export interface DashboardShortcutPopupHandlers {
+  closePoppedOutTask: (taskId: string) => void;
+  closeQuickChat: () => void;
+  closeTerminal: () => void;
+}
+
+/*
+FNXC:DashboardShortcuts 2026-07-04-12:02:
+The App-level Escape close order is factored into a pure helper so regression tests can prove the real dashboard shell ordering without rendering every lazy dashboard surface. The helper must close exactly one surface and return false when no popup is open so component-local Escape handlers remain authoritative.
+*/
+export function closeTopmostDashboardPopupForShortcut(
+  state: DashboardShortcutPopupState,
+  handlers: DashboardShortcutPopupHandlers,
+): boolean {
+  const lastPoppedOutTaskId = state.poppedOutTaskIds[state.poppedOutTaskIds.length - 1];
+  if (lastPoppedOutTaskId) {
+    handlers.closePoppedOutTask(lastPoppedOutTaskId);
+    return true;
+  }
+  if (state.quickChatOpen) {
+    handlers.closeQuickChat();
+    return true;
+  }
+  if (state.terminalOpen) {
+    handlers.closeTerminal();
+    return true;
+  }
+  const match = state.modalClosers.find(([open]) => open);
+  if (!match) return false;
+  match[1]();
+  return true;
+}
+
 function AppInner() {
   const { t } = useTranslation("app");
   const { toasts, addToast, removeToast } = useToast();
@@ -958,43 +998,41 @@ function AppInner() {
     /*
     FNXC:DashboardShortcuts 2026-07-04-00:00:
     Escape should close only one visible dashboard popup per key press. Floating user surfaces close before fixed app modals so a Quick Chat or task popout on top does not accidentally dismiss the underlying Terminal, Settings, or Task Detail modal.
+
+    FNXC:DashboardShortcuts 2026-07-04-12:02:
+    Popped-out tasks are the most recent floating work surface and must close before Quick Chat. This preserves the topmost-popup invariant when a task popout overlays chat, then falls back to Terminal and modal-manager surfaces one layer per Escape.
     */
-    if (quickChatOpen) {
-      setQuickChatOpen(false);
-      return true;
-    }
-    const lastPoppedOutTask = poppedOutTasks[poppedOutTasks.length - 1];
-    if (lastPoppedOutTask) {
-      closePoppedOutTask(lastPoppedOutTask.id);
-      return true;
-    }
-    if (modalManager.terminalOpen) {
-      closeTerminalWithNav();
-      return true;
-    }
-    const modalClosers: Array<[boolean, () => void]> = [
-      [modalManager.filesOpen, modalManager.closeFiles],
-      [modalManager.workflowEditorOpen, modalManager.closeWorkflowEditor],
-      [modalManager.gitManagerOpen, modalManager.closeGitManager],
-      [modalManager.activityLogOpen, modalManager.closeActivityLog],
-      [modalManager.scriptsOpen, modalManager.closeScripts],
-      [modalManager.agentsOpen, modalManager.closeAgents],
-      [modalManager.usageOpen, modalManager.closeUsage],
-      [modalManager.schedulesOpen, modalManager.closeSchedules],
-      [modalManager.githubImportOpen, modalManager.closeGitHubImport],
-      [modalManager.settingsOpen, modalManager.closeSettings],
-      [Boolean(modalManager.detailTask), modalManager.closeDetailTask],
-      [Boolean(modalManager.groupModalGroupId), modalManager.closeGroupModal],
-      [modalManager.isSubtaskOpen, modalManager.closeSubtask],
-      [modalManager.isPlanningOpen, modalManager.closePlanning],
-      [modalManager.newTaskModalOpen, modalManager.closeNewTask],
-      [modalManager.setupWizardOpen, modalManager.closeSetupWizard],
-      [modalManager.modelOnboardingOpen, modalManager.closeModelOnboarding],
-    ];
-    const match = modalClosers.find(([open]) => open);
-    if (!match) return false;
-    match[1]();
-    return true;
+    return closeTopmostDashboardPopupForShortcut(
+      {
+        poppedOutTaskIds: poppedOutTasks.map((task) => task.id),
+        quickChatOpen,
+        terminalOpen: modalManager.terminalOpen,
+        modalClosers: [
+          [modalManager.filesOpen, modalManager.closeFiles],
+          [modalManager.workflowEditorOpen, modalManager.closeWorkflowEditor],
+          [modalManager.gitManagerOpen, modalManager.closeGitManager],
+          [modalManager.activityLogOpen, modalManager.closeActivityLog],
+          [modalManager.scriptsOpen, modalManager.closeScripts],
+          [modalManager.agentsOpen, modalManager.closeAgents],
+          [modalManager.usageOpen, modalManager.closeUsage],
+          [modalManager.schedulesOpen, modalManager.closeSchedules],
+          [modalManager.githubImportOpen, modalManager.closeGitHubImport],
+          [modalManager.settingsOpen, modalManager.closeSettings],
+          [Boolean(modalManager.detailTask), modalManager.closeDetailTask],
+          [Boolean(modalManager.groupModalGroupId), modalManager.closeGroupModal],
+          [modalManager.isSubtaskOpen, modalManager.closeSubtask],
+          [modalManager.isPlanningOpen, modalManager.closePlanning],
+          [modalManager.newTaskModalOpen, modalManager.closeNewTask],
+          [modalManager.setupWizardOpen, modalManager.closeSetupWizard],
+          [modalManager.modelOnboardingOpen, modalManager.closeModelOnboarding],
+        ],
+      },
+      {
+        closePoppedOutTask,
+        closeQuickChat: () => setQuickChatOpen(false),
+        closeTerminal: closeTerminalWithNav,
+      },
+    );
   }, [closePoppedOutTask, closeTerminalWithNav, modalManager, poppedOutTasks, quickChatOpen]);
 
   useDashboardKeyboardShortcuts({
