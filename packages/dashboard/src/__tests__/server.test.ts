@@ -1931,6 +1931,22 @@ describe("createServer scoped scheduling resolver regressions", () => {
     };
   }
 
+  /*
+  FNXC:RoutineRunnerTests 2026-07-03-19:59:
+  Manual routine routes must stream live progress, so scoped server tests assert the RoutineRunner contract includes the routine id and live callback object instead of the legacy single-argument call.
+  */
+  function expectManualTriggerWithLiveCallbacks(triggerManual: any, routineId: string) {
+    expect(triggerManual).toHaveBeenCalledWith(
+      routineId,
+      expect.objectContaining({
+        onStep: expect.any(Function),
+        onText: expect.any(Function),
+        onToolStart: expect.any(Function),
+        onToolEnd: expect.any(Function),
+      }),
+    );
+  }
+
   // ── Mock ProjectEngineManager ───────────────────────────────────
 
   function createMockEngineManager() {
@@ -2358,7 +2374,7 @@ describe("createServer scoped scheduling resolver regressions", () => {
       expect(res.status).toBe(200);
       expect(res.body.routine).toBeDefined();
       expect(res.body.result).toBeDefined();
-      expect(routineRunner.triggerManual).toHaveBeenCalledWith("routine-global-1");
+      expectManualTriggerWithLiveCallbacks(routineRunner.triggerManual, "routine-global-1");
     });
 
     it("POST /api/routines/:id/run with scope=project for global routine returns 404", async () => {
@@ -2396,7 +2412,7 @@ describe("createServer scoped scheduling resolver regressions", () => {
       const res = await REQUEST(app, "POST", "/api/routines/routine-global-1/trigger?scope=global");
 
       expect(res.status).toBe(200);
-      expect(routineRunner.triggerManual).toHaveBeenCalledWith("routine-global-1");
+      expectManualTriggerWithLiveCallbacks(routineRunner.triggerManual, "routine-global-1");
     });
 
     it("GET /api/routines/:id/runs with scope=global returns runs for global routine", async () => {
@@ -2820,7 +2836,7 @@ describe("createServer scoped scheduling resolver regressions", () => {
       const res = await REQUEST(app, "POST", "/api/routines/routine-global-1/run?scope=global");
 
       expect(res.status).toBe(200);
-      expect(routineRunner.triggerManual).toHaveBeenCalledWith("routine-global-1");
+      expectManualTriggerWithLiveCallbacks(routineRunner.triggerManual, "routine-global-1");
     });
 
     it("POST /api/routines/:id/run with scope=project for global routine returns 404", async () => {
@@ -3073,7 +3089,7 @@ describe("createServer scoped scheduling resolver regressions", () => {
       // Verify engine was consulted
       expect(engineManager.getEngine).toHaveBeenCalledWith("proj-a");
       // Verify engine's runner was used
-      expect(projARoutineRunner.triggerManual).toHaveBeenCalledWith("routine-proj-a");
+      expectManualTriggerWithLiveCallbacks(projARoutineRunner.triggerManual, "routine-proj-a");
     });
 
     it("POST /api/routines/:id/run?scope=project&projectId=proj-b never uses proj-a engine", async () => {
