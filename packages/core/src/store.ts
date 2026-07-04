@@ -2340,6 +2340,10 @@ export class TaskStore extends EventEmitter<TaskStoreEvents> {
       missionId: entry.missionId,
       sliceId: entry.sliceId,
       assigneeUserId: entry.assigneeUserId,
+      // FNXC:BranchGroupCompletion 2026-07-04-00:00: FN-7534 — restore the frozen
+      // mergeDetails snapshot so isBranchGroupMemberLanded can still tell an
+      // archived-but-landed member apart from one that never landed.
+      mergeDetails: entry.mergeDetails,
     };
   }
 
@@ -2482,6 +2486,10 @@ export class TaskStore extends EventEmitter<TaskStoreEvents> {
       mergeRetries: task.mergeRetries,
       error: task.error,
       modifiedFiles: task.modifiedFiles,
+      // FNXC:BranchGroupCompletion 2026-07-04-00:00: FN-7534 — persist mergeDetails on
+      // archival so an archived member that had already landed against its branch group
+      // keeps counting as landed (see ArchivedTaskEntry.mergeDetails doc comment).
+      mergeDetails: task.mergeDetails,
       missionId: task.missionId,
       sliceId: task.sliceId,
       assigneeUserId: task.assigneeUserId,
@@ -5638,7 +5646,27 @@ ${TASK_UPSERT_SQL_ASSIGNMENTS}
   }
 
   async listTasksByBranchGroup(groupId: string): Promise<Task[]> {
-    const tasks = await this.listTasks({ includeArchived: false, slim: true });
+    /*
+     * FNXC:BranchGroupCompletion 2026-07-04-00:00:
+     * FN-7534: this scan previously used `includeArchived: false`, which silently
+     * dropped an archived-but-UNLANDED member from `total` with no corresponding
+     * drop from `landed` — `isBranchGroupComplete` / `evaluateBranchGroupCompletion`
+     * ("total>0 && every member landed") could then flip a genuinely-incomplete
+     * group to `complete: true`, making the engine promotion gate
+     * (`promoteBranchGroup`) eligible to promote unfinished work. Scanning with
+     * `includeArchived: true` keeps every member — archived or not — in the
+     * membership set; `isBranchGroupMemberLanded` (merge-target-safety unchanged)
+     * still governs whether each one counts as landed. An archived member that had
+     * already landed before archival is now told apart from one that never landed
+     * via the mergeDetails snapshot persisted on the archive entry (see
+     * ArchivedTaskEntry.mergeDetails), so this does not regress a
+     * previously-complete group into a permanent deadlock. This is the SOLE
+     * membership scan shared by the dashboard branch-groups route, the CLI
+     * `branch-group` command, and the engine group-merge coordinator
+     * (`promoteBranchGroup`) — fixing it here means all three inherit the
+     * correction without further changes.
+     */
+    const tasks = await this.listTasks({ includeArchived: true, slim: true });
     // Membership filter (incl. legacy synthetic-groupId fallback) is shared with
     // the dashboard list route via `filterTasksByBranchGroup` so semantics can't
     // drift between the two call sites (Fix #8/#9).

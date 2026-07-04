@@ -4,6 +4,7 @@ import { rm } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { TaskStore } from "../store.js";
+import { isBranchGroupMemberLanded } from "../branch-group-completion.js";
 
 function makeTmpDir(): string {
   return mkdtempSync(join(tmpdir(), "fusion-branch-group-test-"));
@@ -362,5 +363,81 @@ describe("TaskStore branch groups", () => {
     const archivedTask = archivedSlim.find((entry) => entry.id === task.id)!;
     expect(archivedTask.autoMerge).toBe(true);
     expect(archivedTask.branchContext?.groupId).toBe(group.id);
+  });
+
+  /*
+   * FNXC:BranchGroupCompletion 2026-07-04-00:00:
+   * FN-7534: an unlanded member archived while still belonging to a branch group must
+   * NEVER silently drop out of `listTasksByBranchGroup`'s membership set — it previously
+   * vanished from `total` without any corresponding drop in `landed`, letting
+   * `isBranchGroupComplete`/`evaluateBranchGroupCompletion` flip a genuinely-incomplete
+   * group to `complete: true`. The fix scans with `includeArchived: true` so archived
+   * members stay counted, and `mergeDetails` is now persisted on the archive entry (it
+   * was previously dropped at the archive boundary) so an archived member that HAD landed
+   * before archival keeps counting as landed rather than regressing to "pending" forever.
+   */
+  it("keeps an archived unlanded member in branch-group membership so completion cannot go true prematurely (FN-7534)", async () => {
+    const group = store.createBranchGroup({ sourceType: "planning", sourceId: "PS-archived-unlanded", branchName: "fn/archived-unlanded" });
+
+    const landedTask = await store.createTask({ description: "landed member" });
+    await store.setTaskBranchGroup(landedTask.id, group.id);
+    await store.updateTask(landedTask.id, {
+      mergeDetails: {
+        mergeConfirmed: true,
+        mergeTargetSource: "branch-group-integration",
+        mergeTargetBranch: group.branchName,
+      } as any,
+    });
+
+    const abandonedTask = await store.createTask({ description: "unlanded member, later archived" });
+    await store.setTaskBranchGroup(abandonedTask.id, group.id);
+    await store.archiveTask(abandonedTask.id);
+
+    const members = await store.listTasksByBranchGroup(group.id);
+    expect(members.map((task) => task.id).sort()).toEqual([abandonedTask.id, landedTask.id].sort());
+
+    const archivedMember = members.find((task) => task.id === abandonedTask.id)!;
+    expect(archivedMember.column).toBe("archived");
+    expect(isBranchGroupMemberLanded(archivedMember, group)).toBe(false);
+
+    const landedMember = members.find((task) => task.id === landedTask.id)!;
+    expect(isBranchGroupMemberLanded(landedMember, group)).toBe(true);
+  });
+
+  it("preserves mergeDetails on an archived member that had already landed before archival (FN-7534)", async () => {
+    const group = store.createBranchGroup({ sourceType: "planning", sourceId: "PS-archived-landed", branchName: "fn/archived-landed" });
+
+    const task = await store.createTask({ description: "landed then archived" });
+    await store.setTaskBranchGroup(task.id, group.id);
+    await store.updateTask(task.id, {
+      mergeDetails: {
+        mergeConfirmed: true,
+        mergeTargetSource: "branch-group-integration",
+        mergeTargetBranch: group.branchName,
+      } as any,
+    });
+    await store.moveTask(task.id, "todo");
+    await store.moveTask(task.id, "in-progress");
+    await store.moveTask(task.id, "done");
+    await store.archiveTask(task.id);
+
+    const members = await store.listTasksByBranchGroup(group.id);
+    expect(members).toHaveLength(1);
+    expect(members[0].column).toBe("archived");
+    expect(isBranchGroupMemberLanded(members[0], group)).toBe(true);
+  });
+
+  it("still matches a legacy synthetic-groupId member into membership after it is archived (FN-7534)", async () => {
+    const group = store.createBranchGroup({ sourceType: "planning", sourceId: "PS-legacy-archived", branchName: "fn/legacy-archived" });
+    const legacyTask = await store.createTask({
+      description: "legacy member, later archived",
+      branchContext: { groupId: "planning:PS-legacy-archived", source: "planning", assignmentMode: "shared" },
+    });
+
+    await store.archiveTask(legacyTask.id);
+
+    const members = await store.listTasksByBranchGroup(group.id);
+    expect(members.map((task) => task.id)).toEqual([legacyTask.id]);
+    expect(isBranchGroupMemberLanded(members[0], group)).toBe(false);
   });
 });

@@ -1827,6 +1827,8 @@ The Group Task Modal shows shared branch name/status, member list (`taskId`, tit
 
 > **FN-7532:** a member only counts as "landed" once it merge-confirms onto its OWN group's branch via the branch-group-integration path (`mergeDetails.mergeTargetSource === "branch-group-integration"` and a matching `mergeTargetBranch`) — this is the same predicate the engine's promotion gate uses, so the checklist can never show "complete" when a real promotion would still be refused (or vice versa). The merge engine now stamps this attribution for every merge (previously only the legacy merge path did, so shared-group members merged through the current path were undercounted).
 
+> **FN-7534:** archiving a member does NOT remove it from its branch group's completion count. An archived member that never landed stays in `total` as pending, so the checklist and the engine promotion gate (`promoteBranchGroup`) both keep reporting the group incomplete — archiving a stuck/abandoned member is not a way to force a group to "complete". An archived member that HAD already landed before archival keeps counting as landed (its merge-confirmation is frozen at archive time), so a group that was genuinely done before one of its members got archived does not regress into a permanent stuck state.
+
 Both the modal and branch-group card are completion-gated: while members are still pending, they show progress only. PR / merge controls are only revealed after all members are landed into the shared branch. When auto-merge is off, promote/open-PR is explicit user action (no automatic push-to-origin behavior).
 
 ### CLI-onboarding backfill runbook

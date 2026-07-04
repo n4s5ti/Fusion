@@ -4994,6 +4994,17 @@ export interface ArchivedTaskEntry {
   error?: string;
   /** User assigned to review this task (used during review handoff) */
   assigneeUserId?: string;
+  /**
+   * FNXC:BranchGroupCompletion 2026-07-04-00:00:
+   * FN-7534: frozen merge-confirmation snapshot, captured at archive time. Previously
+   * dropped entirely on archival, which meant a branch-group member that had already
+   * landed before being archived could never be told apart from one that never landed —
+   * both looked identical (mergeDetails undefined) to isBranchGroupMemberLanded once
+   * archived. Persisting it here lets an archived-but-already-landed member keep
+   * counting as landed for branch-group completion instead of regressing to "pending"
+   * and permanently deadlocking an otherwise-complete group.
+   */
+  mergeDetails?: MergeDetails;
 }
 
 /** Type of planning question presented to the user */
