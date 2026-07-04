@@ -2,7 +2,7 @@ import "./TaskDetailModal.css";
 import React, { Suspense, lazy, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useTranslation } from "react-i18next";
-import { Pencil, Bot, X, ChevronDown, ChevronRight, GitBranch, ArrowLeft, Zap, Loader2, AlertTriangle, Sparkles, Maximize2, Minimize2 } from "lucide-react";
+import { Pencil, Bot, X, ChevronDown, ChevronRight, GitBranch, ArrowLeft, Zap, Loader2, AlertTriangle, Sparkles, Maximize2, Minimize2, Send, Square, Info } from "lucide-react";
 import { useModalResizePersist } from "../hooks/useModalResizePersist";
 import { useMobileScrollLock } from "../hooks/useMobileScrollLock";
 import { useOverlayDismiss } from "../hooks/useOverlayDismiss";
@@ -11,16 +11,18 @@ import ReactMarkdown from "react-markdown";
 import type { Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { sharedRehypePlugins, createMermaidCodeComponent } from "./markdownPipeline";
-import type { Task, TaskDetail, TaskAttachment, Column, ColumnId, MergeResult, Settings, GlobalSettings, Agent, TaskPriority, TaskSourceIssue, WorkflowStepResult, GithubIssueAction, TaskGitLabTrackedItem } from "@fusion/core";
+import type { Task, TaskDetail, TaskAttachment, Column, ColumnId, MergeResult, Settings, GlobalSettings, Agent, TaskPriority, TaskSourceIssue, WorkflowStepResult, GithubIssueAction, TaskGitLabTrackedItem, PlannerOversightLevel, PlannerOverseerRuntimeSnapshot } from "@fusion/core";
 import {
   DEFAULT_TASK_PRIORITY,
   REPO_OVERRIDE_RE,
   TASK_PRIORITIES,
+  PLANNER_OVERSIGHT_LEVELS,
   getErrorMessage,
 } from "@fusion/core";
+import { resolveEffectivePlannerOversightLevel } from "../../../core/src/workflow-settings-resolver";
 import { isNearDuplicateCanonicalInactive } from "../../../core/src/near-duplicate-canonical";
 import { resolveEffectiveAutoMerge } from "../../../core/src/task-merge";
-import { uploadAttachment, deleteAttachment, updateTask, repairOverlapBlocker, pauseTask, unpauseTask, fetchTaskDetail, fetchSettings, fetchTaskEffectiveSettings, fetchGlobalSettings, requestSpecRevision, rebuildTaskSpec, approvePlan, rejectPlan, refineTask, fetchWorkflowResults, assignTask, fetchAgents, fetchAgent, refreshPrStatus, fetchBoardWorkflows, updateTaskCustomFields, summarizeTitle, api } from "../api";
+import { uploadAttachment, deleteAttachment, updateTask, repairOverlapBlocker, pauseTask, unpauseTask, fetchTaskDetail, fetchSettings, fetchTaskEffectiveSettings, fetchGlobalSettings, requestSpecRevision, rebuildTaskSpec, approvePlan, rejectPlan, refineTask, fetchWorkflowResults, assignTask, fetchAgents, fetchAgent, refreshPrStatus, fetchBoardWorkflows, updateTaskCustomFields, summarizeTitle, fetchWorkflowSettingValues, nudgeOverseer, stopOverseer, explainOverseer, api } from "../api";
 import type { BoardWorkflowsPayload, WorkflowFieldDefinition, CustomFieldRejection } from "../api";
 import { WorkflowIcon } from "./WorkflowIcon";
 import { ApiRequestError } from "../api";
@@ -409,6 +411,59 @@ function normalizeSourceIssueUrl(value: string): string | undefined {
   const trimmed = value.trim();
   return trimmed.length > 0 ? trimmed : undefined;
 }
+
+/*
+FNXC:PlannerOversight 2026-07-04-17:00:
+FN-7517 quick oversight-level-change control needs the workflow's effective
+`plannerOversightLevel` setting to show/reset-to the TRUE effective level
+for tasks with no per-task override — the same gap FN-7516's TaskCard badge
+hit (Task carries no `workflowId` field; the setting is not on the task
+payload). Mirrors TaskCard's module-level `(workflowId, projectId)` cache +
+in-flight de-dup exactly (see packages/dashboard/app/components/TaskCard.tsx)
+rather than re-deriving precedence locally — `resolveEffectivePlannerOversightLevel`
+remains the single resolver both surfaces call.
+*/
+const modalWorkflowOversightEffectiveCache = new Map<string, PlannerOversightLevel | undefined>();
+const modalWorkflowOversightInflight = new Map<string, Promise<void>>();
+
+function getModalWorkflowOversightCacheKey(workflowId: string, projectId?: string): string {
+  return `${projectId ?? "default"}::${workflowId}`;
+}
+
+function isPlannerOversightLevelValue(value: unknown): value is PlannerOversightLevel {
+  return typeof value === "string" && (PLANNER_OVERSIGHT_LEVELS as readonly string[]).includes(value);
+}
+
+async function loadModalWorkflowOversightEffectiveLevel(workflowId: string, projectId: string | undefined): Promise<PlannerOversightLevel | undefined> {
+  const key = getModalWorkflowOversightCacheKey(workflowId, projectId);
+  if (modalWorkflowOversightEffectiveCache.has(key)) {
+    return modalWorkflowOversightEffectiveCache.get(key);
+  }
+  let inflight = modalWorkflowOversightInflight.get(key);
+  if (!inflight) {
+    inflight = fetchWorkflowSettingValues(workflowId, projectId)
+      .then((payload) => {
+        const raw = payload.effective?.plannerOversightLevel;
+        modalWorkflowOversightEffectiveCache.set(key, isPlannerOversightLevelValue(raw) ? raw : undefined);
+      })
+      .catch(() => {
+        modalWorkflowOversightEffectiveCache.set(key, undefined);
+      })
+      .finally(() => {
+        modalWorkflowOversightInflight.delete(key);
+      });
+    modalWorkflowOversightInflight.set(key, inflight);
+  }
+  await inflight;
+  return modalWorkflowOversightEffectiveCache.get(key);
+}
+
+const OVERSIGHT_LEVEL_LABEL: Record<PlannerOversightLevel, string> = {
+  off: "Off",
+  observe: "Observe",
+  steer: "Steer",
+  autonomous: "Autonomous recovery",
+};
 
 function normalizeTaskPriorityValue(priority: Task["priority"]): TaskPriority {
   return isStringValue(priority) && (TASK_PRIORITIES as readonly string[]).includes(priority)
@@ -857,6 +912,46 @@ export function TaskDetailContent({
     };
   }, [task.id, projectId, workflowFieldDefsProp]);
 
+  /*
+  FNXC:PlannerOversight 2026-07-04-17:00:
+  FN-7517: resolve the WORKFLOW's effective plannerOversightLevel (via the
+  same cache/fetch pattern as TaskCard's card-oversight-badge, see the FNXC
+  block above `modalWorkflowOversightEffectiveCache`) so the quick
+  level-change control shows the TRUE effective level — not a guessed
+  schema default — for tasks with no per-task override. Gated on
+  `taskWorkflowBadge.id` resolving first (from the board-workflows payload
+  fetch above); a known per-task override renders synchronously regardless.
+  */
+  const workflowIdForOversight = taskWorkflowBadge?.id;
+  const [workflowOversightState, setWorkflowOversightState] = useState<{ level: PlannerOversightLevel | undefined; resolved: boolean }>({ level: undefined, resolved: false });
+  useEffect(() => {
+    if (!workflowIdForOversight) {
+      setWorkflowOversightState({ level: undefined, resolved: true });
+      return;
+    }
+    const workflowId = workflowIdForOversight;
+    const key = getModalWorkflowOversightCacheKey(workflowId, projectId);
+    if (modalWorkflowOversightEffectiveCache.has(key)) {
+      setWorkflowOversightState({ level: modalWorkflowOversightEffectiveCache.get(key), resolved: true });
+      return;
+    }
+    setWorkflowOversightState({ level: undefined, resolved: false });
+    let cancelled = false;
+    void loadModalWorkflowOversightEffectiveLevel(workflowId, projectId).then((level) => {
+      if (!cancelled) setWorkflowOversightState({ level, resolved: true });
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [workflowIdForOversight, projectId]);
+  const workflowOversightEffectiveLevel = workflowOversightState.level;
+  const workflowOversightResolved = workflowOversightState.resolved;
+  const hasTaskOversightOverride = isPlannerOversightLevelValue(task.plannerOversightLevel);
+  const effectiveOversightLevel: PlannerOversightLevel = resolveEffectivePlannerOversightLevel(
+    task.plannerOversightLevel,
+    workflowOversightEffectiveLevel,
+  );
+
   const handleSaveCustomFields = useCallback(
     async (patch: Record<string, unknown>) => {
       setCustomFieldError(null);
@@ -941,6 +1036,13 @@ export function TaskDetailContent({
   const [isSavingInlineExecutionMode, setIsSavingInlineExecutionMode] = useState(false);
   const [inlineNoCommitsExpected, setInlineNoCommitsExpected] = useState<boolean>(task.noCommitsExpected === true);
   const [isSavingInlineNoCommitsExpected, setIsSavingInlineNoCommitsExpected] = useState(false);
+  // FNXC:PlannerOversight 2026-07-04-17:00: FN-7517 quick oversight-level-change + nudge/stop/explain control state.
+  const [isSavingOversightLevel, setIsSavingOversightLevel] = useState(false);
+  const [isNudgingOverseer, setIsNudgingOverseer] = useState(false);
+  const [isStoppingOverseer, setIsStoppingOverseer] = useState(false);
+  const [overseerExplainOpen, setOverseerExplainOpen] = useState(false);
+  const [isLoadingOverseerExplain, setIsLoadingOverseerExplain] = useState(false);
+  const [overseerExplainSnapshot, setOverseerExplainSnapshot] = useState<PlannerOverseerRuntimeSnapshot | null>(null);
   const { confirm, confirmWithChoice, confirmWithCheckbox } = useConfirm();
   const requestClose = useCallback(() => {
     onRequestClose?.();
@@ -1882,6 +1984,124 @@ export function TaskDetailContent({
     }
   }, [task.id, projectId, inlineNoCommitsExpected, onTaskUpdated, addToast]);
 
+  /*
+  FNXC:PlannerOversight 2026-07-04-17:00:
+  FN-7517 quick oversight-level-change control. Writes the per-task override
+  via the SAME `updateTask` scalar-override plumbing FN-7509/FN-7515 already
+  wired (no parallel override path). `nextValue === "__inherit__"` clears the
+  override back to the inherited workflow/project default (null-clear,
+  mirroring the other scalar overrides' clear semantics).
+  */
+  const handleOversightLevelChange = useCallback(async (nextValue: string) => {
+    const isClear = nextValue === "__inherit__";
+    const nextOverride: PlannerOversightLevel | null = isClear ? null : (nextValue as PlannerOversightLevel);
+
+    setIsSavingOversightLevel(true);
+    try {
+      const updatedTask = await updateTask(task.id, { plannerOversightLevel: nextOverride }, projectId);
+      onTaskUpdated?.(updatedTask);
+      addToast(
+        isClear
+          ? t("taskDetail.oversight.reset", "Oversight level reset to workflow default")
+          : t("taskDetail.oversight.updated", "Oversight level set to {{level}}", { level: OVERSIGHT_LEVEL_LABEL[nextOverride as PlannerOversightLevel] }),
+        "success",
+      );
+    } catch (err) {
+      addToast(t("taskDetail.updateFailed", "Failed to update {{id}}: {{error}}", { id: task.id, error: getErrorMessage(err) }), "error");
+    } finally {
+      if (mountedRef.current) {
+        setIsSavingOversightLevel(false);
+      }
+    }
+  }, [task.id, projectId, onTaskUpdated, addToast, t]);
+
+  /*
+  FNXC:PlannerOversight 2026-07-04-17:00:
+  FN-7517 manual nudge control. Guidance-only — never a merge/PR/destructive
+  side effect (enforced server-side by `ProjectEngine.nudgeOverseerTask`,
+  reusing the FN-7512 guidance channel). `applied: false` is a normal,
+  non-error outcome (oversight off/inactive, or withheld by the human-control
+  guard) surfaced as an info toast, not an error toast.
+  */
+  const handleNudgeOverseer = useCallback(async () => {
+    setIsNudgingOverseer(true);
+    try {
+      const result = await nudgeOverseer(task.id, projectId);
+      if (result.applied) {
+        if (result.task) {
+          onTaskUpdated?.(result.task);
+        }
+        addToast(t("taskDetail.oversight.nudged", "Manual nudge sent to the overseer"), "success");
+      } else {
+        addToast(t("taskDetail.oversight.nudgeNotApplicable", "Nudge not applicable ({{reason}})", { reason: result.reason }), "info");
+      }
+    } catch (err) {
+      addToast(t("taskDetail.updateFailed", "Failed to update {{id}}: {{error}}", { id: task.id, error: getErrorMessage(err) }), "error");
+    } finally {
+      if (mountedRef.current) {
+        setIsNudgingOverseer(false);
+      }
+    }
+  }, [task.id, projectId, onTaskUpdated, addToast, t]);
+
+  /*
+  FNXC:PlannerOversight 2026-07-04-17:00:
+  FN-7517 stop-oversight control. Disables active oversight for this task
+  (per-task override -> "off") — a lightweight `confirm(...)` guards it since
+  it's a disabling action, matching the PROMPT's guidance for this control.
+  */
+  const handleStopOverseer = useCallback(async () => {
+    const shouldStop = await confirm({
+      title: t("taskDetail.oversight.stopTitle", "Stop planner oversight?"),
+      message: t("taskDetail.oversight.stopMessage", "This disables active planner oversight for this task (sets oversight level to Off)."),
+    });
+    if (!shouldStop) return;
+
+    setIsStoppingOverseer(true);
+    try {
+      const result = await stopOverseer(task.id, projectId);
+      if (result.task) {
+        onTaskUpdated?.(result.task);
+      }
+      addToast(t("taskDetail.oversight.stopped", "Planner oversight stopped for this task"), "success");
+    } catch (err) {
+      addToast(t("taskDetail.updateFailed", "Failed to update {{id}}: {{error}}", { id: task.id, error: getErrorMessage(err) }), "error");
+    } finally {
+      if (mountedRef.current) {
+        setIsStoppingOverseer(false);
+      }
+    }
+  }, [task.id, projectId, onTaskUpdated, addToast, confirm, t]);
+
+  /*
+  FNXC:PlannerOversight 2026-07-04-17:00:
+  FN-7517 explain-current-action control: toggles a small read-only panel and
+  fetches the current overseer runtime state (watched stage, reason, last
+  action, attempt count/limit). Never mutates anything.
+  */
+  const handleExplainOverseer = useCallback(async () => {
+    if (overseerExplainOpen) {
+      setOverseerExplainOpen(false);
+      return;
+    }
+    setOverseerExplainOpen(true);
+    setIsLoadingOverseerExplain(true);
+    try {
+      const result = await explainOverseer(task.id, projectId);
+      if (mountedRef.current) {
+        setOverseerExplainSnapshot(result.snapshot);
+      }
+    } catch {
+      if (mountedRef.current) {
+        setOverseerExplainSnapshot(null);
+      }
+    } finally {
+      if (mountedRef.current) {
+        setIsLoadingOverseerExplain(false);
+      }
+    }
+  }, [task.id, projectId, overseerExplainOpen]);
+
   // Handle keyboard shortcuts for edit mode
   const handleEditKeyDown = useCallback((e: KeyboardEvent) => {
     if (!isEditing) return;
@@ -2790,6 +3010,30 @@ export function TaskDetailContent({
   const autoMergeEnabled = autoMergeEnabledProp ?? (settings?.autoMerge ?? false);
   const effectiveAutoMerge = resolveEffectiveAutoMerge({ autoMerge: task.autoMerge }, { autoMerge: autoMergeEnabled });
   const isManualPrFlow = mergeStrategy === "pull-request" && !effectiveAutoMerge;
+  /*
+  FNXC:PlannerOversight 2026-07-04-17:00:
+  FN-7517 enablement rules for the nudge/stop/explain controls. Nudge and
+  explain require the overseer to actively be watching this task (mirrors
+  `PlannerOverseerMonitor.observeTask`, which records nothing for an idle/off
+  task) — approximated client-side via presence of `task.plannerOverseerState`
+  (FN-7531; only ever populated while there is a live observation). Nudge
+  additionally respects the human-control safeguards this task must NOT
+  re-implement (FN-7513/FN-7514): user-pause (`isTaskPaused`), done/archived
+  terminal columns, and the `autoMerge:false` in-review human-review terminal
+  (approximated here via `effectiveAutoMerge`, the same resolver the merge UI
+  already uses — the server-side `evaluateOverseerHumanControl` guard is the
+  real enforcement; this is a client-side disable heuristic only). Stop is
+  hidden once oversight is already off — there is nothing left to stop.
+  */
+  const overseerSnapshot = task.plannerOverseerState ?? null;
+  const overseerActive = Boolean(overseerSnapshot);
+  const isDoneOrArchivedColumn = task.column === "done" || task.column === "archived";
+  const isOverseerHumanReviewTerminal = task.column === "in-review" && !effectiveAutoMerge;
+  const overseerHumanControlSuppressed = Boolean(isTaskPaused) || isDoneOrArchivedColumn || isOverseerHumanReviewTerminal;
+  const oversightIsOff = effectiveOversightLevel === "off";
+  const canNudgeOverseer = overseerActive && !oversightIsOff && !overseerHumanControlSuppressed;
+  const canExplainOverseer = overseerActive && !oversightIsOff;
+  const showStopOverseer = !oversightIsOff;
   const isActivityExpanded = activityExpanded && activeTab === "chat" && !isEditing;
   const isPlannerChatExpanded = plannerChatExpanded && activeTab === "planner-chat" && !isEditing;
   /*
@@ -3473,7 +3717,131 @@ export function TaskDetailContent({
                     <Zap aria-hidden="true" />
                     <span>{inlineExecutionMode === "fast" ? t("taskDetail.executionMode.fast", "Fast") : t("taskDetail.executionMode.standard", "Standard")}</span>
                   </button>
+                  {/*
+                  FNXC:PlannerOversight 2026-07-04-17:00:
+                  FN-7517 quick oversight-level-change control. Shows the current
+                  EFFECTIVE level (resolved via the single `resolveEffectivePlannerOversightLevel`
+                  resolver, not re-derived locally) and distinguishes an explicit
+                  per-task override from an inherited workflow/project default via
+                  the "Inherit workflow default" option. Withheld entirely until the
+                  workflow tier resolves (or a per-task override renders it
+                  synchronously), mirroring FN-7516's TaskCard badge gating so this
+                  never shows a guessed schema-default value for a beat.
+                  */}
+                  {(hasTaskOversightOverride || workflowOversightResolved) && (
+                    <label
+                      className={`card-oversight-badge card-oversight-badge--${effectiveOversightLevel} detail-oversight-chip ${isSavingOversightLevel ? "detail-oversight-chip--saving" : ""}`}
+                    >
+                      <span>{t("taskDetail.oversight.label", "Oversight:")}</span>
+                      <select
+                        className="detail-oversight-select"
+                        data-testid="detail-oversight-level-select"
+                        value={hasTaskOversightOverride ? (task.plannerOversightLevel as string) : "__inherit__"}
+                        onChange={(event) => {
+                          void handleOversightLevelChange(event.target.value);
+                        }}
+                        disabled={isSavingOversightLevel}
+                        aria-label={t("taskDetail.oversight.ariaLabel", "Planner oversight level")}
+                      >
+                        <option value="__inherit__">
+                          {t("taskDetail.oversight.inherit", "Inherit ({{level}})", { level: OVERSIGHT_LEVEL_LABEL[effectiveOversightLevel] })}
+                        </option>
+                        {PLANNER_OVERSIGHT_LEVELS.map((levelOption) => (
+                          <option key={levelOption} value={levelOption}>
+                            {OVERSIGHT_LEVEL_LABEL[levelOption]}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  )}
+                  {/*
+                  FNXC:PlannerOversight 2026-07-04-17:00:
+                  FN-7517 manual nudge / stop oversight / explain current action
+                  controls. Disabled (with an accessible aria-label reason) rather
+                  than hidden for nudge/explain when the overseer is off/inactive
+                  so operators understand WHY the control is inert instead of it
+                  silently vanishing; stop is hidden once oversight is already off
+                  (nothing left to stop) per the PROMPT's enablement rule, avoiding
+                  an always-on empty shell for the common oversight-off default.
+                  */}
+                  {(hasTaskOversightOverride || workflowOversightResolved) && !oversightIsOff && (
+                    <button
+                      type="button"
+                      className={`btn btn-sm detail-overseer-nudge ${isNudgingOverseer ? "detail-overseer-nudge--saving" : ""}`}
+                      data-testid="detail-overseer-nudge"
+                      onClick={() => {
+                        void handleNudgeOverseer();
+                      }}
+                      disabled={!canNudgeOverseer || isNudgingOverseer}
+                      title={canNudgeOverseer ? t("taskDetail.oversight.nudgeTitle", "Inject steering guidance into the current stage now") : t("taskDetail.oversight.nudgeDisabledTitle", "Nudge unavailable: overseer is not actively watching this task")}
+                      aria-label={t("taskDetail.oversight.nudgeAriaLabel", "Manual nudge")}
+                    >
+                      {isNudgingOverseer ? <Loader2 className="spin" aria-hidden="true" /> : <Send aria-hidden="true" />}
+                      <span>{t("taskDetail.oversight.nudge", "Nudge")}</span>
+                    </button>
+                  )}
+                  {(hasTaskOversightOverride || workflowOversightResolved) && showStopOverseer && (
+                    <button
+                      type="button"
+                      className={`btn btn-sm detail-overseer-stop ${isStoppingOverseer ? "detail-overseer-stop--saving" : ""}`}
+                      data-testid="detail-overseer-stop"
+                      onClick={() => {
+                        void handleStopOverseer();
+                      }}
+                      disabled={isStoppingOverseer}
+                      aria-label={t("taskDetail.oversight.stopAriaLabel", "Stop oversight")}
+                    >
+                      {isStoppingOverseer ? <Loader2 className="spin" aria-hidden="true" /> : <Square aria-hidden="true" />}
+                      <span>{t("taskDetail.oversight.stop", "Stop")}</span>
+                    </button>
+                  )}
+                  {(hasTaskOversightOverride || workflowOversightResolved) && !oversightIsOff && (
+                    <button
+                      type="button"
+                      className="btn btn-sm detail-overseer-explain"
+                      data-testid="detail-overseer-explain"
+                      onClick={() => {
+                        void handleExplainOverseer();
+                      }}
+                      disabled={!canExplainOverseer && !overseerExplainOpen}
+                      title={canExplainOverseer ? t("taskDetail.oversight.explainTitle", "Explain the overseer's current action") : t("taskDetail.oversight.explainDisabledTitle", "Explain unavailable: overseer is not actively watching this task")}
+                      aria-label={t("taskDetail.oversight.explainAriaLabel", "Explain current action")}
+                      aria-expanded={overseerExplainOpen}
+                    >
+                      <Info aria-hidden="true" />
+                      <span>{t("taskDetail.oversight.explain", "Explain")}</span>
+                    </button>
+                  )}
                 </div>
+                {overseerExplainOpen && (
+                  <div className="detail-overseer-explain-panel" data-testid="detail-overseer-explain-panel" role="region" aria-live="polite">
+                    {isLoadingOverseerExplain ? (
+                      <span className="detail-overseer-explain-panel__loading">
+                        <Loader2 className="spin" aria-hidden="true" />
+                        {t("taskDetail.oversight.explainLoading", "Loading overseer state…")}
+                      </span>
+                    ) : overseerExplainSnapshot ? (
+                      <dl className="detail-overseer-explain-panel__grid">
+                        <dt>{t("taskDetail.oversight.explainStage", "Watched stage")}</dt>
+                        <dd>{overseerExplainSnapshot.watchedStage ?? t("taskDetail.oversight.explainUnknown", "Unknown")}</dd>
+                        <dt>{t("taskDetail.oversight.explainReason", "Reason")}</dt>
+                        <dd>{overseerExplainSnapshot.reason ?? t("taskDetail.oversight.explainUnknown", "Unknown")}</dd>
+                        <dt>{t("taskDetail.oversight.explainLastAction", "Last action")}</dt>
+                        <dd>{overseerExplainSnapshot.lastAction ?? t("taskDetail.oversight.explainNone", "None yet")}</dd>
+                        <dt>{t("taskDetail.oversight.explainAttempts", "Attempts")}</dt>
+                        <dd>
+                          {overseerExplainSnapshot.attemptCount ?? 0}
+                          {" / "}
+                          {overseerExplainSnapshot.attemptLimit ?? "—"}
+                        </dd>
+                      </dl>
+                    ) : (
+                      <span className="detail-overseer-explain-panel__empty">
+                        {t("taskDetail.oversight.explainEmpty", "The overseer is not currently watching this task.")}
+                      </span>
+                    )}
+                  </div>
+                )}
                 {provenanceDisplay && (
                   <div className="detail-provenance">
                     <GitBranch aria-hidden="true" />

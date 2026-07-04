@@ -16,6 +16,14 @@ export interface PlannerOverseerObservationSource {
 export interface PlannerRecoveryRegistrySource {
   getPendingConfirmations(taskId: string): { status?: string }[];
   getAttemptCount(taskId: string, stage: string): number;
+  /**
+   * FNXC:PlannerOversight 2026-07-04-17:00:
+   * FN-7517 addition: last dispatched/recorded action label for a
+   * `(taskId, stage)` pair, consumed by the "explain current action"
+   * control. Optional on the source interface so pre-FN-7517 fakes in
+   * existing tests keep compiling without a stub.
+   */
+  getLastAction?(taskId: string, stage: string): string | undefined;
 }
 
 /**
@@ -43,6 +51,7 @@ export function assemblePlannerOverseerRuntimeSnapshot(
 
     const pendingConfirmationCount = recoveryController?.getPendingConfirmations(taskId).length ?? 0;
     const attemptCount = recoveryController?.getAttemptCount(taskId, observation.stage) ?? 0;
+    const lastAction = recoveryController?.getLastAction?.(taskId, observation.stage);
 
     const state = derivePlannerOverseerState({
       oversightLevel: observation.oversightLevel,
@@ -60,6 +69,8 @@ export function assemblePlannerOverseerRuntimeSnapshot(
       attemptLimit: PLANNER_RECOVERY_MAX_ATTEMPTS,
       pendingConfirmation: pendingConfirmationCount > 0,
       observedAt: observation.observedAt,
+      reason: observation.reason,
+      ...(lastAction ? { lastAction } : {}),
     };
   } catch {
     return null;

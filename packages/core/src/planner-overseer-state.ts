@@ -33,6 +33,24 @@ export interface PlannerOverseerRuntimeSnapshot {
   attemptLimit?: number;
   pendingConfirmation?: boolean;
   observedAt?: number;
+  /**
+   * FNXC:PlannerOversight 2026-07-04-17:00:
+   * FN-7517 addition: the human-readable reason for the latest observation
+   * (verbatim from `OverseerStageObservation.reason`), so the task-detail
+   * "explain current action" affordance can render a readable summary
+   * without re-deriving it. Optional/best-effort — absent when there is no
+   * active observation (mirrors `watchedStage`/`signal`).
+   */
+  reason?: string;
+  /**
+   * FNXC:PlannerOversight 2026-07-04-17:00:
+   * FN-7517 addition: a short label for the last dispatched bounded-recovery
+   * action (e.g. `"inject_guidance"`, `"retry_step"`, `"request_targeted_fix"`)
+   * OR a manual operator action recorded via the explain/nudge/stop control
+   * surface (e.g. `"manual_nudge"`, `"manual_stop"`). Absent when no action
+   * has been dispatched/recorded yet for the current watched stage.
+   */
+  lastAction?: string;
 }
 
 /** Pure input the state derivation reads — no engine types, no side effects. */

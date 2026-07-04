@@ -21,10 +21,13 @@ function fakeMonitor(observations: OverseerStageObservation[]) {
   };
 }
 
-function fakeController(opts: { pending?: { status?: string }[]; attempts?: Record<string, number> } = {}) {
+function fakeController(
+  opts: { pending?: { status?: string }[]; attempts?: Record<string, number>; lastActions?: Record<string, string> } = {},
+) {
   return {
     getPendingConfirmations: () => opts.pending ?? [],
     getAttemptCount: (_taskId: string, stage: string) => opts.attempts?.[stage] ?? 0,
+    getLastAction: (_taskId: string, stage: string) => opts.lastActions?.[stage],
   };
 }
 
@@ -81,6 +84,25 @@ describe("assemblePlannerOverseerRuntimeSnapshot", () => {
     const snapshot = assemblePlannerOverseerRuntimeSnapshot("FN-1", fakeMonitor([older, latest]), fakeController());
     expect(snapshot?.signal).toBe("failed");
     expect(snapshot?.observedAt).toBe(2);
+  });
+
+  it("passes through the observation's `reason` verbatim (FN-7517)", () => {
+    const obs = observation({ reason: "Executor stage paused: waiting on human input" });
+    const snapshot = assemblePlannerOverseerRuntimeSnapshot("FN-1", fakeMonitor([obs]), fakeController());
+    expect(snapshot?.reason).toBe("Executor stage paused: waiting on human input");
+  });
+
+  it("includes lastAction from the recovery controller when present (FN-7517)", () => {
+    const obs = observation({ stage: "executor" as OverseerWatchedStage });
+    const controller = fakeController({ lastActions: { executor: "manual_nudge" } });
+    const snapshot = assemblePlannerOverseerRuntimeSnapshot("FN-1", fakeMonitor([obs]), controller);
+    expect(snapshot?.lastAction).toBe("manual_nudge");
+  });
+
+  it("omits lastAction entirely when the controller has no recorded action (FN-7517)", () => {
+    const obs = observation({ stage: "executor" as OverseerWatchedStage });
+    const snapshot = assemblePlannerOverseerRuntimeSnapshot("FN-1", fakeMonitor([obs]), fakeController());
+    expect(snapshot && "lastAction" in snapshot).toBe(false);
   });
 
   it("never throws — a throwing monitor/controller degrades to null", () => {

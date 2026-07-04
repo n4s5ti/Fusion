@@ -2405,6 +2405,74 @@ export function registerTaskWorkflowRoutes(ctx: ApiRoutesContext, deps: TaskWork
     }
   });
 
+  /*
+  FNXC:PlannerOversight 2026-07-04-17:00:
+  FN-7517 task-detail planner-overseer control endpoints. Nudge is
+  guidance-only — it must NOT trigger merge/PR/destructive side effects; it
+  reuses ProjectEngine.nudgeOverseerTask, which itself only ever posts a
+  steering comment through the existing FN-7512 guidance channel and is
+  gated by the FN-7514 human-control guard (user-paused / autoMerge:false
+  human-review) plus the effective oversight level. Stop disables active
+  oversight for this task (per-task override -> "off") via
+  ProjectEngine.stopOverseerTask. Explain is a pure READ of the current
+  overseer runtime state (watched stage, reason, last action, attempt
+  count/limit) via ProjectEngine.explainOverseerTask — never mutates
+  anything. All three degrade to a 200 "not applicable" style payload
+  (rather than a 5xx) when the engine/overseer runtime is unavailable for
+  this project, since a missing in-memory runtime is an expected
+  (non-error) state, e.g. right after an engine restart.
+  */
+  router.post("/tasks/:id/overseer/nudge", async (req, res) => {
+    try {
+      const { store: scopedStore, engine } = await getProjectContext(req);
+      await scopedStore.getTask(req.params.id);
+      if (!engine) {
+        return res.json({ applied: false, reason: "engine-unavailable" });
+      }
+      const result = await engine.nudgeOverseerTask(req.params.id);
+      res.json(result);
+    } catch (err: unknown) {
+      if (err instanceof ApiError) {
+        throw err;
+      }
+      rethrowAsApiError(err);
+    }
+  });
+
+  router.post("/tasks/:id/overseer/stop", async (req, res) => {
+    try {
+      const { store: scopedStore, engine } = await getProjectContext(req);
+      await scopedStore.getTask(req.params.id);
+      if (!engine) {
+        return res.json({ applied: false, reason: "engine-unavailable" });
+      }
+      const result = await engine.stopOverseerTask(req.params.id);
+      res.json(result);
+    } catch (err: unknown) {
+      if (err instanceof ApiError) {
+        throw err;
+      }
+      rethrowAsApiError(err);
+    }
+  });
+
+  router.get("/tasks/:id/overseer/explain", async (req, res) => {
+    try {
+      const { store: scopedStore, engine } = await getProjectContext(req);
+      await scopedStore.getTask(req.params.id);
+      if (!engine) {
+        return res.json({ snapshot: null });
+      }
+      const snapshot = engine.explainOverseerTask(req.params.id);
+      res.json({ snapshot });
+    } catch (err: unknown) {
+      if (err instanceof ApiError) {
+        throw err;
+      }
+      rethrowAsApiError(err);
+    }
+  });
+
   router.post("/tasks/:id/recover-branch-binding", async (req, res) => {
     try {
       const { store: scopedStore } = await getProjectContext(req);

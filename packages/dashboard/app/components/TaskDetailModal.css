@@ -319,6 +319,16 @@ The task-detail modal metadata must keep priority, execution mode, provenance, P
     gap: var(--space-sm);
   }
 
+  /*
+  FNXC:PlannerOversight 2026-07-04-17:00:
+  FN-7517: the oversight-controls cluster (priority + execution-mode + the
+  new oversight-level/nudge/stop/explain controls) must wrap without
+  overflowing the mobile modal width rather than forcing horizontal scroll.
+  */
+  .detail-meta-inline-controls {
+    flex-wrap: wrap;
+  }
+
   .detail-provenance {
     align-items: center;
   }
@@ -427,6 +437,118 @@ The task-detail modal metadata must keep priority, execution mode, provenance, P
 
 .detail-execution-mode-toggle:disabled {
   cursor: wait;
+}
+
+/*
+FNXC:PlannerOversight 2026-07-04-17:00:
+FN-7517 task-detail planner-overseer controls (quick level-change chip,
+manual nudge / stop / explain buttons, explain panel). Reuses the same
+`.card-oversight-badge--*` status-color modifiers FN-7516's TaskCard badge
+already declares (see TaskCard.css) so oversight-level color stays a single
+semantic source, and the same `--detail-priority-control-min-height` chip
+height token as the priority/execution-mode controls above so the cluster
+renders at a uniform height.
+*/
+.detail-oversight-chip {
+  gap: var(--space-xs);
+  min-height: var(--detail-priority-control-min-height);
+  padding-block: var(--space-xs);
+  box-sizing: border-box;
+}
+
+.detail-oversight-chip--saving {
+  opacity: 0.75;
+}
+
+.detail-oversight-select {
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  padding: 0;
+  min-height: inherit;
+}
+
+.detail-oversight-select:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring-strong);
+  border-radius: var(--radius-sm);
+}
+
+.detail-oversight-select:disabled {
+  cursor: wait;
+}
+
+.detail-oversight-select option {
+  color: var(--text);
+  background: var(--surface);
+}
+
+.detail-overseer-nudge,
+.detail-overseer-stop,
+.detail-overseer-explain {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-xs);
+  min-height: var(--detail-priority-control-min-height);
+  padding-block: var(--space-xs);
+  box-sizing: border-box;
+}
+
+.detail-overseer-nudge svg,
+.detail-overseer-stop svg,
+.detail-overseer-explain svg {
+  width: 1em;
+  height: 1em;
+}
+
+.detail-overseer-nudge--saving,
+.detail-overseer-stop--saving {
+  opacity: 0.75;
+}
+
+.detail-overseer-nudge:disabled,
+.detail-overseer-stop:disabled,
+.detail-overseer-explain:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.detail-overseer-explain-panel {
+  margin-top: var(--space-xs);
+  padding: var(--space-sm);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface-alt, var(--surface));
+  font-size: var(--font-size-sm, 0.875rem);
+}
+
+.detail-overseer-explain-panel__loading {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-xs);
+  color: var(--text-muted);
+}
+
+.detail-overseer-explain-panel__grid {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: var(--space-xs) var(--space-sm);
+  margin: 0;
+}
+
+.detail-overseer-explain-panel__grid dt {
+  color: var(--text-muted);
+  font-weight: 600;
+}
+
+.detail-overseer-explain-panel__grid dd {
+  margin: 0;
+}
+
+.detail-overseer-explain-panel__empty {
+  color: var(--text-muted);
 }
 
 

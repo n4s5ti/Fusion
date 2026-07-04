@@ -24,6 +24,7 @@ import type { ProjectRuntimeConfig } from "./project-runtime.js";
 import { PrMonitor } from "./pr-monitor.js";
 import { PlannerOverseerMonitor } from "./planner-overseer.js";
 import { PlannerRecoveryController, type PlannerRecoveryHandlers } from "./planner-recovery-controller.js";
+import { evaluateOverseerHumanControl } from "./overseer-human-control-policy.js";
 import type { PrNodeGithubOps } from "./pr-nodes.js";
 import { PrReconciler, type PrReconcileGithubOps } from "./pr-reconcile.js";
 import { PrCommentHandler } from "./pr-comment-handler.js";
@@ -1041,6 +1042,107 @@ export class ProjectEngine {
    */
   getPlannerOverseerRuntimeSnapshot(taskId: string): PlannerOverseerRuntimeSnapshot | null {
     return assemblePlannerOverseerRuntimeSnapshot(taskId, this.plannerOverseer, this.plannerRecoveryController);
+  }
+
+  /**
+   * FNXC:PlannerOversight 2026-07-04-17:00:
+   * FN-7517 manual nudge control: injects one planner-authored steering
+   * comment into the task's currently watched stage RIGHT NOW, via the same
+   * `store.addSteeringComment` guidance channel FN-7512's `injectGuidance`
+   * handler already uses — guidance-only, never a merge/PR/destructive side
+   * effect (those remain FN-7513's confirmation-gated executeMergePrAction/
+   * executeDestructiveExternalAction, never invoked here). Returns
+   * `{applied:false, reason:...}` without mutating anything when: the task
+   * does not exist, the human-control guard withholds oversight (user-paused
+   * or autoMerge:false/human-review), the effective oversight level is
+   * "off", or there is no currently monitorable watched stage.
+   */
+  async nudgeOverseerTask(taskId: string): Promise<{ applied: boolean; reason: string; task?: Task }> {
+    try {
+      const store = this.runtime.getTaskStore();
+      const task = await store.getTask(taskId).catch(() => undefined);
+      if (!task) {
+        return { applied: false, reason: "task-not-found" };
+      }
+
+      const settings = await store.getSettings().catch(() => undefined);
+      const humanControl = evaluateOverseerHumanControl(task, settings);
+      if (humanControl.withhold) {
+        return { applied: false, reason: `withheld:${humanControl.reason}`, task };
+      }
+
+      const workflowEffective = await resolveEffectiveSettings(store, { id: task.id }).catch(() => ({}) as Record<string, unknown>);
+      const level = resolveEffectivePlannerOversightLevel(task.plannerOversightLevel, workflowEffective.plannerOversightLevel as string | undefined);
+      if (level === "off") {
+        return { applied: false, reason: "oversight-off", task };
+      }
+
+      let observation = this.plannerOverseer ? this.plannerOverseer.getObservations(taskId).slice(-1)[0] : undefined;
+      if (!observation && this.plannerOverseer) {
+        observation = (await this.plannerOverseer.observeTask(task, level)) ?? undefined;
+      }
+      if (!observation) {
+        return { applied: false, reason: "no-active-stage", task };
+      }
+
+      const text = `[planner-oversight] manual nudge (${observation.stage}): ${observation.reason}`;
+      await store.addSteeringComment(taskId, text, "user");
+      this.plannerRecoveryController?.recordManualAction(taskId, observation.stage, "manual_nudge");
+
+      const updatedTask = await store.getTask(taskId).catch(() => undefined);
+      return { applied: true, reason: "nudged", task: updatedTask ?? task };
+    } catch (err) {
+      void err;
+      return { applied: false, reason: "error" };
+    }
+  }
+
+  /**
+   * FNXC:PlannerOversight 2026-07-04-17:00:
+   * FN-7517 stop-oversight control: disables active planner oversight for
+   * this task by writing the per-task override `plannerOversightLevel:
+   * "off"` (the same FN-7509 scalar-override field/plumbing the quick
+   * level-change control writes) and releasing the in-memory monitor/
+   * recovery-controller ring buffers for this task (mirrors the poll's
+   * leave-in-flight cleanup). This is a user action; it never mutates task
+   * lifecycle/column and never performs a merge/PR/destructive side effect.
+   */
+  async stopOverseerTask(taskId: string): Promise<{ applied: boolean; reason: string; task?: Task }> {
+    try {
+      const store = this.runtime.getTaskStore();
+      const task = await store.getTask(taskId).catch(() => undefined);
+      if (!task) {
+        return { applied: false, reason: "task-not-found" };
+      }
+
+      const observation = this.plannerOverseer ? this.plannerOverseer.getObservations(taskId).slice(-1)[0] : undefined;
+      if (observation) {
+        this.plannerRecoveryController?.recordManualAction(taskId, observation.stage, "manual_stop");
+      }
+
+      const updatedTask = await store.updateTask(taskId, { plannerOversightLevel: "off" });
+      this.plannerOverseer?.clear(taskId);
+      this.plannerRecoveryController?.clear(taskId);
+
+      return { applied: true, reason: "stopped", task: updatedTask };
+    } catch (err) {
+      void err;
+      return { applied: false, reason: "error" };
+    }
+  }
+
+  /**
+   * FNXC:PlannerOversight 2026-07-04-17:00:
+   * FN-7517 explain-current-action control: a READ of the current overseer
+   * runtime state — watched stage, reason, last action taken, and attempt
+   * count/limit — assembled from the exact same FN-7511/FN-7512/FN-7531
+   * sources as `getPlannerOverseerRuntimeSnapshot`, plus the human-readable
+   * `reason`/`lastAction` fields FN-7517 added to `PlannerOverseerRuntimeSnapshot`.
+   * Never mutates anything. Returns `null` when there is no active
+   * observation for the task (nothing to explain).
+   */
+  explainOverseerTask(taskId: string): PlannerOverseerRuntimeSnapshot | null {
+    return this.getPlannerOverseerRuntimeSnapshot(taskId);
   }
 
   /**
