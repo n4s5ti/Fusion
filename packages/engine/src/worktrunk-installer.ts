@@ -210,7 +210,29 @@ async function lookupPath(binaryName: string): Promise<string | null> {
   }
 }
 
+/*
+FNXC:WindowsTerminalStartup 2026-07-03-16:10:
+On Windows the worktrunk CLI (`wt`) collides by name with Windows Terminal (`wt.exe`), which ships as an App Execution Alias under %LOCALAPPDATA%\Microsoft\WindowsApps and is on PATH by default on Windows 11. `where wt` therefore resolves to Windows Terminal, and probing it with `wt --version` LAUNCHES Windows Terminal — popping its native "Windows Terminal <version>" Help/version dialog whenever worktrunk resolution runs (e.g. on dashboard load or a Settings save, field report Issue 4). Never exec a resolved `wt` that is the Windows Terminal alias; a genuine worktrunk binary lives on PATH elsewhere or under ~/.fusion/bin, never under WindowsApps / a WindowsTerminal package dir. This guard sits in probeWorktrunk — the single choke point every resolution surface (cached/override/PATH/install/settings-route) funnels through — so the invariant holds everywhere.
+*/
+export const WORKTRUNK_WINDOWS_TERMINAL_COLLISION_MESSAGE =
+  "Refusing to probe `wt` on Windows: the resolved binary is Windows Terminal (wt.exe), not worktrunk. Set `worktrunk.binaryPath` to the real worktrunk executable, or let Fusion install it under ~/.fusion/bin.";
+
+export function isWindowsTerminalBinary(binaryPath: string): boolean {
+  if (process.platform !== "win32") return false;
+  // Compute the basename from the backslash-normalized string directly rather
+  // than path.basename(): on a POSIX build host (tests/CI) node's default `path`
+  // is POSIX and would not split on "\\", so a Windows path would be misparsed.
+  const normalized = binaryPath.replace(/\//g, "\\").toLowerCase();
+  const base = (normalized.split("\\").pop() ?? "").replace(/\.exe$/, "");
+  if (base !== "wt") return false;
+  return normalized.includes("\\windowsapps\\") || normalized.includes("windowsterminal");
+}
+
 export async function probeWorktrunk(binaryPath: string): Promise<{ ok: boolean; version?: string; error?: string }> {
+  if (isWindowsTerminalBinary(binaryPath)) {
+    logger.warn("probe: refusing to launch Windows Terminal wt.exe", { binaryPath });
+    return { ok: false, error: WORKTRUNK_WINDOWS_TERMINAL_COLLISION_MESSAGE };
+  }
   try {
     const { stdout } = await execAsync(`"${binaryPath}" --version`, {
       timeout: WORKTRUNK_PROBE_TIMEOUT_MS,

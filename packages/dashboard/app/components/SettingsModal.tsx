@@ -701,8 +701,6 @@ export function SettingsModal({
   const { isEmbedded, scrollLockEnabled, resizePersistEnabled, escapeEnabled, overlayDismissEnabled } = useEmbeddedPresentation(presentation);
   const { t } = useTranslation("app");
   const { confirm } = useConfirm();
-  const worktrunkInstall = useWorktrunkInstallStatus(projectId);
-  const worktrunkInstallVerified = worktrunkInstall.status === "installed";
   const viewportMode = useViewportMode();
   // Modal-only: lock background scroll on mobile. Embedded view owns its own scroll region.
   useMobileScrollLock(scrollLockEnabled);
@@ -771,6 +769,11 @@ export function SettingsModal({
     prTitlePromptInstructions: "",
     prDescriptionPromptInstructions: "",
   });
+  // FNXC:WindowsTerminalStartup 2026-07-03-16:25:
+  // Only probe worktrunk status when the integration is enabled (user opted in),
+  // so opening Settings on Windows can't auto-launch Windows Terminal (`wt.exe`).
+  const worktrunkInstall = useWorktrunkInstallStatus(projectId, { enabled: form.worktrunk?.enabled === true });
+  const worktrunkInstallVerified = worktrunkInstall.status === "installed";
   const [loading, setLoading] = useState(true);
   // Guards the Save action against double-submit (rapid clicks / Enter) while the
   // parallel global+project writes are in flight.

@@ -33,7 +33,12 @@ async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
   return payload;
 }
 
-export function useWorktrunkInstallStatus(projectId?: string) {
+/*
+FNXC:WindowsTerminalStartup 2026-07-03-16:25:
+The worktrunk status probe must NOT run automatically on Settings/dashboard mount. `GET /api/worktrunk/status` resolves + probes the `wt` binary server-side, and on Windows `wt` collides with Windows Terminal (`wt.exe`), so an automatic probe pops Windows Terminal's native version/Help dialog just from opening Settings (field report Issue 4). Only auto-refresh when worktrunk integration is enabled — i.e. the user has opted in / requested it. `refresh` stays exposed so explicit UI actions can still check on demand. Backstop: probeWorktrunk (engine) also refuses to launch the Windows Terminal alias.
+*/
+export function useWorktrunkInstallStatus(projectId?: string, options?: { enabled?: boolean }) {
+  const enabled = options?.enabled === true;
   const [status, setStatus] = useState<WorktrunkInstallStatusResponse>({ status: "missing" });
   const [requesting, setRequesting] = useState(false);
 
@@ -47,8 +52,9 @@ export function useWorktrunkInstallStatus(projectId?: string) {
   }, [projectId]);
 
   useEffect(() => {
+    if (!enabled) return;
     void refresh();
-  }, [refresh]);
+  }, [enabled, refresh]);
 
   useEffect(() => {
     const unsubscribe = subscribeSse(withProjectId("/api/events", projectId), {
