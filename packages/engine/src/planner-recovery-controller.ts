@@ -16,16 +16,45 @@
  * external-service action — those are excluded by construction (only
  * `injectGuidance` / `retryStep` / `requestTargetedFix` exist) and are owned
  * by FN-7513's confirmation-gated layer.
+ *
+ * FNXC:PlannerOverseer 2026-07-04-15:00:
+ * FN-7514 upgrades the userPaused-only guard above to the full human-control
+ * predicate `evaluateOverseerHumanControl` (auto-merge-off/human-review PLUS
+ * user-pause, including the non-`userPaused` `task.paused` user-source park
+ * shape). The predicate is consulted at the TOP of `tick()`, before
+ * `decidePlannerRecovery`/confirmation classification even runs — a
+ * user-paused or auto-merge-off/human-review task never even records a
+ * pending `PlannerConfirmationRequest`. When withheld, a bounded
+ * `overseer:oversight-withheld-human-control` no-action audit event is
+ * recorded (via the optional `recordHumanControlWithheld` handler) at most
+ * once per (taskId, watchedStage, reason) — repeated `tick()`s for the same
+ * still-withheld reason do not re-emit until the reason changes or the task
+ * leaves the withheld state, so the audit trail isn't spammed every poll.
  */
 
-import type { PlannerConfirmationRequest, PlannerRecoveryDecision, PlannerRecoveryObservation, Task } from "@fusion/core";
+import type { PlannerConfirmationRequest, PlannerRecoveryDecision, PlannerRecoveryObservation, Settings, Task } from "@fusion/core";
 import { decidePlannerRecovery, PLANNER_RECOVERY_MAX_ATTEMPTS } from "@fusion/core";
 import { createLogger, type Logger } from "./logger.js";
 import type { OverseerStageObservation } from "./planner-overseer.js";
+import {
+  evaluateOverseerHumanControl,
+  type OverseerHumanControlDecision,
+  type OverseerHumanControlWithholdReason,
+} from "./overseer-human-control-policy.js";
 
 /** Minimal shared context threaded through to handlers (e.g. a run-id or clock). */
 export interface PlannerRecoveryContext {
   now?: () => number;
+  /**
+   * FN-7514: current engine `Settings` (or a narrowed pick of just
+   * `autoMerge`), used ONLY by the human-control guard's
+   * `allowsAutoMergeProcessing` check. When omitted, the guard falls back to
+   * `{ autoMerge: true }` (auto-merge globally enabled) so existing callers
+   * that don't yet thread settings are unaffected — the per-task
+   * `autoMerge`/`prInfo`/`prInfos` fields on `task` itself still fully
+   * participate in that check regardless.
+   */
+  settings?: Pick<Settings, "autoMerge">;
   [key: string]: unknown;
 }
 
@@ -63,6 +92,19 @@ export interface PlannerRecoveryHandlers {
    * ONLY from `resolveConfirmation(..., "approved")` — never from `tick`.
    */
   executeDestructiveExternalAction?: (taskId: string, request: PlannerConfirmationRequest, ctx: PlannerRecoveryContext) => Promise<void>;
+  /**
+   * FN-7514: notified (at most once per distinct withheld reason per
+   * `(taskId, watchedStage)`, see `tick()`) when the human-control guard
+   * withholds ALL oversight for a task. Callers wire this to a bounded
+   * `RunAuditor.database({ type: "overseer:oversight-withheld-human-control", ... })`
+   * no-action event. Optional; a missing handler is a pure no-op (the guard
+   * still withholds action either way — this handler is audit-only).
+   */
+  recordHumanControlWithheld?: (
+    task: Task,
+    decision: OverseerHumanControlDecision & { reason: OverseerHumanControlWithholdReason },
+    ctx: PlannerRecoveryContext,
+  ) => Promise<void>;
 }
 
 /** Minimal seam for fetching the current watched-stage observation for a task. */
@@ -125,6 +167,13 @@ export class PlannerRecoveryController {
    */
   private readonly pendingConfirmations = new Map<string, PlannerConfirmationRequest>();
   private confirmationSeq = 0;
+  /**
+   * FN-7514: last withheld reason recorded per taskId, so the
+   * `overseer:oversight-withheld-human-control` audit event is emitted only
+   * on the first `tick()` a task enters (or changes) a withheld state — not
+   * on every subsequent poll while it remains withheld for the same reason.
+   */
+  private readonly lastWithheldReason = new Map<string, OverseerHumanControlWithholdReason>();
 
   constructor(options: PlannerRecoveryControllerOptions) {
     this.snapshotProvider = normalizeProvider(options.snapshotProvider);
@@ -150,9 +199,30 @@ export class PlannerRecoveryController {
    */
   async tick(task: Task, ctx: PlannerRecoveryContext = {}): Promise<PlannerRecoveryDecision | null> {
     try {
-      if (!task || task.userPaused === true) {
+      if (!task) {
         return null;
       }
+
+      // FN-7514: the human-control guard runs BEFORE anything else — before
+      // the snapshot lookup, before decidePlannerRecovery, before confirmation
+      // classification. A withheld task never even reaches the point where a
+      // pending confirmation could be recorded.
+      const humanControl = evaluateOverseerHumanControl(task, ctx.settings);
+      if (humanControl.withhold) {
+        // Snapshot lookup here is READ-ONLY metadata enrichment for the audit
+        // event (stage/oversightLevel) — it never feeds back into the
+        // withhold decision, which was already made above purely from `task`
+        // + `ctx.settings`.
+        const snapshotForAudit = await this.getSnapshotSafe(task.id);
+        await this.recordWithheldIfChanged(
+          task,
+          humanControl as OverseerHumanControlDecision & { reason: OverseerHumanControlWithholdReason },
+          snapshotForAudit,
+          ctx,
+        );
+        return null;
+      }
+      this.lastWithheldReason.delete(task.id);
 
       const snapshot = await this.getSnapshotSafe(task.id);
       if (!snapshot) {
@@ -212,6 +282,38 @@ export class PlannerRecoveryController {
     } catch (err) {
       this.logger.warn(`handler for action="${decision.action}" failed on ${task.id}: ${(err as Error)?.message ?? String(err)}`);
       return false;
+    }
+  }
+
+  /**
+   * FN-7514: records `overseer:oversight-withheld-human-control` (via the
+   * optional `recordHumanControlWithheld` handler) the first time `task`
+   * enters a withheld reason, or when the withheld reason changes — never
+   * on repeated `tick()`s for the same still-withheld reason. Never throws.
+   */
+  private async recordWithheldIfChanged(
+    task: Task,
+    decision: OverseerHumanControlDecision & { reason: OverseerHumanControlWithholdReason },
+    snapshotForAudit: OverseerStageObservation | null,
+    ctx: PlannerRecoveryContext,
+  ): Promise<void> {
+    const previous = this.lastWithheldReason.get(task.id);
+    if (previous === decision.reason) {
+      return;
+    }
+    this.lastWithheldReason.set(task.id, decision.reason);
+
+    if (!this.handlers.recordHumanControlWithheld) {
+      return;
+    }
+    try {
+      await this.handlers.recordHumanControlWithheld(task, decision, {
+        ...ctx,
+        stage: snapshotForAudit?.stage,
+        oversightLevel: snapshotForAudit?.oversightLevel,
+      });
+    } catch (err) {
+      this.logger.warn(`recordHumanControlWithheld handler failed for ${task.id}: ${(err as Error)?.message ?? String(err)}`);
     }
   }
 
@@ -386,6 +488,7 @@ export class PlannerRecoveryController {
         this.pendingConfirmations.delete(key);
       }
     }
+    this.lastWithheldReason.delete(taskId);
   }
 
   /** Test/inspection seam: current attempt count for a `(taskId, watchedStage)` pair. */

@@ -656,6 +656,13 @@ export {
   type PlannerRecoveryControllerOptions,
 } from "./planner-recovery-controller.js";
 export {
+  evaluateOverseerHumanControl,
+  type OverseerHumanControlDecision,
+  type OverseerHumanControlWithholdReason,
+  type OverseerHumanControlTask,
+  type OverseerHumanControlSettings,
+} from "./overseer-human-control-policy.js";
+export {
   decidePlannerRecovery,
   PLANNER_RECOVERY_MAX_ATTEMPTS,
   type PlannerRecoveryActionKind,

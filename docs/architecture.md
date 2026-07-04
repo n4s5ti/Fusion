@@ -1521,6 +1521,45 @@ FN-7517), comprehensive human-control safeguards beyond `userPaused` (FN-7514), 
 timeline (FN-7519), and run-audit/activity events (FN-7520) all consume the data this gate exposes but
 are implemented elsewhere.
 
+### Planner overseer human-control guard (FN-7514)
+
+FN-7514 supplies the comprehensive human-control safeguard the FN-7512/FN-7513 layers deferred: the
+overseer must be fully inert — no steering, retry, targeted-fix, or FN-7513 confirmation-required action
+(merge/PR progression, destructive/external-service side effect) may fire, and no pending confirmation
+may even be recorded — whenever a task is (a) user-paused, or (b) ineligible for auto-merge processing
+per the FN-5147 `autoMerge:false` / PR-based human-review terminal contract.
+
+`packages/engine/src/overseer-human-control-policy.ts` exports the pure predicate
+`evaluateOverseerHumanControl(task, settings)` (no I/O, mirrors the `recovery-policy.ts` style), returning
+`{ withhold: boolean; reason?: "user-paused" | "auto-merge-off-human-review" }`. It reuses
+`allowsAutoMergeProcessing` from `@fusion/core` VERBATIM for the auto-merge-off half — never re-derives
+the predicate inline. For the pause half, it distinguishes:
+
+- Explicit user pause: `task.userPaused === true`, OR `task.paused === true` with NO `task.pausedReason`
+  (the `fn_task_pause` tool / `TaskStore.pauseTask` never stamps a `pausedReason`).
+- Engine/self-healing park (NOT user pause): `task.paused === true` WITH a `pausedReason` (every
+  self-healing park path — branch-conflict-unrecoverable, token_budget_exceeded,
+  in-review-stall-deadlock, worktrunk_operation_failed, etc. — always stamps one).
+
+`PlannerRecoveryController.tick()` (`planner-recovery-controller.ts`) consults this guard FIRST — before
+the snapshot lookup, before `decidePlannerRecovery`, before FN-7513's confirmation classification. When
+withheld, `tick()` returns `null` immediately (same contract as the prior bare `userPaused` check) and
+never reaches the point where a pending `PlannerConfirmationRequest` could be created. A snapshot lookup
+AFTER the withhold decision (read-only, for audit metadata only — stage/oversightLevel — never feeding
+back into the decision) feeds an optional `recordHumanControlWithheld` handler, which `ProjectEngine`
+wires to a bounded `RunAuditor.database({ type: "overseer:oversight-withheld-human-control", ... })`
+no-action event (metadata: `{ taskId, reason, stage, oversightLevel }`). The controller dedupes this
+emission per `(taskId, withheld reason)` — a task stuck in the same withheld state across many poll
+cycles emits the event once, not on every tick; a reason change (or `clear(taskId)` on terminal
+transition) re-arms it.
+
+`ProjectEngine.pollPlannerOverseer` fetches global `Settings` once per poll cycle (not per task) and
+threads it through `ctx.settings` to `tick()`, so the guard's `allowsAutoMergeProcessing` check sees the
+same settings self-healing already gates lifecycle mutation on.
+
+**Downstream ownership (not this layer):** the dashboard UI/badges surfacing withheld state (FN-7515+),
+a persisted intervention timeline (FN-7519), and richer run-audit/activity presentation (FN-7520).
+
 ---
 
 ## 11) Multi-Project Architecture

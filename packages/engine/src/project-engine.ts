@@ -1097,6 +1097,37 @@ export class ProjectEngine {
       // `destructive_external` action (FN-7511 has no destructive-action
       // signal), so this is intentionally left unset; a future task can wire
       // a concrete handler using existing safe helpers when one is needed.
+      // FNXC:PlannerOverseer 2026-07-04-15:00:
+      // FN-7514 requirement: when the human-control guard (user-paused, or
+      // autoMerge:false/human-review) withholds ALL oversight for a task,
+      // record a bounded `overseer:oversight-withheld-human-control` no-action
+      // run-audit event (metadata: taskId/reason/stage/oversightLevel) so the
+      // withholding is observable, mirroring the `*-no-action` self-healing
+      // convention. Audit-only — this handler performs no lifecycle mutation.
+      recordHumanControlWithheld: async (task, decision, ctx) => {
+        try {
+          const auditor = createRunAuditor(store, {
+            runId: generateSyntheticRunId("planner-overseer-human-control", task.id),
+            agentId: "planner-overseer",
+            taskId: task.id,
+            phase: "planner-overseer-poll",
+          });
+          await auditor.database({
+            type: "overseer:oversight-withheld-human-control",
+            target: task.id,
+            metadata: {
+              taskId: task.id,
+              reason: decision.reason,
+              stage: (ctx as { stage?: string }).stage,
+              oversightLevel: (ctx as { oversightLevel?: string }).oversightLevel,
+            },
+          });
+        } catch (err: unknown) {
+          runtimeLog.warn(
+            `Failed to record overseer:oversight-withheld-human-control for ${task.id}: ${err instanceof Error ? err.message : String(err)}`,
+          );
+        }
+      },
     };
   }
 
@@ -1935,6 +1966,11 @@ export class ProjectEngine {
       ]);
       const inFlight = [...inProgress, ...inReview];
       const inFlightIds = new Set(inFlight.map((t) => t.id));
+      // FN-7514: fetch global engine Settings ONCE per poll cycle (not per
+      // task) so `PlannerRecoveryController.tick`'s human-control guard can
+      // consult `allowsAutoMergeProcessing(task, settings)` — the same
+      // FN-5147 predicate `self-healing.ts` gates lifecycle mutation on.
+      const engineSettings = await store.getSettings().catch(() => undefined);
 
       for (const task of inFlight) {
         try {
@@ -1951,10 +1987,12 @@ export class ProjectEngine {
           // FN-7512: one guarded, autonomous-only bounded recovery tick at the
           // same passive seam FN-7511 uses for observation. Inert for every
           // other effective level ("off"/"observe"/"steer" already `continue`d
-          // above); `PlannerRecoveryController.tick` itself skips userPaused
-          // tasks and never throws.
+          // above). FN-7514: `PlannerRecoveryController.tick` now consults the
+          // full human-control guard (user-paused OR autoMerge:false/
+          // human-review) BEFORE any action/confirmation classification —
+          // never throws.
           if (level === "autonomous" && this.plannerRecoveryController) {
-            await this.plannerRecoveryController.tick(task);
+            await this.plannerRecoveryController.tick(task, { settings: engineSettings });
           }
         } catch {
           // Best-effort per-task — never let one task's failure block the poll.
