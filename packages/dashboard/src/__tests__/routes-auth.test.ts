@@ -2188,7 +2188,10 @@ describe("POST /auth/login", () => {
     expect(observedPromptInput).toBe("manual-code");
   });
 
-  it("normalizes Anthropic subscription pasted callback URLs with fragment parameters", async () => {
+  it.each([
+    ["fragment", "http://localhost:53692/callback#code=fragment-code&state=expected-state", "code=fragment-code&state=expected-state"],
+    ["schemeless", "localhost:53692/callback?code=schemeless-code&state=expected-state", "code=schemeless-code&state=expected-state"],
+  ])("normalizes Anthropic subscription pasted callback URLs with %s parameters", async (_case, callbackUrl, expectedInput) => {
     (authStorage.getOAuthProviders as ReturnType<typeof vi.fn>).mockReturnValue([{ id: "anthropic", name: "Anthropic" }]);
 
     let observedManualInput: string | undefined;
@@ -2203,7 +2206,6 @@ describe("POST /auth/login", () => {
     });
     await new Promise((resolve) => setTimeout(resolve, 0));
 
-    const callbackUrl = "http://localhost:53692/callback#code=fragment-code&state=expected-state";
     const submitRes = await REQUEST(app, "POST", "/api/auth/manual-code", JSON.stringify({ provider: "anthropic-subscription", code: callbackUrl }), {
       "Content-Type": "application/json",
     });
@@ -2211,7 +2213,7 @@ describe("POST /auth/login", () => {
 
     await loginReq;
     await new Promise((resolve) => setTimeout(resolve, 0));
-    expect(observedManualInput).toBe("code=fragment-code&state=expected-state");
+    expect(observedManualInput).toBe(expectedInput);
   });
 
   it("prefers browser login for openai-codex multi-option prompts", async () => {

@@ -280,8 +280,8 @@ export const registerAuthRoutes: ApiRouteRegistrar = (ctx) => {
 
       /*
       FNXC:ProviderAuth 2026-07-04-00:00:
-      Anthropic subscription and Codex pasted-login flows must accept the exact browser address bar after redirect, including providers/browsers that place OAuth `code` and `state` in the URL fragment.
-      The upstream CLI parser treats a syntactically valid URL as search-only, so normalize fragment callbacks to query-param text before resolving the pending manual-code prompt.
+      Anthropic subscription and Codex pasted-login flows must accept the exact browser address bar after redirect, including providers/browsers that place OAuth `code` and `state` in the URL fragment or omit the URL scheme.
+      The upstream CLI parser treats a syntactically valid URL as search-only and schemeless localhost text as raw parameters, so normalize callback inputs to query-param text before resolving the pending manual-code prompt.
       */
       const normalized = new URLSearchParams();
       normalized.set("code", hashCode);
