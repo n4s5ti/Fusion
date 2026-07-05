@@ -522,66 +522,6 @@ falling through to an unstyled transparent shell.
   color: var(--text-muted);
 }
 
-/*
-FNXC:PlannerOversight 2026-07-04-00:00:
-`.card-overseer-state-badge` shows the FN-7516 active-overseer-state indicator,
-rendered only while the card-local watched-stage derivation resolves a stage
-and the task is not paused/done/archived (see TaskCard.tsx `deriveOverseerCardWatchedStage`
-and `showOverseerStateBadge`). Chip sizing mirrors `.card-oversight-badge` so it
-participates in the same `.card-meta-badges` wrap/height invariants. Per-stage
-modifiers reuse existing semantic status tokens rather than new hex values.
-*/
-.card-overseer-state-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 3px;
-  max-width: 100%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: 0.625rem;
-  font-weight: 600;
-  line-height: 1;
-  letter-spacing: 0.4px;
-  text-transform: uppercase;
-  padding: calc(var(--space-xs) / 2) var(--space-sm);
-  border: var(--btn-border-width) solid transparent;
-  border-radius: var(--radius-pill);
-  background: color-mix(in srgb, var(--color-info) 15%, transparent);
-  color: var(--color-info);
-}
-
-.card-overseer-state-badge svg {
-  width: 0.6875rem;
-  height: 0.6875rem;
-  flex-shrink: 0;
-}
-
-.card-overseer-state-badge--executor {
-  background: color-mix(in srgb, var(--color-info) 15%, transparent);
-  color: var(--color-info);
-}
-
-.card-overseer-state-badge--reviewer {
-  background: color-mix(in srgb, var(--color-warning) 15%, transparent);
-  color: var(--color-warning);
-}
-
-.card-overseer-state-badge--merger {
-  background: color-mix(in srgb, var(--triage) 15%, transparent);
-  color: var(--triage);
-}
-
-.card-overseer-state-badge--pull-request {
-  background: color-mix(in srgb, var(--color-info) 15%, transparent);
-  color: var(--color-info);
-}
-
-.card-overseer-state-badge--workflow-gate {
-  background: color-mix(in srgb, var(--color-warning) 18%, transparent);
-  color: var(--color-warning);
-}
-
 .card.failed {
   border-left: 3px solid var(--color-error-dark);
 }
@@ -1733,8 +1673,7 @@ executing. These map 1:1 to the unified progress status so the dot color encodes
   .card-size-badge,
   /* FNXC:PlannerOversight 2026-07-04-00:00: mobile-scale the FN-7516 oversight
      badge alongside the other .card-meta-badges chips at narrow widths. */
-  .card-oversight-badge,
-  .card-overseer-state-badge {
+  .card-oversight-badge {
     font-size: 0.5625rem;
     padding: calc(var(--space-xs) / 4) calc((var(--space-xs) * 3) / 2);
   }

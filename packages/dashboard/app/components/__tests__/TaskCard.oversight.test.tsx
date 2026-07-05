@@ -1,20 +1,21 @@
 /*
- * FNXC:PlannerOversight 2026-07-04-00:00:
- * FN-7516 card-surface tests for the read-only effective oversight-level badge
- * and the active-overseer-state indicator. Covers the Surface Enumeration data
- * states: Observe/Steer/Autonomous render a labeled badge; an explicit "off"
- * effective level renders nothing (no empty shell); an unset per-task override
- * that resolves to the schema default ("autonomous") renders NO badge at all
- * (FN-7539: an inherited default is not meaningfully-configured oversight),
- * while an EXPLICIT per-task override of "autonomous" still renders the
- * badge (explicit intent is preserved). The overseer-state indicator renders only while the
- * card-local watched-stage derivation (`deriveOverseerCardWatchedStage` in
- * TaskCard.tsx, mirroring the engine's `resolveWatchedStage`) resolves a stage
- * AND the task is not paused/done/archived AND the effective oversight level
- * is not "off". Round-2 code-review fix covered here: when a card must fetch
- * the workflow's effective oversight tier (no synchronous per-task override),
- * neither badge renders until that fetch resolves — the schema default must
- * never render as a guess while the true workflow tier is unknown.
+ * FNXC:PlannerOversight 2026-07-04-HH:MM:
+ * FN-7516 card-surface tests for the read-only effective oversight-level badge.
+ * Covers the Surface Enumeration data states: Observe/Steer/Autonomous render a
+ * labeled badge; an explicit "off" effective level renders nothing (no empty
+ * shell); an unset per-task override that resolves to the schema default
+ * ("autonomous") renders NO badge at all (FN-7539: an inherited default is not
+ * meaningfully-configured oversight), while an EXPLICIT per-task override of
+ * "autonomous" still renders the badge (explicit intent is preserved).
+ * Round-2 code-review fix covered here: when a card must fetch the workflow's
+ * effective oversight tier (no synchronous per-task override), the badge does
+ * not render until that fetch resolves — the schema default must never render
+ * as a guess while the true workflow tier is unknown.
+ *
+ * FN-7542 removed the sibling active-overseer-state ("Executor") indicator as
+ * unwanted per-card noise; see the removal-regression describe block below
+ * asserting `card-overseer-state-badge` is gone across the surfaces it used
+ * to render on.
  */
 import { afterEach, describe, it, expect, vi } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
@@ -149,29 +150,32 @@ describe("TaskCard effective oversight-level badge (FN-7516)", () => {
   });
 });
 
-describe("TaskCard active-overseer-state indicator (FN-7516)", () => {
+/*
+ * FNXC:PlannerOversight 2026-07-04-HH:MM:
+ * FN-7542 removal-regression coverage: `card-overseer-state-badge` must never
+ * render again. Every case below is set up with `plannerOversightLevel: "steer"`
+ * and a column/state combination that the pre-removal `deriveOverseerCardWatchedStage`
+ * code WOULD have resolved to a stage (Executor/Reviewer/Pull request/Merger/
+ * Workflow gate), plus the already-nothing-rendered baselines (non-monitorable
+ * column, userPaused, off level) to confirm no regression there either.
+ */
+describe("TaskCard overseer-state badge removed (FN-7542)", () => {
   it.each([
-    ["in-progress", {}, "executor", "Executor"],
-    ["in-review", { reviewState: { source: "reviewer-agent", items: [], addressing: [] } }, "reviewer", "Reviewer"],
-    ["in-review", { prInfo: { number: 1, status: "open" } }, "pull-request", "Pull request"],
+    ["in-progress", {}],
+    ["in-review", { reviewState: { source: "reviewer-agent", items: [], addressing: [] } }],
+    ["in-review", { prInfo: { number: 1, status: "open" } }],
     [
       "in-review",
       { workflowTransitionNotification: { kind: "manual-merge-hold", column: "in-review", transitionId: "t1", createdAt: "2026-01-01" } },
-      "merger",
-      "Merger",
     ],
-    ["in-review", {}, "merger", "Merger"],
-  ] as const)("renders the indicator for column=%s state=%o with stage=%s", (column, stateOverrides, stage, label) => {
+    ["in-review", {}],
+  ] as const)("renders no overseer-state badge for column=%s state=%o (previously would have shown a stage chip)", (column, stateOverrides) => {
     renderCard({ column, plannerOversightLevel: "steer", ...(stateOverrides as Partial<Task>) });
 
-    const badge = screen.getByTestId("card-overseer-state-badge");
-    expect(badge).toBeTruthy();
-    expect(badge.className).toContain(`card-overseer-state-badge--${stage}`);
-    expect(badge.textContent).toContain(label);
-    expect(badge.getAttribute("title")).toBe(`Overseer: ${label}`);
+    expect(screen.queryByTestId("card-overseer-state-badge")).toBeNull();
   });
 
-  it("renders the workflow-gate stage when paused on a workflow input/approval gate", () => {
+  it("renders no overseer-state badge when paused on a workflow input/approval gate", () => {
     renderCard({
       column: "in-progress",
       plannerOversightLevel: "steer",
@@ -179,55 +183,35 @@ describe("TaskCard active-overseer-state indicator (FN-7516)", () => {
       pausedReason: "workflow-cli-approval:node-1",
     });
 
-    const badge = screen.getByTestId("card-overseer-state-badge");
-    expect(badge).toBeTruthy();
-    expect(badge.className).toContain("card-overseer-state-badge--workflow-gate");
-    expect(badge.textContent).toContain("Workflow gate");
+    expect(screen.queryByTestId("card-overseer-state-badge")).toBeNull();
   });
 
-  it("renders no indicator (no empty shell) when the task is not in a monitorable column", () => {
+  it("renders no overseer-state badge when the task is not in a monitorable column (no regression)", () => {
     renderCard({ column: "todo", plannerOversightLevel: "steer" });
 
     expect(screen.queryByTestId("card-overseer-state-badge")).toBeNull();
   });
 
-  it("renders no indicator when the effective oversight level is off", () => {
+  it("renders no overseer-state badge when the effective oversight level is off (no regression)", () => {
     renderCard({ column: "in-progress", plannerOversightLevel: "off" });
 
     expect(screen.queryByTestId("card-overseer-state-badge")).toBeNull();
   });
 
-  it("suppresses the indicator when the task is user-paused", () => {
+  it("renders no overseer-state badge when the task is user-paused (no regression)", () => {
     renderCard({ column: "in-progress", plannerOversightLevel: "steer", userPaused: true });
 
     expect(screen.queryByTestId("card-overseer-state-badge")).toBeNull();
   });
 
-  it("suppresses the indicator when the task is agent-paused off a workflow gate", () => {
-    renderCard({ column: "in-progress", plannerOversightLevel: "steer", paused: true, pausedReason: "some-other-reason" });
-
-    expect(screen.queryByTestId("card-overseer-state-badge")).toBeNull();
-  });
-
-  it("suppresses the indicator when the task column is done", () => {
-    renderCard({ column: "done", plannerOversightLevel: "steer" });
-
-    expect(screen.queryByTestId("card-overseer-state-badge")).toBeNull();
-  });
-
-  it("suppresses the indicator when the task column is archived", () => {
-    renderCard({ column: "archived", plannerOversightLevel: "steer" });
-
-    expect(screen.queryByTestId("card-overseer-state-badge")).toBeNull();
-  });
-
-  it("does not render an always-on empty card-meta-badges child when both level is off and overseer is inactive", () => {
-    const { container } = renderCard({ plannerOversightLevel: "off", column: "todo" });
+  it("does not render an empty card-meta-badges shell when the overseer-state chip was the only would-be meta child", () => {
+    const { container } = renderCard({ column: "in-progress", plannerOversightLevel: "steer" });
 
     const metaBadges = container.querySelector(".card-meta-badges");
+    // Either the wrapper is entirely absent, or if present for some other
+    // reason it must not contain an overseer-state badge element.
     if (metaBadges) {
       expect(metaBadges.querySelector(".card-overseer-state-badge")).toBeNull();
-      expect(metaBadges.querySelector(".card-oversight-badge")).toBeNull();
     }
   });
 });
@@ -342,49 +326,18 @@ describe("TaskCard workflow-effective oversight level (FN-7516 code-review fix)"
   });
 });
 
-describe("TaskCard memo comparator — oversight level and overseer state (FN-7516)", () => {
+/*
+ * FNXC:PlannerOversight 2026-07-04-HH:MM:
+ * FN-7542 dropped the `pausedReason`/`reviewState`/`workflowTransitionNotification`
+ * memo-comparator compares — they existed solely to repaint the now-removed
+ * overseer-state badge and none of those fields are read by any other render
+ * path in this component. `plannerOversightLevel` and `workflowBadge.workflowId`
+ * remain compared for the surviving oversight-level badge.
+ */
+describe("TaskCard memo comparator — oversight level (FN-7516)", () => {
   it("returns false when task.plannerOversightLevel changes, so the card repaints", () => {
     const base = makeTask({ plannerOversightLevel: "observe" });
     const changed = makeTask({ plannerOversightLevel: "steer" });
-
-    expect(
-      __test_areTaskCardPropsEqual(
-        { task: base, onOpenDetail: noop, addToast: noop } as any,
-        { task: changed, onOpenDetail: noop, addToast: noop } as any,
-      ),
-    ).toBe(false);
-  });
-
-  it("returns false when task.reviewState changes, so the overseer-state badge repaints", () => {
-    const base = makeTask({ column: "in-review" });
-    const changed = makeTask({ column: "in-review", reviewState: { source: "reviewer-agent", items: [], addressing: [] } });
-
-    expect(
-      __test_areTaskCardPropsEqual(
-        { task: base, onOpenDetail: noop, addToast: noop } as any,
-        { task: changed, onOpenDetail: noop, addToast: noop } as any,
-      ),
-    ).toBe(false);
-  });
-
-  it("returns false when task.pausedReason changes, so the workflow-gate stage repaints", () => {
-    const base = makeTask({ column: "in-progress", paused: true, pausedReason: "workflow-cli-approval:a" });
-    const changed = makeTask({ column: "in-progress", paused: true, pausedReason: "workflow-cli-approval:b" });
-
-    expect(
-      __test_areTaskCardPropsEqual(
-        { task: base, onOpenDetail: noop, addToast: noop } as any,
-        { task: changed, onOpenDetail: noop, addToast: noop } as any,
-      ),
-    ).toBe(false);
-  });
-
-  it("returns false when task.workflowTransitionNotification changes, so the merger stage repaints", () => {
-    const base = makeTask({ column: "in-review" });
-    const changed = makeTask({
-      column: "in-review",
-      workflowTransitionNotification: { kind: "manual-merge-hold", column: "in-review", transitionId: "t1", createdAt: "2026-01-01" },
-    });
 
     expect(
       __test_areTaskCardPropsEqual(
