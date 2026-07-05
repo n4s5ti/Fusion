@@ -6,6 +6,7 @@ import { createPortal } from "react-dom";
 import { Link, Clock, Layers, Pencil, ChevronDown, Folder, Target, Bot, Trash2, RotateCw, Zap, GitBranch, GitPullRequest, AlertTriangle, ArrowUpRight, Eye } from "lucide-react";
 import type { Task, TaskDetail, Column, ColumnId, PrInfo, IssueInfo, TaskPriority, GithubIssueAction, MergeResult, PlannerOversightLevel } from "@fusion/core";
 import {
+  DEFAULT_PLANNER_OVERSIGHT_LEVEL,
   DEFAULT_TASK_PRIORITY,
   HIGH_FANOUT_BLOCKER_TODO_THRESHOLD,
   PLANNER_OVERSIGHT_LEVELS,
@@ -1702,14 +1703,32 @@ function TaskCardComponent({
    * default/guessed level. Only an effective level that resolves to "off"
    * renders no badge either (no empty shell) — see the
    * `hasCardMetaBadges`/render guard below.
+   *
+   * FN-7539: the round-2 fix above still showed the badge on virtually every
+   * card, because a task with no per-task override and no explicit
+   * non-default workflow tier resolves to the schema default
+   * (`DEFAULT_PLANNER_OVERSIGHT_LEVEL`, "autonomous") — and that default was
+   * still treated as "resolved" and rendered. An inherited default is not
+   * meaningfully-configured oversight, so it must not surface a per-card
+   * badge. Narrowed: suppress the badge when the effective level equals the
+   * schema default AND there is no explicit per-task override — i.e. the
+   * default was reached purely by inheritance (no override, no non-default
+   * workflow tier). An EXPLICIT per-task override of "autonomous" still
+   * renders the badge (explicit intent is preserved, not treated as
+   * inherited default), and a workflow tier that explicitly resolves to
+   * "autonomous" also renders nothing, matching the inherited-default case.
    */
   const hasTaskOversightOverride = isPlannerOversightLevelValue(task.plannerOversightLevel);
   const effectiveOversightLevel: PlannerOversightLevel = resolveEffectivePlannerOversightLevel(
     task.plannerOversightLevel,
     workflowOversightEffectiveLevel,
   );
+  const isInheritedDefaultOversightLevel =
+    !hasTaskOversightOverride && effectiveOversightLevel === DEFAULT_PLANNER_OVERSIGHT_LEVEL;
   const showOversightBadge =
-    (hasTaskOversightOverride || workflowOversightResolved) && effectiveOversightLevel !== "off";
+    (hasTaskOversightOverride || workflowOversightResolved) &&
+    effectiveOversightLevel !== "off" &&
+    !isInheritedDefaultOversightLevel;
 
   /*
    * FNXC:PlannerOversight 2026-07-04-00:00:

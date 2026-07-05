@@ -4,8 +4,10 @@
  * and the active-overseer-state indicator. Covers the Surface Enumeration data
  * states: Observe/Steer/Autonomous render a labeled badge; an explicit "off"
  * effective level renders nothing (no empty shell); an unset per-task override
- * resolves to the schema default ("autonomous") rather than rendering nothing,
- * per code review. The overseer-state indicator renders only while the
+ * that resolves to the schema default ("autonomous") renders NO badge at all
+ * (FN-7539: an inherited default is not meaningfully-configured oversight),
+ * while an EXPLICIT per-task override of "autonomous" still renders the
+ * badge (explicit intent is preserved). The overseer-state indicator renders only while the
  * card-local watched-stage derivation (`deriveOverseerCardWatchedStage` in
  * TaskCard.tsx, mirroring the engine's `resolveWatchedStage`) resolves a stage
  * AND the task is not paused/done/archived AND the effective oversight level
@@ -111,8 +113,14 @@ describe("TaskCard effective oversight-level badge (FN-7516)", () => {
     expect(screen.queryByTestId("card-oversight-badge")).toBeNull();
   });
 
-  it("resolves the schema default (autonomous) — and renders the badge — when the level field is undefined", () => {
+  it("renders no badge (no empty shell) when the level field is undefined and it resolves to the inherited schema default (autonomous) (FN-7539)", () => {
     renderCard({ column: "todo" });
+
+    expect(screen.queryByTestId("card-oversight-badge")).toBeNull();
+  });
+
+  it("renders the badge when the level is EXPLICITLY overridden to autonomous (explicit intent preserved) (FN-7539)", () => {
+    renderCard({ plannerOversightLevel: "autonomous", column: "todo" });
 
     const badge = screen.getByTestId("card-oversight-badge");
     expect(badge).toBeTruthy();
@@ -126,6 +134,15 @@ describe("TaskCard effective oversight-level badge (FN-7516)", () => {
     const metaBadges = container.querySelector(".card-meta-badges");
     // Either the wrapper is entirely absent, or if present for some other
     // reason it must not contain an oversight badge element.
+    if (metaBadges) {
+      expect(metaBadges.querySelector(".card-oversight-badge")).toBeNull();
+    }
+  });
+
+  it("does not render an always-on empty card-meta-badges child for the inherited-default case (FN-7539)", () => {
+    const { container } = renderCard({ column: "todo" });
+
+    const metaBadges = container.querySelector(".card-meta-badges");
     if (metaBadges) {
       expect(metaBadges.querySelector(".card-oversight-badge")).toBeNull();
     }
@@ -259,10 +276,12 @@ describe("TaskCard workflow-effective oversight level (FN-7516 code-review fix)"
     expect(screen.queryByTestId("card-overseer-state-badge")).toBeNull();
 
     // Once the fetch resolves (workflow has no oversight setting → schema
-    // default applies), the badge appears.
+    // default applies), the badge STILL does not render (FN-7539: an
+    // inherited default is not meaningfully-configured oversight).
     resolveFetch({ stored: {}, effective: {}, orphaned: [] });
-    const badge = await screen.findByTestId("card-oversight-badge");
-    expect(badge.className).toContain("card-oversight-badge--autonomous");
+    await waitFor(() => {
+      expect(screen.queryByTestId("card-oversight-badge")).toBeNull();
+    });
   });
 
   it("renders a per-task override immediately even while the workflow-tier fetch is pending", async () => {
@@ -303,6 +322,23 @@ describe("TaskCard workflow-effective oversight level (FN-7516 code-review fix)"
 
     const badge = await screen.findByTestId("card-oversight-badge");
     expect(badge.className).toContain("card-oversight-badge--observe");
+  });
+
+  it("renders no badge when the workflow's effective level explicitly resolves to autonomous (equals the inherited default) (FN-7539)", async () => {
+    vi.mocked(fetchWorkflowSettingValues).mockResolvedValueOnce({
+      stored: { plannerOversightLevel: "autonomous" },
+      effective: { plannerOversightLevel: "autonomous" },
+      orphaned: [],
+    });
+
+    renderCard({ column: "todo" }, { workflowBadge: { workflowId: "wf-configured-autonomous", workflowName: "Configured Autonomous" } });
+
+    await waitFor(() => {
+      expect(fetchWorkflowSettingValues).toHaveBeenCalledWith("wf-configured-autonomous", undefined);
+    });
+    await waitFor(() => {
+      expect(screen.queryByTestId("card-oversight-badge")).toBeNull();
+    });
   });
 });
 

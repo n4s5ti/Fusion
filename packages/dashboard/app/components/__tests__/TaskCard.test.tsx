@@ -2360,16 +2360,15 @@ describe("TaskCard", () => {
     expect(timer?.closest(".card-meta-badges")).toBeNull();
     expect(timer?.closest(".card-footer-row-right")).not.toBeNull();
 
-    // FNXC:PlannerOversight 2026-07-04-00:00: an unset per-task oversight override
-    // resolves to the schema default ("autonomous") via the FN-7516 card badge,
-    // so it now appears alongside the other opt-in meta badges (FN-7516).
+    // FNXC:PlannerOversight 2026-07-04-00:00: an unset per-task oversight
+    // override resolving to the inherited schema default ("autonomous") no
+    // longer renders a per-card badge (FN-7539) — an inherited default is not
+    // meaningfully-configured oversight, so it does not appear among the
+    // opt-in meta badges here.
     expect(Array.from(group?.children ?? []).map((child) => child.className)).toEqual([
       "card-priority-badge card-priority-badge--high",
       "card-execution-mode-badge card-execution-mode-badge--fast",
       "card-agent-created-badge",
-      "card-oversight-badge card-oversight-badge--autonomous",
-
-
     ]);
   });
 
