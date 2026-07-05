@@ -28,6 +28,7 @@ import { ProviderIcon } from "./ProviderIcon";
 import { PluginSlot } from "./PluginSlot";
 import { useBadgeWebSocket } from "../hooks/useBadgeWebSocket";
 import { useCoarsePointer } from "../hooks/useCoarsePointer";
+import { plannerOverseerBadgeTooltip, plannerOverseerStateLabel } from "./plannerOverseerBadge";
 import { getFreshBatchData } from "../hooks/useBatchBadgeFetch";
 import { useTaskDiffStats } from "../hooks/useTaskDiffStats";
 import { useAgentsMapCache } from "../hooks/useAgentsMapCache";
@@ -2774,13 +2775,11 @@ function TaskCardComponent({
         {task.plannerOverseerState && task.plannerOverseerState.state !== "idle" && (
           <span
             className="card-status-badge card-planner-overseer-state"
-            title={t("tasks.plannerOverseerStateTitle", "Planner overseer: {{state}}", {
-              state: task.plannerOverseerState.state,
-            })}
+            title={plannerOverseerBadgeTooltip(task.plannerOverseerState, t)}
             data-testid="planner-overseer-state-badge"
             data-planner-overseer-state={task.plannerOverseerState.state}
           >
-            {task.plannerOverseerState.state}
+            {plannerOverseerStateLabel(task.plannerOverseerState.state, t)}
           </span>
         )}
         {showStalledReview && stalledReview && (

@@ -295,6 +295,78 @@ describe("TaskCard", () => {
     expect(screen.getByTestId("planner-overseer-state-badge")).toBeInTheDocument();
   });
 
+  // FN-7563: the badge used to print the raw kebab-case state (e.g.
+  // "awaiting-confirmation") with a bare "Planner overseer: awaiting-confirmation"
+  // tooltip. This reproduces the reported in-review symptom and asserts the badge
+  // is now human-readable and self-explanatory.
+  it("explains an in-review awaiting-confirmation badge with a readable label and a reason-bearing tooltip", () => {
+    const task = makeTask({
+      column: "in-review",
+      plannerOverseerState: {
+        state: "awaiting-confirmation",
+        oversightLevel: "autonomous",
+        watchedStage: "executor",
+        signal: "stalled",
+        attemptCount: 2,
+        attemptLimit: 3,
+        pendingConfirmation: true,
+        observedAt: 1700000000000,
+        reason: "Retry limit reached; waiting for an operator decision",
+      },
+    });
+
+    render(<TaskCard task={task} onOpenDetail={noop} addToast={noop} />);
+
+    const badge = screen.getByTestId("planner-overseer-state-badge");
+    expect(badge.textContent).not.toBe("awaiting-confirmation");
+    expect(badge.textContent).toBe("Awaiting confirmation");
+
+    const title = badge.getAttribute("title") ?? "";
+    expect(title).not.toBe("Planner overseer: awaiting-confirmation");
+    expect(title).toContain("Retry limit reached; waiting for an operator decision");
+    expect(title).toMatch(/human decision/i);
+    expect(title).not.toMatch(/undefined/);
+  });
+
+  it("renders readable labels for in-progress watching and recovering overseer states", () => {
+    const watchingTask = makeTask({
+      column: "in-progress",
+      plannerOverseerState: {
+        state: "watching",
+        oversightLevel: "autonomous",
+        watchedStage: "executor",
+        signal: "progressing",
+        attemptCount: 0,
+        attemptLimit: 3,
+        pendingConfirmation: false,
+        observedAt: 1700000000000,
+      },
+    });
+    const { unmount } = render(<TaskCard task={watchingTask} onOpenDetail={noop} addToast={noop} />);
+    let badge = screen.getByTestId("planner-overseer-state-badge");
+    expect(badge.textContent).toBe("Overseer watching");
+    expect(badge.getAttribute("title")).not.toMatch(/undefined/);
+    unmount();
+
+    const recoveringTask = makeTask({
+      column: "in-progress",
+      plannerOverseerState: {
+        state: "recovering",
+        oversightLevel: "autonomous",
+        attemptCount: 1,
+        attemptLimit: 3,
+        pendingConfirmation: false,
+        observedAt: 1700000000000,
+      },
+    });
+    render(<TaskCard task={recoveringTask} onOpenDetail={noop} addToast={noop} />);
+    badge = screen.getByTestId("planner-overseer-state-badge");
+    expect(badge.textContent).toBe("Overseer recovering");
+    const title = badge.getAttribute("title") ?? "";
+    expect(title).not.toMatch(/undefined/);
+    expect(title.length).toBeGreaterThan(0);
+  });
+
   it("shows an Answer-questions button when awaiting user input and opens the workflow tab", async () => {
     const onOpenDetailWithTab = vi.fn();
     render(

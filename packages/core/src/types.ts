@@ -1,5 +1,12 @@
 import type { InReviewStallSignal } from "./in-review-stall.js";
 import type { PlannerOverseerRuntimeSnapshot } from "./planner-overseer-state.js";
+// FNXC:PlannerOversight 2026-07-04-18:00: FN-7563 needs `PlannerOverseerState`/
+// `PlannerOverseerRuntimeSnapshot` as TYPE-ONLY imports in the dashboard's pure
+// `plannerOverseerBadge.ts` helper. The dashboard's vite alias for "@fusion/core"
+// resolves only to this file (types.ts), not the package barrel, so the types must
+// be re-exported here (type-only — no engine/runtime code crosses into the browser
+// bundle) rather than requiring dashboard code to import the source module path.
+export type { PlannerOverseerState, PlannerOverseerRuntimeSnapshot } from "./planner-overseer-state.js";
 import type { ModelPricing } from "./model-pricing.js";
 import type { InReviewStalledSignal } from "./in-review-stalled.js";
 import type { StalePausedReviewSignal } from "./stale-paused-review.js";
