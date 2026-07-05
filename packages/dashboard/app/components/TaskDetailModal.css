@@ -324,9 +324,22 @@ The task-detail modal metadata must keep priority, execution mode, provenance, P
   FN-7517: the oversight-controls cluster (priority + execution-mode + the
   new oversight-level/nudge/stop/explain controls) must wrap without
   overflowing the mobile modal width rather than forcing horizontal scroll.
+
+  FNXC:PlannerOversight 2026-07-04-19:00:
+  FN-7545: the level-select/nudge/stop/explain controls now collapse behind a
+  single `.detail-oversight-menu-trigger` button below this breakpoint (JS
+  `isOversightMenuMobile` swap in TaskDetailModal.tsx, not a CSS hide), so the
+  cluster only ever needs to fit priority + execution-mode + the trigger on
+  one row; `flex-wrap: wrap` remains as a safety fallback so the cluster never
+  forces horizontal scroll if it still overflows at very narrow widths.
   */
   .detail-meta-inline-controls {
     flex-wrap: wrap;
+  }
+
+  .detail-oversight-menu {
+    right: 0;
+    left: auto;
   }
 
   .detail-provenance {
@@ -549,6 +562,111 @@ renders at a uniform height.
 
 .detail-overseer-explain-panel__empty {
   color: var(--text-muted);
+}
+
+/*
+FNXC:PlannerOversight 2026-07-04-19:00:
+FN-7545 — mobile overflow menu for the oversight action controls. Reuses the
+same `.detail-move-dropdown` / `.detail-move-menu` popover tokens/pattern
+(position/border/radius/shadow) so the two overflow menus in this modal look
+and behave consistently. The popover opens DOWNWARD (`top: calc(100% + ...)`)
+since the trigger lives in the header cluster rather than the footer, unlike
+`.detail-move-menu` which opens upward from the footer.
+*/
+.detail-oversight-menu-dropdown {
+  position: relative;
+}
+
+.detail-oversight-menu-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-xs);
+  min-height: var(--detail-priority-control-min-height);
+  padding-block: var(--space-xs);
+  box-sizing: border-box;
+}
+
+.detail-oversight-menu-trigger svg {
+  width: 1em;
+  height: 1em;
+}
+
+.detail-oversight-menu {
+  position: absolute;
+  top: calc(100% + var(--space-xs));
+  right: 0;
+  z-index: 50;
+  display: flex;
+  flex-direction: column;
+  min-width: calc(var(--space-2xl) + var(--space-2xl) + var(--space-md));
+  max-width: min(calc(100vw - var(--space-lg) * 2), 280px);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-md);
+  overflow: hidden;
+}
+
+.detail-oversight-menu-item {
+  /*
+  FNXC:PlannerOversight 2026-07-04-19:00:
+  FN-7545 — 36px touch-target floor for the collapsed mobile menu items,
+  matching the project's existing `--settings-inline-touch-target` /
+  `--wf-editor-touch-target` calc(space-lg + space-lg + space-xs) formula
+  (SettingsModal.css / WorkflowNodeEditor.css) so tap targets stay comfortable
+  without hardcoding a raw pixel value.
+  */
+  --detail-oversight-menu-item-min-height: calc(var(--space-lg) + var(--space-lg) + var(--space-xs));
+
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  width: 100%;
+  min-height: var(--detail-oversight-menu-item-min-height);
+  padding: var(--space-sm) var(--space-md);
+  font-size: 13px;
+  font-weight: 400;
+  color: var(--text);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  text-align: left;
+  box-sizing: border-box;
+  transition: background var(--transition-fast);
+}
+
+label.detail-oversight-menu-item--select {
+  cursor: default;
+  justify-content: space-between;
+}
+
+.detail-oversight-menu-item--select .detail-oversight-select {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.detail-oversight-menu-item:hover {
+  background: var(--surface-hover, color-mix(in srgb, var(--text) 6%, transparent));
+}
+
+button.detail-oversight-menu-item:focus {
+  outline: none;
+  background: var(--surface-hover, color-mix(in srgb, var(--text) 6%, transparent));
+}
+
+button.detail-oversight-menu-item:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+button.detail-oversight-menu-item svg {
+  width: 1em;
+  height: 1em;
 }
 
 /*

@@ -2,7 +2,7 @@ import "./TaskDetailModal.css";
 import React, { Suspense, lazy, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useTranslation } from "react-i18next";
-import { Pencil, Bot, X, ChevronDown, ChevronRight, GitBranch, ArrowLeft, Zap, Loader2, AlertTriangle, Sparkles, Maximize2, Minimize2, Send, Square, Info } from "lucide-react";
+import { Pencil, Bot, X, ChevronDown, ChevronRight, GitBranch, ArrowLeft, Zap, Loader2, AlertTriangle, Sparkles, Maximize2, Minimize2, Send, Square, Info, MoreVertical } from "lucide-react";
 import { useModalResizePersist } from "../hooks/useModalResizePersist";
 import { useMobileScrollLock } from "../hooks/useMobileScrollLock";
 import { useOverlayDismiss } from "../hooks/useOverlayDismiss";
@@ -84,6 +84,8 @@ const ACTIVITY_VIEW_MENU_MIN_WIDTH = 160;
 const ACTIVITY_VIEW_MENU_MIN_HEIGHT = 120;
 const ACTIVITY_VIEW_MENU_MAX_HEIGHT = 320;
 const ACTIVITY_VIEW_MENU_OPEN_VIEWPORT_GUARD_MS = 350;
+// FNXC:PlannerOversight 2026-07-04-19:00: FN-7545 — mobile breakpoint for collapsing the oversight action cluster into an overflow menu; matches the `@media (max-width: 768px)` breakpoint used across TaskDetailModal.css.
+const OVERSIGHT_MENU_MOBILE_BREAKPOINT = 768;
 
 type ActivityViewMenuPosition = {
   top: number;
@@ -1044,6 +1046,20 @@ export function TaskDetailContent({
   const [overseerExplainOpen, setOverseerExplainOpen] = useState(false);
   const [isLoadingOverseerExplain, setIsLoadingOverseerExplain] = useState(false);
   const [overseerExplainSnapshot, setOverseerExplainSnapshot] = useState<PlannerOverseerRuntimeSnapshot | null>(null);
+  /*
+  FNXC:PlannerOversight 2026-07-04-19:00:
+  FN-7545 — collapse the oversight action controls into a mobile overflow
+  menu so the detail control bar fits narrow viewports; desktop keeps the
+  inline cluster; menu never renders an empty shell when oversight is
+  off/inactive. `isOversightMenuMobile` mirrors the `DocumentsView` local
+  `isMobile` resize-listener pattern (defaults false so JSDOM/unit tests keep
+  exercising the desktop inline branch unless a test explicitly narrows the
+  viewport).
+  */
+  const [isOversightMenuMobile, setIsOversightMenuMobile] = useState(false);
+  const [showOversightMenu, setShowOversightMenu] = useState(false);
+  const oversightMenuRef = useRef<HTMLDivElement>(null);
+  const oversightMenuButtonRef = useRef<HTMLButtonElement>(null);
   const { confirm, confirmWithChoice, confirmWithCheckbox } = useConfirm();
   const requestClose = useCallback(() => {
     onRequestClose?.();
@@ -1410,7 +1426,7 @@ export function TaskDetailContent({
 
   // Close task-detail dropdown menus on outside click
   useEffect(() => {
-    const hasOpenMenu = showMoveMenu || showActionsMenu || showActivityViewMenu;
+    const hasOpenMenu = showMoveMenu || showActionsMenu || showActivityViewMenu || showOversightMenu;
     if (!hasOpenMenu) return;
 
     const handleClick = (e: MouseEvent) => {
@@ -1418,6 +1434,7 @@ export function TaskDetailContent({
       const inMoveMenu = moveMenuRef.current?.contains(target);
       const inActionsMenu = actionsMenuRef.current?.contains(target);
       const inActivityViewMenu = activityViewMenuRef.current?.contains(target) || activityViewButtonRef.current?.contains(target);
+      const inOversightMenu = oversightMenuRef.current?.contains(target) || oversightMenuButtonRef.current?.contains(target);
 
       if (!inMoveMenu && showMoveMenu) {
         setShowMoveMenu(false);
@@ -1430,15 +1447,18 @@ export function TaskDetailContent({
         setShowActivityViewMenu(false);
         setActivityViewMenuPosition(null);
       }
+      if (!inOversightMenu && showOversightMenu) {
+        setShowOversightMenu(false);
+      }
     };
 
     document.addEventListener("mousedown", handleClick);
     return () => document.removeEventListener("mousedown", handleClick);
-  }, [showMoveMenu, showActionsMenu, showActivityViewMenu]);
+  }, [showMoveMenu, showActionsMenu, showActivityViewMenu, showOversightMenu]);
 
   // Close task-detail dropdown menus on Escape key (before modal Escape handler)
   useEffect(() => {
-    const hasOpenMenu = showMoveMenu || showActionsMenu || showActivityViewMenu;
+    const hasOpenMenu = showMoveMenu || showActionsMenu || showActivityViewMenu || showOversightMenu;
     if (!hasOpenMenu) return;
 
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -1451,12 +1471,35 @@ export function TaskDetailContent({
           setShowActivityViewMenu(false);
           setActivityViewMenuPosition(null);
         }
+        if (showOversightMenu) {
+          setShowOversightMenu(false);
+        }
       }
     };
 
     document.addEventListener("keydown", handleKeyDown);
     return () => document.removeEventListener("keydown", handleKeyDown);
-  }, [showMoveMenu, showActionsMenu, showActivityViewMenu]);
+  }, [showMoveMenu, showActionsMenu, showActivityViewMenu, showOversightMenu]);
+
+  // FNXC:PlannerOversight 2026-07-04-19:00: FN-7545 — track the mobile breakpoint locally (mirrors DocumentsView's isMobile resize-listener pattern) so the oversight action cluster can collapse into an overflow menu on narrow viewports while desktop keeps the inline layout.
+  useEffect(() => {
+    const updateOversightMenuMobile = () => {
+      setIsOversightMenuMobile(window.innerWidth <= OVERSIGHT_MENU_MOBILE_BREAKPOINT);
+    };
+
+    updateOversightMenuMobile();
+    window.addEventListener("resize", updateOversightMenuMobile);
+
+    return () => {
+      window.removeEventListener("resize", updateOversightMenuMobile);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!isOversightMenuMobile) {
+      setShowOversightMenu(false);
+    }
+  }, [isOversightMenuMobile]);
 
   // Reset spec edit state when task changes
   useEffect(() => {
@@ -3155,6 +3198,44 @@ export function TaskDetailContent({
     closeMoveMenuAndFocusTrigger();
   }, [closeMoveMenuAndFocusTrigger]);
 
+  /*
+  FNXC:PlannerOversight 2026-07-04-19:00:
+  FN-7545 — mobile oversight overflow-menu open/close/keyboard handling,
+  mirroring `handleMoveButtonClick`/`handleMoveButtonKeyDown`/`handleMoveMenuKeyDown`
+  above so the two popovers behave consistently (toggle on click, ArrowDown
+  opens, Escape closes and returns focus to the trigger).
+  */
+  const closeOversightMenuAndFocusTrigger = useCallback(() => {
+    setShowOversightMenu(false);
+    oversightMenuButtonRef.current?.focus();
+  }, []);
+
+  const handleOversightMenuButtonClick = useCallback(() => {
+    setShowOversightMenu((prev) => !prev);
+    setShowMoveMenu(false);
+    setShowActionsMenu(false);
+  }, []);
+
+  const handleOversightMenuButtonKeyDown = useCallback((event: React.KeyboardEvent<HTMLButtonElement>) => {
+    const shouldOpenMenu = event.key === "ArrowDown" || (event.altKey && event.key === "ArrowDown");
+    if (!shouldOpenMenu) {
+      return;
+    }
+
+    event.preventDefault();
+    setShowOversightMenu(true);
+  }, []);
+
+  const handleOversightMenuKeyDown = useCallback((event: React.KeyboardEvent<HTMLElement>) => {
+    if (event.key !== "Escape") {
+      return;
+    }
+
+    event.preventDefault();
+    event.stopPropagation();
+    closeOversightMenuAndFocusTrigger();
+  }, [closeOversightMenuAndFocusTrigger]);
+
   const closeActivityViewMenuAndFocusTrigger = useCallback(() => {
     activityViewMenuViewportGuardUntilRef.current = 0;
     setShowActivityViewMenu(false);
@@ -3260,6 +3341,15 @@ export function TaskDetailContent({
     const firstMenuItem = moveMenuRef.current?.querySelector<HTMLButtonElement>(".detail-move-menu-item");
     firstMenuItem?.focus();
   }, [showMoveMenu]);
+
+  useEffect(() => {
+    if (!showOversightMenu) {
+      return;
+    }
+
+    const firstMenuItem = oversightMenuRef.current?.querySelector<HTMLButtonElement | HTMLSelectElement>(".detail-oversight-menu-item");
+    firstMenuItem?.focus();
+  }, [showOversightMenu]);
 
   useLayoutEffect(() => {
     if (!showActivityViewMenu) {
@@ -3730,90 +3820,207 @@ export function TaskDetailContent({
                   workflow tier resolves (or a per-task override renders it
                   synchronously), mirroring FN-7516's TaskCard badge gating so this
                   never shows a guessed schema-default value for a beat.
+
+                  FNXC:PlannerOversight 2026-07-04-19:00:
+                  FN-7545 — collapse the oversight action controls into a mobile
+                  overflow menu so the detail control bar fits narrow viewports;
+                  desktop keeps the inline cluster; menu never renders an empty
+                  shell when oversight is off/inactive. Both branches below share
+                  the SAME enablement gates (`hasTaskOversightOverride`,
+                  `workflowOversightResolved`, `oversightIsOff`, `showStopOverseer`,
+                  `canNudgeOverseer`, `canExplainOverseer`) and the SAME handlers
+                  — the mobile branch only changes where the controls render, never
+                  their guard logic.
                   */}
-                  {(hasTaskOversightOverride || workflowOversightResolved) && (
-                    <label
-                      className={`card-oversight-badge card-oversight-badge--${effectiveOversightLevel} detail-oversight-chip ${isSavingOversightLevel ? "detail-oversight-chip--saving" : ""}`}
-                    >
-                      <span>{t("taskDetail.oversight.label", "Oversight:")}</span>
-                      <select
-                        className="detail-oversight-select"
-                        data-testid="detail-oversight-level-select"
-                        value={hasTaskOversightOverride ? (task.plannerOversightLevel as string) : "__inherit__"}
-                        onChange={(event) => {
-                          void handleOversightLevelChange(event.target.value);
-                        }}
-                        disabled={isSavingOversightLevel}
-                        aria-label={t("taskDetail.oversight.ariaLabel", "Planner oversight level")}
-                      >
-                        <option value="__inherit__">
-                          {t("taskDetail.oversight.inherit", "Inherit ({{level}})", { level: OVERSIGHT_LEVEL_LABEL[effectiveOversightLevel] })}
-                        </option>
-                        {PLANNER_OVERSIGHT_LEVELS.map((levelOption) => (
-                          <option key={levelOption} value={levelOption}>
-                            {OVERSIGHT_LEVEL_LABEL[levelOption]}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-                  )}
-                  {/*
-                  FNXC:PlannerOversight 2026-07-04-17:00:
-                  FN-7517 manual nudge / stop oversight / explain current action
-                  controls. Disabled (with an accessible aria-label reason) rather
-                  than hidden for nudge/explain when the overseer is off/inactive
-                  so operators understand WHY the control is inert instead of it
-                  silently vanishing; stop is hidden once oversight is already off
-                  (nothing left to stop) per the PROMPT's enablement rule, avoiding
-                  an always-on empty shell for the common oversight-off default.
-                  */}
-                  {(hasTaskOversightOverride || workflowOversightResolved) && !oversightIsOff && (
-                    <button
-                      type="button"
-                      className={`btn btn-sm detail-overseer-nudge ${isNudgingOverseer ? "detail-overseer-nudge--saving" : ""}`}
-                      data-testid="detail-overseer-nudge"
-                      onClick={() => {
-                        void handleNudgeOverseer();
-                      }}
-                      disabled={!canNudgeOverseer || isNudgingOverseer}
-                      title={canNudgeOverseer ? t("taskDetail.oversight.nudgeTitle", "Inject steering guidance into the current stage now") : t("taskDetail.oversight.nudgeDisabledTitle", "Nudge unavailable: overseer is not actively watching this task")}
-                      aria-label={t("taskDetail.oversight.nudgeAriaLabel", "Manual nudge")}
-                    >
-                      {isNudgingOverseer ? <Loader2 className="spin" aria-hidden="true" /> : <Send aria-hidden="true" />}
-                      <span>{t("taskDetail.oversight.nudge", "Nudge")}</span>
-                    </button>
-                  )}
-                  {(hasTaskOversightOverride || workflowOversightResolved) && showStopOverseer && (
-                    <button
-                      type="button"
-                      className={`btn btn-sm detail-overseer-stop ${isStoppingOverseer ? "detail-overseer-stop--saving" : ""}`}
-                      data-testid="detail-overseer-stop"
-                      onClick={() => {
-                        void handleStopOverseer();
-                      }}
-                      disabled={isStoppingOverseer}
-                      aria-label={t("taskDetail.oversight.stopAriaLabel", "Stop oversight")}
-                    >
-                      {isStoppingOverseer ? <Loader2 className="spin" aria-hidden="true" /> : <Square aria-hidden="true" />}
-                      <span>{t("taskDetail.oversight.stop", "Stop")}</span>
-                    </button>
-                  )}
-                  {(hasTaskOversightOverride || workflowOversightResolved) && !oversightIsOff && (
-                    <button
-                      type="button"
-                      className="btn btn-sm detail-overseer-explain"
-                      data-testid="detail-overseer-explain"
-                      onClick={() => {
-                        void handleExplainOverseer();
-                      }}
-                      disabled={!canExplainOverseer && !overseerExplainOpen}
-                      title={canExplainOverseer ? t("taskDetail.oversight.explainTitle", "Explain the overseer's current action") : t("taskDetail.oversight.explainDisabledTitle", "Explain unavailable: overseer is not actively watching this task")}
-                      aria-label={t("taskDetail.oversight.explainAriaLabel", "Explain current action")}
-                      aria-expanded={overseerExplainOpen}
-                    >
-                      <Info aria-hidden="true" />
-                      <span>{t("taskDetail.oversight.explain", "Explain")}</span>
-                    </button>
+                  {isOversightMenuMobile ? (
+                    (hasTaskOversightOverride || workflowOversightResolved) && (
+                      <div className="detail-oversight-menu-dropdown" ref={oversightMenuRef}>
+                        <button
+                          type="button"
+                          ref={oversightMenuButtonRef}
+                          className="btn btn-sm detail-oversight-menu-trigger"
+                          data-testid="detail-oversight-menu-trigger"
+                          onClick={handleOversightMenuButtonClick}
+                          onKeyDown={handleOversightMenuButtonKeyDown}
+                          aria-haspopup="menu"
+                          aria-expanded={showOversightMenu}
+                          aria-label={t("taskDetail.oversight.menuAriaLabel", "Oversight actions")}
+                        >
+                          <MoreVertical aria-hidden="true" />
+                          <span>{t("taskDetail.oversight.menuLabel", "Oversight")}</span>
+                        </button>
+                        {showOversightMenu && (
+                          <div className="detail-oversight-menu" role="menu" onKeyDown={handleOversightMenuKeyDown}>
+                            <label className="detail-oversight-menu-item detail-oversight-menu-item--select">
+                              <span>{t("taskDetail.oversight.label", "Oversight:")}</span>
+                              <select
+                                className="detail-oversight-select detail-oversight-menu-item"
+                                data-testid="detail-oversight-level-select"
+                                value={hasTaskOversightOverride ? (task.plannerOversightLevel as string) : "__inherit__"}
+                                onChange={(event) => {
+                                  void handleOversightLevelChange(event.target.value);
+                                }}
+                                disabled={isSavingOversightLevel}
+                                aria-label={t("taskDetail.oversight.ariaLabel", "Planner oversight level")}
+                              >
+                                <option value="__inherit__">
+                                  {t("taskDetail.oversight.inherit", "Inherit ({{level}})", { level: OVERSIGHT_LEVEL_LABEL[effectiveOversightLevel] })}
+                                </option>
+                                {PLANNER_OVERSIGHT_LEVELS.map((levelOption) => (
+                                  <option key={levelOption} value={levelOption}>
+                                    {OVERSIGHT_LEVEL_LABEL[levelOption]}
+                                  </option>
+                                ))}
+                              </select>
+                            </label>
+                            {!oversightIsOff && (
+                              <button
+                                type="button"
+                                className={`detail-oversight-menu-item detail-overseer-nudge ${isNudgingOverseer ? "detail-overseer-nudge--saving" : ""}`}
+                                role="menuitem"
+                                data-testid="detail-overseer-nudge"
+                                onClick={() => {
+                                  void handleNudgeOverseer();
+                                  setShowOversightMenu(false);
+                                }}
+                                onKeyDown={handleOversightMenuKeyDown}
+                                disabled={!canNudgeOverseer || isNudgingOverseer}
+                                title={canNudgeOverseer ? t("taskDetail.oversight.nudgeTitle", "Inject steering guidance into the current stage now") : t("taskDetail.oversight.nudgeDisabledTitle", "Nudge unavailable: overseer is not actively watching this task")}
+                                aria-label={t("taskDetail.oversight.nudgeAriaLabel", "Manual nudge")}
+                              >
+                                {isNudgingOverseer ? <Loader2 className="spin" aria-hidden="true" /> : <Send aria-hidden="true" />}
+                                <span>{t("taskDetail.oversight.nudge", "Nudge")}</span>
+                              </button>
+                            )}
+                            {showStopOverseer && (
+                              <button
+                                type="button"
+                                className={`detail-oversight-menu-item detail-overseer-stop ${isStoppingOverseer ? "detail-overseer-stop--saving" : ""}`}
+                                role="menuitem"
+                                data-testid="detail-overseer-stop"
+                                onClick={() => {
+                                  void handleStopOverseer();
+                                  setShowOversightMenu(false);
+                                }}
+                                onKeyDown={handleOversightMenuKeyDown}
+                                disabled={isStoppingOverseer}
+                                aria-label={t("taskDetail.oversight.stopAriaLabel", "Stop oversight")}
+                              >
+                                {isStoppingOverseer ? <Loader2 className="spin" aria-hidden="true" /> : <Square aria-hidden="true" />}
+                                <span>{t("taskDetail.oversight.stop", "Stop")}</span>
+                              </button>
+                            )}
+                            {!oversightIsOff && (
+                              <button
+                                type="button"
+                                className="detail-oversight-menu-item detail-overseer-explain"
+                                role="menuitem"
+                                data-testid="detail-overseer-explain"
+                                onClick={() => {
+                                  void handleExplainOverseer();
+                                  setShowOversightMenu(false);
+                                }}
+                                onKeyDown={handleOversightMenuKeyDown}
+                                disabled={!canExplainOverseer && !overseerExplainOpen}
+                                title={canExplainOverseer ? t("taskDetail.oversight.explainTitle", "Explain the overseer's current action") : t("taskDetail.oversight.explainDisabledTitle", "Explain unavailable: overseer is not actively watching this task")}
+                                aria-label={t("taskDetail.oversight.explainAriaLabel", "Explain current action")}
+                                aria-expanded={overseerExplainOpen}
+                              >
+                                <Info aria-hidden="true" />
+                                <span>{t("taskDetail.oversight.explain", "Explain")}</span>
+                              </button>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    )
+                  ) : (
+                    <>
+                      {(hasTaskOversightOverride || workflowOversightResolved) && (
+                        <label
+                          className={`card-oversight-badge card-oversight-badge--${effectiveOversightLevel} detail-oversight-chip ${isSavingOversightLevel ? "detail-oversight-chip--saving" : ""}`}
+                        >
+                          <span>{t("taskDetail.oversight.label", "Oversight:")}</span>
+                          <select
+                            className="detail-oversight-select"
+                            data-testid="detail-oversight-level-select"
+                            value={hasTaskOversightOverride ? (task.plannerOversightLevel as string) : "__inherit__"}
+                            onChange={(event) => {
+                              void handleOversightLevelChange(event.target.value);
+                            }}
+                            disabled={isSavingOversightLevel}
+                            aria-label={t("taskDetail.oversight.ariaLabel", "Planner oversight level")}
+                          >
+                            <option value="__inherit__">
+                              {t("taskDetail.oversight.inherit", "Inherit ({{level}})", { level: OVERSIGHT_LEVEL_LABEL[effectiveOversightLevel] })}
+                            </option>
+                            {PLANNER_OVERSIGHT_LEVELS.map((levelOption) => (
+                              <option key={levelOption} value={levelOption}>
+                                {OVERSIGHT_LEVEL_LABEL[levelOption]}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                      )}
+                      {/*
+                      FNXC:PlannerOversight 2026-07-04-17:00:
+                      FN-7517 manual nudge / stop oversight / explain current action
+                      controls. Disabled (with an accessible aria-label reason) rather
+                      than hidden for nudge/explain when the overseer is off/inactive
+                      so operators understand WHY the control is inert instead of it
+                      silently vanishing; stop is hidden once oversight is already off
+                      (nothing left to stop) per the PROMPT's enablement rule, avoiding
+                      an always-on empty shell for the common oversight-off default.
+                      */}
+                      {(hasTaskOversightOverride || workflowOversightResolved) && !oversightIsOff && (
+                        <button
+                          type="button"
+                          className={`btn btn-sm detail-overseer-nudge ${isNudgingOverseer ? "detail-overseer-nudge--saving" : ""}`}
+                          data-testid="detail-overseer-nudge"
+                          onClick={() => {
+                            void handleNudgeOverseer();
+                          }}
+                          disabled={!canNudgeOverseer || isNudgingOverseer}
+                          title={canNudgeOverseer ? t("taskDetail.oversight.nudgeTitle", "Inject steering guidance into the current stage now") : t("taskDetail.oversight.nudgeDisabledTitle", "Nudge unavailable: overseer is not actively watching this task")}
+                          aria-label={t("taskDetail.oversight.nudgeAriaLabel", "Manual nudge")}
+                        >
+                          {isNudgingOverseer ? <Loader2 className="spin" aria-hidden="true" /> : <Send aria-hidden="true" />}
+                          <span>{t("taskDetail.oversight.nudge", "Nudge")}</span>
+                        </button>
+                      )}
+                      {(hasTaskOversightOverride || workflowOversightResolved) && showStopOverseer && (
+                        <button
+                          type="button"
+                          className={`btn btn-sm detail-overseer-stop ${isStoppingOverseer ? "detail-overseer-stop--saving" : ""}`}
+                          data-testid="detail-overseer-stop"
+                          onClick={() => {
+                            void handleStopOverseer();
+                          }}
+                          disabled={isStoppingOverseer}
+                          aria-label={t("taskDetail.oversight.stopAriaLabel", "Stop oversight")}
+                        >
+                          {isStoppingOverseer ? <Loader2 className="spin" aria-hidden="true" /> : <Square aria-hidden="true" />}
+                          <span>{t("taskDetail.oversight.stop", "Stop")}</span>
+                        </button>
+                      )}
+                      {(hasTaskOversightOverride || workflowOversightResolved) && !oversightIsOff && (
+                        <button
+                          type="button"
+                          className="btn btn-sm detail-overseer-explain"
+                          data-testid="detail-overseer-explain"
+                          onClick={() => {
+                            void handleExplainOverseer();
+                          }}
+                          disabled={!canExplainOverseer && !overseerExplainOpen}
+                          title={canExplainOverseer ? t("taskDetail.oversight.explainTitle", "Explain the overseer's current action") : t("taskDetail.oversight.explainDisabledTitle", "Explain unavailable: overseer is not actively watching this task")}
+                          aria-label={t("taskDetail.oversight.explainAriaLabel", "Explain current action")}
+                          aria-expanded={overseerExplainOpen}
+                        >
+                          <Info aria-hidden="true" />
+                          <span>{t("taskDetail.oversight.explain", "Explain")}</span>
+                        </button>
+                      )}
+                    </>
                   )}
                 </div>
                 {overseerExplainOpen && (

@@ -128,6 +128,8 @@ vi.mock("lucide-react", () => ({
   Code2: () => null,
   Cpu: () => null,
   Bell: () => null,
+  // FNXC:PlannerOversight 2026-07-04-19:00: FN-7545 mobile oversight overflow-menu trigger icon.
+  MoreVertical: (props: any) => React.createElement("svg", { "data-testid": "more-vertical-icon", ...props }),
 }));
 
 vi.mock("../../hooks/useAgentLogs", () => ({
