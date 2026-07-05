@@ -552,8 +552,8 @@ The task detail modal exposes multiple tabs:
 
 After planning, each task gets a structured `PROMPT.md` with sections like:
 
-- Mission
 - Before → after transformation summary
+- Mission
 - Dependencies
 - Context to read first
 - File scope

@@ -753,6 +753,23 @@ describe("FN-5893 invariant regression wording", () => {
     expect(FAST_PLANNING_PROMPT).not.toContain("## Proactive Subtask Breakdown");
   });
 
+  it("places Before → After Transformation at the top of the definition, ahead of Mission and Review Level (FN-7593)", () => {
+    const standardTransformationIdx = STANDARD_PLANNING_PROMPT.indexOf("## Before → After Transformation");
+    const standardReviewLevelIdx = STANDARD_PLANNING_PROMPT.indexOf("## Review Level");
+    const standardMissionIdx = STANDARD_PLANNING_PROMPT.indexOf("## Mission");
+    expect(standardTransformationIdx).toBeGreaterThan(-1);
+    expect(standardReviewLevelIdx).toBeGreaterThan(-1);
+    expect(standardMissionIdx).toBeGreaterThan(-1);
+    expect(standardTransformationIdx).toBeLessThan(standardReviewLevelIdx);
+    expect(standardTransformationIdx).toBeLessThan(standardMissionIdx);
+
+    const fastTransformationIdx = FAST_PLANNING_PROMPT.indexOf("## Before → After Transformation");
+    const fastMissionIdx = FAST_PLANNING_PROMPT.indexOf("## Mission");
+    expect(fastTransformationIdx).toBeGreaterThan(-1);
+    expect(fastMissionIdx).toBeGreaterThan(-1);
+    expect(fastTransformationIdx).toBeLessThan(fastMissionIdx);
+  });
+
   it("requires invariant-level regression coverage in standard, fast, and core triage prompts", () => {
     for (const prompt of [
       TRIAGE_POLICY_PROMPT,
