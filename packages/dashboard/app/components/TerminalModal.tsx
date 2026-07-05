@@ -2194,6 +2194,96 @@ export function TerminalModal({ isOpen, onClose, initialCommand, initialCommandG
       : {}),
   } as CSSProperties;
 
+  /*
+  FNXC:TerminalFooter 2026-07-04-20:00:
+  Single source of truth for the terminal action-control cluster (reconnect/restart,
+  font-size, Clear, Shortcuts toggle, Preferences toggle, connection status, exit code,
+  help text, and the desktop-only pin/pop-out toggles). Rendered in exactly ONE place
+  per breakpoint: inside the header `.terminal-actions` on desktop/floating/pinned-below
+  (FN-7502), or inside a dedicated bottom `.terminal-status-bar` footer on mobile (FN-7560)
+  so the narrow mobile header does not crowd the tab dropdown and close button. Do not
+  duplicate these handlers elsewhere — always render this fragment.
+  */
+  const terminalActionControls = (
+    <>
+      {connectionStatus === "disconnected" && activeTab && (
+        <button
+          className="terminal-reconnect-btn"
+          onClick={reconnect}
+          title={t("terminal.reconnect", "Reconnect")}
+          data-testid="terminal-reconnect-btn"
+        >
+          <RefreshCw size={14} />
+          <span className="terminal-action-label">{t("terminal.reconnect", "Reconnect")}</span>
+        </button>
+      )}
+      {exitCode !== null && (
+        <button
+          className="terminal-restart-btn"
+          onClick={handleRestart}
+          title={t("terminal.newSession", "New Session")}
+          data-testid="terminal-restart-btn"
+        >
+          <RefreshCw size={14} />
+          <span className="terminal-action-label">{t("terminal.newSession", "New Session")}</span>
+        </button>
+      )}
+      <span className="terminal-font-size-controls terminal-font-size-controls--header">
+        <button type="button" className="terminal-font-size-btn" onClick={handleDecreaseFontSize} data-testid="terminal-font-size-decrease" aria-label={t("terminal.decreaseFontSize", "Decrease terminal font size")}>
+          <Minus size={14} />
+        </button>
+        <span className="terminal-font-size-value" data-testid="terminal-font-size-value">{fontSize}{TERMINAL_KEY_LABELS.pxUnit}</span>
+        <button type="button" className="terminal-font-size-btn" onClick={handleIncreaseFontSize} data-testid="terminal-font-size-increase" aria-label={t("terminal.increaseFontSize", "Increase terminal font size")}>
+          <Plus size={14} />
+        </button>
+      </span>
+      <button className="terminal-clear-btn" onClick={handleClear} data-testid="terminal-clear-btn" title={t("terminal.clearTerminal", "Clear terminal")}>
+        <Trash2 size={14} />
+        <span className="terminal-action-label">{t("terminal.clear", "Clear")}</span>
+      </button>
+      <button className="terminal-clear-btn terminal-clear-btn--shortcut" onClick={() => setShowShortcuts((current) => !current)} data-testid="terminal-shortcut-toggle" title={t("terminal.shortcuts", "Shortcuts")} aria-pressed={showShortcuts}>
+        <Keyboard size={14} />
+        <span className="terminal-action-label">{t("terminal.shortcuts", "Shortcuts")}</span>
+      </button>
+      <button className="terminal-clear-btn terminal-clear-btn--shortcut" onClick={() => setShowPreferences((current) => !current)} data-testid="terminal-preferences-toggle" title={t("terminal.preferences", "Preferences")} aria-pressed={showPreferences}>
+        <Settings size={14} />
+        <span className="terminal-action-label">{t("terminal.preferences", "Preferences")}</span>
+      </button>
+      <span className={`terminal-connection-status ${connectionStatus}`}>
+        {connectionStatus === "connected" && t("terminal.statusConnected", "Connected")}
+        {connectionStatus === "connecting" && t("terminal.statusConnecting", "Connecting...")}
+        {connectionStatus === "reconnecting" && t("terminal.statusReconnecting", "Reconnecting...")}
+        {connectionStatus === "disconnected" && t("terminal.statusDisconnected", "Disconnected")}
+      </span>
+      {exitCode !== null && <span className="terminal-exit-code" data-testid="terminal-exit-code">{t("terminal.exitLabel", "Exit: {{code}}", { code: exitCode })}</span>}
+      <span className="terminal-shortcuts terminal-shortcuts--header">{t("terminal.helpText", "Ctrl++/- zoom • ⌨ Shortcuts panel • Esc close")}</span>
+      {!isMobileTerminal && (
+        <button
+          className="terminal-clear-btn terminal-clear-btn--shortcut terminal-clear-btn--icon"
+          onClick={handleToggleBelowMode}
+          data-testid="terminal-pin-toggle"
+          title={isBelowMode ? t("terminal.unpinTerminal", "Unpin terminal (overlay content)") : t("terminal.pinTerminal", "Pin terminal (push content)")}
+          aria-label={isBelowMode ? t("terminal.unpinTerminal", "Unpin terminal (overlay content)") : t("terminal.pinTerminal", "Pin terminal (push content)")}
+          aria-pressed={isBelowMode}
+        >
+          {isBelowMode ? <PinOff size={14} /> : <Pin size={14} />}
+        </button>
+      )}
+      {!isMobileTerminal && (
+        <button
+          className="terminal-clear-btn terminal-clear-btn--shortcut terminal-clear-btn--icon"
+          onClick={handleToggleDisplayMode}
+          data-testid="terminal-popout-toggle"
+          title={displayMode === "floating" ? t("terminal.dockTerminal", "Dock terminal") : t("terminal.popOutTerminal", "Pop out terminal")}
+          aria-label={displayMode === "floating" ? t("terminal.dockTerminal", "Dock terminal") : t("terminal.popOutTerminal", "Pop out terminal")}
+          aria-pressed={displayMode === "floating"}
+        >
+          {displayMode === "floating" ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
+        </button>
+      )}
+    </>
+  );
+
   const terminalPanel = (
     <div
       ref={modalRef}
@@ -2428,98 +2518,18 @@ export function TerminalModal({ isOpen, onClose, initialCommand, initialCommandG
             </div>
           )}
           
-          {/* Status indicator */}
-          <div className="terminal-title" data-testid="terminal-title">
-            <TerminalIcon size={16} />
-            {getStatusIndicator()}
-          </div>
-          
-          {/* Actions — labels hidden on mobile via .terminal-action-label */}
-          <div className="terminal-actions" data-testid="terminal-actions">
-            {connectionStatus === "disconnected" && activeTab && (
-              <button
-                className="terminal-reconnect-btn"
-                onClick={reconnect}
-                title={t("terminal.reconnect", "Reconnect")}
-                data-testid="terminal-reconnect-btn"
-              >
-                <RefreshCw size={14} />
-                <span className="terminal-action-label">{t("terminal.reconnect", "Reconnect")}</span>
-              </button>
-            )}
-            {exitCode !== null && (
-              <button
-                className="terminal-restart-btn"
-                onClick={handleRestart}
-                title={t("terminal.newSession", "New Session")}
-                data-testid="terminal-restart-btn"
-              >
-                <RefreshCw size={14} />
-                <span className="terminal-action-label">{t("terminal.newSession", "New Session")}</span>
-              </button>
-            )}
-            {/*
-            FNXC:TerminalHeader 2026-07-04-19:16:
-            Footer controls live in the terminal header so docked, floating, pinned-below, and mobile layouts keep terminal actions reachable without spending a separate footer row. The pin button mirrors the right sidebar contract: aria-pressed means the persistent below-application push layout is active.
-            */}
-            <span className="terminal-font-size-controls terminal-font-size-controls--header">
-              <button type="button" className="terminal-font-size-btn" onClick={handleDecreaseFontSize} data-testid="terminal-font-size-decrease" aria-label={t("terminal.decreaseFontSize", "Decrease terminal font size")}>
-                <Minus size={14} />
-              </button>
-              <span className="terminal-font-size-value" data-testid="terminal-font-size-value">{fontSize}{TERMINAL_KEY_LABELS.pxUnit}</span>
-              <button type="button" className="terminal-font-size-btn" onClick={handleIncreaseFontSize} data-testid="terminal-font-size-increase" aria-label={t("terminal.increaseFontSize", "Increase terminal font size")}>
-                <Plus size={14} />
-              </button>
-            </span>
-            <button className="terminal-clear-btn" onClick={handleClear} data-testid="terminal-clear-btn" title={t("terminal.clearTerminal", "Clear terminal")}>
-              <Trash2 size={14} />
-              <span className="terminal-action-label">{t("terminal.clear", "Clear")}</span>
-            </button>
-            <button className="terminal-clear-btn terminal-clear-btn--shortcut" onClick={() => setShowShortcuts((current) => !current)} data-testid="terminal-shortcut-toggle" title={t("terminal.shortcuts", "Shortcuts")} aria-pressed={showShortcuts}>
-              <Keyboard size={14} />
-              <span className="terminal-action-label">{t("terminal.shortcuts", "Shortcuts")}</span>
-            </button>
-            <button className="terminal-clear-btn terminal-clear-btn--shortcut" onClick={() => setShowPreferences((current) => !current)} data-testid="terminal-preferences-toggle" title={t("terminal.preferences", "Preferences")} aria-pressed={showPreferences}>
-              <Settings size={14} />
-              <span className="terminal-action-label">{t("terminal.preferences", "Preferences")}</span>
-            </button>
-            <span className={`terminal-connection-status ${connectionStatus}`}>
-              {connectionStatus === "connected" && t("terminal.statusConnected", "Connected")}
-              {connectionStatus === "connecting" && t("terminal.statusConnecting", "Connecting...")}
-              {connectionStatus === "reconnecting" && t("terminal.statusReconnecting", "Reconnecting...")}
-              {connectionStatus === "disconnected" && t("terminal.statusDisconnected", "Disconnected")}
-            </span>
-            {exitCode !== null && <span className="terminal-exit-code" data-testid="terminal-exit-code">{t("terminal.exitLabel", "Exit: {{code}}", { code: exitCode })}</span>}
-            <span className="terminal-shortcuts terminal-shortcuts--header">{t("terminal.helpText", "Ctrl++/- zoom • ⌨ Shortcuts panel • Esc close")}</span>
-            {!isMobileTerminal && (
-              <button
-                className="terminal-clear-btn terminal-clear-btn--shortcut terminal-clear-btn--icon"
-                onClick={handleToggleBelowMode}
-                data-testid="terminal-pin-toggle"
-                title={isBelowMode ? t("terminal.unpinTerminal", "Unpin terminal (overlay content)") : t("terminal.pinTerminal", "Pin terminal (push content)")}
-                aria-label={isBelowMode ? t("terminal.unpinTerminal", "Unpin terminal (overlay content)") : t("terminal.pinTerminal", "Pin terminal (push content)")}
-                aria-pressed={isBelowMode}
-              >
-                {isBelowMode ? <PinOff size={14} /> : <Pin size={14} />}
-              </button>
-            )}
-            {/*
-            FNXC:Terminal 2026-06-23-00:15:
-            Clear / Shortcuts / Preferences moved OUT of the header actions and DOWN into the bottom status bar (footer) next to the text-size control, so the header keeps only contextual reconnect/restart, the icon-only pop-out toggle, and close.
-            The pop-out/dock toggle is now ICON-ONLY (no visible "Pop out"/"Dock" text); the icon flips and the title/aria-label still announce the toggle target for accessibility.
-            */}
-            {!isMobileTerminal && (
-              <button
-                className="terminal-clear-btn terminal-clear-btn--shortcut terminal-clear-btn--icon"
-                onClick={handleToggleDisplayMode}
-                data-testid="terminal-popout-toggle"
-                title={displayMode === "floating" ? t("terminal.dockTerminal", "Dock terminal") : t("terminal.popOutTerminal", "Pop out terminal")}
-                aria-label={displayMode === "floating" ? t("terminal.dockTerminal", "Dock terminal") : t("terminal.popOutTerminal", "Pop out terminal")}
-                aria-pressed={displayMode === "floating"}
-              >
-                {displayMode === "floating" ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
-              </button>
-            )}
+          {/*
+          FNXC:TerminalFooter 2026-07-04-20:00:
+          On desktop/floating/pinned-below the header keeps its FN-7502 shape:
+          status title + `.terminal-actions` (rendering the shared
+          `terminalActionControls` fragment) + close. On mobile (isMobileTerminal)
+          the header renders ONLY the close button here — no `.terminal-actions`
+          shell — because the mobile tab dropdown already occupies the header and
+          the action controls move into the `.terminal-status-bar` footer below
+          (FN-7560) so they don't crowd the dropdown/close. Both sites render the
+          SAME fragment, never a duplicated copy, so handlers cannot drift.
+          */}
+          {isMobileTerminal ? (
             <button
               className="terminal-close"
               onClick={onClose}
@@ -2528,7 +2538,28 @@ export function TerminalModal({ isOpen, onClose, initialCommand, initialCommandG
             >
               <X size={20} />
             </button>
-          </div>
+          ) : (
+            <>
+              {/* Status indicator */}
+              <div className="terminal-title" data-testid="terminal-title">
+                <TerminalIcon size={16} />
+                {getStatusIndicator()}
+              </div>
+
+              {/* Actions — labels hidden on mobile via .terminal-action-label */}
+              <div className="terminal-actions" data-testid="terminal-actions">
+                {terminalActionControls}
+                <button
+                  className="terminal-close"
+                  onClick={onClose}
+                  data-testid="terminal-close-btn"
+                  title={t("terminal.closeTerminal", "Close terminal")}
+                >
+                  <X size={20} />
+                </button>
+              </div>
+            </>
+          )}
         </div>
 
         {/* Error message */}
@@ -2795,6 +2826,22 @@ export function TerminalModal({ isOpen, onClose, initialCommand, initialCommandG
             >
               {t("terminal.resetPreferences", "Reset to defaults")}
             </button>
+          </div>
+        )}
+
+        {/*
+        FNXC:TerminalFooter 2026-07-04-20:00:
+        Mobile-only footer bar (FN-7560) restoring the pre-FN-7502 footer
+        ergonomics: the same `terminalActionControls` fragment used by the
+        desktop header renders here instead so font-size/Clear/Shortcuts/
+        Preferences/connection-status/exit-code stay reachable without
+        crowding the mobile header's tab dropdown and close button. Scrolls
+        horizontally (min-width: 0 + overflow-x: auto) if controls exceed the
+        viewport width, matching the .terminal-shortcut-panel (FN-7550) pattern.
+        */}
+        {isMobileTerminal && (
+          <div className="terminal-status-bar" data-testid="terminal-footer-actions">
+            {terminalActionControls}
           </div>
         )}
 

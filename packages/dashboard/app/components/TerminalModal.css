@@ -1507,19 +1507,15 @@ The Android keyboard-open recurrence can start with a touch-primary visualViewpo
     max-width: 150px;
   }
 
-  /* Hide the redundant title/status indicator on mobile — .terminal-status-bar shows connection state */
+  /*
+  FNXC:TerminalFooter 2026-07-04-20:00:
+  On mobile the header no longer renders .terminal-title or .terminal-actions at
+  all (FN-7560) — the header keeps only the tab dropdown and close button, and
+  the action controls (incl. connection state) render in the .terminal-status-bar
+  footer at the bottom of the panel instead, so they don't crowd the dropdown.
+  */
   .terminal-title {
     display: none;
-  }
-
-  /* Actions stay reachable at the end of the header row and wrap as a unit after the selector/picker when space is exhausted. */
-  .terminal-actions {
-    order: 3;
-    flex: 0 0 auto;
-    justify-content: flex-end;
-    border-top: none;
-    padding: 0 var(--space-xs) 0 0;
-    min-height: 36px;
   }
 
   /* Hide text labels on action buttons to save space */
@@ -1694,9 +1690,31 @@ The Android keyboard-open recurrence can start with a touch-primary visualViewpo
     display: none;
   }
 
-  .terminal-actions {
-    flex-wrap: wrap;
-    justify-content: flex-end;
+  /*
+  FNXC:TerminalFooter 2026-07-04-20:00:
+  FN-7560: on mobile the terminal action controls (font-size, Clear, Shortcuts,
+  Preferences, connection status, exit code) render in this bottom footer bar
+  instead of the header, restoring pre-FN-7502 footer ergonomics so the narrow
+  header only has to fit the tab dropdown and close button. Reuses the same
+  min-width: 0 + overflow-x: auto flex-scroll pattern as .terminal-actions and
+  .terminal-shortcut-panel (FN-7550) so a crowded footer scrolls horizontally
+  instead of clipping/wrapping. padding-bottom composes with the iOS safe-area
+  inset so the bar clears the home indicator; it stays in-flow at the bottom of
+  the panel's flex column, so the .terminal-modal[style*="--keyboard-overlap"]
+  height clamp shrinks .terminal-container (flex: 1) rather than the footer.
+  */
+  .terminal-status-bar {
+    display: flex;
+    align-items: center;
+    flex-wrap: nowrap;
+    gap: var(--space-xs);
+    border-top: 1px solid var(--border);
+    padding: var(--space-xs);
+    padding-bottom: max(var(--space-xs), env(safe-area-inset-bottom, 0));
+    min-height: 36px;
+    min-width: 0;
+    overflow-x: auto;
+    scrollbar-width: thin;
   }
 
   .terminal-shortcuts--header,

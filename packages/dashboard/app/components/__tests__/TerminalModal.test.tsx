@@ -680,13 +680,26 @@ describe("TerminalModal", () => {
   it("encodes below-terminal in-flow layout without fixed overlay geometry", () => {
     const hostRule = terminalModalCss.match(/\.terminal-below-host\s*\{([^}]*)\}/)?.[1] ?? "";
     const belowRule = terminalModalCss.match(/\.modal\.terminal-modal\.terminal-modal--below\s*\{([^}]*)\}/)?.[1] ?? "";
-    const footerShellRule = terminalModalCss.match(/\.terminal-status-bar\s*\{/);
 
     expect(hostRule).toContain("display: flex;");
     expect(belowRule).toContain("position: relative;");
     expect(belowRule).not.toContain("position: fixed;");
     expect(belowRule).toContain("height: var(--terminal-below-height);");
-    expect(footerShellRule).toBeNull();
+
+    // FN-7560: the `.terminal-status-bar` footer is a MOBILE-ONLY affordance
+    // (isMobileTerminal, which itself excludes below mode) — it must exist only
+    // scoped inside a `@media (max-width: 768px)` block, never as a global/
+    // unscoped rule that could leak a footer shell into desktop/floating/
+    // pinned-below. Strip every mobile media-query block out of the
+    // stylesheet and confirm no `.terminal-status-bar` rule remains outside it.
+    const cssWithoutMobileMediaBlocks = terminalModalCss.replace(
+      /@media \(max-width: 768px\) \{(?:[^{}]*\{[^{}]*\})*[^{}]*\}/g,
+      "",
+    );
+    expect(cssWithoutMobileMediaBlocks).not.toMatch(/\.terminal-status-bar\s*\{/);
+    const mobileFooterRule =
+      terminalModalCss.match(/@media \(max-width: 768px\) \{[\s\S]*?\.terminal-status-bar\s*\{/);
+    expect(mobileFooterRule).not.toBeNull();
   });
 
   it("exposes floating drag and resize handles and refits after floating resize", async () => {
@@ -1351,6 +1364,16 @@ describe("TerminalModal", () => {
         terminalModalCss.match(/@media \(max-width: 768px\) \{[\s\S]*?\.terminal-shortcut-panel\s*\{([^}]*)\}/)?.[1] ?? "";
       expect(mobilePanelRule).toContain("max-height");
       expect(mobilePanelRule).not.toContain("min-width");
+    });
+
+    it("gives the mobile footer bar the same horizontal-scroll pattern (FN-7560)", () => {
+      // FN-7560: the mobile action-control footer must reuse the min-width: 0 +
+      // overflow-x: auto flex-scroll pattern so a crowded footer scrolls
+      // horizontally instead of clipping/wrapping.
+      const footerRule =
+        terminalModalCss.match(/@media \(max-width: 768px\) \{[\s\S]*?\.terminal-status-bar\s*\{([^}]*)\}/)?.[1] ?? "";
+      expect(footerRule).toContain("overflow-x: auto;");
+      expect(footerRule).toContain("min-width: 0;");
     });
 
     it("is hidden by default and toggles from header action", async () => {
@@ -3303,7 +3326,14 @@ describe("TerminalModal — mobile layout contract", () => {
     });
   });
 
-  it("header actions show connection state without a footer status-bar shell", async () => {
+  it("header actions show connection state without a footer status-bar shell (desktop, FN-7502)", async () => {
+    // FN-7560: explicitly desktop-width — the footer only exists on the mobile
+    // (isMobileTerminal) path; desktop/floating/pinned-below keep the FN-7502
+    // header-actions contract with NO footer shell rendered.
+    const previousInnerWidth = window.innerWidth;
+    Object.defineProperty(window, "innerWidth", { value: 1280, configurable: true });
+
+    try {
     render(<TerminalModal isOpen={true} onClose={mockOnClose} />);
 
     await waitFor(() => {
@@ -3313,6 +3343,112 @@ describe("TerminalModal — mobile layout contract", () => {
       const connectionStatus = actions.querySelector(".terminal-connection-status");
       expect(connectionStatus?.textContent).toBe("Disconnected");
     });
+    } finally {
+      Object.defineProperty(window, "innerWidth", { value: previousInnerWidth, configurable: true });
+    }
+  });
+
+  it("renders terminal action controls in a mobile footer, not the header (FN-7560)", async () => {
+    const previousInnerWidth = window.innerWidth;
+    Object.defineProperty(window, "innerWidth", { value: 390, configurable: true });
+
+    try {
+      render(<TerminalModal isOpen={true} onClose={mockOnClose} />);
+
+      await waitFor(() => {
+        const footer = screen.getByTestId("terminal-footer-actions");
+        expect(footer.className).toContain("terminal-status-bar");
+
+        const clearBtn = screen.getByTestId("terminal-clear-btn");
+        const shortcutToggle = screen.getByTestId("terminal-shortcut-toggle");
+        const preferencesToggle = screen.getByTestId("terminal-preferences-toggle");
+        const fontSizeValue = screen.getByTestId("terminal-font-size-value");
+
+        // Controls live inside the footer region...
+        expect(footer.contains(clearBtn)).toBe(true);
+        expect(footer.contains(shortcutToggle)).toBe(true);
+        expect(footer.contains(preferencesToggle)).toBe(true);
+        expect(footer.contains(fontSizeValue)).toBe(true);
+
+        // ...and NOT inside the header.
+        const header = document.querySelector(".terminal-header");
+        expect(header).toBeTruthy();
+        expect(header?.contains(clearBtn)).toBe(false);
+        expect(header?.contains(shortcutToggle)).toBe(false);
+        expect(header?.contains(preferencesToggle)).toBe(false);
+        expect(header?.contains(fontSizeValue)).toBe(false);
+
+        // No empty .terminal-actions shell renders in the mobile header.
+        expect(header?.querySelector(".terminal-actions")).toBeNull();
+
+        // The close button and mobile tab dropdown remain in the header.
+        const closeBtn = screen.getByTestId("terminal-close-btn");
+        expect(header?.contains(closeBtn)).toBe(true);
+        expect(footer.contains(closeBtn)).toBe(false);
+        const mobileTabs = screen.getByTestId("terminal-mobile-tabs");
+        expect(header?.contains(mobileTabs)).toBe(true);
+      });
+    } finally {
+      Object.defineProperty(window, "innerWidth", { value: previousInnerWidth, configurable: true });
+    }
+  });
+
+  it("shows the reconnect control in the mobile footer when disconnected (FN-7560)", async () => {
+    const previousInnerWidth = window.innerWidth;
+    Object.defineProperty(window, "innerWidth", { value: 390, configurable: true });
+
+    try {
+      mockUseTerminal.mockReturnValue(
+        createMockTerminalState({ connectionStatus: "disconnected" }),
+      );
+
+      render(<TerminalModal isOpen={true} onClose={mockOnClose} />);
+
+      await waitFor(() => {
+        const footer = screen.getByTestId("terminal-footer-actions");
+        const reconnectBtn = screen.getByTestId("terminal-reconnect-btn");
+        expect(footer.contains(reconnectBtn)).toBe(true);
+      });
+    } finally {
+      Object.defineProperty(window, "innerWidth", { value: previousInnerWidth, configurable: true });
+    }
+  });
+
+  it("shows the restart control and exit code in the mobile footer after the terminal exits (FN-7560)", async () => {
+    const previousInnerWidth = window.innerWidth;
+    Object.defineProperty(window, "innerWidth", { value: 390, configurable: true });
+
+    let exitCallback: ((code: number) => void) | null = null;
+    const customOnExit = vi.fn((cb: (code: number) => void) => {
+      exitCallback = cb;
+      return vi.fn();
+    });
+
+    try {
+      mockUseTerminal.mockReturnValue(
+        createMockTerminalState({ connectionStatus: "connected", onExit: customOnExit }),
+      );
+
+      render(<TerminalModal isOpen={true} onClose={mockOnClose} />);
+
+      await waitFor(() => {
+        expect(mockTerminalInstance.open).toHaveBeenCalled();
+      });
+
+      act(() => {
+        exitCallback?.(0);
+      });
+
+      await waitFor(() => {
+        const footer = screen.getByTestId("terminal-footer-actions");
+        const restartBtn = screen.getByTestId("terminal-restart-btn");
+        const exitCodeEl = screen.getByTestId("terminal-exit-code");
+        expect(footer.contains(restartBtn)).toBe(true);
+        expect(footer.contains(exitCodeEl)).toBe(true);
+      });
+    } finally {
+      Object.defineProperty(window, "innerWidth", { value: previousInnerWidth, configurable: true });
+    }
   });
 
   it("delivers buffered terminal output to xterm when subscriptions are established after websocket messages", async () => {
