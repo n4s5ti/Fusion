@@ -1,5 +1,18 @@
 /**
  * Focused regression coverage for mobile task-detail swipe-back behavior.
+ *
+ * FNXC:TaskDetailAndroidBack 2026-07-05-11:45:
+ * FN-7583 diagnosed the Android back-GESTURE regression as native-delivery-only: the
+ * generated AndroidManifest.xml never opted into `android:enableOnBackInvokedCallback`,
+ * so AndroidX's dispatcher didn't route the predictive-back gesture to
+ * `@capacitor/app`'s registered callback (fixed via `packages/mobile/scripts/
+ * patch-android-manifest.ts`). The dashboard-side dismissal invariant covered below
+ * (board main-panel / list-mobile / modal / nested detail, via both `popstate` and
+ * `dispatchNativeAndroidBack()`) was already correct and required NO change for this
+ * fix — once the gesture reaches the native `backButton` listener, it dispatches the
+ * exact same `fusion:native-back` event the hardware Back button already used, so this
+ * suite's existing coverage continues to prove the shared invariant for gesture, button,
+ * and browser Back alike.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, fireEvent, waitFor, act } from "@testing-library/react";

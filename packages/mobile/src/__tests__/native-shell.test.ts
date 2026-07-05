@@ -1,5 +1,9 @@
+import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { buildMobileShellHandoff } from "../plugins/shell-handoff.js";
+import { patchAndroidManifest, patchManifestSource } from "../../scripts/patch-android-manifest.js";
 
 type BackButtonListener = (event: { canGoBack: boolean }) => void;
 
@@ -258,5 +262,103 @@ describe("MobileNativeShellBridge", () => {
     capacitorState.backButtonListener?.({ canGoBack: false });
 
     expect(capacitorState.exitApp).toHaveBeenCalledTimes(1);
+  });
+
+  /*
+  FNXC:TaskDetailAndroidBack 2026-07-05-11:45:
+  FN-7583 — the Android back GESTURE (predictive back / edge swipe, Android 13+) reached
+  the OS but was never delivered to `AndroidBackButtonManager`'s `backButton` listener
+  because the generated AndroidManifest.xml never opted into
+  `android:enableOnBackInvokedCallback="true"`. The raw OS gesture cannot be dispatched
+  from a unit test, so these tests drive the actual seam the fix introduced
+  (`patch-android-manifest.ts`) and assert it converges on the exact contract the button
+  path above already proves: once the manifest opts in, gesture-completion delivery uses
+  the SAME `OnBackPressedCallback` -> "backButton" -> `dispatchNativeBackEvent()` ->
+  `fusion:native-back` chain, with the same cancelable-event and empty-stack fallback
+  semantics. This test fails against the pre-fix tree (no `patch-android-manifest.ts`
+  module, so the import above throws) and passes after.
+  */
+  describe("Android Back: gesture-delivery manifest opt-in (patch-android-manifest)", () => {
+    let workDir: string;
+
+    beforeEach(() => {
+      workDir = mkdtempSync(join(tmpdir(), "fusion-fn7583-manifest-"));
+    });
+
+    afterEach(() => {
+      rmSync(workDir, { recursive: true, force: true });
+    });
+
+    function writeManifest(xml: string): string {
+      const manifestDir = join(workDir, "android", "app", "src", "main");
+      mkdirSync(manifestDir, { recursive: true });
+      const manifestPath = join(manifestDir, "AndroidManifest.xml");
+      writeFileSync(manifestPath, xml, "utf8");
+      return manifestPath;
+    }
+
+    const baseManifest = `<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android" package="com.fusion.mobile">
+    <application
+        android:allowBackup="true"
+        android:icon="@mipmap/ic_launcher"
+        android:label="@string/app_name">
+        <activity android:name=".MainActivity" />
+    </application>
+</manifest>
+`;
+
+    it("opts the generated manifest into predictive-back gesture delivery (the seam the gesture needs)", () => {
+      const manifestPath = writeManifest(baseManifest);
+
+      const result = patchAndroidManifest(workDir);
+
+      expect(result.patched).toBe(true);
+      expect(result.skipped).toBe(false);
+      const patchedXml = readFileSync(manifestPath, "utf8");
+      expect(patchedXml).toMatch(/<application[^>]*android:enableOnBackInvokedCallback="true"[^>]*>/);
+    });
+
+    it("is idempotent across repeated cap sync runs (does not duplicate the attribute)", () => {
+      writeManifest(baseManifest);
+
+      const first = patchAndroidManifest(workDir);
+      const second = patchAndroidManifest(workDir);
+
+      expect(first.patched).toBe(true);
+      expect(second.patched).toBe(false);
+      const manifestPath = join(workDir, "android", "app", "src", "main", "AndroidManifest.xml");
+      const xml = readFileSync(manifestPath, "utf8");
+      expect(xml.match(/android:enableOnBackInvokedCallback/g)).toHaveLength(1);
+    });
+
+    it("leaves an already-opted-in manifest untouched", () => {
+      const alreadyOptedIn = baseManifest.replace(
+        '<application\n        android:allowBackup="true"',
+        '<application\n        android:enableOnBackInvokedCallback="true"\n        android:allowBackup="true"',
+      );
+      writeManifest(alreadyOptedIn);
+
+      const result = patchAndroidManifest(workDir);
+
+      expect(result.patched).toBe(false);
+      const xml = readFileSync(join(workDir, "android", "app", "src", "main", "AndroidManifest.xml"), "utf8");
+      expect(xml.match(/android:enableOnBackInvokedCallback/g)).toHaveLength(1);
+    });
+
+    it("no-ops safely (does not throw) when no android/ project has been added yet", () => {
+      const result = patchAndroidManifest(workDir);
+
+      expect(result.skipped).toBe(true);
+      expect(result.patched).toBe(false);
+    });
+
+    it("patchManifestSource preserves the rest of the manifest verbatim aside from the opt-in attribute", () => {
+      const { changed, xml } = patchManifestSource(baseManifest);
+
+      expect(changed).toBe(true);
+      expect(xml).toContain('<activity android:name=".MainActivity" />');
+      expect(xml).toContain('android:label="@string/app_name"');
+    });
   });
 });
