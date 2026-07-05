@@ -1970,6 +1970,39 @@ export class SelfHealingManager {
     return findAlreadyMergedTaskCommit(input);
   }
 
+  /**
+   * Best-effort refresh of the remote-tracking base ref so the already-merged
+   * evidence detector can see a squash that landed on the remote after this
+   * process last fetched. Returns the `origin/<base>` ref to re-run the detector
+   * against, or null when there is nothing fresher to prove against.
+   *
+   * Fail-closed: a fetch error (offline / auth / no remote) is swallowed and we
+   * still attempt to resolve the (possibly stale) remote-tracking ref; if even
+   * that is absent we return null and the caller leaves the card untouched.
+   */
+  private async refreshRemoteBaseRef(baseBranch: string): Promise<string | null> {
+    // Already a remote ref — nothing local to refresh.
+    if (baseBranch.startsWith("origin/")) return null;
+    const remoteRef = `origin/${baseBranch}`;
+    try {
+      await execAsync(`git fetch origin ${shellQuote(baseBranch)}`, {
+        cwd: this.options.rootDir,
+        timeout: 60_000,
+      });
+    } catch {
+      // Swallow: fall through to the existing remote-tracking ref if present.
+    }
+    try {
+      await execAsync(`git rev-parse --verify ${shellQuote(remoteRef)}`, {
+        cwd: this.options.rootDir,
+        timeout: 30_000,
+      });
+      return remoteRef;
+    } catch {
+      return null;
+    }
+  }
+
   private async readCommitTaskOwnership(sha: string, taskId: string, lineageId?: string) {
     const { stdout } = await execAsync(`git show -s --format=%s%x1f%b ${shellQuote(sha)}`, {
       cwd: this.options.rootDir,
@@ -8635,7 +8668,7 @@ export class SelfHealingManager {
             }
           }
 
-          const landed = await this.findAlreadyMergedTaskCommit({
+          let landed = await this.findAlreadyMergedTaskCommit({
             taskId: task.id,
             lineageId: task.lineageId,
             repoDir: this.options.rootDir,
@@ -8643,6 +8676,29 @@ export class SelfHealingManager {
             taskBranch: task.branch,
             baseCommitSha: task.baseCommitSha,
           });
+          if (!landed && getPrimaryPrInfo(task)) {
+            // Fetch-then-prove: the LOCAL base ref can be stale. When a PR merged
+            // on the remote (human / merge-train squash) but this process never
+            // fetched, the owned commit is absent from the local base branch, so
+            // the detector finds nothing and the failed card holds its file-scope
+            // lease forever. Best-effort refresh the remote-tracking base ref and
+            // re-run the SAME evidence detector against it. The owned-commit proof
+            // (and every foreign-ownership guard inside the detector) still gates
+            // the heal, so this only un-wedges a genuinely-merged task — it never
+            // phantom-finalizes on unproven state. Gated on a recorded PR: no PR
+            // ⇒ nothing could have merged remotely ⇒ no fetch.
+            const refreshedBaseRef = await this.refreshRemoteBaseRef(baseBranch);
+            if (refreshedBaseRef) {
+              landed = await this.findAlreadyMergedTaskCommit({
+                taskId: task.id,
+                lineageId: task.lineageId,
+                repoDir: this.options.rootDir,
+                baseBranch: refreshedBaseRef,
+                taskBranch: task.branch,
+                baseCommitSha: task.baseCommitSha,
+              });
+            }
+          }
           if (!landed) continue;
 
           const mergeDetails: MergeDetails = {
