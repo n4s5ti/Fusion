@@ -1,5 +1,16 @@
 # runfusion.ai
 
+## 0.56.1
+
+### Patch Changes
+
+- Updated dependencies [ed823c7]
+- Updated dependencies [dc44730]
+- Updated dependencies [b9d60b3]
+- Updated dependencies [e347062]
+- Updated dependencies [f4f1656]
+  - @runfusion/fusion@0.56.1
+
 ## 0.56.0
 
 ### Patch Changes

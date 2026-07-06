@@ -415,11 +415,16 @@ describe("createFusionAuthStorage", () => {
       // subscription id only — the raw `anthropic` slot stays empty.
       expect(await authStorage.getApiKey("anthropic")).toBe("refreshed-subscription-access-token");
       expect(await authStorage.getApiKey("anthropic-subscription")).toBe("refreshed-subscription-access-token");
+      // FNXC:ClaudeOAuth 2026-07-05-18:52: the refresh request MUST NOT send `scope`.
+      // Per RFC 6749 §6 an included scope re-issues the token with exactly that scope
+      // (never broader), which previously narrowed refreshed tokens to profile-only and
+      // stripped `user:inference` — leaving the account "logged in" yet 403ing on every
+      // model call. Omitting scope makes Anthropic preserve the originally-granted scopes.
       expect(fetchMock).toHaveBeenCalledWith(
         "https://platform.claude.com/v1/oauth/token",
         expect.objectContaining({
           method: "POST",
-          body: expect.stringContaining("\"scope\":\"user:profile org:create_api_key\""),
+          body: expect.not.stringContaining("\"scope\""),
         }),
       );
       expect(authStorage.get("anthropic-subscription")).toEqual({
@@ -739,11 +744,13 @@ describe("createFusionAuthStorage", () => {
     const authStorage = createFusionAuthStorage();
 
     expect(await authStorage.getApiKey("anthropic")).toBe("refreshed-claude-access-token");
+    // FNXC:ClaudeOAuth 2026-07-05-18:52: refresh must omit `scope` so Anthropic preserves
+    // the original grant (RFC 6749 §6); sending it previously stripped `user:inference`.
     expect(fetchMock).toHaveBeenCalledWith(
       "https://platform.claude.com/v1/oauth/token",
       expect.objectContaining({
         method: "POST",
-        body: expect.stringContaining("\"scope\":\"user:profile org:create_api_key\""),
+        body: expect.not.stringContaining("\"scope\""),
       }),
     );
     expect(authStorage.get("anthropic")).toEqual({

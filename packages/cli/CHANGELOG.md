@@ -1,5 +1,25 @@
 # @runfusion/fusion
 
+## 0.56.1
+
+### Patch Changes
+
+- ed823c7: summary: Fix Anthropic subscription showing "logged in" while all model calls fail.
+  category: fix
+  dev: Two-part fix. (1) OAuth token refresh in `packages/engine/src/auth-storage.ts` sent a `scope` param (defaulting to `user:profile`), which per RFC 6749 §6 re-issued the access token narrowed to that scope and stripped `user:inference` — so refreshed tokens 403'd on every model call. Refresh now omits `scope` (preserving the originally-granted scopes, matching pi-ai's own refresh), and `ANTHROPIC_DEFAULT_SCOPES` mirrors the full Claude Code scope set. (2) `/auth/status` now reports an unexpired Anthropic OAuth token that lacks an inference scope as not-connected (authenticated:false, expired:true so the re-login banner fires) with a scope-specific loginError, instead of falsely claiming a live session. Existing narrowed tokens need one re-login to obtain a fresh broad grant.
+- dc44730: summary: Fix "Invalid transition" error when moving cards out of a custom workflow column like Coding (Ideas) → Ideas.
+  category: fix
+  dev: moveTaskInternal's compat-flag legacy path validated moves against the legacy VALID_TRANSITIONS table, which is keyed only by the built-in column ids; a task in a non-legacy workflow column (e.g. "ideas") had no key and every move was rejected. The legacy branch now resolves a non-legacy source column's targets from the task's own workflow adjacency (resolveAllowedColumns) while preserving the legacy bare-Error contract for legacy columns.
+- b9d60b3: summary: Fix overlapping Record and Clear buttons in the Keyboard Shortcuts settings rows on desktop and mobile.
+  category: fix
+  dev: The shortcut-capture Record/Clear buttons no longer use the icon-only `btn-icon` class (which set `line-height:0` and a mobile 36px square, clipping/overlapping the text labels); they use a text-button class and the `.shortcut-capture` row locks buttons with `flex-shrink:0` so the input and controls never overlap, stacking cleanly on mobile.
+- e347062: summary: Fix persistent mobile terminal inter-character spacing (5th recurrence root cause).
+  category: fix
+  dev: xterm's CharSizeService picks a Canvas-based (OffscreenCanvas) or DOM-based character-measurement strategy at terminal.open() time; DomRenderer's letter-spacing bake always measures via a separate DOM-based WidthCache, so a Canvas-vs-DOM measurement mismatch survived FN-7561/FN-7567's remeasure-ordering fixes. `withDomBasedTerminalCharacterMeasurement` in terminalPreferences.ts forces CharSizeService onto the same DOM strategy for both TerminalModal and SessionTerminal.
+- f4f1656: summary: Fix manual PR actions hidden when a task auto-merge override was on but global auto-merge was off.
+  category: fix
+  dev: TaskDetailModal isManualPrFlow now keys off live global autoMergeEnabled, not the per-task effective override (regression from FN-7255).
+
 ## 0.56.0
 
 ### Minor Changes

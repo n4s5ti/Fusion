@@ -33,7 +33,18 @@ const ANTHROPIC_PROVIDER_ID = "anthropic";
 const ANTHROPIC_SUBSCRIPTION_PROVIDER_ID = "anthropic-subscription";
 const ANTHROPIC_TOKEN_ENDPOINT = "https://platform.claude.com/v1/oauth/token";
 const ANTHROPIC_OAUTH_CLIENT_ID = "9d1c250a-e61b-44d9-88ed-5944d1962f5e";
-const ANTHROPIC_DEFAULT_SCOPES = ["user:profile"];
+/*
+FNXC:ClaudeOAuth 2026-07-05-18:52:
+Anthropic subscription login (delegated to pi-ai) grants the full Claude Code scope set — `user:inference` is what authorizes model calls. Earlier this constant was `["user:profile"]`, which was WRONG twice over: (1) it under-describes the token pi-ai actually obtains, and (2) it was fed into the refresh request's `scope` param, which under RFC 6749 §6 NARROWS the refreshed access token to profile-only and strips `user:inference`. The symptom: the account reads "logged in via OAuth" (token present + unexpired) yet every model call 403s with "OAuth token does not meet scope requirement any_of(user:inference, ...)". The default must mirror pi-ai's granted scopes so any fallback describes a usable token, and the refresh path (below) must NOT send it as a narrowing scope.
+*/
+const ANTHROPIC_DEFAULT_SCOPES = [
+  "org:create_api_key",
+  "user:profile",
+  "user:inference",
+  "user:sessions:claude_code",
+  "user:mcp_servers",
+  "user:file_upload",
+];
 const OAUTH_REFRESH_TIMEOUT_MS = 10_000;
 const OAUTH_REFRESH_FAILURE_COOLDOWN_MS = 30_000;
 
@@ -212,6 +223,10 @@ async function refreshAnthropicOAuthCredential(credential: StoredCredential): Pr
     Fusion must renew expired Claude OAuth credentials with the stored refresh token so users are not forced through repeated manual Claude re-login when the access token expires.
     Persist the rotated access token in Fusion auth storage because model execution and dashboard usage resolve credentials through different runtime paths.
     */
+    /*
+    FNXC:ClaudeOAuth 2026-07-05-18:52:
+    Do NOT send `scope` on refresh. RFC 6749 §6: a refresh request that includes `scope` re-issues the access token with EXACTLY that scope (never broader), so sending our stored/derived scope list can only strip capabilities — and did: it narrowed refreshed tokens to `user:profile` and broke inference. Omitting `scope` makes Anthropic preserve the originally-granted scopes (this is what pi-ai's own `refreshAnthropicToken` does). `scopes` is still resolved above and used only as the parseScopes fallback for the persisted credential record.
+    */
     const response = await fetch(ANTHROPIC_TOKEN_ENDPOINT, {
       method: "POST",
       headers: {
@@ -222,7 +237,6 @@ async function refreshAnthropicOAuthCredential(credential: StoredCredential): Pr
         grant_type: "refresh_token",
         refresh_token: refresh,
         client_id: ANTHROPIC_OAUTH_CLIENT_ID,
-        scope: scopes.join(" "),
       }),
       signal: controller.signal,
     });
