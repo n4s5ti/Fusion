@@ -415,6 +415,10 @@ Use **Show worktree grouping on the board** in **Settings → Worktrees** when y
 
 Planning is a desktop/tablet left-sidebar main-content destination after **Command Center**. It opens the planning-session list and composer in the main content region; mobile continues to use the compact planning entry points. Planning Mode now includes branch controls on the summary screen before you create a task.
 
+<!-- FNXC:SessionBanner 2026-07-05-00:00: A Planning session waiting for input no longer shows a top-of-board SessionNotificationBanner (its Resume button did not reliably redirect into Planning Mode). Instead the Planning nav destination shows a yellow `status-dot--pending` dot (desktop left sidebar, mobile More item, and mobile More tab icon) until you open Planning or the session resolves. Other session types (subtask breakdown, mission/milestone/slice interviews, CLI-agent needs-attention, and errored sessions of any type, including Planning) continue to surface via the top-of-board banner. -->
+
+When a Planning session is awaiting your input, look for the yellow needs-input dot on the Planning nav destination (desktop left sidebar; mobile More sheet item and More tab icon) rather than a banner — clicking Planning always opens the correct docked Planning view.
+
 <!-- FNXC:PlanningModeDeepeningCheckpoint 2026-07-02-12:18: Planning Mode must pause before every final summary at a mandatory "Would you like to go deeper?" checkpoint so users can request inferred follow-up themes, enter a custom topic, or proceed without deepening. -->
 
 Before Planning Mode shows **Planning Complete!** or the final plan summary, it first asks **Would you like to go deeper?**. Select one or more suggested themes to continue the interview, use **Other** to add a custom topic, or choose **No, continue to final summary** to reveal the pending summary and task-creation actions.
