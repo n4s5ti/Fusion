@@ -923,6 +923,52 @@ export default plugin;
       expect(loader.isPluginLoaded("disabled-plugin")).toBe(false);
     });
 
+    /*
+     * FNXC:PluginLoader 2026-07-07-00:00:
+     * FN-7629 — regression coverage for the built-in runtime disable durability invariant.
+     * Symptom: with no plugin_installs row, a built-in runtime (e.g. Hermes) could not be
+     * disabled from the dashboard, and once registered+enabled it re-activated on every restart.
+     * The register-then-disable UI path (installPlugin + disablePlugin) relies on this store/loader
+     * contract: once a plugin's project state is enabled=false, loadAllPlugins must skip it on
+     * every subsequent load pass (i.e. every process restart) and must never record an activation
+     * event for it, even though the plugin_installs row itself persists untouched.
+     */
+    it("keeps a user-disabled runtime built-in skipped and unactivated across repeated loadAllPlugins passes (restart simulation)", async () => {
+      await pluginStore.init();
+
+      const pluginDir = join(rootDir, "plugins");
+      const runtimePlugin = makePlugin(makeManifest({ id: "fusion-plugin-fake-runtime" }));
+      const runtimePath = await writePluginModule(pluginDir, "fake-runtime.js", runtimePlugin);
+
+      // Mirrors the UI's durable-disable path: register (defaults to enabled=true,
+      // same as installPlugin/registerPlugin), then immediately disable.
+      await pluginStore.registerPlugin({ manifest: runtimePlugin.manifest, path: runtimePath });
+      await pluginStore.disablePlugin("fusion-plugin-fake-runtime");
+
+      const firstLoader = new PluginLoader({ pluginStore, taskStore: mockTaskStore });
+      const firstResult = await firstLoader.loadAllPlugins();
+
+      expect(firstResult).toEqual({ loaded: 0, errors: 0 });
+      expect(firstLoader.isPluginLoaded("fusion-plugin-fake-runtime")).toBe(false);
+      expect(mockTaskStore.recordPluginActivation).not.toHaveBeenCalledWith(
+        expect.objectContaining({ pluginId: "fusion-plugin-fake-runtime" }),
+      );
+
+      // Simulate a second restart with a brand-new PluginLoader instance against the
+      // same persisted store — the disabled decision must still be honored.
+      mockTaskStore.recordPluginActivation.mockClear();
+      const secondLoader = new PluginLoader({ pluginStore, taskStore: mockTaskStore });
+      const secondResult = await secondLoader.loadAllPlugins();
+
+      expect(secondResult).toEqual({ loaded: 0, errors: 0 });
+      expect(secondLoader.isPluginLoaded("fusion-plugin-fake-runtime")).toBe(false);
+      expect(mockTaskStore.recordPluginActivation).not.toHaveBeenCalled();
+
+      // The install row itself must still exist and remain disabled (durable, not deleted).
+      const stored = await pluginStore.getPlugin("fusion-plugin-fake-runtime");
+      expect(stored.enabled).toBe(false);
+    });
+
     it("returns error count for failed plugins", async () => {
       await pluginStore.init();
 

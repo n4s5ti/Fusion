@@ -1157,6 +1157,7 @@ Features:
 - Enable/disable plugins, reload active plugins, and uninstall plugins
 - Inspect plugin runtime state and transition feedback
 - Edit and save plugin-defined settings schemas from the same panel
+- Built-in runtime plugins (Hermes, Paperclip, OpenClaw, Droid) always expose an interactive enable/disable toggle in the Built-in Plugins list, even before install. Disabling one registers it and disables it in the same action, and the decision survives restarts — a disabled runtime is not re-activated on the next startup. The Runtimes settings cards mirror this state instead of showing a stale detected/connected status.
 
 For full plugin lifecycle workflows (discovery, install, enable/disable, configure, update, uninstall, troubleshooting), see [Plugin Management](./plugin-management.md). For plugin-related settings and experimental toggles, see [Settings reference](./settings-reference.md).
 
