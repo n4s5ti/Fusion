@@ -18,6 +18,7 @@ import * as useTerminalModule from "../../hooks/useTerminal";
 import * as useTerminalSessionsModule from "../../hooks/useTerminalSessions";
 import * as useWorkspacesModule from "../../hooks/useWorkspaces";
 import * as apiModule from "../../api";
+import { loadAllAppCss } from "../../test/cssFixture";
 
 const terminalModalCss = readFileSync("app/components/TerminalModal.css", "utf8");
 
@@ -1494,6 +1495,111 @@ describe("TerminalModal", () => {
         terminalModalCss.match(/@media \(max-width: 768px\) \{[\s\S]*?\.terminal-status-bar\s*\{([^}]*)\}/)?.[1] ?? "";
       expect(footerRule).toContain("overflow-x: auto;");
       expect(footerRule).toContain("min-width: 0;");
+    });
+
+    describe("real-CSS mobile cascade (FN-7621 recurrence #3)", () => {
+      // FN-7621: the FN-7550/FN-7560 tests above are leaf-rule string matches —
+      // they proved the declarations exist, but never proved the panel actually
+      // scrolls under the real mobile cascade (ancestor overrides, mobile
+      // classes, media queries). This is exactly why the bug recurred a third
+      // time while those tests stayed green: touch-action's used value for a
+      // touch gesture is the INTERSECTION of the touched element's value and
+      // every ancestor's value (confirmed by this codebase's own
+      // "opt known horizontal scrollers back into pan-x" convention in
+      // styles.css's mobile lockdown), so a correct leaf `touch-action: pan-x`
+      // on `.terminal-shortcut-panel` was silently defeated by its ancestors
+      // (`.terminal-modal`, `.modal-overlay`) staying locked to `pan-y` by that
+      // same global mobile lockdown. Resolve real cascade winners via
+      // `getComputedStyle` under `loadAllAppCss()` instead of matching rule text.
+      let styleEl: HTMLStyleElement;
+
+      beforeAll(() => {
+        styleEl = document.createElement("style");
+        styleEl.textContent = loadAllAppCss();
+        document.head.appendChild(styleEl);
+      });
+
+      afterAll(() => {
+        styleEl.remove();
+      });
+
+      async function renderMobileShortcutPanel(): Promise<{ panel: HTMLElement; modal: HTMLElement; overlay: HTMLElement | null }> {
+        Object.defineProperty(window, "innerWidth", { value: 390, configurable: true });
+        render(<TerminalModal isOpen={true} onClose={mockOnClose} />);
+        const toggle = await screen.findByTestId("terminal-shortcut-toggle");
+        fireEvent.click(toggle);
+        const panel = await screen.findByTestId("terminal-shortcut-panel");
+        const modal = await screen.findByTestId("terminal-modal");
+        const overlay = modal.closest(".modal-overlay") as HTMLElement | null;
+        return { panel, modal, overlay };
+      }
+
+      it("resolves the panel + full ancestor chain as width-bounded and pan-x-capable at mobile fullscreen", async () => {
+        const { panel, modal, overlay } = await renderMobileShortcutPanel();
+        expect(modal).toHaveClass("terminal-modal--mobile");
+
+        const panelStyle = getComputedStyle(panel);
+        expect(panelStyle.minWidth).toBe("0px");
+        expect(panelStyle.overflowX).toBe("auto");
+        expect(panelStyle.flexWrap).toBe("nowrap");
+        expect(panelStyle.touchAction).toContain("pan-x");
+
+        // The direct parent (.terminal-modal) must itself be width-bounded
+        // (overflow: hidden + a definite width/max-width) AND must not
+        // re-lock horizontal panning for its descendants — this is the
+        // ancestor that FN-7550/FN-7560 never touched.
+        const modalStyle = getComputedStyle(modal);
+        expect(modalStyle.overflow).toBe("hidden");
+        expect(modalStyle.maxWidth).not.toBe("");
+        expect(modalStyle.touchAction).toContain("pan-x");
+
+        // The portaled overlay ancestor is the OTHER surface the mobile
+        // lockdown explicitly re-locks to pan-y (`.modal-overlay:not(.confirm-dialog-overlay)`
+        // in styles.css) — it must be carved back out too.
+        expect(overlay).toBeTruthy();
+        const overlayStyle = getComputedStyle(overlay as HTMLElement);
+        expect(overlayStyle.touchAction).toContain("pan-x");
+      });
+
+      it("keeps the ancestor chain pan-x-capable in the --keyboard-overlap narrowed-visual-viewport variant", async () => {
+        const { panel, modal, overlay } = await renderMobileShortcutPanel();
+
+        // Simulate the keyboard-open narrowed-visual-viewport variant
+        // (--vv-width narrower than the layout viewport) directly on the DOM
+        // node — this exercises the `.terminal-modal--mobile[style*="--keyboard-overlap"]`
+        // selector's cascade without needing the full focus/resize keyboard
+        // simulation machinery used elsewhere in this file.
+        act(() => {
+          modal.style.setProperty("--keyboard-overlap", "300px");
+          modal.style.setProperty("--vv-width", "320px");
+          modal.style.setProperty("--vv-height", "380px");
+        });
+
+        const panelStyle = getComputedStyle(panel);
+        expect(panelStyle.minWidth).toBe("0px");
+        expect(panelStyle.overflowX).toBe("auto");
+        expect(panelStyle.touchAction).toContain("pan-x");
+
+        const modalStyle = getComputedStyle(modal);
+        expect(modalStyle.maxWidth).toBe("var(--vv-width, 100vw)");
+        expect(modalStyle.touchAction).toContain("pan-x");
+
+        expect(overlay).toBeTruthy();
+        expect(getComputedStyle(overlay as HTMLElement).touchAction).toContain("pan-x");
+      });
+
+      it("does not regress desktop docked/floating/pinned-below touch-action or width contracts", async () => {
+        Object.defineProperty(window, "innerWidth", { value: 1280, configurable: true });
+        render(<TerminalModal isOpen={true} onClose={mockOnClose} />);
+        const modal = await screen.findByTestId("terminal-modal");
+        expect(modal).not.toHaveClass("terminal-modal--mobile");
+        // Desktop never had a touch-action restriction on the modal/overlay —
+        // this fix only carves out the mobile-locked ancestors, so desktop's
+        // computed touch-action must stay whatever it already was (unset/auto),
+        // never narrowed to something that would block desktop pointer input.
+        const modalStyle = getComputedStyle(modal);
+        expect(modalStyle.touchAction === "" || modalStyle.touchAction === "auto").toBe(true);
+      });
     });
 
     it("is hidden by default and toggles from header action", async () => {
