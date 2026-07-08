@@ -12,9 +12,15 @@
   border-color: var(--todo);
 }
 
+/*
+FNXC:DashboardTokens 2026-07-08-00:00:
+--space-2xs is intentionally undefined (FN-5934 decision); the guard in
+app/__tests__/space-token-defined.test.ts asserts it stays undefined. Use the
+smallest defined token, --space-xs (4px), instead of reintroducing --space-2xs.
+*/
 .quick-entry-box--drag-over {
   border-color: var(--triage);
-  box-shadow: 0 0 0 var(--space-2xs) color-mix(in srgb, var(--triage) 35%, transparent);
+  box-shadow: 0 0 0 var(--space-xs) color-mix(in srgb, var(--triage) 35%, transparent);
 }
 
 .quick-entry-drop-target {
@@ -26,7 +32,7 @@
   justify-content: center;
   gap: var(--space-xs);
   padding: var(--space-sm);
-  border: var(--space-2xs) dashed var(--triage);
+  border: var(--space-xs) dashed var(--triage);
   border-radius: var(--radius-sm);
   background: color-mix(in srgb, var(--card) 86%, var(--triage));
   color: var(--text);
@@ -38,12 +44,12 @@
 .quick-entry-attach-button {
   position: relative;
   min-width: calc(var(--space-xl) + var(--space-xs));
-  gap: var(--space-2xs);
+  gap: var(--space-xs);
 }
 
 .quick-entry-attach-count {
   min-width: var(--space-md);
-  padding: 0 var(--space-2xs);
+  padding: 0 var(--space-xs);
   border-radius: calc(var(--radius) * 4);
   background: var(--triage);
   color: var(--provider-icon-contrast);
@@ -54,7 +60,7 @@
 
 @media (max-width: 768px) {
   .quick-entry-drop-target {
-    inset: var(--space-2xs);
+    inset: var(--space-xs);
     padding: var(--space-xs);
     text-align: center;
   }
@@ -288,7 +294,7 @@ FN-7677 — the workflow trigger shares `.btn.btn-sm.dep-trigger` classes with o
 .quick-entry-workflow-option-copy {
   display: flex;
   flex-direction: column;
-  gap: var(--space-2xs);
+  gap: var(--space-xs);
   min-width: 0;
 }
 

@@ -1780,7 +1780,7 @@ describe("QuickEntryBox", () => {
       expect(menuRule).not.toContain("inset-inline-start: 0");
       expect(menuRule).toContain("width: min(calc(var(--space-xl) * 16), calc(100vw - var(--space-lg)))");
       expect(menuRule).toContain("min-width: min(calc(var(--space-xl) * 14), calc(100vw - var(--space-lg)))");
-      expect(optionCopyRule).toContain("gap: var(--space-2xs)");
+      expect(optionCopyRule).toContain("gap: var(--space-xs)");
       expect(optionNameRule).toContain("overflow-wrap: anywhere");
       expect(optionNameRule).toContain("white-space: normal");
       expect(optionNameRule).not.toContain("text-overflow: ellipsis");
