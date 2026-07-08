@@ -144,6 +144,26 @@ describe("seedDashboardProviders", () => {
     expect(providerIds).toEqual(expect.arrayContaining(["zai", "openrouter", "acme-one", "acme-two"]));
   });
 
+  it("registers an anthropic-compatible custom provider under the anthropic-messages api key (FN-7690)", async () => {
+    const store = makeStore([
+      customProvider({
+        id: "anthropic-id",
+        name: "Anthropic Custom",
+        apiType: "anthropic-compatible",
+        baseUrl: "https://anthropic.test",
+      }),
+    ]);
+    const authStorage = makeAuthStorage();
+    const modelRegistry = makeModelRegistry();
+
+    await seedDashboardProviders({ store, authStorage, modelRegistry });
+
+    expect(modelRegistry.registerProvider).toHaveBeenCalledWith(
+      "anthropic-custom",
+      expect.objectContaining({ api: "anthropic-messages" }),
+    );
+  });
+
   it("does not abort startup when reading custom providers from global settings fails", async () => {
     const authStorage = makeAuthStorage();
     const modelRegistry = makeModelRegistry();

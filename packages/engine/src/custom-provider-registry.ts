@@ -28,9 +28,22 @@ interface ModelRegistryLike {
   refresh: () => void;
 }
 
+/*
+FNXC:CustomProviders 2026-07-08-00:00:
+FN-7690: resolveApiType() and pi.ts's resolveCustomProviderApiType() both translate a
+custom provider's declared apiType into the api key handed to pi-ai's
+ModelRegistry.registerProvider({ api }). Both call sites register into a REAL pi-ai
+ModelRegistry (registerCustomProviders/reregisterCustomProviders below feed
+seedDashboardProviders, used by desktop + CLI serve/dashboard/daemon), so every arm here
+must return a key pi-ai's api-registry actually registers. `anthropic-compatible` resolves
+to "anthropic-messages" — matching pi.ts's resolveCustomProviderApiType and the built-in
+Anthropic provider config (packages/core/src/anthropic-models.ts, api: "anthropic-messages").
+The bare "anthropic" key is never registered and throws "No API provider registered for
+api: anthropic" the moment a task streams against it.
+*/
 export function resolveApiType(apiType: string): string {
   if (apiType === "anthropic-compatible") {
-    return "anthropic";
+    return "anthropic-messages";
   }
   if (apiType === "openai-responses") {
     return "openai-responses";
