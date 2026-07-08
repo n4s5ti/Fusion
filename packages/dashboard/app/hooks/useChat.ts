@@ -757,7 +757,12 @@ export function useChat(
       if (id) {
         void fetchChatSession(id, projectId)
           .then(({ session: refreshedSession }) => {
-            if (!refreshedSession.isGenerating || !refreshedSession.inFlightGeneration) {
+            if (!refreshedSession.isGenerating) {
+              return;
+            }
+            // Only act if the user hasn't navigated away from this session
+            // while the authoritative refresh was in flight.
+            if (activeSessionRef.current?.id !== id) {
               return;
             }
             setActiveSession((prev) => {
@@ -769,6 +774,21 @@ export function useChat(
                 ...refreshedSession,
               };
             });
+            /*
+            FNXC:ChatStreaming 2026-07-07-00:00:
+            FN-7656: returning to a session with an in-flight generation must restore the
+            working/"Thinking…" indicator immediately, even before the first response delta.
+            The local `sessions` cache's `isGenerating` flag is often stale (chat:session:updated
+            SSE payloads lack the route-level isGenerating/inFlightGeneration enrichment), and
+            early in a generation the server reports isGenerating:true with inFlightGeneration
+            still null (no delta emitted yet). Reattach on isGenerating alone via this
+            authoritative fetchChatSession refresh rather than requiring inFlightGeneration too;
+            attachIfGenerating already handles a null inFlightGeneration snapshot gracefully and
+            guards against double-attach via streamRef.current.
+            */
+            if (!streamRef.current) {
+              attachIfGenerating(id, refreshedSession.inFlightGeneration, { silent: true });
+            }
           })
           .catch(() => {
             // Ignore stale-cache recovery fetch failures.
