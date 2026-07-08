@@ -52,6 +52,23 @@ export default defineConfig({
     projects: [
       {
         extends: true,
+        resolve: {
+          /*
+          FNXC:EngineTests 2026-07-08-03:00:
+          FN-7667: scope the gate-safe @fusion/core barrel (packages/core/src/index.gate.ts)
+          to THIS project only. It must not leak to the root resolve.alias — that would
+          silently narrow the module graph for engine-default/engine-reliability/engine-slow
+          too. Project-level resolve.alias merges over (does not replace) the root map
+          inherited via extends:true, so @fusion/test-utils/@fusion/plugin-sdk/@fusion/dashboard
+          stay on their root aliases and only @fusion/core is overridden here. @fusion/engine
+          is deliberately left on the full barrel: none of the 18 curated gate files import
+          "@fusion/engine" at all (verified by grep), so narrowing it would be zero-benefit
+          churn/risk (see task docs for the full per-file import-surface map).
+          */
+          alias: {
+            "@fusion/core": resolve(__dirname, "../core/src/index.gate.ts"),
+          },
+        },
         test: {
           name: "engine-core",
           /*

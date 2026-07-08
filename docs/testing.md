@@ -10,6 +10,9 @@ CI blocks PRs on exactly four checks (`.github/workflows/pr-checks.yml`): **Lint
 
 Gate membership is the explicit allow-list in `packages/engine/vitest.config.ts` (`engine-core` project). Admission requires evidence of value (the test catches real regressions); tests never graduate in by default. A flaky gate test is evicted by deleting its allow-list line — the eviction PR does not need the flaky test to pass. The whole `engine-core` project must stay under ~60s wall-clock.
 
+<!-- FNXC:EngineTests 2026-07-08-03:00: FN-7667 decouples the engine-core gate's module graph from full-barrel growth so new feature modules don't silently inflate every gate fork's transform/import cost. -->
+**Gate-safe `@fusion/core` barrel:** the `engine-core` project resolves `@fusion/core` to `packages/core/src/index.gate.ts` (a project-scoped `resolve.alias`, not the root map), not the full `packages/core/src/index.ts` barrel. `index.gate.ts` is a byte-for-byte copy of the full barrel minus the `export ... from` statements for modules added to the barrel after the last re-audit baseline — i.e. it re-exports everything the full barrel does except genuinely new, gate-irrelevant feature modules (diffed against the prior baseline commit's barrel, not hand-picked from what gate *test* files import — production modules under test pull in far more of the barrel transitively than their own imports suggest). `engine-default`/`engine-reliability`/`engine-slow` are unaffected and keep resolving the full barrel. `@fusion/engine` is untouched (no gate file imports it). When adding a new barrel module that no gate test needs, mirror the exclusion in `index.gate.ts` rather than letting gate wall-time grow — see the FNXC comment at the top of `index.gate.ts` and `packages/engine/vitest.config.ts`'s `engine-core` project for the audit procedure.
+
 ## Weekly signal-per-second baseline
 
 Refresh and publish the test feedback-loop baseline in #leads once per weekly cycle:
