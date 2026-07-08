@@ -108,6 +108,7 @@ export {
   resolveAgentPrompt,
   getAvailableTemplates,
   getTemplatesForRole,
+  FUSION_RUNTIME_SELF_AWARENESS,
 } from "./agent-prompts.js";
 export {
   parseWorkflowIr,

@@ -541,6 +541,23 @@ Expected behavior and boundaries:
 
 For the full research workflow, builtin-default behavior, optional external provider setup, CLI commands, and API reference, see the [Research guide](./research.md).
 
+## Runtime Self-Awareness Preamble
+
+**FN-7675:** every standard-toolset conversational base prompt — chat/CEO persona, both heartbeat personas (task-bound and no-task), and the executor — is prefixed with a single canonical, cacheable preamble: `FUSION_RUNTIME_SELF_AWARENESS`, exported from `packages/core/src/agent-prompts.ts` (re-exported from `@fusion/core`). The preamble encodes:
+
+- The agent executes as a **hosted process inside** the running Fusion daemon; its own execution ends the moment that process ends. There is no "wait for Fusion to close, then keep going" capability.
+- **Shutdown-crossing workflows** (updates, installs, patches, migrations, in-place binary swaps) must be handed off as a **standalone artifact the user runs themselves** — never orchestrated live across the shutdown boundary. This closes a real failure mode: an agent planned a live "close Fusion → back up → swap build → verify → relaunch" sequence, which is impossible because step 1 kills the process running steps 2–5.
+- A short, current description of the platform (task board + engine + desktop/CLI/web surfaces).
+- A pointer to the maintained docs (`docs/` and `CONCEPTS.md`) so the agent answers "how do I do X in Fusion" from real documentation instead of improvising.
+
+The preamble is prepended to the **stable** (cacheable) prompt layer — `basePrompt` in `buildPromptLayers()` — at each surface, so it is byte-identical across sessions and does not break prompt-cache discounts:
+
+- Chat: `CHAT_SYSTEM_PROMPT` in `packages/dashboard/src/chat.ts`.
+- Heartbeat: `HEARTBEAT_SYSTEM_PROMPT` and `HEARTBEAT_NO_TASK_SYSTEM_PROMPT` in `packages/engine/src/agent-heartbeat.ts`.
+- Executor: `EXECUTOR_SYSTEM_PROMPT` in `packages/engine/src/executor.ts` (mirrored via `EXECUTOR_PROMPT_TEXT` in `packages/core/src/agent-prompts.ts`).
+
+It is intentionally **not** wired into merger, reviewer, triage, cron-runner, PR-response, mission-validation, or reflection prompts — those are internal single-purpose lanes, not standard-toolset agents reasoning about the shutdown boundary.
+
 ## Built-In Agent Prompt Templates
 
 Fusion includes built-in templates for role prompts:

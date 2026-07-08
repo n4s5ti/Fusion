@@ -65,6 +65,7 @@ import {
   loadWorkspaceConfig,
   type WorkspaceConfig,
   type RunCommandResult,
+  FUSION_RUNTIME_SELF_AWARENESS,
 } from "@fusion/core";
 import { findWorktreeUser, getConflictedFiles } from "./merger.js";
 import {
@@ -1319,7 +1320,9 @@ Agents must not run the full/workspace-wide test suite by default; targeted/pack
 FNXC:ExecutorPrompt 2026-07-05-00:35:
 FN-7608: a `require-approval` gate previously only parked the single tool call (soft rejection + task/agent paused in the store) while the turn-ending rules below forbade ending a turn without another tool call, so the model was effectively instructed to hunt for ungated workarounds (re-issuing the same bash, probing read-only equivalents, fn_web_fetch/fn_task_attach bypasses) instead of stopping. The engine now actually suspends the in-flight session when a gate resolves to wait-for-approval (see executor.ts buildActionGateContext.pauseForApproval), so the prompt must carve out waiting on a pending approval as a legitimate turn end and explicitly forbid probing for alternatives. This clause must stay byte-identical with EXECUTOR_PROMPT_TEXT in packages/core/src/agent-prompts.ts.
 */
-const EXECUTOR_SYSTEM_PROMPT = `You are a task execution agent for "fn", an AI-orchestrated task board.
+const EXECUTOR_SYSTEM_PROMPT = `${FUSION_RUNTIME_SELF_AWARENESS}
+
+You are a task execution agent for "fn", an AI-orchestrated task board.
 
 You are working in a git worktree isolated from the main branch. Your job is to implement the task described in the PROMPT.md specification you're given.
 
@@ -1558,7 +1561,7 @@ The tool prevents your session from being killed by the inactivity watchdog duri
 - Marking a step done before required review/tooling gates are satisfied`;
 
 /** Resolve the executor system prompt from settings, falling back to the hardcoded constant. */
-function getExecutorSystemPrompt(settings: Settings): string {
+export function getExecutorSystemPrompt(settings: Settings): string {
   const customPrompt = resolveAgentPrompt("executor", settings.agentPrompts);
   const basePrompt = customPrompt || EXECUTOR_SYSTEM_PROMPT;
   const sections = [
