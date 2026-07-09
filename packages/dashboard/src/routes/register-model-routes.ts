@@ -1,7 +1,7 @@
 import { access, readFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { customProviderRegistryKey, mergeSupplementalAnthropicModels, resolvePlanningSettingsModel } from "@fusion/core";
+import { customProviderRegistryKey, mergeSupplementalAnthropicModels, mergeSupplementalOpenAiCodexModels, resolvePlanningSettingsModel } from "@fusion/core";
 import type { CustomProvider } from "@fusion/core";
 import { ApiError } from "../api-error.js";
 import { getCursorPickerModels, CURSOR_PICKER_PROVIDER_ID } from "../cursor-model-cache.js";
@@ -245,6 +245,14 @@ export const registerModelRoutes: ApiRouteRegistrar = (ctx) => {
       options.modelRegistry.refresh();
       if (options.modelRegistry.registerProvider) {
         mergeSupplementalAnthropicModels(options.modelRegistry as Parameters<typeof mergeSupplementalAnthropicModels>[0], (message) => runtimeLogger.child("models").warn(message));
+        /*
+         * FNXC:ModelCatalog 2026-07-09-12:30:
+         * FN-7745: additively merge the GPT-5.6 codenamed OpenAI Codex variants
+         * (gpt-5.6-luna/sol/terra), mirroring the mergeSupplementalAnthropicModels call
+         * above. Strictly additive/dedupe-safe — an existing pinned-catalog row for any
+         * of the three ids always wins, no row is displaced or duplicated.
+         */
+        mergeSupplementalOpenAiCodexModels(options.modelRegistry as unknown as Parameters<typeof mergeSupplementalOpenAiCodexModels>[0], (message) => runtimeLogger.child("models").warn(message));
       }
       let models = options.modelRegistry.getAvailable().map((m) => ({
         provider: m.provider,

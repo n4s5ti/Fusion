@@ -67,6 +67,15 @@ export {
   mergeSupplementalAnthropicModels,
 } from "./anthropic-models.js";
 export type { AnthropicProviderRegistration } from "./anthropic-models.js";
+export {
+  OPENAI_CODEX_PROVIDER_ID,
+  GPT_5_6_LUNA_MODEL_ID,
+  GPT_5_6_SOL_MODEL_ID,
+  GPT_5_6_TERRA_MODEL_ID,
+  SUPPLEMENTAL_OPENAI_CODEX_PROVIDER_REGISTRATION,
+  mergeSupplementalOpenAiCodexModels,
+} from "./openai-models.js";
+export type { OpenAiCodexProviderRegistration } from "./openai-models.js";
 export { detectImageMimeFromBytes } from "./image-mime.js";
 export type { DetectedImageMime } from "./image-mime.js";
 export { redactSecrets } from "./redact-secrets.js";
