@@ -36,6 +36,13 @@ vi.mock("../PluginSlot", () => ({
 vi.mock("../../hooks/useTaskDiffStats", () => ({
   useTaskDiffStats: () => ({ stats: null, loading: false }),
 }));
+vi.mock("../../hooks/useToast", () => ({
+  useToast: () => ({
+    addToast: vi.fn(),
+    removeToast: vi.fn(),
+    toasts: [],
+  }),
+}));
 
 const noop = () => {};
 
