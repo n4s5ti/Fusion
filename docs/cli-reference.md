@@ -626,6 +626,34 @@ global-scope settings live in the file-backed `GlobalSettingsStore`
 with no close and no lock-retry. All of the above honor the same
 `FUSION_CLI_LOCK_RETRY_MS` deadline override.
 
+The same class of fix (FN-7740) also covers `fn research *`
+(`create`/`list`/`show`/`export`/`cancel`/`retry`), `fn settings import`,
+`fn agent export`, `fn git *` (`status`/`fetch`/`pull`/`push`), and
+`fn project *` (`list`/`add`/`remove`/`show`/`set-default`/`detect`):
+
+- `fn git *` and `fn agent export` never write the board, so they are
+  **teardown-only** — the resolved project path is now obtained via the
+  path-only helper (no cached, never-closed `TaskStore` left behind), and
+  `fn agent export` additionally closes the `AgentStore` it opens on every
+  exit path (success and the no-agents-to-export guard).
+- `fn project list`/`show` compute per-project task counts against an
+  uncached `TaskStore` per registered project; that store is now closed
+  after every call (so `fn project list` no longer leaks one store per
+  registered project), and the count read retries a momentary
+  `database is locked` instead of silently reporting zero tasks.
+- `fn settings import`'s `importSettings` write and `fn research create`
+  (settings read) / `fn research export`'s `createExport` write retry
+  through a momentary `database is locked` — subject to the same
+  `FUSION_CLI_LOCK_RETRY_MS` deadline override as `fn task`/`fn branch-group`/
+  `fn pr` — and the resolved store is closed BEFORE every `process.exit()`
+  call (a pending `finally` does not run after `process.exit()`).
+- `fn research create` without `--wait-for-completion` is the ONE
+  intentionally-long-lived exception in the CLI: the research run continues
+  in the background against the same store after the command returns, so
+  that store is deliberately NOT closed on this path (closing it would
+  truncate the in-flight run). Every other `fn research *` path, including
+  `--wait-for-completion`, closes its store on exit.
+
 ### Execution and status
 
 ```bash
