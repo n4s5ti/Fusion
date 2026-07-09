@@ -139,7 +139,6 @@ import {
   isResearchToolSurfaceEnabled,
 } from "./tool-availability.js";
 import { runGhostBugPreflight } from "./triage-preflight.js";
-import { evaluateReleaseAuthorizationGate } from "./triage-release-authorization.js";
 import { archiveAsGhostBug } from "./self-healing.js";
 import { createRunAuditor, generateSyntheticRunId } from "./run-audit.js";
 import { resolveAndEmitGoalContext } from "./goal-injection-diagnostics.js";
@@ -2513,63 +2512,10 @@ export class TriageProcessor {
       planLog.warn(`${task.id}: failed to re-read task before planning transition (${message}); proceeding with original task snapshot`);
       latestTransitionTask = task;
     }
-    try {
-      /**
-       * FNXC:ReleaseAuthorizationGate 2026-06-15-02:47:
-       * FN-6469 showed that agent-authored release specs can otherwise flow from triage directly to execution and publish npm packages. FN-6481 parks release-class tasks before every final triage dispatch branch unless a user-authored source supplied the explicit authorization marker.
-       */
-      const releaseGateDecision = evaluateReleaseAuthorizationGate({
-        sourceType: latestTransitionTask?.sourceType ?? task.sourceType,
-        title: latestTransitionTask?.title ?? task.title ?? "",
-        description: latestTransitionTask?.description ?? task.description ?? "",
-        promptText: written,
-      });
-      if (releaseGateDecision.action === "block") {
-        /*
-         * FNXC:ReleaseAuthorizationGate 2026-07-04-21:35:
-         * FN-7559: stamp awaitingApprovalReason so the dashboard can tell this
-         * release-authorization hold apart from the (independently gated, never
-         * bypassed by auto-approve-all) manual plan-approval hold, which shares
-         * the same status: "awaiting-approval". See FNXC:PlanApproval in types.ts.
-         */
-        const approvalUpdates: Record<string, unknown> = { status: "awaiting-approval", awaitingApprovalReason: "release-authorization" };
-        if (shouldApplyPromptDeclaredTitle && promptDeclaredTitle) {
-          approvalUpdates.title = promptDeclaredTitle;
-        }
-        const signals = releaseGateDecision.signals.length > 0
-          ? releaseGateDecision.signals.join(", ")
-          : "release intent";
-        const details = `${releaseGateDecision.reason} Matched signals: ${signals}.`;
-        await this.store.updateTask(task.id, approvalUpdates);
-        await this.store.logEntry(
-          task.id,
-          "Release authorization required — leaving task in triage awaiting release authorization",
-          details,
-        );
-        try {
-          await this.store.recordActivity({
-            type: "task:release-authorization-required",
-            taskId: task.id,
-            taskTitle: promptDeclaredTitle ?? latestTransitionTask?.title ?? task.title ?? "",
-            details,
-            metadata: {
-              reason: releaseGateDecision.reason,
-              signals: releaseGateDecision.signals,
-              sourceType: latestTransitionTask?.sourceType ?? task.sourceType ?? "unknown",
-            },
-          });
-        } catch (activityError: unknown) {
-          const message = activityError instanceof Error ? activityError.message : String(activityError);
-          planLog.warn(`${task.id}: failed to record release-authorization-required activity (${message})`);
-        }
-        planLog.log(`${task.id} release authorization required — leaving in triage awaiting release authorization (${signals})`);
-        return;
-      }
-    } catch (error: unknown) {
-      const message = error instanceof Error ? error.message : String(error);
-      planLog.warn(`${task.id}: release-authorization gate failed open: ${message}`);
-    }
-
+    /*
+    FNXC:ReleaseAuthorizationGate 2026-07-09-00:00:
+    Removed the triage release-authorization gate (FN-6481/FN-6469). It over-fired: AI-authored specs routinely mention release tooling (`scripts/release.mjs`, `pnpm release`) in disclaimers and file-scope notes, and every non-user source made the in-band authorization marker inert, so ordinary revert/UI/refactor tasks were stranded in awaiting-approval with no exit (see FN-7560, FN-7525, FN-7554, FN-7556). Releases are now kept out of Fusion by agent instruction (AGENTS.md → "Releasing") instead of an engine gate: agents must never run `pnpm release`/publish from inside a Fusion task.
+    */
     if (latestTransitionTask?.paused === true || latestTransitionTask?.userPaused === true) {
       const restoreStatus = options.isReplan ? "needs-replan" : null;
       await this.store.updateTask(task.id, { status: restoreStatus });

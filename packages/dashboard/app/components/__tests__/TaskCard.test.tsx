@@ -1948,25 +1948,12 @@ describe("TaskCard", () => {
   });
 
   /*
-   * FN-7559: release-authorization holds and manual plan-approval holds both
-   * use status "awaiting-approval" (auto-approve-all intentionally bypasses
-   * only the manual gate), so the card badge must render a distinct label and
-   * class for a release-authorization hold instead of the generic "Awaiting
-   * Approval" manual-gate badge.
+   * FNXC:ReleaseAuthorizationGate 2026-07-09-00:00: the triage release-authorization
+   * gate was removed. A legacy release-authorization hold now renders the generic
+   * "Awaiting Approval" badge like any manual plan-approval hold — no distinct
+   * release-authorization label or badge class.
    */
-  it("renders a distinct badge for a release-authorization hold vs a manual approval hold", () => {
-    const { container: manualContainer, unmount: unmountManual } = render(
-      <TaskCard
-        task={makeTask({ column: "triage", status: "awaiting-approval" })}
-        onOpenDetail={noop}
-        addToast={noop}
-      />,
-    );
-    expect(within(manualContainer).getByText("Awaiting Approval")).toBeDefined();
-    const manualBadge = manualContainer.querySelector(".card-status-badge") as HTMLElement;
-    expect(manualBadge.className).not.toContain("awaiting-release-authorization");
-    unmountManual();
-
+  it("renders the generic Awaiting Approval badge for a legacy release-authorization hold", () => {
     const { container: releaseContainer } = render(
       <TaskCard
         task={makeTask({ column: "triage", status: "awaiting-approval", awaitingApprovalReason: "release-authorization" } as any)}
@@ -1974,10 +1961,10 @@ describe("TaskCard", () => {
         addToast={noop}
       />,
     );
-    expect(within(releaseContainer).getByText("Awaiting Release Authorization")).toBeDefined();
-    expect(within(releaseContainer).queryByText("Awaiting Approval")).toBeNull();
+    expect(within(releaseContainer).getByText("Awaiting Approval")).toBeDefined();
+    expect(within(releaseContainer).queryByText("Awaiting Release Authorization")).toBeNull();
     const releaseBadge = releaseContainer.querySelector(".card-status-badge") as HTMLElement;
-    expect(releaseBadge.className).toContain("awaiting-release-authorization");
+    expect(releaseBadge.className).not.toContain("awaiting-release-authorization");
   });
 
   it("renders stalled badge with visible reason when stalledReview is set", () => {

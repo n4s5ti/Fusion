@@ -1271,14 +1271,12 @@ function TaskCardComponent({
   const taskAgeStalenessCopy = getTaskAgeStalenessCopy(task.ageStaleness);
   const isAwaitingApproval = task.column === "triage" && task.status === "awaiting-approval";
   /*
-   * FNXC:PlanApproval 2026-07-04-21:35:
-   * FN-7559: release-authorization holds and manual plan-approval holds both use
-   * status "awaiting-approval" (auto-approve-all intentionally bypasses only the
-   * manual gate — see FNXC:PlanApproval in types.ts). Distinguish them for the
-   * operator via the awaitingApprovalReason discriminator instead of showing the
-   * generic manual-approval badge/label for both.
+   * FNXC:ReleaseAuthorizationGate 2026-07-09-00:00:
+   * The triage release-authorization gate was removed; a legacy release-authorization
+   * hold is now just an ordinary manual plan-approval hold and no longer gets a
+   * distinct badge.
    */
-  const isReleaseAuthorizationHold = isAwaitingApproval && task.awaitingApprovalReason === "release-authorization";
+  const isReleaseAuthorizationHold = false;
   const isAwaitingInput = task.status === "awaiting-user-input";
   const isArchived = task.column === "archived";
   const isAgentActive = !globalPaused && !queued && !isFailed && !isPaused && !isStuck && !isAwaitingApproval && !isAwaitingInput && (task.column === "in-progress" || ACTIVE_STATUSES.has(visualStatus as string));

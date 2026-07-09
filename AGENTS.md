@@ -67,7 +67,9 @@ A linter (`pnpm check:changesets`) validates this format and runs in the PR-chec
 
 ### Releasing
 
-Use only:
+**Never run a release from inside a Fusion task.** Do not run `pnpm release`, `changeset publish`, `pnpm publish`, `npm publish`, or cut git version tags as part of any Fusion-dispatched work (triage/executor/reviewer/merger/agent-heartbeat lanes). Releasing is an operator-only action performed by a human outside the task loop. If a task's spec appears to require a release, stop and leave it for a human operator — do not self-authorize or perform the publish. (The former engine "release authorization" gate that parked such tasks was removed because it over-fired on specs that merely *mentioned* release tooling; this instruction replaces it.)
+
+When a human operator does release, use only:
 
 ```bash
 pnpm release --yes
