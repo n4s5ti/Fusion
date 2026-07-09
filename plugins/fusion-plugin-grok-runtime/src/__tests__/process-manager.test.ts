@@ -16,6 +16,20 @@ const DASH_MODELS_OUTPUT = [
 
 const COLUMN_MODELS_OUTPUT = ["grok-4       $5.00/M in", "grok-4-fast  $0.20/M in"].join("\n");
 
+// FN-7712: verified real `grok models` output shape (attachment 1871.png) —
+// login/session preamble, "Default model:" line, "Available models:" header,
+// then a bulleted list with `* <id> (default)` for the active model and
+// `- <id>` for the rest.
+const REAL_BULLETED_OUTPUT = [
+  "You are logged in with grok-cli v1.2.3",
+  "Default model: grok-4.5",
+  "Available models:",
+  "* grok-4.5 (default)",
+  "- grok-composer-2.5-fast",
+  "- grok-4-fast-reasoning",
+  "- grok-3-mini",
+].join("\n");
+
 describe("discoverGrokModels", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -37,6 +51,31 @@ describe("discoverGrokModels", () => {
     expect(result.models).toEqual(["grok-4", "grok-4-fast"]);
     expect(result.source).toBe("models-text");
     expect(result.fallbackUsed).toBe(false);
+  });
+
+  it("extracts clean model ids from the verified real bulleted output, dropping preamble and markers", async () => {
+    vi.mocked(runGrokCommand).mockResolvedValueOnce({ code: 0, stdout: REAL_BULLETED_OUTPUT, stderr: "" });
+    const result = await discoverGrokModels("grok");
+
+    expect(result.models).toEqual(["grok-4.5", "grok-composer-2.5-fast", "grok-4-fast-reasoning", "grok-3-mini"]);
+    expect(result.source).toBe("models-text");
+    expect(result.fallbackUsed).toBe(false);
+    for (const model of result.models) {
+      expect(model).not.toMatch(/^[*-]/);
+      expect(model).not.toMatch(/\(default\)/i);
+    }
+    expect(result.models.some((m) => /logged in|default model|available models/i.test(m))).toBe(false);
+  });
+
+  it("strips the ` (default)` suffix marker from a bulleted default-model line", async () => {
+    vi.mocked(runGrokCommand).mockResolvedValueOnce({
+      code: 0,
+      stdout: ["Available models:", "* grok-4.5 (default)"].join("\n"),
+      stderr: "",
+    });
+    const result = await discoverGrokModels("grok");
+
+    expect(result.models).toEqual(["grok-4.5"]);
   });
 
   it("extracts bare ids from columnar/pricing-separated output", async () => {
