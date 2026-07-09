@@ -57,10 +57,11 @@ export function resolveApiType(apiType: string): string {
  * FN-7689: shared model-list builder used by BOTH custom-provider registration paths
  * (this module's `toProviderConfig` and pi.ts's `createFnAgent` inline registration) so the
  * `compat.cacheControlFormat` opt-in cannot drift between them again. `api` is the pi-ai
- * api-registry key resolved by each call site's own resolver — `resolveApiType` here returns
- * `"anthropic"` while pi.ts's `resolveCustomProviderApiType` returns `"anthropic-messages"` for
- * the same `anthropic-compatible` input (a pre-existing naming drift out of scope for this fix;
- * see FN-7689 follow-up). Only `"openai-completions"` gets `compat.cacheControlFormat` — pi-ai's
+ * api-registry key resolved by each call site's own resolver — both `resolveApiType` here and
+ * pi.ts's `resolveCustomProviderApiType` return `"anthropic-messages"` for the same
+ * `anthropic-compatible` input (FN-7690 reconciled the earlier naming drift; the bare
+ * `"anthropic"` key is never registered by pi-ai). Only `"openai-completions"` gets
+ * `compat.cacheControlFormat` — pi-ai's
  * anthropic path already auto-caches without any flag, and `openai-responses` uses OpenAI's
  * native `prompt_cache_key`/`prompt_cache_retention` mechanism (no `cache_control` marker concept
  * per pi-ai's `OpenAIResponsesCompat`), so the opt-in is inert there by construction.

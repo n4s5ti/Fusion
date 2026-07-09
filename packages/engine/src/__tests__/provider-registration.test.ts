@@ -259,7 +259,11 @@ describe("registerCustomProviders anthropicPromptCaching opt-in (FN-7689)", () =
     const call = modelRegistry.registerProvider.mock.calls.find(([key]: [string]) => key === "acme-ai");
     expect(call).toBeDefined();
     const [, config] = call as [string, { api: string; models: Array<{ compat?: Record<string, unknown> }> }];
-    expect(config.api).toBe("anthropic");
+    // FNXC:ProviderAuth 2026-07-08-17:50: anthropic-compatible resolves to the
+    // registered pi-ai key "anthropic-messages" (FN-7690), not the bare
+    // "anthropic" key which is never registered and throws at stream time.
+    // Reconciles FN-7689's stale pre-FN-7690 expectation.
+    expect(config.api).toBe("anthropic-messages");
     expect(config.models[0].compat).toBeUndefined();
   });
 
