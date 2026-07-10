@@ -13,7 +13,7 @@ import { existsSync, lstatSync, realpathSync } from "node:fs";
 import { readFile, rm, writeFile } from "node:fs/promises";
 import type { TaskStore, Task, TaskDetail, TaskTokenUsage, StepStatus, Settings, WorkflowStep, MissionStore, Slice, AgentState, AgentCapability, RunMutationContext, AgentHeartbeatConfig, Agent, AgentMemoryInclusionMode, ProjectSettings, MergeResult, WorkflowIrNode, WorkflowIrNodeKind, WorkflowStepResult as CoreWorkflowStepResult, ThinkingLevel } from "@fusion/core";
 import { getUnmetSchedulingDependencies } from "./scheduler.js";
-import { RetryStormError, TaskDeletedError, serializeRetryStormError, isExperimentalFeatureEnabled, resolveWorkflowIrForTask, resolveColumnAgentBinding, resolveEffectiveAgent, instanceNodeId, getWorkflowExtensionRegistry, getBuiltinWorkflow, parseNoOpCompletionMarker, allowsAutoMergeProcessing, resolveEffectiveAutoMerge, isLiveSharedBranchGroupMemberIntegration, resolveMaxAutoMergeRetries, resolveOptionalStepRevisionBudget, resolveOptionalReviewRevisionBudget, COMPLETION_SUMMARY_NODE_ID, upsertWorkflowStepResult, AWAITING_APPROVAL_PAUSE_REASON, THINKING_LEVELS } from "@fusion/core";
+import { RetryStormError, TaskDeletedError, serializeRetryStormError, isExperimentalFeatureEnabled, resolveWorkflowIrForTask, resolveColumnAgentBinding, resolveEffectiveAgent, instanceNodeId, getWorkflowExtensionRegistry, getBuiltinWorkflow, parseNoOpCompletionMarker, allowsAutoMergeProcessing, resolveEffectiveAutoMerge, isLiveSharedBranchGroupMemberIntegration, resolveMaxAutoMergeRetries, resolveOptionalStepRevisionBudget, resolveOptionalReviewRevisionBudget, COMPLETION_SUMMARY_NODE_ID, upsertWorkflowStepResult, AWAITING_APPROVAL_PAUSE_REASON, THINKING_LEVELS, AgentStore } from "@fusion/core";
 import { finalizeProvenAutoMergeTask } from "./auto-merge-finalization.js";
 import { mergeEffectiveSettings } from "./effective-settings.js";
 import type { TaskStep, WorkflowIr, WorkflowFieldDefinition, WorkflowColumnAgent, EffectiveAgentInput, WorkflowWorkEngineDispatchResult } from "@fusion/core";
@@ -1722,6 +1722,8 @@ export class TaskExecutor {
   private activeWorkflowStepSessionSeenSteeringIds = new Map<string, Set<string>>();
   /** Active configured-command abort controllers keyed by task. */
   private activeConfiguredCommandControllers = new Map<string, Set<AbortController>>();
+  /** Lazily-created root-project reader used only when an execution lookup is handed an agents-less worktree store. */
+  private authoritativeAssignedAgentStore: AgentStore | null = null;
   /** Active workflow-graph runner abort controllers keyed by task. */
   private activeWorkflowGraphAbortControllers = new Map<string, AbortController>();
   /**
@@ -4492,12 +4494,33 @@ export class TaskExecutor {
     return activeRun !== null;
   }
 
+  private async getAuthoritativeAssignedAgent(
+    assignedAgentId: string | null | undefined,
+  ): Promise<Agent | null> {
+    const normalizedId = assignedAgentId?.trim();
+    if (!normalizedId) return null;
+
+    const configuredAgent = await this.options.agentStore?.getAgent(normalizedId).catch(() => null) ?? null;
+    if (configuredAgent) return configuredAgent;
+
+    /*
+    FNXC:ModelResolution 2026-07-10-00:00:
+    Task execution sessions must honor the assigned permanent agent's runtimeConfig like chat sessions do. If the live executor was handed an agents-less worktree AgentStore, fall back to the authoritative project `.fusion` AgentStore instead of letting `resolveExecutorSessionModel` see an empty runtimeConfig and silently drift to the pi built-in model.
+    */
+    try {
+      this.authoritativeAssignedAgentStore ??= new AgentStore({ rootDir: join(this.rootDir, ".fusion"), taskStore: this.store });
+      await this.authoritativeAssignedAgentStore.init();
+      return await this.authoritativeAssignedAgentStore.getAgent(normalizedId).catch(() => null);
+    } catch (err: unknown) {
+      executorLog.warn(`Failed to read assigned agent ${normalizedId} from authoritative project AgentStore: ${err instanceof Error ? err.message : String(err)}`);
+      return null;
+    }
+  }
+
   private async getAssignedAgentRuntimeConfig(
     assignedAgentId: string | null | undefined,
   ): Promise<Record<string, unknown> | undefined> {
-    const normalizedId = assignedAgentId?.trim();
-    if (!normalizedId || !this.options.agentStore) return undefined;
-    const agent = await this.options.agentStore.getAgent(normalizedId).catch(() => null);
+    const agent = await this.getAuthoritativeAssignedAgent(assignedAgentId);
     return (agent?.runtimeConfig ?? undefined) as Record<string, unknown> | undefined;
   }
 
@@ -9829,9 +9852,7 @@ export class TaskExecutor {
         // ── Step-Session Path ──────────────────────────────────────────
         executorLog.log(`${task.id}: using step-session mode (maxParallel=${settings.maxParallelSteps ?? 2}${forceStepSession ? ", graph-pinned" : ""})`);
 
-        const stepSessionAgent = detail.assignedAgentId && this.options.agentStore
-          ? await this.options.agentStore.getAgent(detail.assignedAgentId).catch(() => null)
-          : null;
+        const stepSessionAgent = await this.getAuthoritativeAssignedAgent(detail.assignedAgentId);
 
         // Column-agent SESSION IDENTITY (U4, R2/R3/R4/R8): when the governing
         // step-execute node's declared column binds an agent that supersedes the
@@ -10402,9 +10423,7 @@ export class TaskExecutor {
       const reflectionTools = this.options.reflectionService && settings.reflectionEnabled && assignedAgentId
         ? [createReflectOnPerformanceTool(this.options.reflectionService, assignedAgentId)]
         : [];
-      const assignedAgent = assignedAgentId && this.options.agentStore
-        ? await this.options.agentStore.getAgent(assignedAgentId).catch(() => null)
-        : null;
+      const assignedAgent = await this.getAuthoritativeAssignedAgent(assignedAgentId);
 
       // Column-agent SESSION IDENTITY (U4, R2/R3/R4/R8): when the governing execute
       // seam node's declared column binds an agent that supersedes the task's
@@ -15006,9 +15025,7 @@ You have access to the file system to review changes.${inlineFixBlock}${verdictB
         pluginRunner: this.options.pluginRunner,
       });
 
-      const workflowAgent = task.assignedAgentId && this.options.agentStore
-        ? await this.options.agentStore.getAgent(task.assignedAgentId).catch(() => null)
-        : null;
+      const workflowAgent = await this.getAuthoritativeAssignedAgent(task.assignedAgentId);
       const workflowRuntimeHint = extractRuntimeHint(workflowAgent?.runtimeConfig);
       // Signal to skills running in this step (e.g. compound-engineering ce-plan /
       // ce-work) that they are inside a Fusion autonomous workflow step, NOT an

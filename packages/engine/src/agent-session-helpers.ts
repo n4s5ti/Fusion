@@ -526,6 +526,26 @@ export async function createResolvedAgentSession(
     `[${sessionPurpose}] Using runtime "${resolved.runtimeId}" (configured=${resolved.wasConfigured})`,
   );
 
+  // Forward `beforeSpawnSession` to the runtime so it fires at the true
+  // latest sync point (just before LLM session instantiation) rather than
+  // here, before the runtime's own awaited setup work runs. See
+  // AgentRuntimeOptions.beforeSpawnSession for the contract.
+  const result = await resolved.runtime.createSession(effectiveRuntimeOptionsWithModel);
+
+  const testModeActive = settings ? isTestModeActive(settings) : false;
+  const mockProviderActive = isMockProviderId(runtimeOptions.defaultProvider);
+  const noModelResolved = !mockProviderActive && !testModeActive && (!runtimeOptions.defaultProvider || !runtimeOptions.defaultModelId);
+  const runtimeBuiltInFallbackModel = noModelResolved ? resolved.runtime.describeModel(result.session) : undefined;
+  if (noModelResolved) {
+    /*
+    FNXC:ModelResolution 2026-07-10-00:00:
+    Fusion#1984 showed that non-mock/non-test task sessions could resolve no provider+model pair and then quietly run the pi runtime's built-in default, creating unexpected spend. Keep the fallback non-fatal for existing default-model deployments, but warn and audit the actual runtime model so the drift is visible.
+    */
+    sessionLog.warn(
+      `[${sessionPurpose}] no complete provider/model resolved; runtime "${resolved.runtimeId}" is using built-in fallback model "${runtimeBuiltInFallbackModel ?? "unknown model"}"`,
+    );
+  }
+
   try {
     await runAuditor?.database({
       type: "session:runtime-resolved",
@@ -536,8 +556,9 @@ export async function createResolvedAgentSession(
         wasConfigured: resolved.wasConfigured,
         provider: runtimeOptions.defaultProvider ?? null,
         modelId: runtimeOptions.defaultModelId ?? null,
-        mockProviderActive: isMockProviderId(runtimeOptions.defaultProvider),
-        testModeActive: settings ? isTestModeActive(settings) : false,
+        mockProviderActive,
+        testModeActive,
+        ...(noModelResolved ? { noModelResolved: true, runtimeBuiltInFallbackModel } : {}),
         ...(effectiveRuntimeHint ? { runtimeHint: effectiveRuntimeHint } : {}),
         ...(autoGrokRuntimeHint ? { reason: "grok-cli-no-visible-key" } : {}),
         ...(!autoGrokRuntimeHint && "fallbackReason" in resolved && resolved.fallbackReason ? { reason: resolved.fallbackReason } : {}),
@@ -546,12 +567,6 @@ export async function createResolvedAgentSession(
   } catch (err) {
     sessionLog.warn(`[${sessionPurpose}] failed to record session:runtime-resolved audit: ${String(err)}`);
   }
-
-  // Forward `beforeSpawnSession` to the runtime so it fires at the true
-  // latest sync point (just before LLM session instantiation) rather than
-  // here, before the runtime's own awaited setup work runs. See
-  // AgentRuntimeOptions.beforeSpawnSession for the contract.
-  const result = await resolved.runtime.createSession(effectiveRuntimeOptionsWithModel);
 
   // Attach the resolved runtime's promptWithFallback as a bound method on the
   // session object when it is not already present. This is the dispatch hook
