@@ -87,7 +87,7 @@ function populatedTokenFixture() {
     cost: { usd: 9, unavailable: false, stale: false },
     groups: [
       {
-        key: "gpt-4o",
+        key: "gpt-5.5",
         inputTokens: 600,
         outputTokens: 300,
         cachedTokens: 100,
@@ -413,6 +413,8 @@ describe("CommandCenter mobile scroll regression (FN-6595)", () => {
     render(<CommandCenter />);
 
     await screen.findByTestId("command-center-overview-charts");
+    expect(screen.getByTestId("command-center-stat-tokens")).toHaveTextContent("$9.00");
+    expect(screen.getByTestId("command-center-stat-tokens")).not.toHaveTextContent("—");
     expect(screen.getByTestId("command-center-overview-chart-tokens")).toBeTruthy();
     expect(screen.getByTestId("cc-overview-pie")).toBeTruthy();
     expect(screen.getByTestId("cc-overview-line")).toBeTruthy();

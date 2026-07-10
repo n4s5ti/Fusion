@@ -95,8 +95,8 @@ describe("workflow-analytics", () => {
       outputTokens: 1_000_000,
       totalTokens: 2_000_000,
       tokenUsageLastUsedAt: "2026-03-02T00:00:00.000Z",
-      modelProvider: "openai",
-      modelId: "gpt-4o",
+      modelProvider: "openai-codex",
+      modelId: "gpt-5.5",
       modifiedFiles: ["src/custom.ts", "src/shared.ts"],
       updatedAt: "2026-03-02T00:00:00.000Z",
     });
@@ -149,7 +149,7 @@ describe("workflow-analytics", () => {
       tasksInReview: 0,
     });
     expect(byWorkflow.get("WF-custom")?.tokens.totalTokens).toBe(2_000_000);
-    expect(byWorkflow.get("WF-custom")?.cost).toEqual({ usd: 12.5, unavailable: false, stale: false });
+    expect(byWorkflow.get("WF-custom")?.cost).toEqual({ usd: 35, unavailable: false, stale: false });
     expect(byWorkflow.get("builtin:quick-fix")).toMatchObject({
       workflowName: "Quick fix",
       isBuiltin: true,

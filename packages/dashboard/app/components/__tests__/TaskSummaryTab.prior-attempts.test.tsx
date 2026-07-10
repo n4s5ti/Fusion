@@ -13,6 +13,42 @@ function doneTaskWithResults(workflowStepResults: unknown[]) {
 }
 
 describe("TaskSummaryTab prior-attempts history (FN-7727)", () => {
+  it("renders current OpenAI Codex token costs as dollars instead of the unavailable sentinel", () => {
+    render(
+      <TaskSummaryTab
+        task={makeTask({
+          column: "done",
+          tokenUsage: {
+            inputTokens: 1_000_000,
+            outputTokens: 200_000,
+            cachedTokens: 500_000,
+            cacheWriteTokens: 100_000,
+            totalTokens: 1_800_000,
+            firstUsedAt: "2026-07-01T10:00:00.000Z",
+            lastUsedAt: "2026-07-01T10:30:00.000Z",
+            perModel: [
+              {
+                modelProvider: "openai-codex",
+                modelId: "gpt-5.5",
+                inputTokens: 1_000_000,
+                outputTokens: 200_000,
+                cachedTokens: 500_000,
+                cacheWriteTokens: 100_000,
+                totalTokens: 1_800_000,
+                firstUsedAt: "2026-07-01T10:00:00.000Z",
+                lastUsedAt: "2026-07-01T10:30:00.000Z",
+              },
+            ],
+          },
+        })}
+      />,
+    );
+
+    const section = screen.getByTestId("task-summary-token-cost-section");
+    expect(section).toHaveTextContent("$11.25");
+    expect(section).not.toHaveTextContent("—");
+  });
+
   it("renders a collapsed prior-attempts affordance for a step with history", () => {
     render(
       <TaskSummaryTab

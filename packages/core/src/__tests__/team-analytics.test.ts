@@ -90,8 +90,8 @@ describe("team-analytics", () => {
       outputTokens: 1_000_000,
       totalTokens: 2_000_000,
       tokenUsageLastUsedAt: "2026-03-02T00:00:00.000Z",
-      modelProvider: "openai",
-      modelId: "gpt-4o",
+      modelProvider: "openai-codex",
+      modelId: "gpt-5.5",
     });
     insertTask(db, {
       id: "a-done",
@@ -143,7 +143,7 @@ describe("team-analytics", () => {
       tasksInReview: 0,
     });
     expect(byAgent.get("agent-a")?.tokens.totalTokens).toBe(2_000_000);
-    expect(byAgent.get("agent-a")?.cost).toEqual({ usd: 12.5, unavailable: false, stale: false });
+    expect(byAgent.get("agent-a")?.cost).toEqual({ usd: 35, unavailable: false, stale: false });
     expect(byAgent.get("agent-b")).toMatchObject({
       agentName: "Beta",
       role: "reviewer",

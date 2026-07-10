@@ -65,17 +65,25 @@ describe("model-pricing", () => {
     expect(result.usd).toBeCloseTo(3.25, 2);
   });
 
-  it("prices OpenAI Codex GPT-5.6 codenamed models instead of reporting unavailable", () => {
-    // FN-7742: gpt-5.6-luna / gpt-5.6-sol / gpt-5.6-terra mirror the gpt-5.3-codex rate
-    // ($1.25/1M input, $10/1M output). 1,000,000 input + 200,000 output = 1.25 + 2.00 = 3.25
-    for (const model of ["gpt-5.6-luna", "gpt-5.6-sol", "gpt-5.6-terra"]) {
+  it("prices current OpenAI Codex catalog models instead of reporting unavailable", () => {
+    const cases = [
+      ["gpt-5.3-codex-spark", 4.55],
+      ["gpt-5.4", 5.5],
+      ["gpt-5.4-mini", 1.65],
+      ["gpt-5.5", 11],
+      ["gpt-5.6-luna", 2.2],
+      ["gpt-5.6-sol", 11],
+      ["gpt-5.6-terra", 5.5],
+    ] as const;
+
+    for (const [model, expectedUsd] of cases) {
       const result = costFor(
         { ...ZERO, inputTokens: 1_000_000, outputTokens: 200_000 },
         { provider: "openai-codex", model },
       );
       expect(result.unavailable).toBe(false);
       expect(result.usd).not.toBeNull();
-      expect(result.usd).toBeCloseTo(3.25, 2);
+      expect(result.usd).toBeCloseTo(expectedUsd, 2);
     }
   });
 
