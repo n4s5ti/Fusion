@@ -184,7 +184,7 @@ export function isFts5CorruptionError(error: unknown): boolean {
 
 // ── Schema Definition ────────────────────────────────────────────────
 
-const SCHEMA_VERSION = 139;
+const SCHEMA_VERSION = 140;
 
 const TASKS_FTS_AUTOMERGE = 8;
 const TASKS_FTS_CRISISMERGE = 16;
@@ -5641,6 +5641,18 @@ export class Database {
        */
       this.applyMigration(139, () => {
         this.addColumnIfMissing("tasks", "approvedPlanFingerprint", "TEXT");
+      });
+    }
+
+    if (version < 140) {
+      /*
+       * FNXC:Chat-ThinkingLevel 2026-07-10-00:00:
+       * Chat sessions store an optional per-session reasoning-effort level so model-loop chats can pass it as the engine `defaultThinkingLevel`; NULL means inherit the resolved project/global default.
+       */
+      this.applyMigration(140, () => {
+        if (this.hasTable("chat_sessions")) {
+          this.addColumnIfMissing("chat_sessions", "thinkingLevel", "TEXT");
+        }
       });
     }
 

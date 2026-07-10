@@ -834,6 +834,7 @@ export {
   createResolvedAgentSession,
   promptWithAutoRetry,
   describeAgentModel,
+  resolveExecutorThinkingLevel,
   extractRuntimeHint,
   extractRuntimeModel,
   type ResolvedSessionOptions,

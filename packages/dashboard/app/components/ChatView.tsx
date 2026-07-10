@@ -259,7 +259,7 @@ interface NewChatDialogProps {
   projectId?: string;
   defaultModel: DefaultModelSelection;
   onClose: () => void;
-  onCreate: (input: { agentId: string; modelProvider?: string; modelId?: string }) => void;
+  onCreate: (input: { agentId: string; modelProvider?: string; modelId?: string; thinkingLevel?: string }) => void;
 }
 
 function NewChatDialog({ projectId, defaultModel, onClose, onCreate }: NewChatDialogProps) {
@@ -272,6 +272,11 @@ function NewChatDialog({ projectId, defaultModel, onClose, onCreate }: NewChatDi
     ? `${defaultModel.provider}/${defaultModel.modelId}`
     : "";
   const [selectedModel, setSelectedModel] = useState<string>(defaultModelValue);
+  /*
+   * FNXC:Chat-ThinkingLevel 2026-07-10-00:00:
+   * New model-mode chats expose the shared inline thinking selector; an empty value means Default and is omitted from the create-session payload so the backend resolves project/global reasoning effort.
+   */
+  const [thinkingLevel, setThinkingLevel] = useState<string>("");
   const [favoriteProviders, setFavoriteProviders] = useState<string[]>(cachedFavoriteProviders);
   const [favoriteModels, setFavoriteModels] = useState<string[]>(cachedFavoriteModels);
 
@@ -341,7 +346,7 @@ function NewChatDialog({ projectId, defaultModel, onClose, onCreate }: NewChatDi
     if (slashIdx <= 0) return;
     const modelProvider = resolvedModel.slice(0, slashIdx);
     const modelId = resolvedModel.slice(slashIdx + 1);
-    onCreate({ agentId: FN_AGENT_ID, modelProvider, modelId });
+    onCreate({ agentId: FN_AGENT_ID, modelProvider, modelId, thinkingLevel: thinkingLevel || undefined });
   };
 
   const isSubmitDisabled =
@@ -417,6 +422,10 @@ function NewChatDialog({ projectId, defaultModel, onClose, onCreate }: NewChatDi
                   onToggleFavorite={handleToggleFavorite}
                   favoriteModels={favoriteModels}
                   onToggleModelFavorite={handleToggleModelFavorite}
+                  showThinkingLevel
+                  thinkingLevel={thinkingLevel}
+                  onThinkingLevelChange={setThinkingLevel}
+                  defaultThinkingLevel="off"
                 />
               )}
             </div>
@@ -1400,7 +1409,7 @@ export function ChatView({ projectId, addToast, floating = false, compactLayout 
 
   // Handle create session
   const handleCreateSession = useCallback(
-    async (input: { agentId: string; modelProvider?: string; modelId?: string }) => {
+    async (input: { agentId: string; modelProvider?: string; modelId?: string; thinkingLevel?: string }) => {
       try {
         await createSession(input);
         setShowNewDialog(false);
@@ -1477,6 +1486,7 @@ export function ChatView({ projectId, addToast, floating = false, compactLayout 
         agentId: activeSession.agentId,
         modelProvider: activeSession.modelProvider ?? undefined,
         modelId: activeSession.modelId ?? undefined,
+        thinkingLevel: activeSession.thinkingLevel ?? undefined,
       }).catch(() => {
         addToast(t("chat.failedToClearConversation", "Failed to clear conversation"), "error");
       });

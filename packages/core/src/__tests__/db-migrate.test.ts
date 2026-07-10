@@ -1315,6 +1315,39 @@ describe("schema migration", () => {
     db.close();
   });
 
+  it("adds thinkingLevel to chat_sessions when migrating from schema version 139", () => {
+    const db = new Database(fusionDir);
+    db.exec("CREATE TABLE IF NOT EXISTS __meta (key TEXT PRIMARY KEY, value TEXT)");
+    db.exec("INSERT INTO __meta (key, value) VALUES ('schemaVersion', '139')");
+    db.exec("INSERT INTO __meta (key, value) VALUES ('lastModified', '1000')");
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS chat_sessions (
+        id TEXT PRIMARY KEY,
+        agentId TEXT NOT NULL,
+        title TEXT,
+        status TEXT NOT NULL DEFAULT 'active',
+        projectId TEXT,
+        modelProvider TEXT,
+        modelId TEXT,
+        createdAt TEXT NOT NULL,
+        updatedAt TEXT NOT NULL,
+        cliSessionFile TEXT,
+        inFlightGeneration TEXT,
+        cliExecutorAdapterId TEXT
+      )
+    `);
+
+    db.init();
+
+    const columns = db
+      .prepare("PRAGMA table_info(chat_sessions)")
+      .all() as Array<{ name: string }>;
+    expect(columns.map((column) => column.name)).toContain("thinkingLevel");
+
+    expect(db.getSchemaVersion()).toBe(SCHEMA_VERSION);
+    db.close();
+  });
+
   it("creates cli_sessions on a fresh database (fresh-create path)", () => {
     const db = new Database(fusionDir);
     db.init();
