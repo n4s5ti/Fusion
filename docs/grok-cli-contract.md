@@ -134,7 +134,7 @@ Notes:
   `GrokCliProviderCard.tsx`) is out of scope for this task and is not
   modified here.
 
-## Wiring (resolved — FN-7725, extended by FN-7753)
+## Wiring (resolved — FN-7725, extended by FN-7753/FN-7758)
 
 <!--
 FNXC:GrokCli 2026-07-09-00:00:
@@ -160,16 +160,24 @@ via the dashboard's agent **Runtime Source → Runtime** picker
 plugin runtime, including the bundled Grok Runtime plugin's `runtimeId:
 "grok"`, with no Grok-specific code required).
 
-**Automatic no-key fallback (FN-7753):** when `createResolvedAgentSession()` sees
+**Automatic no-key fallback (FN-7753/FN-7758):** when `createResolvedAgentSession()` sees
 all of the following, it derives the same effective `runtimeHint: "grok"` before
 calling `resolveRuntime()`:
 
 1. no explicit runtime hint was supplied (explicit hints, including `"pi"`,
    always win);
-2. the resolved execution provider is `grok-cli`;
+2. the resolved primary/default provider is `grok-cli`, or the configured
+   fallback provider is `grok-cli`;
 3. Fusion cannot see a non-empty `GROK_API_KEY` either in the environment or in
    `~/.grok/user-settings.json`'s `apiKey` field; and
 4. the bundled Grok Runtime plugin has registered runtime id `"grok"`.
+
+FN-7758 also requires dashboard Chat/QuickChat and room responders to forward
+the configured default provider/model into this same session seam when a send has
+no explicit model and no bound agent runtime model. That keeps the no-key routing
+invariant identical across executor, reviewer/validator/merger-adjacent, single
+chat, QuickChat, and room responder surfaces instead of letting model-less chat
+bypass the auto-derive by omitting `defaultProvider`.
 
 If a Fusion-visible key exists, the direct xAI OpenAI-compatible endpoint remains
 the default. If the Grok runtime is not registered, Fusion leaves the session on
@@ -207,13 +215,14 @@ additive change," formalizing + testing + documenting the already-working
 path is lower risk and closes the actual gap (an *exercised* path, not just
 an implemented adapter) without adding new user-facing config surface.
 
-**Model plumbing (FN-7753):** for the automatic no-key fallback, the selected
-`grok-cli/*` model id is preserved through `AgentRuntimeOptions.defaultModelId`,
-normalized by stripping a leading `grok-cli/` (or `grok/`) prefix, and passed to
-the CLI as `grok --model <id>` alongside `--prompt` and `--format json`.
-Runtime-mode remains model-agnostic when chosen explicitly from the dashboard;
-that no-model path still uses the adapter's historical `"grok/default"` session
-fallback and omits `--model`.
+**Model plumbing (FN-7753/FN-7758):** for the automatic no-key fallback, the selected
+`grok-cli/*` model id is preserved through `AgentRuntimeOptions.defaultModelId`
+(or promoted from `fallbackModelId` when the fallback provider is the grok-cli
+selection), normalized by stripping a leading `grok-cli/` (or `grok/`) prefix,
+and passed to the CLI as `grok --model <id>` alongside `--prompt` and
+`--format json`. Runtime-mode remains model-agnostic when chosen explicitly from
+the dashboard; that no-model path still uses the adapter's historical
+`"grok/default"` session fallback and omits `--model`.
 
 **Why the direct xAI endpoint stays default:** a `grok-cli/*` **model** selection
 continues to route through the direct xAI OpenAI-compatible endpoint

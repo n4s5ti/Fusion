@@ -1708,9 +1708,13 @@ export class ChatManager {
     const roomPrompt = roomPromptParts.join("\n\n");
 
     const responderRuntimeModel = extractRuntimeModel(input.responder.runtimeConfig);
-    const effectiveModelProvider = input.modelProvider ?? responderRuntimeModel.provider;
-    const effectiveModelId = input.modelId ?? responderRuntimeModel.modelId;
     const chatModelSettings = await this.getChatModelSettings();
+    /*
+     * FNXC:GrokCliRouting 2026-07-09-22:10:
+     * Room responders with no explicit send-time or responder runtime model still need the configured chat/project default to reach createResolvedAgentSession. Without forwarding a defaultProvider of grok-cli, the no-visible-key auto-derive seam cannot route to the Grok CLI runtime and pi can surface the direct xAI missing-key error.
+     */
+    const effectiveModelProvider = input.modelProvider ?? responderRuntimeModel.provider ?? chatModelSettings.defaultProvider;
+    const effectiveModelId = input.modelId ?? responderRuntimeModel.modelId ?? chatModelSettings.defaultModelId;
     /*
      * FNXC:ChatModels 2026-07-01-16:42:
      * Room responders should pass configured fallback models even when the room send chose an explicit model. The engine still swaps only for retryable provider/model-selection failures, so an unavailable Sonnet 5 can recover without making ordinary prompt errors ambiguous.
@@ -2177,6 +2181,14 @@ export class ChatManager {
       }
 
       const chatModelSettings = await this.getChatModelSettings();
+      /*
+       * FNXC:GrokCliRouting 2026-07-09-22:10:
+       * Model-less Chat/QuickChat sessions must pass the configured default model into the shared engine session helper. This keeps grok-cli defaults on the Grok CLI runtime when Fusion has no visible key instead of bypassing FN-7753/FN-7758 routing by omitting defaultProvider entirely.
+       */
+      effectiveModelProvider ??= chatModelSettings.defaultProvider;
+      effectiveModelId ??= chatModelSettings.defaultModelId;
+      failureContextProvider = effectiveModelProvider;
+      failureContextModelId = effectiveModelId;
       const usesConfiguredDefaultModel =
         requestedModelProvider === chatModelSettings.defaultProvider
         && requestedModelId === chatModelSettings.defaultModelId

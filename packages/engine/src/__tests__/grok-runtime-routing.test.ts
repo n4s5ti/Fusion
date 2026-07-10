@@ -318,6 +318,124 @@ describe("Grok CLI runtime routing (FN-7725)", () => {
     }));
   });
 
+  it("auto-routes heartbeat/room responder grok-cli defaults to the Grok runtime when no Fusion-visible key exists", async () => {
+    vi.mocked(fusionCore.isGrokApiKeyFusionVisible).mockReturnValue(false);
+    const spawn = vi.fn().mockReturnValue(makeFakeGrokProcess().proc);
+    const grokRegistration = await createGrokRegistration(spawn);
+    const pluginRunner = createMockPluginRunner({
+      getRuntimeById: vi.fn().mockReturnValue(grokRegistration),
+    });
+    const audit = { database: vi.fn().mockResolvedValue(undefined) };
+
+    const result = await createResolvedAgentSession({
+      sessionPurpose: "heartbeat",
+      pluginRunner,
+      runAuditor: audit as never,
+      cwd: "/tmp/project",
+      defaultProvider: "grok-cli",
+      defaultModelId: "grok-4.5",
+      systemPrompt: "room-responder",
+    });
+
+    expect(result.runtimeId).toBe("grok");
+    expect(result.wasConfigured).toBe(true);
+    expect(result.session).toMatchObject({ model: "grok-4.5" });
+    expect(audit.database).toHaveBeenCalledWith(expect.objectContaining({
+      type: "session:runtime-resolved",
+      target: "grok",
+      metadata: expect.objectContaining({
+        sessionPurpose: "heartbeat",
+        runtimeHint: "grok",
+        reason: "grok-cli-no-visible-key",
+      }),
+    }));
+  });
+
+  it("auto-routes a grok-cli fallback model to the Grok runtime when no Fusion-visible key exists", async () => {
+    vi.mocked(fusionCore.isGrokApiKeyFusionVisible).mockReturnValue(false);
+    const spawn = vi.fn().mockReturnValue(makeFakeGrokProcess().proc);
+    const grokRegistration = await createGrokRegistration(spawn);
+    const pluginRunner = createMockPluginRunner({
+      getRuntimeById: vi.fn().mockReturnValue(grokRegistration),
+    });
+    const audit = { database: vi.fn().mockResolvedValue(undefined) };
+
+    const result = await createResolvedAgentSession({
+      sessionPurpose: "executor",
+      pluginRunner,
+      runAuditor: audit as never,
+      cwd: "/tmp/project",
+      defaultProvider: "openai",
+      defaultModelId: "gpt-4o",
+      fallbackProvider: "grok-cli",
+      fallbackModelId: "grok-cli/grok-4.5",
+      systemPrompt: "fallback-selection-only",
+    });
+
+    expect(result.runtimeId).toBe("grok");
+    expect(result.wasConfigured).toBe(true);
+    expect(mockCreateFnAgent).not.toHaveBeenCalled();
+    expect(result.session).toMatchObject({ model: "grok-4.5" });
+    expect(audit.database).toHaveBeenCalledWith(expect.objectContaining({
+      type: "session:runtime-resolved",
+      target: "grok",
+      metadata: expect.objectContaining({
+        runtimeHint: "grok",
+        reason: "grok-cli-no-visible-key",
+        provider: "openai",
+        modelId: "gpt-4o",
+      }),
+    }));
+  });
+
+  it("auto-routes a bare grok-cli fallback model id without adding a provider prefix", async () => {
+    vi.mocked(fusionCore.isGrokApiKeyFusionVisible).mockReturnValue(false);
+    const spawn = vi.fn().mockReturnValue(makeFakeGrokProcess().proc);
+    const grokRegistration = await createGrokRegistration(spawn);
+    const pluginRunner = createMockPluginRunner({
+      getRuntimeById: vi.fn().mockReturnValue(grokRegistration),
+    });
+
+    const result = await createResolvedAgentSession({
+      sessionPurpose: "validation",
+      pluginRunner,
+      cwd: "/tmp/project",
+      defaultProvider: "anthropic",
+      defaultModelId: "claude-sonnet-4-5",
+      fallbackProvider: "grok-cli",
+      fallbackModelId: "grok-4.5",
+      systemPrompt: "fallback-bare-model",
+    });
+
+    expect(result.runtimeId).toBe("grok");
+    expect(result.session).toMatchObject({ model: "grok-4.5" });
+  });
+
+  it("keeps mock/test-mode provider routing on the mock runtime when grok-cli fallback is configured", async () => {
+    vi.mocked(fusionCore.isGrokApiKeyFusionVisible).mockReturnValue(false);
+    const spawn = vi.fn().mockReturnValue(makeFakeGrokProcess().proc);
+    const grokRegistration = await createGrokRegistration(spawn);
+    const pluginRunner = createMockPluginRunner({
+      getRuntimeById: vi.fn().mockReturnValue(grokRegistration),
+    });
+
+    const result = await createResolvedAgentSession({
+      sessionPurpose: "executor",
+      pluginRunner,
+      cwd: "/tmp/project",
+      defaultProvider: "mock",
+      defaultModelId: "scripted",
+      fallbackProvider: "grok-cli",
+      fallbackModelId: "grok-4.5",
+      systemPrompt: "mock-mode",
+    });
+
+    expect(result.runtimeId).toBe("mock");
+    expect(result.wasConfigured).toBe(true);
+    expect(pluginRunner.getRuntimeById).not.toHaveBeenCalledWith("grok");
+    expect(mockCreateFnAgent).not.toHaveBeenCalled();
+  });
+
   it("honors explicit runtime hints over the no-key grok-cli auto-derivation", async () => {
     vi.mocked(fusionCore.isGrokApiKeyFusionVisible).mockReturnValue(false);
     const spawn = vi.fn().mockReturnValue(makeFakeGrokProcess().proc);

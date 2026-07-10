@@ -201,6 +201,47 @@ describe("ChatManager.sendMessage", () => {
     vi.restoreAllMocks();
   });
 
+  it("routes model-less QuickChat through configured default grok-cli provider", async () => {
+    let createOptions: any;
+    __setCreateResolvedAgentSession(async (options: any) => {
+      createOptions = options;
+      return {
+        session: {
+          prompt: vi.fn().mockResolvedValue(undefined),
+          dispose: vi.fn(),
+          model: { provider: "grok-cli", id: "grok-4.5" },
+          state: { messages: [{ role: "assistant", content: "Grok response" }] },
+        },
+        runtimeId: "grok",
+        wasConfigured: true,
+      } as any;
+    });
+    mockChatStore.getSession.mockReturnValue({
+      id: "chat-001",
+      status: "active",
+      projectId: "project-a",
+    });
+    mockChatStore.addMessage.mockImplementation((_sessionId, input) => ({
+      id: input.role === "assistant" ? "assistant-msg" : "user-msg",
+      sessionId: "chat-001",
+      role: input.role,
+      content: input.content,
+      createdAt: "2026-07-09T00:00:00.000Z",
+    }));
+
+    const chatManager = createChatManagerWithSettings({
+      defaultProvider: "grok-cli",
+      defaultModelId: "grok-cli/grok-4.5",
+    });
+    await chatManager.sendMessage("chat-001", "Hello Grok");
+
+    expect(createOptions).toMatchObject({
+      sessionPurpose: "executor",
+      defaultProvider: "grok-cli",
+      defaultModelId: "grok-cli/grok-4.5",
+    });
+  });
+
   it("records successful chat session token usage from provider stats", async () => {
     __setCreateResolvedAgentSession(async () => ({
       session: {

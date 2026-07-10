@@ -167,13 +167,37 @@ function deriveGrokRuntimeHintForNoVisibleKey(
   runtimeOptions: AgentRuntimeOptions,
   pluginRunner: PluginRunner | undefined,
 ): string | undefined {
-  if (runtimeOptions.defaultProvider !== GROK_CLI_PROVIDER_ID) return undefined;
+  if (runtimeOptions.defaultProvider !== GROK_CLI_PROVIDER_ID
+    && runtimeOptions.fallbackProvider !== GROK_CLI_PROVIDER_ID) return undefined;
   if (isGrokApiKeyFusionVisible()) return undefined;
   try {
     return pluginRunner?.getRuntimeById("grok") ? "grok" : undefined;
   } catch {
     return undefined;
   }
+}
+
+function applyGrokCliNoKeyRuntimeOptions(
+  runtimeOptions: AgentRuntimeOptions,
+): AgentRuntimeOptions {
+  if (runtimeOptions.defaultProvider === GROK_CLI_PROVIDER_ID) {
+    return {
+      ...runtimeOptions,
+      defaultModelId: stripGrokCliModelProviderPrefix(runtimeOptions.defaultModelId),
+    };
+  }
+
+  if (runtimeOptions.fallbackProvider === GROK_CLI_PROVIDER_ID) {
+    return {
+      ...runtimeOptions,
+      defaultProvider: runtimeOptions.fallbackProvider,
+      defaultModelId: stripGrokCliModelProviderPrefix(runtimeOptions.fallbackModelId),
+      fallbackProvider: undefined,
+      fallbackModelId: undefined,
+    };
+  }
+
+  return runtimeOptions;
 }
 
 function pickSettingsThenRuntimeModel(
@@ -406,16 +430,18 @@ export async function createResolvedAgentSession(
   Explicit runtime hints always win, visible keys keep the direct xAI endpoint default, and mock/test-mode
   provider routing stays on the mock runtime. Strip only the provider-qualified model prefix so the CLI
   receives the concrete selected model via GrokRuntimeAdapter without changing non-grok sessions.
+
+  FNXC:GrokCliRouting 2026-07-09-22:10:
+  FN-7758 extends the no-visible-key invariant to configured fallback models. Pi resolves fallback models
+  during session creation and prompt-time swaps through the key-requiring provider registry, so a grok-cli
+  fallback must select the Grok CLI runtime up front and promote the fallback model into the CLI session.
   */
   const autoGrokRuntimeHint = !useMockRuntime && !runtimeHint
     ? deriveGrokRuntimeHintForNoVisibleKey(runtimeOptions, pluginRunner)
     : undefined;
   const effectiveRuntimeHint = autoGrokRuntimeHint ?? runtimeHint;
   const effectiveRuntimeOptionsWithModel: AgentRuntimeOptions = autoGrokRuntimeHint
-    ? {
-      ...effectiveRuntimeOptions,
-      defaultModelId: stripGrokCliModelProviderPrefix(effectiveRuntimeOptions.defaultModelId),
-    }
+    ? applyGrokCliNoKeyRuntimeOptions(effectiveRuntimeOptions)
     : effectiveRuntimeOptions;
 
   const resolved = useMockRuntime
