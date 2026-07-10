@@ -711,6 +711,11 @@ export interface WorkflowStep {
    *  Must be set together with `modelProvider`. When both model fields are undefined,
    *  the executor uses global settings defaults. Only used when mode is "prompt". */
   modelId?: string;
+  /**
+   * FNXC:Settings-ThinkingLevel 2026-07-10-00:00:
+   * Workflow IR nodes may pin reasoning effort independently from the model pair so authors can inherit the model while overriding thinking level. Runtime precedence is node/step `thinkingLevel` > task `thinkingLevel` > settings `defaultThinkingLevel`.
+   */
+  thinkingLevel?: ThinkingLevel;
   /** (workflow-editor-consolidation U1/U2, KTD-1/KTD-3) when this legacy step has
    *  been migrated into a fragment WorkflowDefinition, the fragment's id is stamped
    *  here so the lazy step migration is idempotent (already-stamped rows are
@@ -852,6 +857,8 @@ export interface WorkflowStepInput {
   modelProvider?: string;
   /** AI model ID override. Must be set together with modelProvider. Only used when mode is "prompt". */
   modelId?: string;
+  /** Optional per-node reasoning-effort override; inherits from task/settings when omitted. */
+  thinkingLevel?: ThinkingLevel;
   /** (workflow-editor-consolidation U2, KTD-3) fragment id stamped when this step
    *  was migrated into a fragment WorkflowDefinition. Set by the migration only. */
   migratedFragmentId?: string;
@@ -1017,6 +1024,8 @@ export interface WorkflowStepTemplate {
   modelProvider?: string;
   /** AI model ID override for prompt-mode templates. */
   modelId?: string;
+  /** Optional per-node reasoning-effort override for prompt-mode templates. */
+  thinkingLevel?: ThinkingLevel;
   /** Grouping category (e.g., "Quality", "Security") */
   category: string;
   /** Optional icon identifier for UI (e.g., "file-text", "shield") */

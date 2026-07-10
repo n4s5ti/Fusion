@@ -6,12 +6,14 @@ import { setImmediate as setImmediateCb } from "node:timers";
 // Internal git plumbing intentionally bypasses sandbox backends.
 const execAsync = promisify(exec);
 
+const WORKFLOW_THINKING_LEVEL_SET: ReadonlySet<string> = new Set(THINKING_LEVELS);
+
 import { delimiter, isAbsolute, join, relative, resolve as resolvePath } from "node:path";
 import { existsSync, lstatSync, realpathSync } from "node:fs";
 import { readFile, rm, writeFile } from "node:fs/promises";
-import type { TaskStore, Task, TaskDetail, TaskTokenUsage, StepStatus, Settings, WorkflowStep, MissionStore, Slice, AgentState, AgentCapability, RunMutationContext, AgentHeartbeatConfig, Agent, AgentMemoryInclusionMode, ProjectSettings, MergeResult, WorkflowIrNode, WorkflowIrNodeKind, WorkflowStepResult as CoreWorkflowStepResult } from "@fusion/core";
+import type { TaskStore, Task, TaskDetail, TaskTokenUsage, StepStatus, Settings, WorkflowStep, MissionStore, Slice, AgentState, AgentCapability, RunMutationContext, AgentHeartbeatConfig, Agent, AgentMemoryInclusionMode, ProjectSettings, MergeResult, WorkflowIrNode, WorkflowIrNodeKind, WorkflowStepResult as CoreWorkflowStepResult, ThinkingLevel } from "@fusion/core";
 import { getUnmetSchedulingDependencies } from "./scheduler.js";
-import { RetryStormError, TaskDeletedError, serializeRetryStormError, isExperimentalFeatureEnabled, resolveWorkflowIrForTask, resolveColumnAgentBinding, resolveEffectiveAgent, instanceNodeId, getWorkflowExtensionRegistry, getBuiltinWorkflow, parseNoOpCompletionMarker, allowsAutoMergeProcessing, resolveEffectiveAutoMerge, isLiveSharedBranchGroupMemberIntegration, resolveMaxAutoMergeRetries, resolveOptionalStepRevisionBudget, resolveOptionalReviewRevisionBudget, COMPLETION_SUMMARY_NODE_ID, upsertWorkflowStepResult, AWAITING_APPROVAL_PAUSE_REASON } from "@fusion/core";
+import { RetryStormError, TaskDeletedError, serializeRetryStormError, isExperimentalFeatureEnabled, resolveWorkflowIrForTask, resolveColumnAgentBinding, resolveEffectiveAgent, instanceNodeId, getWorkflowExtensionRegistry, getBuiltinWorkflow, parseNoOpCompletionMarker, allowsAutoMergeProcessing, resolveEffectiveAutoMerge, isLiveSharedBranchGroupMemberIntegration, resolveMaxAutoMergeRetries, resolveOptionalStepRevisionBudget, resolveOptionalReviewRevisionBudget, COMPLETION_SUMMARY_NODE_ID, upsertWorkflowStepResult, AWAITING_APPROVAL_PAUSE_REASON, THINKING_LEVELS } from "@fusion/core";
 import { finalizeProvenAutoMergeTask } from "./auto-merge-finalization.js";
 import { mergeEffectiveSettings } from "./effective-settings.js";
 import type { TaskStep, WorkflowIr, WorkflowFieldDefinition, WorkflowColumnAgent, EffectiveAgentInput, WorkflowWorkEngineDispatchResult } from "@fusion/core";
@@ -36,6 +38,7 @@ import { observeWorkflowParity, WORKFLOW_INTERPRETER_DUAL_OBSERVE_FLAG } from ".
 import {
   FOREACH_ACTIVE_CONTEXT_KEY,
   SEAM_GOVERNING_NODE_CONTEXT_KEY,
+  SEAM_THINKING_LEVEL_CONTEXT_KEY,
   SPLIT_ACTIVE_CONTEXT_KEY,
   type ForeachActiveContext,
   type WorkflowLegacySeams,
@@ -4811,6 +4814,12 @@ export class TaskExecutor {
    *  session build, and cleared by the seam afterward. Keyed by task id. */
   private graphSeamGoverningNodeId = new Map<string, string>();
 
+  /**
+   * FNXC:Settings-ThinkingLevel 2026-07-10-00:00:
+   * Execute and step-execute seam nodes can pin reasoning effort for the implementation session; keep it per graph run so session creation applies node/step > task > settings precedence.
+   */
+  private graphSeamThinkingLevel = new Map<string, ThinkingLevel>();
+
   /** Tasks currently being orchestrated by the graph runner. Process-wide for
    *  the same reason as executingTaskLock (FN-4811): duplicate execute()
    *  invocations can arrive from different TaskExecutor instances in one
@@ -5140,6 +5149,7 @@ export class TaskExecutor {
       this.graphColumnAgentResolver.delete(task.id);
       this.graphUnattendedRuns.delete(task.id);
       this.graphSeamGoverningNodeId.delete(task.id);
+      this.graphSeamThinkingLevel.delete(task.id);
       this.graphExecuteSelfRequeued.delete(task.id);
       // Per-instance keys: clear every instance slot owned by this task.
       const ctxPrefix = `${task.id}:`;
@@ -5828,6 +5838,7 @@ export class TaskExecutor {
     stepIndex: number,
     instanceId?: string,
     governingNodeId?: string,
+    thinkingLevel?: ThinkingLevel,
   ): Promise<{ success: boolean; error?: string }> {
     const active = this.foreachActiveForTask(task.id, instanceId);
     /*
@@ -5859,6 +5870,9 @@ export class TaskExecutor {
       if (typeof governingNodeId === "string") {
         this.graphSeamGoverningNodeId.set(task.id, governingNodeId);
       }
+      if (thinkingLevel) {
+        this.graphSeamThinkingLevel.set(task.id, thinkingLevel);
+      }
       phase = this.runImplementationPhase(task);
       this.graphStepRunOnce.set(task.id, phase);
       void phase
@@ -5867,6 +5881,9 @@ export class TaskExecutor {
           // Clear only our own stamp — a rework re-run may have installed a new one.
           if (typeof governingNodeId === "string" && this.graphSeamGoverningNodeId.get(task.id) === governingNodeId) {
             this.graphSeamGoverningNodeId.delete(task.id);
+          }
+          if (thinkingLevel && this.graphSeamThinkingLevel.get(task.id) === thinkingLevel) {
+            this.graphSeamThinkingLevel.delete(task.id);
           }
         });
     }
@@ -6436,11 +6453,16 @@ export class TaskExecutor {
         if (typeof governingNodeId === "string") {
           this.graphSeamGoverningNodeId.set(seamTask.id, governingNodeId);
         }
+        const seamThinkingLevel = context?.[SEAM_THINKING_LEVEL_CONTEXT_KEY];
+        if (typeof seamThinkingLevel === "string" && WORKFLOW_THINKING_LEVEL_SET.has(seamThinkingLevel)) {
+          this.graphSeamThinkingLevel.set(seamTask.id, seamThinkingLevel as ThinkingLevel);
+        }
         let result: { taskDone: boolean; modifiedFiles: string[] };
         try {
           result = await this.runImplementationPhase(seamTask);
         } finally {
           this.graphSeamGoverningNodeId.delete(seamTask.id);
+          this.graphSeamThinkingLevel.delete(seamTask.id);
         }
         if (result.taskDone) {
           return { outcome: "success", value: "implemented" };
@@ -6563,6 +6585,7 @@ export class TaskExecutor {
         // instance's; per-invocation set/delete here would race under parallel
         // foreach (overwrite mid-build, or clear while the shared pass is live).
         const stepGoverningNodeId = context[SEAM_GOVERNING_NODE_CONTEXT_KEY];
+        const seamThinkingLevel = context[SEAM_THINKING_LEVEL_CONTEXT_KEY];
         const result: Awaited<ReturnType<typeof runTaskStep>> = await runTaskStep(
           {
             store: this.store,
@@ -6578,6 +6601,9 @@ export class TaskExecutor {
                 stepIndex,
                 active.instanceId,
                 typeof stepGoverningNodeId === "string" ? stepGoverningNodeId : undefined,
+                typeof seamThinkingLevel === "string" && WORKFLOW_THINKING_LEVEL_SET.has(seamThinkingLevel)
+                  ? (seamThinkingLevel as ThinkingLevel)
+                  : undefined,
               ),
           },
           { id: seamTask.id, steps: live.steps },
@@ -6660,7 +6686,16 @@ export class TaskExecutor {
               defaultModelId: settings.defaultModelId,
               fallbackProvider: settings.fallbackProvider,
               fallbackModelId: settings.fallbackModelId,
-              defaultThinkingLevel: resolveExecutorThinkingLevel(detail.thinkingLevel, settings),
+              /*
+               * FNXC:Settings-ThinkingLevel 2026-07-10-00:00:
+               * Step-review model sessions honor per-node `config.thinkingLevel` before task and settings defaults.
+               */
+              defaultThinkingLevel: resolveExecutorThinkingLevel(
+                typeof config.thinkingLevel === "string" && WORKFLOW_THINKING_LEVEL_SET.has(config.thinkingLevel)
+                  ? (config.thinkingLevel as ThinkingLevel)
+                  : detail.thinkingLevel,
+                settings,
+              ),
               taskValidatorProvider: detail.validatorModelProvider,
               taskValidatorModelId: detail.validatorModelId,
               projectValidatorProvider: settings.validatorProvider,
@@ -7579,6 +7614,13 @@ export class TaskExecutor {
     const stepSkillName = executorKind === "skill" && typeof cfg.skillName === "string" && cfg.skillName.trim()
       ? cfg.skillName.trim()
       : undefined;
+    /*
+     * FNXC:Settings-ThinkingLevel 2026-07-10-00:00:
+     * Graph model nodes can pin reasoning effort independently from modelProvider/modelId; carry only validated THINKING_LEVELS into the synthesized WorkflowStep.
+     */
+    const stepThinkingLevel = typeof cfg.thinkingLevel === "string" && WORKFLOW_THINKING_LEVEL_SET.has(cfg.thinkingLevel)
+      ? cfg.thinkingLevel as ThinkingLevel
+      : undefined;
     const step: WorkflowStep = {
       id: `graph:${node.id}`,
       name: typeof cfg.name === "string" && cfg.name.trim() ? cfg.name : node.id,
@@ -7595,6 +7637,7 @@ export class TaskExecutor {
       ...(stepSkillName ? { skillName: stepSkillName } : {}),
       ...(cfg.requiresBrowser === true ? { requiresBrowser: true } : {}),
       ...(modelProvider && modelId ? { modelProvider, modelId } : {}),
+      ...(stepThinkingLevel ? { thinkingLevel: stepThinkingLevel } : {}),
     };
     if (cfg.summaryTarget === "task") {
       (step as WorkflowStep & { summaryTarget?: "task" }).summaryTarget = "task";
@@ -9834,6 +9877,7 @@ export class TaskExecutor {
           permanentAgentGating: this.buildPermanentAgentGatingContext(task.id, stepIdentityAgent, settings.defaultAgentPermissionPolicy),
           // FNXC:McpConfig 2026-06-25-23:03: Per-step workflow sessions are an executor lane, so they inherit the task's resolved MCP set from the effective step identity agent and never re-read or log plaintext secret values.
           mcpServers: await this.resolveMcpServers(stepIdentityAgent?.id),
+          workflowStepThinkingLevel: this.graphSeamThinkingLevel.get(task.id),
           // Pass skill selection context from the main executor session
           skillSelection: skillContext.skillSelectionContext,
           // Pass agentStore and messageStore for delegation and messaging tools
@@ -10543,7 +10587,7 @@ export class TaskExecutor {
         );
         const executorFallbackProvider = settings.fallbackProvider;
         const executorFallbackModelId = settings.fallbackModelId;
-        const executorThinkingLevel = resolveExecutorThinkingLevel(detail.thinkingLevel, settings);
+        const executorThinkingLevel = resolveExecutorThinkingLevel(this.graphSeamThinkingLevel.get(task.id) ?? detail.thinkingLevel, settings);
 
         // U1 telemetry: now that the session model/provider/node are resolved,
         // give the agent logger the context it needs to emit usage_events tool
@@ -15069,6 +15113,11 @@ You have access to the file system to review changes.${inlineFixBlock}${verdictB
         );
       }
 
+      /*
+       * FNXC:Settings-ThinkingLevel 2026-07-10-00:00:
+       * WorkflowStep sessions resolve reasoning effort as node/step `thinkingLevel` first, then task override, then settings defaults/lane fallbacks.
+       */
+      const workflowStepThinkingLevel = resolveExecutorThinkingLevel(workflowStep.thinkingLevel ?? task.thinkingLevel, settings);
       const { session } = await createResolvedAgentSession({
         sessionPurpose: "executor",
         runtimeHint: workflowRuntimeHint,
@@ -15080,7 +15129,7 @@ You have access to the file system to review changes.${inlineFixBlock}${verdictB
         defaultModelId: modelId,
         fallbackProvider: settings.fallbackProvider,
         fallbackModelId: settings.fallbackModelId,
-        defaultThinkingLevel: resolveExecutorThinkingLevel(task.thinkingLevel, settings),
+        defaultThinkingLevel: workflowStepThinkingLevel,
         runAuditor: createRunAuditor(this.store, this.getRunContextFor(task.id)),
         settings,
         taskEnv: stepEnv,
@@ -15098,7 +15147,7 @@ You have access to the file system to review changes.${inlineFixBlock}${verdictB
 
       const workflowModelDetails = formatModelMarkerDetails(
         describeModel(session),
-        resolveExecutorThinkingLevel(task.thinkingLevel, settings),
+        workflowStepThinkingLevel,
         [
           useOverride && attemptLabel === "primary" ? "workflow step override" : "",
           attemptLabel === "fallback" ? "fallback after timeout" : "",

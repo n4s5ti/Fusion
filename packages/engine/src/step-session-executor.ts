@@ -135,6 +135,8 @@ export interface StepSessionExecutorOptions {
   permanentAgentGating?: PermanentAgentGatingContext;
   /** Optional resolved MCP servers to forward into workflow step sessions. */
   mcpServers?: ResolvedMcpServerDefinition[];
+  /** Optional workflow node/step reasoning-effort override for all sessions in this graph-pinned step pass. */
+  workflowStepThinkingLevel?: string;
   /** Task-scoped environment injected into non-git subprocesses. */
   taskEnv?: NodeJS.ProcessEnv;
   /**
@@ -1270,6 +1272,14 @@ export class StepSessionExecutor {
         let session: AgentSession | null = null;
         const localTelemetry = { agentLogger, trackingKey };
 
+        /*
+         * FNXC:Settings-ThinkingLevel 2026-07-10-00:00:
+         * Reusable primary step sessions resolve reasoning effort as workflow node/step override first, then parsed step metadata, then task and settings defaults.
+         */
+        const stepThinkingLevel = this.options.workflowStepThinkingLevel
+          ?? (taskDetail.steps[stepIndex] as { thinkingLevel?: string } | undefined)?.thinkingLevel;
+        const effectiveThinkingLevel = resolveExecutorThinkingLevel(stepThinkingLevel ?? taskDetail.thinkingLevel, settings);
+
         try {
           // Get plugin tools from plugin runner if available
           const pluginTools = this.options.pluginRunner?.getPluginTools() ?? [];
@@ -1345,7 +1355,7 @@ Follow instructions precisely and avoid unrelated changes.`,
               defaultModelId: executorModelId,
               fallbackProvider: settings.fallbackProvider,
               fallbackModelId: settings.fallbackModelId,
-              defaultThinkingLevel: resolveExecutorThinkingLevel(taskDetail.thinkingLevel, settings),
+              defaultThinkingLevel: effectiveThinkingLevel,
               runAuditor: createRunAuditor(this.store, {
                 runId: generateSyntheticRunId("workflow-step", taskDetail.id),
                 // Column-agent attribution (U4): the effective column agent is the

@@ -83,6 +83,11 @@ vi.mock("../agent-session-helpers.js", async () => {
       const hint = runtimeConfig?.runtimeHint;
       return typeof hint === "string" && hint.trim().length > 0 ? hint.trim() : undefined;
     },
+    resolveExecutorThinkingLevel: (taskThinkingLevel: string | undefined, settings: Record<string, unknown> | undefined) =>
+      taskThinkingLevel
+      ?? (typeof settings?.executionGlobalThinkingLevel === "string" ? settings.executionGlobalThinkingLevel : undefined)
+      ?? (typeof settings?.defaultThinkingLevelOverride === "string" ? settings.defaultThinkingLevelOverride : undefined)
+      ?? (typeof settings?.defaultThinkingLevel === "string" ? settings.defaultThinkingLevel : undefined),
     resolveExecutorSessionModel: (
       taskModelProvider: string | undefined,
       taskModelId: string | undefined,
