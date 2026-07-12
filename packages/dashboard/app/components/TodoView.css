@@ -462,24 +462,25 @@ Redesign Todos to fit the rest of the dashboard theme: full-height tokenized wor
   gap: var(--space-sm);
 }
 
+/*
+FNXC:TodosStyling 2026-07-12-00:00:
+FN-7870 removes the active-row left accent stripe and per-row border boxing so Todo sidebar list rows read as a flat, quiet stack. Active and hover states remain visible through background and text color only.
+*/
 .todo-list-item {
   min-height: 42px;
   padding: var(--space-sm);
-  border: 1px solid transparent;
   border-radius: var(--radius-md);
   color: var(--text-muted);
 }
 
 .todo-list-item:hover {
   background: var(--card-hover);
-  border-color: color-mix(in srgb, var(--border) 70%, transparent);
+  color: var(--text);
 }
 
 .todo-list-item--active {
   background: color-mix(in srgb, var(--todo) 10%, var(--surface));
-  border-color: color-mix(in srgb, var(--todo) 32%, var(--border));
   color: var(--text);
-  box-shadow: inset 3px 0 0 var(--todo);
 }
 
 .todo-list-select-btn {
