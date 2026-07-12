@@ -1917,6 +1917,10 @@ function hasImageSignature(data: Buffer, mimeType: string): boolean {
 function notifyArtifactRegistered(messageStore: MessageStore | undefined, artifact: Artifact, authorId: string): void {
   if (!messageStore) return;
 
+  /*
+  FNXC:ArtifactRegistry 2026-07-12-00:00:
+  Artifact-registration mailbox notifications remain best-effort and keep their stable content string, but metadata now carries mimeType so dashboard mailbox surfaces can render document/other artifact affordances from metadata without an extra artifact fetch.
+  */
   try {
     messageStore.sendMessage({
       fromType: "system",
@@ -1928,6 +1932,7 @@ function notifyArtifactRegistered(messageStore: MessageStore | undefined, artifa
         artifactId: artifact.id,
         artifactType: artifact.type,
         title: artifact.title,
+        mimeType: artifact.mimeType,
         authorId,
         taskId: artifact.taskId,
       },
