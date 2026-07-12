@@ -1162,6 +1162,13 @@ export function TerminalModal({ isOpen, onClose, initialCommand, initialCommandG
   const [terminalWorkspaceMenuOpen, setTerminalWorkspaceMenuOpen] = useState(false);
   const [terminalWorkspaceMenuPosition, setTerminalWorkspaceMenuPosition] = useState<TerminalWorkspaceMenuPosition | null>(null);
   const [selectedTerminalWorkspaceId, setSelectedTerminalWorkspaceId] = useState("project");
+  const terminalWorkspaceSelectionTouchedRef = useRef(false);
+  const defaultTerminalWorkspaceId = useMemo(() => {
+    if (typeof defaultCwd !== "string" || defaultCwd.trim().length === 0) {
+      return undefined;
+    }
+    return terminalWorkspaces.find((workspace) => workspace.worktree && workspace.worktree === defaultCwd)?.id;
+  }, [defaultCwd, terminalWorkspaces]);
 
   const selectedTerminalWorkspace = useMemo(
     () => terminalWorkspaces.find((workspace) => workspace.id === selectedTerminalWorkspaceId) ?? null,
@@ -1180,7 +1187,17 @@ export function TerminalModal({ isOpen, onClose, initialCommand, initialCommandG
 
   FNXC:TerminalWorkspaces 2026-06-29-00:00:
   The picker is a header menu, not terminal input: Escape and outside clicks close the listbox first so users do not accidentally close the whole terminal while navigating worktrees with keyboard or touch.
+
+  FNXC:TerminalWorkspaces 2026-07-11-00:00:
+  Embedded Task Detail terminals pass defaultCwd for the first shell, so default the picker to the registered workspace whose worktree exactly matches that path. Apply this only until the operator manually changes the picker; footer terminals omit defaultCwd and continue to show Project Root.
   */
+  useEffect(() => {
+    if (!defaultTerminalWorkspaceId || selectedTerminalWorkspaceId !== "project" || terminalWorkspaceSelectionTouchedRef.current) {
+      return;
+    }
+    setSelectedTerminalWorkspaceId(defaultTerminalWorkspaceId);
+  }, [defaultTerminalWorkspaceId, selectedTerminalWorkspaceId]);
+
   useEffect(() => {
     if (selectedTerminalWorkspaceId === "project") {
       return;
@@ -2648,6 +2665,7 @@ export function TerminalModal({ isOpen, onClose, initialCommand, initialCommandG
                     type="button"
                     className={`terminal-workspace-picker-option${selectedTerminalWorkspaceId === "project" ? " active" : ""}`}
                     onClick={() => {
+                      terminalWorkspaceSelectionTouchedRef.current = true;
                       setSelectedTerminalWorkspaceId("project");
                       setTerminalWorkspaceMenuOpen(false);
                     }}
@@ -2674,6 +2692,7 @@ export function TerminalModal({ isOpen, onClose, initialCommand, initialCommandG
                         className={`terminal-workspace-picker-option${selectedTerminalWorkspaceId === workspace.id ? " active" : ""}${disabled ? " disabled" : ""}`}
                         onClick={() => {
                           if (disabled) return;
+                          terminalWorkspaceSelectionTouchedRef.current = true;
                           setSelectedTerminalWorkspaceId(workspace.id);
                           setTerminalWorkspaceMenuOpen(false);
                         }}

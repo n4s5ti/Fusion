@@ -497,6 +497,70 @@ describe("TerminalModal", () => {
     expect(defaultSessionState.createTab).toHaveBeenCalledWith();
   });
 
+  it("defaults the embedded picker to the workspace matching defaultCwd", async () => {
+    mockUseWorkspaces.mockReturnValue({
+      projectName: "kb",
+      workspaces: [
+        { id: "FN-7832", label: "FN-7832", title: "Task terminal picker", worktree: "/repo/.worktrees/FN-7832", kind: "task" },
+      ],
+      loading: false,
+      error: null,
+    });
+
+    render(
+      <TerminalModal
+        isOpen={true}
+        onClose={mockOnClose}
+        embedded
+        defaultCwd="/repo/.worktrees/FN-7832"
+        scopeId="FN-7832"
+      />,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByLabelText("Select terminal workspace: FN-7832")).toBeInTheDocument();
+    });
+    expect(screen.queryByLabelText("Select terminal workspace: Project Root")).toBeNull();
+  });
+
+  it("falls back to Project Root when embedded defaultCwd has no workspace match", async () => {
+    mockUseWorkspaces.mockReturnValue({
+      projectName: "kb",
+      workspaces: [
+        { id: "FN-0001", label: "FN-0001", title: "Different task", worktree: "/repo/.worktrees/FN-0001", kind: "task" },
+      ],
+      loading: false,
+      error: null,
+    });
+
+    render(
+      <TerminalModal
+        isOpen={true}
+        onClose={mockOnClose}
+        embedded
+        defaultCwd="/repo/.worktrees/FN-7832"
+        scopeId="FN-7832"
+      />,
+    );
+
+    expect(await screen.findByLabelText("Select terminal workspace: Project Root")).toBeInTheDocument();
+  });
+
+  it("keeps the footer picker defaulted to Project Root when defaultCwd is omitted", async () => {
+    mockUseWorkspaces.mockReturnValue({
+      projectName: "kb",
+      workspaces: [
+        { id: "FN-7832", label: "FN-7832", title: "Task terminal picker", worktree: "/repo/.worktrees/FN-7832", kind: "task" },
+      ],
+      loading: false,
+      error: null,
+    });
+
+    render(<TerminalModal isOpen={true} onClose={mockOnClose} />);
+
+    expect(await screen.findByLabelText("Select terminal workspace: Project Root")).toBeInTheDocument();
+  });
+
   it("opens a new terminal in the selected task worktree", async () => {
     const createTab = vi.fn().mockResolvedValue(defaultTab);
     mockUseTerminalSessions.mockReturnValue({

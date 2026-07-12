@@ -3681,6 +3681,9 @@ Read-only list/placeholder only — not the deferred rich per-repo-status compon
 /*
 FNXC:TaskDetailTerminal 2026-07-10-00:00:
 FN-7813's interactive task Terminal tab hosts an embedded TerminalModal, so the section must provide a real flex height and keep terminal scrolling internal to the shell instead of the surrounding detail modal.
+
+FNXC:TaskDetailTerminal 2026-07-11-00:00:
+Mobile Task Detail needs a shorter embedded terminal than the desktop/tablet shell so tab context and controls remain reachable above the fold; keep the value token-based and large enough for an interactive shell.
 */
 .detail-section--worktree-terminal {
   display: flex;
@@ -3691,6 +3694,6 @@ FN-7813's interactive task Terminal tab hosts an embedded TerminalModal, so the 
 
 @media (max-width: 768px) {
   .detail-section--worktree-terminal {
-    min-height: min(65dvh, calc(var(--space-2xl) * 14));
+    min-height: min(50dvh, calc(var(--space-2xl) * 11));
   }
 }

@@ -4380,13 +4380,6 @@ export function TaskDetailContent({
                 {t("taskDetail.tabs.summary", "Summary")}
               </button>
             )}
-            {/* FNXC:TaskDetailCost 2026-07-11-12:10: The Cost tab is always reachable (unlike done-only Summary) because operators need read-time model spend visibility while work is still in progress; it reuses costFor via the shared taskTokenCost helper and never persists derived USD. */}
-            <button
-              className={`detail-tab${activeTab === "cost" ? " detail-tab-active" : ""}`}
-              onClick={() => setActiveTab("cost")}
-            >
-              {t("taskDetail.tabs.cost", "Cost")}
-            </button>
             <button
               className={`detail-tab${activeTab === "definition" ? " detail-tab-active" : ""}`}
               onClick={() => setActiveTab("definition")}
@@ -4420,6 +4413,21 @@ export function TaskDetailContent({
               onClick={() => setActiveTab("comments")}
             >
               {t("taskDetail.tabs.comments", "Comments")}
+            </button>
+            {/* FNXC:TaskDetailCost 2026-07-11-00:00: Keep the tab strip's operator workflow as Comments → Terminal → Cost so discussion, shell context, and model spend sit together. Cost remains always reachable (unlike done-only Summary) and uses costFor via the shared taskTokenCost helper without persisting derived USD. */}
+            {showWorktreeTerminalTab && (
+              <button
+                className={`detail-tab${activeTab === "worktree-terminal" ? " detail-tab-active" : ""}`}
+                onClick={() => setActiveTab("worktree-terminal")}
+              >
+                {t("taskDetail.tabs.worktreeTerminal", "Terminal")}
+              </button>
+            )}
+            <button
+              className={`detail-tab${activeTab === "cost" ? " detail-tab-active" : ""}`}
+              onClick={() => setActiveTab("cost")}
+            >
+              {t("taskDetail.tabs.cost", "Cost")}
             </button>
             <button
               className={`detail-tab${activeTab === "documents" ? " detail-tab-active" : ""}`}
@@ -4458,14 +4466,6 @@ export function TaskDetailContent({
                 onClick={() => setActiveTab("terminal")}
               >
                 {t("taskDetail.tabs.terminal", "Session")}
-              </button>
-            )}
-            {showWorktreeTerminalTab && (
-              <button
-                className={`detail-tab${activeTab === "worktree-terminal" ? " detail-tab-active" : ""}`}
-                onClick={() => setActiveTab("worktree-terminal")}
-              >
-                {t("taskDetail.tabs.worktreeTerminal", "Terminal")}
               </button>
             )}
             {/* Plugin tabs */}

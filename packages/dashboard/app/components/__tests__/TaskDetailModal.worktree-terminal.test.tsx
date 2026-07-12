@@ -161,6 +161,18 @@ describe("TaskDetailModal worktree terminal tab", () => {
     }));
   });
 
+  it("orders Comments, Terminal, and Cost tabs together", async () => {
+    const { container } = renderDetail();
+
+    await screen.findByRole("button", { name: "Terminal" });
+    const tabLabels = Array.from(container.querySelectorAll<HTMLButtonElement>(".detail-tabs .detail-tab"))
+      .map((tab) => tab.textContent?.trim());
+
+    expect(tabLabels.indexOf("Comments")).toBeGreaterThanOrEqual(0);
+    expect(tabLabels.indexOf("Terminal")).toBeGreaterThan(tabLabels.indexOf("Comments"));
+    expect(tabLabels.indexOf("Cost")).toBe(tabLabels.indexOf("Terminal") + 1);
+  });
+
   it("renders distinct Session and Terminal tab labels when an agent session exists", async () => {
     vi.mocked(dashboardApi.api).mockResolvedValueOnce({
       sessions: [{
