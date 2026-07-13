@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import "@testing-library/jest-dom";
 import { CommandCenter } from "../CommandCenter";
+import { BUG_URL_MAX_ENCODED } from "../areas/SystemControlsArea";
 
 const apiMock = vi.fn();
 const mockFetchSystemInfo = vi.fn();
@@ -266,6 +267,8 @@ describe("SystemControlsArea layout integration", () => {
     expect(body).toContain("<details><summary>Diagnostics</summary>");
     expect(body).toContain('"recentLogs"');
     expect(body).toContain("boom");
+    expect(body).not.toContain("\u2026(truncated)");
+    expect(url.length).toBeLessThanOrEqual(BUG_URL_MAX_ENCODED);
 
     confirmSpy.mockRestore();
     openSpy.mockRestore();
@@ -314,12 +317,12 @@ describe("SystemControlsArea layout integration", () => {
     openSpy.mockRestore();
   });
 
-  it("truncates an oversized diagnostics bundle in the bug report body with the truncation cap marker", async () => {
+  it("truncates an oversized diagnostics bundle against the encoded GitHub URL ceiling", async () => {
     mockFetchSystemLogs.mockResolvedValue({
       entries: Array.from({ length: 100 }, (_, i) => ({
         timestamp: "2026-07-12T00:00:00.000Z",
         level: "error" as const,
-        message: `error-line-${i}-${"x".repeat(100)}`,
+        message: `error-line-${i}-{\"quoted\":\"${"x".repeat(100)}\",\"nested\":{\"value\":\"${"y".repeat(100)}\"}}`,
       })),
     });
     const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true);
@@ -332,8 +335,8 @@ describe("SystemControlsArea layout integration", () => {
     await waitFor(() => expect(openSpy).toHaveBeenCalledTimes(1));
     const url = openSpy.mock.calls[0]?.[0] as string;
     const body = decodeURIComponent(url.split("?body=")[1] ?? "");
+    expect(url.length).toBeLessThanOrEqual(BUG_URL_MAX_ENCODED);
     expect(body).toContain("\u2026(truncated)");
-    expect(body.length).toBeLessThanOrEqual(5500 + "\n\u2026(truncated)".length);
 
     confirmSpy.mockRestore();
     openSpy.mockRestore();

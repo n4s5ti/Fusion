@@ -58,8 +58,33 @@ const BACK_ONLINE_RELOAD_DELAY_MS = 3000;
 // respawn, unsupervised restart that stopped) doesn't leave the panel polling
 // forever with every control disabled.
 const RESTART_WAIT_TIMEOUT_MS = 90_000;
-const BUG_URL_BODY_CAP = 5500;
+export const BUG_URL_MAX_ENCODED = 8000;
+const BUG_URL_TRUNCATION_MARKER = "\n…(truncated)";
+const BUG_URL_BODY_QUERY_PREFIX = "?body=";
 const GITHUB_NEW_ISSUE_URL = "https://github.com/Runfusion/Fusion/issues/new";
+
+function buildBugReportIssueUrl(body: string): string {
+  const prefix = `${GITHUB_NEW_ISSUE_URL}${BUG_URL_BODY_QUERY_PREFIX}`;
+  const toUrl = (candidate: string) => `${prefix}${encodeURIComponent(candidate)}`;
+  const fullUrl = toUrl(body);
+  if (fullUrl.length <= BUG_URL_MAX_ENCODED) return fullUrl;
+
+  const encodedBudget = BUG_URL_MAX_ENCODED - prefix.length;
+  const codePoints = Array.from(body);
+  let low = 0;
+  let high = codePoints.length;
+  while (low < high) {
+    const mid = Math.ceil((low + high) / 2);
+    const candidate = `${codePoints.slice(0, mid).join("")}${BUG_URL_TRUNCATION_MARKER}`;
+    if (encodeURIComponent(candidate).length <= encodedBudget) {
+      low = mid;
+    } else {
+      high = mid - 1;
+    }
+  }
+
+  return toUrl(`${codePoints.slice(0, low).join("")}${BUG_URL_TRUNCATION_MARKER}`);
+}
 
 type RestartPhase = null | "waiting" | "back" | "timeout";
 
@@ -378,11 +403,16 @@ export function SystemControlsArea({ projectId, addToast }: SystemControlsAreaPr
   context for a first triage pass. Now doReportBug reuses the exact same
   buildDiagnostics() bundle that "Copy diagnostics" produces (health,
   runtime/system info, recent logs) and asks a single confirmation question
-  covering that whole bundle. The confirm gate, fenceSafe neutralization, and
-  BUG_URL_BODY_CAP truncation are preserved unchanged because this content is
-  still sent to a public github.com issue and must never be included without
-  explicit operator consent, must not let a log line break out of the fenced
-  code block, and must not produce an over-length URL.
+  covering that whole bundle.
+
+  FNXC:SystemPanel 2026-07-12-18:41:
+  Requirement change (FN-7890): truncation is budgeted against the full URL that
+  GitHub receives: base issue URL + ?body= + encodeURIComponent(body). FN-7883's
+  diagnostics JSON includes quotes, braces, and newlines that expand during
+  percent-encoding, so the old raw body-length cap could still emit a request
+  URL too long for GitHub. The confirm gate, fenceSafe neutralization, and body
+  sections remain unchanged while the final window.open URL is kept under the
+  encoded ceiling.
   */
   const doReportBug = useCallback(
     () =>
@@ -396,7 +426,7 @@ export function SystemControlsArea({ projectId, addToast }: SystemControlsAreaPr
           ),
         );
         const diagnostics = includeDiagnostics ? await buildDiagnostics() : null;
-        let body = [
+        const body = [
           "### What happened",
           "",
           "<!-- Describe the bug -->",
@@ -419,8 +449,7 @@ export function SystemControlsArea({ projectId, addToast }: SystemControlsAreaPr
               ]
             : []),
         ].join("\n");
-        if (body.length > BUG_URL_BODY_CAP) body = `${body.slice(0, BUG_URL_BODY_CAP)}\n…(truncated)`;
-        window.open(`${GITHUB_NEW_ISSUE_URL}?body=${encodeURIComponent(body)}`, "_blank", "noopener");
+        window.open(buildBugReportIssueUrl(body), "_blank", "noopener");
       }),
     [buildDiagnostics, info, runAction, t],
   );
