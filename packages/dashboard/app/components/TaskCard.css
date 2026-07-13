@@ -1521,6 +1521,7 @@ short-landscape variant (FN-5751 lesson: never a desktop-only or portrait-only f
   width: 20px;
   height: 20px;
   padding: 0;
+  line-height: 1;
   background: transparent;
   border: none;
   border-radius: var(--radius-sm);
@@ -1650,6 +1651,10 @@ too so future divergence doesn't have to rediscover the shared selector group.
   position: relative;
 }
 
+/*
+FNXC:TaskCardLayout 2026-07-12-00:00:
+FN-7928 requires the Send-back/Actions trigger, ⋯ menu button, and size badge to share one optical vertical center inside .card-header-actions. Normalize their line boxes while preserving FN-7889's cluster↔id transform nudge, FN-7862's flex-start header anchor, FN-7837's middle-badge wrap/size-chip-not-orphaned contract, and FN-4351's mobile no-min-height rule.
+*/
 .card-send-back-btn {
   display: inline-flex;
   align-items: center;
@@ -1659,6 +1664,7 @@ too so future divergence doesn't have to rediscover the shared selector group.
   margin-left: var(--space-xs);
   font-size: 0.625rem;
   font-weight: 500;
+  line-height: 1;
   background: var(--card);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);

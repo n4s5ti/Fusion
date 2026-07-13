@@ -82,6 +82,55 @@ function expectSharedHeaderBaseline(container: HTMLElement) {
   expect(actionsStyles.flex).toBe("0 0 auto");
 }
 
+function expectHeaderActionsControlCenterline(container: HTMLElement, expected: {
+  sendBack?: boolean;
+  menu?: boolean;
+  size?: boolean;
+}) {
+  const actions = container.querySelector(".card-header-actions") as HTMLElement;
+  expect(actions).toBeTruthy();
+  expect(getComputedStyle(actions).alignItems).toBe("center");
+
+  const sendBack = actions.querySelector(".card-send-back-btn") as HTMLElement | null;
+  const menu = actions.querySelector(".card-menu-btn") as HTMLElement | null;
+  const sizeBadge = actions.querySelector(".card-size-badge") as HTMLElement | null;
+
+  if (expected.sendBack) {
+    expect(sendBack).toBeTruthy();
+    const sendBackStyles = getComputedStyle(sendBack!);
+    expect(sendBackStyles.display).toBe("inline-flex");
+    expect(sendBackStyles.alignItems).toBe("center");
+    expect(sendBackStyles.lineHeight).toBe("1");
+    expect(sendBackStyles.minHeight).toBe("");
+  } else {
+    expect(sendBack).toBeNull();
+  }
+
+  if (expected.menu) {
+    expect(menu).toBeTruthy();
+    const menuStyles = getComputedStyle(menu!);
+    expect(menuStyles.display).toBe("flex");
+    expect(menuStyles.alignItems).toBe("center");
+    expect(menuStyles.justifyContent).toBe("center");
+    expect(menuStyles.lineHeight).toBe("1");
+    expect(menuStyles.minHeight).toBe("");
+  } else {
+    expect(menu).toBeNull();
+  }
+
+  if (expected.size) {
+    expect(sizeBadge).toBeTruthy();
+    const sizeStyles = getComputedStyle(sizeBadge!);
+    expect(sizeStyles.display).toBe("inline-flex");
+    expect(sizeStyles.alignItems).toBe("center");
+    expect(sizeStyles.lineHeight).toBe("1");
+    expect(actions.contains(sizeBadge)).toBe(true);
+    expect(sizeBadge!.closest(".card-header-badges")).toBeNull();
+  } else {
+    expect(sizeBadge).toBeNull();
+  }
+}
+
 function makeTask(overrides: Partial<Task> = {}): Task {
   return {
     id: "FN-5162",
@@ -268,6 +317,93 @@ describe("TaskCard badge wrapping (FN-5162)", () => {
     expect(actions.contains(sizeBadge)).toBe(true);
     expect(sizeBadge.closest(".card-header-badges")).toBeNull();
     expectSharedHeaderBaseline(triageContainer);
+  });
+
+  it("keeps Send back, menu, and size controls on one header-actions centerline across card states", () => {
+    const { container: inProgressContainer } = render(
+      <TaskCard
+        task={makeTask({
+          id: "FN-7928-IN-PROGRESS",
+          column: "in-progress",
+          status: "running" as Task["status"],
+          size: "M",
+        })}
+        onOpenDetail={noop}
+        addToast={noop}
+        onMoveTask={async () => makeTask()}
+      />,
+    );
+
+    expectSharedHeaderBaseline(inProgressContainer);
+    expectHeaderActionsControlCenterline(inProgressContainer, { sendBack: true, menu: true, size: true });
+
+    const { container: doneContainer } = render(
+      <TaskCard
+        task={makeTask({
+          id: "FN-7928-DONE",
+          column: "done",
+          status: "done" as Task["status"],
+          size: "S",
+        })}
+        onOpenDetail={noop}
+        addToast={noop}
+        onArchiveTask={async () => makeTask()}
+      />,
+    );
+
+    expectSharedHeaderBaseline(doneContainer);
+    expectHeaderActionsControlCenterline(doneContainer, { sendBack: true, menu: true, size: true });
+
+    const { container: triageContainer } = render(
+      <TaskCard
+        task={makeTask({
+          id: "FN-7928-TRIAGE",
+          column: "triage",
+          status: undefined,
+          size: "L",
+        })}
+        onOpenDetail={noop}
+        addToast={noop}
+        onUpdateTask={async () => makeTask()}
+        onDeleteTask={async () => makeTask()}
+      />,
+    );
+
+    expectSharedHeaderBaseline(triageContainer);
+    expectHeaderActionsControlCenterline(triageContainer, { menu: true, size: true });
+
+    const { container: menuAbsentContainer } = render(
+      <TaskCard
+        task={makeTask({
+          id: "FN-7928-NO-MENU",
+          column: "todo",
+          status: "pending" as Task["status"],
+          size: "M",
+        })}
+        onOpenDetail={noop}
+        addToast={noop}
+      />,
+    );
+
+    expectSharedHeaderBaseline(menuAbsentContainer);
+    expectHeaderActionsControlCenterline(menuAbsentContainer, { size: true });
+
+    const { container: sizeAbsentContainer } = render(
+      <TaskCard
+        task={makeTask({
+          id: "FN-7928-NO-SIZE",
+          column: "in-progress",
+          status: "running" as Task["status"],
+          size: undefined,
+        })}
+        onOpenDetail={noop}
+        addToast={noop}
+        onMoveTask={async () => makeTask()}
+      />,
+    );
+
+    expectSharedHeaderBaseline(sizeAbsentContainer);
+    expectHeaderActionsControlCenterline(sizeAbsentContainer, { sendBack: true, menu: true });
   });
 
   it("keeps the centered-id nudge and mobile header rhythm tokenized with the badge-wrap contract", () => {
