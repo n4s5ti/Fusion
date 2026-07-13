@@ -1967,9 +1967,14 @@ CLI-agent sessions, or while streaming) — see StandardChatSurface.tsx `showEdi
   transform: scale(0.97);
 }
 
+/*
+FNXC:Chat-ComposerAlignment 2026-07-12-10:25:
+Composer attach + model/thinking icon controls must be vertically centered with the single-line text input box on all surfaces (desktop/tablet/mobile). Match their block-size to --chat-input-control-size (== send button == textarea min-height) so align-self: flex-end yields center alignment when single-line and keeps them at the row bottom when the textarea grows multi-line. (FN-7917)
+*/
 .chat-attach-btn {
-  min-width: calc(var(--space-lg) * 2);
-  min-height: calc(var(--space-lg) * 2);
+  min-inline-size: var(--chat-input-control-size);
+  min-block-size: var(--chat-input-control-size);
+  block-size: var(--chat-input-control-size);
   align-self: flex-end;
 }
 
@@ -1985,12 +1990,15 @@ FN-7908 keeps model/agent retargeting inside the same brain popup. The widened p
 */
 .chat-thinking-level-root {
   position: relative;
+  min-block-size: var(--chat-input-control-size);
+  block-size: var(--chat-input-control-size);
   align-self: flex-end;
 }
 
 .chat-thinking-btn {
-  min-width: calc(var(--space-lg) * 2);
-  min-height: calc(var(--space-lg) * 2);
+  min-inline-size: var(--chat-input-control-size);
+  min-block-size: var(--chat-input-control-size);
+  block-size: var(--chat-input-control-size);
 }
 
 .chat-thinking-btn--active {
@@ -2520,16 +2528,12 @@ Queued-message banners stack above the composer input with a capped scroll area,
     margin-left: auto;
   }
 
-  /* primary touch targets per AGENTS.md convention */
-  .chat-attach-btn {
-    min-width: calc(var(--space-lg) * 2.25);
-    min-height: calc(var(--space-lg) * 2.25);
-  }
-
-  /* FN-7898: mirror the attach button's mobile touch-target bump. */
+  /* primary touch targets per AGENTS.md convention; FN-7917 keeps the icon controls in parity with the send/input control size on mobile too. */
+  .chat-attach-btn,
   .chat-thinking-btn {
-    min-width: calc(var(--space-lg) * 2.25);
-    min-height: calc(var(--space-lg) * 2.25);
+    min-inline-size: var(--chat-input-control-size);
+    min-block-size: var(--chat-input-control-size);
+    block-size: var(--chat-input-control-size);
   }
 
   /*
