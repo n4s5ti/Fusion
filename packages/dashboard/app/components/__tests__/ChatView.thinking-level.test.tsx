@@ -8,6 +8,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { act, fireEvent, render as rtlRender, screen } from "@testing-library/react";
 import { ChatView } from "../ChatView";
+import * as api from "../../api";
 import * as useChatModule from "../../hooks/useChat";
 import * as useChatRoomsModule from "../../hooks/useChatRooms";
 import type { ChatSessionInfo, UseChatReturn } from "../../hooks/useChat";
@@ -26,6 +27,11 @@ vi.mock("../SessionTerminal", () => ({
 
 vi.mock("../../hooks/useChat");
 vi.mock("../../hooks/useChatRooms");
+vi.mock("../CustomModelDropdown", () => ({
+  CustomModelDropdown: ({ defaultThinkingLevel }: { defaultThinkingLevel?: string }) => (
+    <div data-testid="custom-model-dropdown" data-default-thinking={defaultThinkingLevel ?? ""} />
+  ),
+}));
 vi.mock("../../hooks/useNavigationHistory", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../../hooks/useNavigationHistory")>();
   return {
@@ -38,8 +44,10 @@ vi.mock("../../api", async (importOriginal) => {
   return {
     ...actual,
     fetchAgents: vi.fn().mockResolvedValue([]),
+    fetchModels: vi.fn().mockResolvedValue({ models: [], favoriteProviders: [], favoriteModels: [] }),
     fetchDiscoveredSkills: vi.fn().mockResolvedValue([]),
     fetchTasks: vi.fn().mockResolvedValue([]),
+    fetchSettings: vi.fn().mockResolvedValue({}),
     searchFiles: vi.fn().mockResolvedValue({ files: [] }),
   };
 });
@@ -54,6 +62,7 @@ async function renderWithAct(ui: Parameters<typeof rtlRender>[0]) {
 
 const mockUseChat = vi.mocked(useChatModule.useChat);
 const mockUseChatRooms = vi.mocked(useChatRoomsModule.useChatRooms);
+const mockFetchSettings = vi.mocked(api.fetchSettings);
 
 function makeSession(overrides: Partial<ChatSessionInfo> = {}): ChatSessionInfo {
   return {
@@ -168,6 +177,7 @@ describe("ChatView thinking-level control (FN-7898)", () => {
   beforeEach(() => {
     _resetInitialViewportHeight();
     vi.clearAllMocks();
+    mockFetchSettings.mockResolvedValue({} as Awaited<ReturnType<typeof api.fetchSettings>>);
     mockDesktopViewport();
     mockUseChatRooms.mockReturnValue(roomsState());
   });
@@ -258,5 +268,37 @@ describe("ChatView thinking-level control (FN-7898)", () => {
     // the trigger sits alongside the attach button inside the same input row.
     expect(trigger.closest(".chat-input-row")).not.toBeNull();
     expect(trigger.closest(".chat-thinking-level-root")).not.toBeNull();
+  });
+
+  it("(g) uses the resolved Settings default for both the in-chat and New Chat thinking-level labels", async () => {
+    mockFetchSettings.mockResolvedValue({ defaultThinkingLevel: "medium" } as Awaited<ReturnType<typeof api.fetchSettings>>);
+    const session = makeSession({ id: "sess-default-medium", cliExecutorAdapterId: null, thinkingLevel: null });
+    mockUseChat.mockReturnValue(chatState({ activeSession: session, sessions: [session] }));
+
+    await renderWithAct(<ChatView projectId="proj-123" addToast={vi.fn()} />);
+
+    fireEvent.click(screen.getByTestId("chat-thinking-btn"));
+    expect(await screen.findByText("Default (medium)")).toBeInTheDocument();
+
+    fireEvent.click(screen.getAllByTestId("chat-new-btn")[0]);
+    fireEvent.click(screen.getByTestId("chat-new-dialog-mode-model"));
+
+    expect(await screen.findByTestId("custom-model-dropdown")).toHaveAttribute("data-default-thinking", "medium");
+  });
+
+  it("(h) falls back to off for both chat thinking-level surfaces when Settings has no default", async () => {
+    mockFetchSettings.mockResolvedValue({} as Awaited<ReturnType<typeof api.fetchSettings>>);
+    const session = makeSession({ id: "sess-default-off", cliExecutorAdapterId: null, thinkingLevel: null });
+    mockUseChat.mockReturnValue(chatState({ activeSession: session, sessions: [session] }));
+
+    await renderWithAct(<ChatView projectId="proj-123" addToast={vi.fn()} />);
+
+    fireEvent.click(screen.getByTestId("chat-thinking-btn"));
+    expect(screen.getByText("Default (off)")).toBeInTheDocument();
+
+    fireEvent.click(screen.getAllByTestId("chat-new-btn")[0]);
+    fireEvent.click(screen.getByTestId("chat-new-dialog-mode-model"));
+
+    expect(await screen.findByTestId("custom-model-dropdown")).toHaveAttribute("data-default-thinking", "off");
   });
 });

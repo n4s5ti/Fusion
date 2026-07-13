@@ -31,6 +31,22 @@ describe("ChatThinkingLevelControl", () => {
     expect(screen.getAllByRole("option")).toHaveLength(THINKING_LEVELS.length + 1);
   });
 
+  it("labels Default with the supplied resolved project/global thinking default", () => {
+    render(<ChatThinkingLevelControl level={null} defaultThinkingLevel="medium" onChange={vi.fn()} />);
+
+    fireEvent.click(screen.getByTestId("chat-thinking-btn"));
+
+    expect(screen.getByTestId("chat-thinking-option-default")).toHaveTextContent("Default (medium)");
+  });
+
+  it("falls back to Default (off) when no resolved default is supplied", () => {
+    render(<ChatThinkingLevelControl level={null} onChange={vi.fn()} />);
+
+    fireEvent.click(screen.getByTestId("chat-thinking-btn"));
+
+    expect(screen.getByTestId("chat-thinking-option-default")).toHaveTextContent("Default (off)");
+  });
+
   it("selecting a level calls onChange with that level and closes the popup", () => {
     const onChange = vi.fn();
     render(<ChatThinkingLevelControl level={null} onChange={onChange} />);

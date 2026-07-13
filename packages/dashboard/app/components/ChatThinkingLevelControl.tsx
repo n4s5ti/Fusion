@@ -14,6 +14,9 @@ the session's next send. This mirrors ThemeDropdown.tsx's small-popover interact
 (rootRef + pointerdown outside-close, Escape, aria-haspopup listbox) and reuses
 CustomModelDropdown's exact i18n keys for level labels and the default entry, rather than
 introducing a parallel thinking-level list.
+
+FNXC:Chat-ThinkingLevel 2026-07-12-20:08:
+The Default entry must describe the resolved project/global default supplied by ChatView, while omitted props preserve the legacy isolated fallback label `Default (off)`.
 */
 
 export interface ChatThinkingLevelControlProps {
@@ -21,12 +24,14 @@ export interface ChatThinkingLevelControlProps {
   level: string | null | undefined;
   /** Called with the newly selected level ("" for the Default/clear option). */
   onChange: (level: string) => void | Promise<void>;
+  /** Resolved project/global default used only for the Default/clear label. */
+  defaultThinkingLevel?: string;
   disabled?: boolean;
 }
 
 const THINKING_LEVEL_OPTIONS = ["", ...THINKING_LEVELS] as const;
 
-export function ChatThinkingLevelControl({ level, onChange, disabled = false }: ChatThinkingLevelControlProps) {
+export function ChatThinkingLevelControl({ level, onChange, defaultThinkingLevel = "off", disabled = false }: ChatThinkingLevelControlProps) {
   const { t } = useTranslation("app");
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement | null>(null);
@@ -54,7 +59,7 @@ export function ChatThinkingLevelControl({ level, onChange, disabled = false }: 
 
   const optionLabel = (value: string): string => {
     if (value === "") {
-      return t("modelSelection.thinkingDefault", "Default ({{level}})", { level: "off" });
+      return t("modelSelection.thinkingDefault", "Default ({{level}})", { level: defaultThinkingLevel ?? "off" });
     }
     return t(`models.options.${value}`, value === "xhigh" ? "Very High" : value.charAt(0).toUpperCase() + value.slice(1));
   };

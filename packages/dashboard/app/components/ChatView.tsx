@@ -23,8 +23,8 @@ import { useChat, type ChatMessageInfo } from "../hooks/useChat";
 import { RoomMessageDeliveredButReplyFailedError, useChatRooms } from "../hooks/useChatRooms";
 import { useChatUnread } from "../hooks/useChatUnread";
 import { useViewportMode } from "./Header";
-import { updateGlobalSettings, type DiscoveredSkill } from "../api";
-import type { Agent } from "@fusion/core";
+import { fetchSettings, updateGlobalSettings, type DiscoveredSkill } from "../api";
+import type { Agent, Settings } from "@fusion/core";
 import { CustomModelDropdown } from "./CustomModelDropdown";
 import { ChatThinkingLevelControl } from "./ChatThinkingLevelControl";
 import { AgentMentionPopup } from "./AgentMentionPopup";
@@ -280,11 +280,12 @@ export function resolveSessionProvider(
 interface NewChatDialogProps {
   projectId?: string;
   defaultModel: DefaultModelSelection;
+  defaultThinkingLevel?: string;
   onClose: () => void;
   onCreate: (input: { agentId: string; modelProvider?: string; modelId?: string; thinkingLevel?: string }) => void;
 }
 
-function NewChatDialog({ projectId, defaultModel, onClose, onCreate }: NewChatDialogProps) {
+function NewChatDialog({ projectId, defaultModel, defaultThinkingLevel, onClose, onCreate }: NewChatDialogProps) {
   const { t } = useTranslation("app");
   const [chatMode, setChatMode] = useState<"agent" | "model">("agent");
   const { agents, loading: agentsLoading } = useAgentsMapCache(projectId);
@@ -447,7 +448,7 @@ function NewChatDialog({ projectId, defaultModel, onClose, onCreate }: NewChatDi
                   showThinkingLevel
                   thinkingLevel={thinkingLevel}
                   onThinkingLevelChange={setThinkingLevel}
-                  defaultThinkingLevel="off"
+                  defaultThinkingLevel={defaultThinkingLevel ?? "off"}
                 />
               )}
             </div>
@@ -501,6 +502,31 @@ export function ChatView({ projectId, addToast, floating = false, compactLayout 
       });
     };
   }, [projectId]);
+
+  const [chatSettings, setChatSettings] = useState<Settings | null>(null);
+  /*
+  FNXC:Chat-ThinkingLevel 2026-07-12-20:05:
+  The chat Default thinking-level labels must surface the same resolved project/global default every dashboard model picker reads from Settings (`defaultThinkingLevel ?? "off"`) instead of hardcoding `off`.
+  This fetch only corrects labels in NewChatDialog and ChatThinkingLevelControl; send-time resolution remains centralized in `resolveExecutorThinkingLevel` in dashboard chat.ts.
+  */
+  useEffect(() => {
+    let cancelled = false;
+    fetchSettings(projectId)
+      .then((settings) => {
+        if (!cancelled) {
+          setChatSettings(settings);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setChatSettings(null);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [projectId]);
+  const resolvedDefaultThinkingLevel = chatSettings?.defaultThinkingLevel ?? "off";
 
   const {
     activeSession,
@@ -2680,6 +2706,7 @@ export function ChatView({ projectId, addToast, floating = false, compactLayout 
         {!cliChatActive && (
           <ChatThinkingLevelControl
             level={activeSession?.thinkingLevel}
+            defaultThinkingLevel={resolvedDefaultThinkingLevel}
             onChange={(level) => {
               if (activeSession) {
                 void setSessionThinkingLevel(activeSession.id, level);
@@ -3658,6 +3685,7 @@ export function ChatView({ projectId, addToast, floating = false, compactLayout 
         <NewChatDialog
           projectId={projectId}
           defaultModel={defaultModel}
+          defaultThinkingLevel={resolvedDefaultThinkingLevel}
           onClose={() => setShowNewDialog(false)}
           onCreate={handleCreateSession}
         />
