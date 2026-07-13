@@ -2,6 +2,48 @@
 
 User-facing release notes aggregated across all packages. This file is auto-synced from each `packages/*/CHANGELOG.md` by `scripts/release.mjs` — do not edit by hand.
 
+## 0.59.0
+
+### Highlights
+- New Assignment Policy setting keeps liaison agents from ever being routed product tasks
+- Switch a chat's model, agent, or thinking level mid-conversation — no need to start over
+- Command Center gets a System tab with rebuild/restart controls, live logs, and a Plugins tab
+- Agents auto-recover from OAuth token-rotation and heartbeat errors instead of parking for manual retry
+- Copy-to-clipboard actions across the dashboard now work reliably on mobile and non-HTTPS origins
+
+### New
+- Assignment Policy per-agent setting (auto/explicit-only/none) blocks liaison agents from receiving product tasks
+- Switch a chat's model, agent, or thinking level mid-conversation from the composer's brain icon
+- Set a per-project Chat default (model or agent), with prompt-each-time or always-use-default behavior for new chats
+- Command Center System tab adds rebuild & restart, engine/agent restarts, backups, and live logs, plus a new Plugins tab; the dashboard now runs supervised by default so restarts are seamless
+- Thinking Level controls added throughout: schedules and routines, insights, chat rooms, mission interviews, planning mode, reviewer/planning task fields, and agent/bulk task model selectors
+- `fn workflow validate` dry-runs a custom workflow without creating or mutating it
+- `fn plugin publish --dry-run` preflight validates a plugin before publishing
+- Artifact-registration mail notifications show an inline preview and a "View task" link
+- Git Manager gets a Commit and Push button
+- Terminal Preferences supports custom shortcut buttons (label + injected key sequence), available in both the floating terminal and the embedded task-detail terminal
+- Release notes now open with AI-written Highlights, and the release process prints a ready-to-post engagement tweet draft
+- One-time banners and an inbox notice announce the upcoming SQLite to embedded-Postgres storage migration, with a Discord "Get help" link
+
+### Fixed
+- Agents auto-recover from transient OAuth token-rotation and generic heartbeat errors instead of parking, and are automatically un-parked on engine restart
+- Ideas-intake cards no longer auto-process on restart; replan and Retry work correctly from Todo, and All-workflows shows every card
+- Chat history no longer flickers while an agent is mid-turn
+- Agent chat tools for sending and reading messages now work consistently on desktop and browser
+- Plugin skills: reloading a path-registered plugin refreshes its version and settings, per-project skill toggles now apply to agent sessions, and skill bodies in subdirectories are delivered correctly
+- Agent inspection tools now show why an agent is in error or paused
+- Copy-to-clipboard actions (diagnostics, secrets, git, CLI binary, chat responses, and more) now work reliably on mobile and non-HTTPS origins
+- Pausing a task now sticks and survives session teardown instead of auto-resuming; pause/unpause updates the board immediately
+- Task deletion restored from the right-dock Tasks list
+- Pinned terminal no longer renders underneath the status footer; terminal workspace drop-down no longer renders behind the floating terminal
+- Mobile/tablet polish: chat composer icons centered with the input box, artifact preview popups go full-screen on mobile, movable modals drag reliably on mobile/tablet, task priority badges no longer wrap, Settings "Reset" label shortened on mobile, and Command Center System tab spacing/alignment fixed
+- In-chat model/thinking popup no longer gets clipped in narrow floating chat windows or on tablet/mobile
+- Mailbox artifact "View task" now opens the same movable task window used elsewhere
+- Task refinement feedback dialog stays open after selecting Refine
+- Project MCP tools stay available across fresh executors and approval resumes
+- Dashboard TUI splash tagline updated to "software factory"
+- Removed stale "Connected" label and shortcut help text from the terminal footer
+
 ## 0.58.0
 
 ### @fusion/dashboard
