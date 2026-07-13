@@ -3,7 +3,7 @@ import { useTranslation } from "react-i18next";
 import type { TFunction } from "i18next";
 import { memo, useCallback, useState, useRef, useEffect, useLayoutEffect, useMemo, type CSSProperties, type ReactElement } from "react";
 import { createPortal } from "react-dom";
-import { Link, Clock, DollarSign, Layers, Pencil, ChevronDown, Folder, Target, Bot, Trash2, RotateCw, Zap, GitBranch, GitPullRequest, AlertTriangle, ArrowUpRight, Eye, MoreHorizontal } from "lucide-react";
+import { Link, Clock, Layers, Pencil, ChevronDown, Folder, Target, Bot, Trash2, RotateCw, Zap, GitBranch, GitPullRequest, AlertTriangle, ArrowUpRight, Eye, MoreHorizontal } from "lucide-react";
 import type { Task, TaskDetail, Column, ColumnId, PrInfo, IssueInfo, TaskPriority, GithubIssueAction, MergeResult, PlannerOversightLevel } from "@fusion/core";
 import {
   DEFAULT_PLANNER_OVERSIGHT_LEVEL,
@@ -3594,7 +3594,10 @@ function TaskCardComponent({
                   title={t("tasks.costBadgeTitle", "Estimated cost {{amount}}", { amount: cardCostLabel })}
                   aria-label={t("tasks.costBadgeAriaLabel", "Estimated cost {{amount}}", { amount: cardCostLabel })}
                 >
-                  <DollarSign size={12} />
+                  {/*
+                  FNXC:TaskCardCostBadge 2026-07-12-00:00:
+                  The cost chip must show only the formatted amount because formatCost already includes the currency symbol; do not render a leading dollar-sign icon that duplicates the label.
+                  */}
                   <span>{cardCostLabel}</span>
                 </span>
               )}

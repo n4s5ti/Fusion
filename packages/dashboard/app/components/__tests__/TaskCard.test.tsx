@@ -29,7 +29,6 @@ vi.mock("lucide-react", () => ({
   GitBranch: () => null,
   Gitlab: () => null,
   Clock: () => null,
-  DollarSign: () => null,
   Pencil: () => null,
   Layers: () => null,
   ChevronDown: () => null,
@@ -5425,7 +5424,9 @@ describe("TaskCard", () => {
     const costBadge = enabled.container.querySelector(".card-cost-indicator") as HTMLElement | null;
     expect(costBadge).not.toBeNull();
     expect(costBadge?.textContent).toContain("$0.25");
+    expect(costBadge?.querySelector("svg")).toBeNull();
     expect(costBadge?.getAttribute("aria-label")).toBe("Estimated cost $0.25");
+    expect(costBadge?.getAttribute("title")).toBe("Estimated cost $0.25");
     expect(costBadge?.closest(".card-footer-row-right")).toBe(enabled.container.querySelector(".card-footer-row-right"));
     enabled.unmount();
 
@@ -5464,6 +5465,8 @@ describe("TaskCard", () => {
     const costBadge = container.querySelector(".card-cost-indicator") as HTMLElement | null;
     expect(costBadge).not.toBeNull();
     expect(costBadge?.textContent).toContain("—");
+    expect(costBadge?.querySelector("svg")).toBeNull();
+    expect(costBadge?.getAttribute("aria-label")).toBe("Estimated cost —");
     expect(costBadge?.getAttribute("title")).toBe("Estimated cost —");
   });
 
