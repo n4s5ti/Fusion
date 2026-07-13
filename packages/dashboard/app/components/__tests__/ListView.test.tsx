@@ -809,6 +809,27 @@ describe("ListView", () => {
     viewportSpy.mockRestore();
   });
 
+  it("opens Planning Mode from eligible list row menus and omits it for executing rows", async () => {
+    const viewportSpy = mockDesktopViewport();
+    const onPlanningMode = vi.fn();
+    const onOpenDetail = vi.fn();
+    const tasks = [
+      createMockTask({ id: "FN-030", title: "Planning row", description: "Seed from list", column: "triage" }),
+      createMockTask({ id: "FN-031", title: "Executing row", description: "Do not plan", column: "in-progress", status: "executing" }),
+    ];
+
+    renderListView({ tasks, onOpenDetail, onPlanningMode });
+
+    fireEvent.contextMenu(document.querySelector('.list-row[data-id="FN-030"]') as HTMLElement, { clientX: 40, clientY: 50 });
+    fireEvent.click(screen.getByRole("menuitem", { name: "Plan" }));
+    expect(onPlanningMode).toHaveBeenCalledWith("Seed from list", null);
+    expect(onOpenDetail).not.toHaveBeenCalled();
+
+    fireEvent.contextMenu(document.querySelector('.list-row[data-id="FN-031"]') as HTMLElement, { clientX: 40, clientY: 50 });
+    expect(screen.queryByRole("menuitem", { name: "Plan" })).not.toBeInTheDocument();
+    viewportSpy.mockRestore();
+  });
+
   it("enables GitHub tracking from desktop and mobile list context menus without selecting rows", async () => {
     const desktopViewportSpy = mockDesktopViewport();
     const onOpenDetail = vi.fn();

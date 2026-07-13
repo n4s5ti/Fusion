@@ -682,6 +682,15 @@ export function ListView({
     return listColumns.map((column) => ({ id: column.id, label: column.name, flags: column.flags }));
   }, [listColumns, workflowMode]);
 
+  const getTaskPlanningWorkflowId = useCallback((task: Task): string | null => {
+    const taskWorkflowId = (task as Task & { workflowId?: string | null }).workflowId;
+    if (taskWorkflowId) return taskWorkflowId;
+    if (workflowMode && boardWorkflows) {
+      return boardWorkflows.taskWorkflowIds[task.id] ?? boardWorkflows.defaultWorkflowId ?? null;
+    }
+    return null;
+  }, [boardWorkflows, workflowMode]);
+
   const isArchivedColumn = useCallback((column: ColumnId): boolean => {
     return workflowMode ? Boolean(columnFlagsById.get(column)?.archived) : column === "archived";
   }, [columnFlagsById, workflowMode]);
@@ -1714,6 +1723,10 @@ export function ListView({
       mergeStrategy,
       prAutomationLabel: getTaskPrAutomationLabel(t, task.status),
       onDelete: () => void handleListTaskDelete(task),
+      onPlan: onPlanningMode ? () => {
+        const seed = (task.description ?? "").trim() || task.title || task.id;
+        onPlanningMode(seed, getTaskPlanningWorkflowId(task));
+      } : undefined,
       onDuplicate: onDuplicateTask ? async () => {
         const shouldDuplicate = await confirm({
           title: t("taskDetail.duplicate.title", "Duplicate Task"),
@@ -1817,7 +1830,7 @@ export function ListView({
       actions.push({ id: model.reviewAction.id, label: model.reviewAction.label, disabled: model.reviewAction.disabled, onSelect: model.reviewAction.onSelect });
     }
     return actions.filter((action) => action.tone === "note" || action.disabled === true || Boolean(action.onSelect));
-  }, [addToast, autoMerge, columnFlagsById, confirm, getListColumnLabel, handleListContextCheckPrStatus, handleListContextEnableGithubTracking, handleListContextMove, handleListTaskArchive, handleListTaskDelete, handleListTaskRevert, isMobile, listContextMenuColumns, mergeStrategy, onDuplicateTask, onMergeTask, onOpenDetail, onPauseTask, onResetTask, onRetryTask, onUnpauseTask, onArchiveTask, onRevertTask, onTasksUpdated, projectId, t, useSinglePaneList]);
+  }, [addToast, autoMerge, columnFlagsById, confirm, getListColumnLabel, getTaskPlanningWorkflowId, handleListContextCheckPrStatus, handleListContextEnableGithubTracking, handleListContextMove, handleListTaskArchive, handleListTaskDelete, handleListTaskRevert, isMobile, listContextMenuColumns, mergeStrategy, onDuplicateTask, onMergeTask, onOpenDetail, onPlanningMode, onPauseTask, onResetTask, onRetryTask, onUnpauseTask, onArchiveTask, onRevertTask, onTasksUpdated, projectId, t, useSinglePaneList]);
 
   const contextMenuActions = useMemo(
     () => (contextMenuState ? buildListContextMenuActions(contextMenuState.task) : []),
