@@ -31,7 +31,7 @@ import { ActivityLogRow } from "./row-types.js";
 import { ActivityEventType, ActivityLogEntry, AgentLogEntry, ArchivedTaskEntry, DEFAULT_SETTINGS, Settings } from "../types.js";
 import { eq } from "drizzle-orm";
 import * as schema from "../postgres/schema/index.js";
-import { WorkflowDefinition, WorkflowDefinitionInput, WorkflowNodeLayout } from "../workflow-definition-types.js";
+import { normalizeWorkflowIcon, type StoredWorkflowRow, type WorkflowDefinition, type WorkflowDefinitionInput, type WorkflowNodeLayout } from "../workflow-definition-types.js";
 import { WorkflowIr } from "../workflow-ir-types.js";
 import { downgradeIrToV1IfPure, parseWorkflowIr, serializeWorkflowIr } from "../workflow-ir.js";
 import { resolveDefaultOnOptionalGroupIds } from "../workflow-optional-steps.js";
@@ -259,16 +259,7 @@ export async function readAllWorkflowDefinitionsImpl(store: TaskStore): Promise<
       store.workflowDefinitionsCache = [...BUILTIN_WORKFLOWS, ...rows.map((row) => store.toWorkflowDefinition(row))];
       return store.workflowDefinitionsCache;
     }
-    const rows = store.db.prepare("SELECT * FROM workflows ORDER BY createdAt ASC").all() as Array<{
-      id: string;
-      name: string;
-      description: string;
-      ir: string;
-      layout: string;
-      kind?: string | null;
-      createdAt: string;
-      updatedAt: string;
-    }>;
+    const rows = store.db.prepare("SELECT * FROM workflows ORDER BY createdAt ASC").all() as StoredWorkflowRow[];
     store.workflowDefinitionsCache = [...BUILTIN_WORKFLOWS, ...rows.map((row) => store.toWorkflowDefinition(row))];
     return store.workflowDefinitionsCache;
 }
@@ -295,16 +286,7 @@ export async function getWorkflowDefinitionImpl(store: TaskStore,
       return asyncRow ? store.toWorkflowDefinition(asyncRow) : undefined;
     }
     const row = store.db.prepare("SELECT * FROM workflows WHERE id = ?").get(id) as
-      | {
-          id: string;
-          name: string;
-          description: string;
-          ir: string;
-          layout: string;
-          kind?: string | null;
-          createdAt: string;
-          updatedAt: string;
-        }
+      | StoredWorkflowRow
       | undefined;
     return row ? store.toWorkflowDefinition(row) : undefined;
 }
@@ -350,6 +332,7 @@ export function insertWorkflowDefinitionSyncImpl(store: TaskStore,
       id,
       name,
       description: input.description ?? "",
+      icon: normalizeWorkflowIcon(input.icon),
       kind: input.kind === "fragment" ? "fragment" : "workflow",
       ir,
       layout,
@@ -358,13 +341,14 @@ export function insertWorkflowDefinitionSyncImpl(store: TaskStore,
     };
     store.db
       .prepare(
-        `INSERT INTO workflows (id, name, description, ir, layout, kind, createdAt, updatedAt)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO workflows (id, name, description, icon, ir, layout, kind, createdAt, updatedAt)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         definition.id,
         definition.name,
         definition.description,
+        definition.icon ?? null,
         serializeWorkflowIr(flagOn ? definition.ir : downgradeIrToV1IfPure(definition.ir)),
         JSON.stringify(definition.layout),
         definition.kind,

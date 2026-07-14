@@ -27,7 +27,7 @@ import { sql } from "drizzle-orm";
 import { runPluginSchemaInitHooks, DEFAULT_PLUGIN_SCHEMA_INIT_HOOKS, type PluginSchemaInitHook } from "./plugin-schema-hook.js";
 
 /** The latest PostgreSQL schema version known to this applier. */
-export const SCHEMA_BASELINE_VERSION = "0006";
+export const SCHEMA_BASELINE_VERSION = "0007";
 const INITIAL_SCHEMA_VERSION = "0000";
 const AUTOMATION_ISOLATION_SCHEMA_VERSION = "0001";
 const ANALYTICS_ISOLATION_SCHEMA_VERSION = "0002";
@@ -39,6 +39,7 @@ export const MONITOR_APPROVAL_ISOLATION_SCHEMA_VERSION = "0003";
 export const LEGACY_CUTOVER_PRESERVATION_SCHEMA_VERSION = "0004";
 export const MULTI_PROJECT_CUTOVER_SCHEMA_VERSION = "0005";
 export const PROJECT_OWNERSHIP_SCHEMA_VERSION = "0006";
+export const SQLITE_SCHEMA_PARITY_VERSION = "0007";
 
 /** Bookkeeping table for the fresh Drizzle migration history. */
 export const MIGRATION_BOOKKEEPING_TABLE = "fusion_schema_migrations";
@@ -74,6 +75,11 @@ const PROJECT_OWNERSHIP_MIGRATION_PATH = join(
   __dirname,
   "migrations",
   "0006_project_ownership.sql",
+);
+const SQLITE_SCHEMA_PARITY_MIGRATION_PATH = join(
+  __dirname,
+  "migrations",
+  "0007_sqlite_schema_parity.sql",
 );
 
 /**
@@ -138,6 +144,7 @@ export async function applySchemaBaseline(
     const legacyCutoverPreservationAlreadyApplied = applied.includes(LEGACY_CUTOVER_PRESERVATION_SCHEMA_VERSION);
     const multiProjectCutoverAlreadyApplied = applied.includes(MULTI_PROJECT_CUTOVER_SCHEMA_VERSION);
     const projectOwnershipAlreadyApplied = applied.includes(PROJECT_OWNERSHIP_SCHEMA_VERSION);
+    const sqliteSchemaParityAlreadyApplied = applied.includes(SQLITE_SCHEMA_PARITY_VERSION);
     let schemaChanged = false;
 
     if (!baselineAlreadyApplied) {
@@ -315,6 +322,19 @@ export async function applySchemaBaseline(
           `Project-owned keys or relationships are globally scoped: ${relationalGaps.map(({ object_name, detail }) => `${object_name}.${detail}`).join(", ")}`,
         );
       }
+    }
+
+    /*
+    FNXC:PostgresMigrationColumnCoverage 2026-07-14-13:17:
+    Apply SQLite schema parity independently of the original baseline and ownership migration. Existing partial cutover targets must gain all late source columns before the idempotent migration retry rebuilds its table plan.
+    */
+    if (!sqliteSchemaParityAlreadyApplied) {
+      const sqliteSchemaParitySql = await readFile(SQLITE_SCHEMA_PARITY_MIGRATION_PATH, "utf8");
+      await tx.execute(sql.raw(sqliteSchemaParitySql));
+      await tx.execute(
+        sql`INSERT INTO public.${sql.identifier(MIGRATION_BOOKKEEPING_TABLE)} (version) VALUES (${SQLITE_SCHEMA_PARITY_VERSION}) ON CONFLICT (version) DO NOTHING`,
+      );
+      schemaChanged = true;
     }
 
     return { applied: schemaChanged, pluginHooksRun: pluginHooks.length };

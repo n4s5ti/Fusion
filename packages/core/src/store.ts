@@ -54,7 +54,7 @@ import "./builtin-traits.js";
 // Step-inversion U12 (KTD-12): the legacy `parseStepsFromPrompt` path resolves
 // the `step-headings` parser through the registry (proving the registry path),
 // staying byte-identical with the direct extracted function.
-import type { WorkflowDefinition, WorkflowDefinitionInput, WorkflowDefinitionUpdate, WorkflowNodeLayout } from "./workflow-definition-types.js";
+import type { StoredWorkflowRow, WorkflowDefinition, WorkflowDefinitionInput, WorkflowDefinitionUpdate, WorkflowNodeLayout } from "./workflow-definition-types.js";
 import { type WorkflowParitySummary, type WorkflowColumnsGraduationReport } from "./workflow-parity.js";
 
 /** Tags WorkflowStep rows materialized by compiling a workflow so they can be
@@ -90,7 +90,7 @@ import { type TaskIdIntegrityReport } from "./task-id-integrity.js";
 // file. These are pure behavior-invariant moves — the extracted symbols are
 // byte-identical to their pre-extraction form. store.ts remains the facade and
 // the single import source for all consumers (re-exports preserved below).
-import { type TaskRow, type TaskPersistSerializationContext, type TaskColumnDescriptor } from "./task-store/persistence.js";
+import { TASK_JSONB_COLUMNS, type TaskRow, type TaskPersistSerializationContext, type TaskColumnDescriptor } from "./task-store/persistence.js";
 import { pgRowToTaskRow as pgRowToTaskRowExternal, rowToTask as rowToTaskExternal, rowToBranchGroup as rowToBranchGroupExternal, generateBranchGroupId as generateBranchGroupIdExternal, computeTimedExecutionMs as computeTimedExecutionMsExternal, archiveEntryToTask as archiveEntryToTaskExternal, summarizeAgentLog as summarizeAgentLogExternal, rowToTaskDocument as rowToTaskDocumentExternal, rowToArtifact as rowToArtifactExternal, rowToTaskDocumentRevision as rowToTaskDocumentRevisionExternal, rowToGoalCitation as rowToGoalCitationExternal } from "./task-store/serialization.js";
 import { moveTaskImpl, handoffToReviewImpl, moveTaskInternalImpl } from "./task-store/moves.js";
 import { recordGoalCitationsImpl, insertTaskWithFtsRecoveryImpl2, assertTaskIdAvailableImpl, atomicWriteTaskJsonImpl2, createTaskWithDistributedReservationImpl, toStoredWorkflowStepImpl, ensureWorkflowStepForTemplateImpl, resolveEnabledWorkflowStepsImpl, setTaskBranchGroupImpl, getTaskColumnsImpl, prepareWorkflowMovePolicyPreflightImpl, updateTaskCustomFieldsImpl, listWorkflowPromptOverridesForProjectImpl, listWorkflowWorkItemsForTaskImpl, listDueWorkflowWorkItemsImpl, rewriteBlockedByResidueDependentsForRemovalImpl, getAllDocumentsImpl, deleteWorkflowStepImpl, toWorkflowDefinitionImpl, materializeDefaultWorkflowStepsImpl, reconcileTaskCustomFieldsForSchemaImpl, getTaskMovedCountsByDayImpl, getGoalStoreImpl, upsertTaskCommitAssociationImpl } from "./task-store/remaining-ops-4.js";
@@ -302,9 +302,9 @@ export class TaskStore extends EventEmitter<TaskStoreEvents> {
   /**
    * FNXC:RuntimePersistenceAsync 2026-06-24-10:42: Task-table columns stored as jsonb in PostgreSQL.
    * pgRowToTaskRow() re-serializes them to strings so rowToTask() works unchanged across both backends.
-   * MUST match TASK_JSONB_COLUMNS in async-persistence.ts.
+   * The shared persistence registry is the canonical read/write list for both PostgreSQL conversion paths.
    */
-  public static readonly PG_JSONB_TASK_COLUMNS: ReadonlySet<string> = new Set(["dependencies", "steps", "customFields", "log", "attachments", "steeringComments", "comments", "review", "reviewState", "workflowStepResults", "prInfo", "prInfos", "issueInfo", "githubTracking", "mergeDetails", "enabledWorkflowSteps", "modifiedFiles", "scopeAutoWiden", "sourceMetadata", "tokenUsagePerModel", "tokenBudgetOverride"]);
+  public static readonly PG_JSONB_TASK_COLUMNS: ReadonlySet<string> = TASK_JSONB_COLUMNS;
   /** All tasks share one per-column capacity pool (KTD-10). */
   public static readonly DEFAULT_WORKFLOW_POOL_ID = DEFAULT_WORKFLOW_POOL_ID;
 
@@ -2139,7 +2139,7 @@ export class TaskStore extends EventEmitter<TaskStoreEvents> {
   public nextWorkflowDefinitionId(): string {
     return nextWorkflowDefinitionIdImpl(this);
   }
-  public toWorkflowDefinition(row: { id: string; name: string; description: string; ir: string; layout: string; kind?: string | null; createdAt: string; updatedAt: string; }): WorkflowDefinition {
+  public toWorkflowDefinition(row: StoredWorkflowRow): WorkflowDefinition {
     return toWorkflowDefinitionImpl(this, row);
   }
   public parseWorkflowLayout( raw: string, ): Record<string, WorkflowNodeLayout> {
@@ -2562,4 +2562,3 @@ export class TaskStore extends EventEmitter<TaskStoreEvents> {
   // ── Backward Compatibility (Multi-Project Support) ────────────────────────
 
 }
-

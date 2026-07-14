@@ -37,6 +37,7 @@ import {
   MONITOR_APPROVAL_ISOLATION_SCHEMA_VERSION,
   MULTI_PROJECT_CUTOVER_SCHEMA_VERSION,
   PROJECT_OWNERSHIP_SCHEMA_VERSION,
+  SQLITE_SCHEMA_PARITY_VERSION,
 } from "../../postgres/schema-applier.js";
 import { rekeyFallbackProjectPartition } from "../../postgres/migration-stamping.js";
 
@@ -70,7 +71,12 @@ describe("schema-applier: immutable migration identities", () => {
 
   it("keeps universal project ownership assigned to version 0006", () => {
     expect(PROJECT_OWNERSHIP_SCHEMA_VERSION).toBe("0006");
-    expect(SCHEMA_BASELINE_VERSION).toBe(PROJECT_OWNERSHIP_SCHEMA_VERSION);
+    expect(Number(SCHEMA_BASELINE_VERSION)).toBeGreaterThanOrEqual(Number(PROJECT_OWNERSHIP_SCHEMA_VERSION));
+  });
+
+  it("keeps SQLite schema parity assigned to version 0007", () => {
+    expect(SQLITE_SCHEMA_PARITY_VERSION).toBe("0007");
+    expect(SCHEMA_BASELINE_VERSION).toBe(SQLITE_SCHEMA_PARITY_VERSION);
   });
 });
 
@@ -385,6 +391,47 @@ pgDescribe("schema-applier: VAL-SCHEMA-001 final-schema parity (table counts)", 
   });
 
   /*
+  FNXC:PostgresMigrationColumnCoverage 2026-07-14-13:17:
+  A cluster that already recorded migrations through 0006 must receive every late SQLite column before cutover retries. This is the production failure shape: the initial copy is blocked while the target schema is otherwise fully initialized.
+  */
+  it("upgrades a 0006 target with every late SQLite source column", async () => {
+    ctx = await setupFreshDb();
+    await applySchemaBaseline(ctx.db, { pluginHooks: [] });
+    await ctx.db.execute(sql.raw(`
+      DELETE FROM public.fusion_schema_migrations WHERE version = '0007';
+      ALTER TABLE project.tasks
+        DROP COLUMN board_id,
+        DROP COLUMN task_question_interrupt,
+        DROP COLUMN column_dwell_ms,
+        DROP COLUMN workflow_transition_notification,
+        DROP COLUMN planner_oversight_level,
+        DROP COLUMN awaiting_approval_reason,
+        DROP COLUMN approved_plan_fingerprint;
+      ALTER TABLE project.workflows DROP COLUMN icon;
+      ALTER TABLE project.mission_contract_assertions DROP COLUMN scope;
+    `));
+
+    expect((await applySchemaBaseline(ctx.db, { pluginHooks: [] })).applied).toBe(true);
+    const columns = (await ctx.db.execute(sql`
+      SELECT table_name, column_name
+      FROM information_schema.columns
+      WHERE table_schema = 'project'
+        AND (
+          (table_name = 'tasks' AND column_name IN (
+            'board_id', 'task_question_interrupt', 'column_dwell_ms',
+            'workflow_transition_notification', 'planner_oversight_level',
+            'awaiting_approval_reason', 'approved_plan_fingerprint'
+          ))
+          OR (table_name = 'workflows' AND column_name = 'icon')
+          OR (table_name = 'mission_contract_assertions' AND column_name = 'scope')
+        )
+      ORDER BY table_name, column_name
+    `)) as unknown as Array<{ table_name: string; column_name: string }>;
+    expect(columns).toHaveLength(9);
+    expect(await getAppliedMigrations(ctx.db)).toContain(SQLITE_SCHEMA_PARITY_VERSION);
+  });
+
+  /*
   FNXC:ProjectDataIsolation 2026-07-14-12:10:
   Every table in the shared PostgreSQL project schema is project-owned unless it is one of the three explicitly cluster-wide coordination tables. Require a physical project_id plus forced row-level security so a missed application predicate cannot expose agents, secrets, inbox messages, missions, workflows, or plugin data to another project.
   */
@@ -609,7 +656,7 @@ pgDescribe("schema-applier: VAL-SCHEMA-001 final-schema parity (table counts)", 
     ctx = await setupFreshDb();
     await applySchemaBaseline(ctx.db);
     await ctx.db.execute(sql.raw(`
-      DELETE FROM public.fusion_schema_migrations WHERE version = '0006';
+      DELETE FROM public.fusion_schema_migrations WHERE version IN ('0006', '0007');
       CREATE TABLE public.fusion_sqlite_migrations (
         migration_key text PRIMARY KEY,
         project_id text,
@@ -667,7 +714,7 @@ pgDescribe("schema-applier: VAL-SCHEMA-001 final-schema parity (table counts)", 
       ALTER TABLE project.agent_heartbeats
         ADD CONSTRAINT agent_heartbeats_legacy_agent_id_fkey
         FOREIGN KEY (agent_id) REFERENCES project.agents(id) ON DELETE CASCADE;
-      DELETE FROM public.fusion_schema_migrations WHERE version = '0006';
+      DELETE FROM public.fusion_schema_migrations WHERE version IN ('0006', '0007');
     `));
 
     await expect(applySchemaBaseline(ctx.db)).resolves.toMatchObject({ applied: true });
@@ -856,7 +903,7 @@ pgDescribe("schema-applier: automation project-isolation upgrade", () => {
     const versions = (await ctx.db.execute(sql`
       SELECT version FROM public.fusion_schema_migrations ORDER BY version
     `)) as unknown as Array<{ version: string }>;
-    expect(versions.map(({ version }) => version)).toEqual(["0000", "0001", "0002", "0003", "0004", "0005", SCHEMA_BASELINE_VERSION]);
+    expect(versions.map(({ version }) => version)).toEqual(["0000", "0001", "0002", "0003", "0004", "0005", PROJECT_OWNERSHIP_SCHEMA_VERSION, SCHEMA_BASELINE_VERSION]);
     expect((await applySchemaBaseline(ctx.db, { pluginHooks: [] })).applied).toBe(false);
   });
 
@@ -880,14 +927,14 @@ pgDescribe("schema-applier: automation project-isolation upgrade", () => {
       applySchemaBaseline(ctx.db, { pluginHooks: [] }),
     ]);
     expect(results.filter(({ applied }) => applied)).toHaveLength(1);
-    expect(await getAppliedMigrations(ctx.db)).toEqual(["0000", "0001", "0002", "0003", "0004", "0005", SCHEMA_BASELINE_VERSION]);
+    expect(await getAppliedMigrations(ctx.db)).toEqual(["0000", "0001", "0002", "0003", "0004", "0005", PROJECT_OWNERSHIP_SCHEMA_VERSION, SCHEMA_BASELINE_VERSION]);
   });
 
   it("upgrades a 0001 database by backfilling analytics ownership", async () => {
     ctx = await setupFreshDb();
     await applySchemaBaseline(ctx.db, { pluginHooks: [] });
     await ctx.db.execute(sql.raw(`
-      DELETE FROM public.fusion_schema_migrations WHERE version IN ('0002', '0003', '0004', '0005', '0006');
+      DELETE FROM public.fusion_schema_migrations WHERE version IN ('0002', '0003', '0004', '0005', '0006', '0007');
       DROP POLICY fusion_project_isolation ON project.activity_log;
       DROP POLICY fusion_project_isolation ON project.agent_runs;
       DROP POLICY fusion_project_isolation ON project.usage_events;
@@ -916,7 +963,7 @@ pgDescribe("schema-applier: automation project-isolation upgrade", () => {
       ))) as unknown as Array<{ project_id: string }>;
       expect(rows).toEqual([{ project_id: "project-a" }]);
     }
-    expect(await getAppliedMigrations(ctx.db)).toEqual(["0000", "0001", "0002", "0003", "0004", "0005", "0006"]);
+    expect(await getAppliedMigrations(ctx.db)).toEqual(["0000", "0001", "0002", "0003", "0004", "0005", "0006", "0007"]);
   });
 
   /**
@@ -927,7 +974,7 @@ pgDescribe("schema-applier: automation project-isolation upgrade", () => {
     ctx = await setupFreshDb();
     await applySchemaBaseline(ctx.db, { pluginHooks: [] });
     await ctx.db.execute(sql.raw(`
-      DELETE FROM public.fusion_schema_migrations WHERE version IN ('0003', '0004', '0005', '0006');
+      DELETE FROM public.fusion_schema_migrations WHERE version IN ('0003', '0004', '0005', '0006', '0007');
       DROP POLICY fusion_project_isolation ON project.deployments;
       DROP POLICY fusion_project_isolation ON project.incidents;
       DROP POLICY fusion_project_isolation ON project.approval_request_audit_events;
@@ -954,7 +1001,7 @@ pgDescribe("schema-applier: automation project-isolation upgrade", () => {
       ))) as unknown as Array<{ project_id: string }>;
       expect(rows).toEqual([{ project_id: "project-a" }]);
     }
-    expect(await getAppliedMigrations(ctx.db)).toEqual(["0000", "0001", "0002", "0003", "0004", "0005", "0006"]);
+    expect(await getAppliedMigrations(ctx.db)).toEqual(["0000", "0001", "0002", "0003", "0004", "0005", "0006", "0007"]);
   });
 
   /*
@@ -965,7 +1012,7 @@ pgDescribe("schema-applier: automation project-isolation upgrade", () => {
     ctx = await setupFreshDb();
     await applySchemaBaseline(ctx.db, { pluginHooks: [] });
     await ctx.db.execute(sql.raw(`
-      DELETE FROM public.fusion_schema_migrations WHERE version IN ('0004', '0005', '0006');
+      DELETE FROM public.fusion_schema_migrations WHERE version IN ('0004', '0005', '0006', '0007');
       DROP TABLE project.project_auth_sessions;
       DROP TABLE project.project_auth_providers;
       DROP TABLE project.project_auth_memberships;
@@ -992,7 +1039,7 @@ pgDescribe("schema-applier: automation project-isolation upgrade", () => {
       "project_auth_users",
       "task_reviewer_runs",
     ]);
-    expect(await getAppliedMigrations(ctx.db)).toEqual(["0000", "0001", "0002", "0003", "0004", "0005", "0006"]);
+    expect(await getAppliedMigrations(ctx.db)).toEqual(["0000", "0001", "0002", "0003", "0004", "0005", "0006", "0007"]);
   });
 });
 

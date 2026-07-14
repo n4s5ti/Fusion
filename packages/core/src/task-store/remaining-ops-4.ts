@@ -20,7 +20,7 @@ import {resolveAllowedColumns, workflowHasColumn} from "../workflow-transitions.
 import type {WorkflowFieldDefinition} from "../workflow-ir-types.js";
 import {validateCustomFieldPatch, applyFieldDefaults, reconcileFieldsOnWorkflowChange, type CustomFieldRejection} from "../task-fields.js";
 import "../builtin-traits.js";
-import type {WorkflowDefinition} from "../workflow-definition-types.js";
+import type {StoredWorkflowRow, WorkflowDefinition} from "../workflow-definition-types.js";
 import {resolveDefaultOnOptionalGroupIds} from "../workflow-optional-steps.js";
 import {toJson} from "../db.js";
 import {GoalStore} from "../goal-store.js";
@@ -610,11 +610,12 @@ export async function deleteWorkflowStepImpl(store: TaskStore, id: string): Prom
     }
   }
 
-export function toWorkflowDefinitionImpl(store: TaskStore, row: { id: string; name: string; description: string; ir: string; layout: string; kind?: string | null; createdAt: string; updatedAt: string; }): WorkflowDefinition {
+export function toWorkflowDefinitionImpl(store: TaskStore, row: StoredWorkflowRow): WorkflowDefinition {
     return {
       id: row.id,
       name: row.name,
       description: row.description,
+      icon: row.icon || undefined,
       // Legacy rows (pre-migration-109) have no kind column; default to "workflow".
       kind: row.kind === "fragment" ? "fragment" : "workflow",
       ir: parseWorkflowIr(row.ir),

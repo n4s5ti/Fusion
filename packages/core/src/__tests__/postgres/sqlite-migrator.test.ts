@@ -646,6 +646,84 @@ pgDescribe("SQLite-to-PostgreSQL migrator", () => {
   });
 
   /*
+  FNXC:PostgresMigrationColumnCoverage 2026-07-14-13:17:
+  The PostgreSQL cutover schema must retain every column in the current SQLite task, workflow, and mission assertion surfaces. These late SQLite migrations previously post-dated the PostgreSQL baseline, so first boot correctly refused to discard their values but could never initialize the task store.
+  */
+  it("migrates every late-added task, workflow, and mission assertion column", async () => {
+    const sqlitePath = join(ctx!.fusionDir, "late-schema-columns.db");
+    const legacy = new DatabaseSync(sqlitePath);
+    try {
+      legacy.exec(`
+        CREATE TABLE tasks (
+          id TEXT PRIMARY KEY, description TEXT NOT NULL, "column" TEXT NOT NULL,
+          createdAt TEXT NOT NULL, updatedAt TEXT NOT NULL,
+          boardId TEXT, taskQuestionInterrupt TEXT, columnDwellMs TEXT,
+          workflowTransitionNotification TEXT, plannerOversightLevel TEXT,
+          awaitingApprovalReason TEXT, approvedPlanFingerprint TEXT
+        );
+        CREATE TABLE workflows (
+          id TEXT PRIMARY KEY, name TEXT NOT NULL, description TEXT NOT NULL DEFAULT '',
+          ir TEXT NOT NULL, layout TEXT NOT NULL DEFAULT '{}', kind TEXT NOT NULL DEFAULT 'workflow',
+          createdAt TEXT NOT NULL, updatedAt TEXT NOT NULL, icon TEXT
+        );
+        CREATE TABLE mission_contract_assertions (
+          id TEXT PRIMARY KEY, milestoneId TEXT NOT NULL, title TEXT NOT NULL,
+          assertion TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'pending',
+          type TEXT NOT NULL DEFAULT 'static', orderIndex INTEGER NOT NULL DEFAULT 0,
+          sourceFeatureId TEXT, scope TEXT NOT NULL DEFAULT 'feature',
+          createdAt TEXT NOT NULL, updatedAt TEXT NOT NULL
+        );
+      `);
+      legacy.prepare(`INSERT INTO tasks VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+        .run(
+          "FN-LATE", "preserve late columns", "todo", "2026-07-14", "2026-07-14",
+          "board-a", JSON.stringify({ question: "Proceed?" }), JSON.stringify({ todo: 42 }),
+          JSON.stringify({ transitionId: "move-a" }), "observe", "plan-review-replan-cap", "sha256:a",
+        );
+      legacy.prepare(`INSERT INTO workflows VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+        .run("workflow-a", "Workflow A", "", "{}", "{}", "workflow", "2026-07-14", "2026-07-14", "gear");
+      legacy.prepare(`INSERT INTO mission_contract_assertions VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+        .run("assertion-a", "milestone-a", "Assertion A", "It holds", "pending", "static", 0, null, "feature", "2026-07-14", "2026-07-14");
+    } finally {
+      legacy.close();
+    }
+
+    const report = await migrateTest(
+      ctx!.db,
+      [{ sqlitePath, pgSchema: "project" as const }],
+      { projectId: "project-schema-parity" },
+    );
+
+    expect(report.tables.filter((table) => !table.skipped && !table.verified)).toEqual([]);
+    const tasks = await ctx!.db.execute(sql`
+      SELECT board_id, task_question_interrupt, column_dwell_ms,
+        workflow_transition_notification, planner_oversight_level,
+        awaiting_approval_reason, approved_plan_fingerprint
+      FROM project.tasks
+      WHERE project_id = 'project-schema-parity' AND id = 'FN-LATE'
+    `) as unknown as Array<Record<string, unknown>>;
+    expect(tasks).toEqual([{
+      board_id: "board-a",
+      task_question_interrupt: JSON.stringify({ question: "Proceed?" }),
+      column_dwell_ms: { todo: 42 },
+      workflow_transition_notification: { transitionId: "move-a" },
+      planner_oversight_level: "observe",
+      awaiting_approval_reason: "plan-review-replan-cap",
+      approved_plan_fingerprint: "sha256:a",
+    }]);
+    const workflows = await ctx!.db.execute(sql`
+      SELECT icon FROM project.workflows
+      WHERE project_id = 'project-schema-parity' AND id = 'workflow-a'
+    `) as unknown as Array<{ icon: string }>;
+    expect(workflows).toEqual([{ icon: "gear" }]);
+    const assertions = await ctx!.db.execute(sql`
+      SELECT scope FROM project.mission_contract_assertions
+      WHERE project_id = 'project-schema-parity' AND id = 'assertion-a'
+    `) as unknown as Array<{ scope: string }>;
+    expect(assertions).toEqual([{ scope: "feature" }]);
+  });
+
+  /*
   FNXC:PostgresMigration 2026-07-13-23:08:
   FTS5 shadow tables are disposable implementation details, but the virtual table is the user-visible search dataset. Verification must distinguish the two so an unmapped search surface fails cutover while its internal indexes remain intentional skips.
   */

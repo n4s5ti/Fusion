@@ -153,6 +153,17 @@ export const tasks = projectSchema.table("tasks", {
   columnMovedAt: text("column_moved_at"),
   firstExecutionAt: text("first_execution_at"),
   cumulativeActiveMs: integer("cumulative_active_ms"),
+  /*
+  FNXC:PostgresMigrationColumnCoverage 2026-07-14-13:17:
+  Keep the task schema aligned with late SQLite lifecycle migrations. JSON lifecycle markers stay jsonb for native backend reads; retired board/question fields remain text so their legacy payloads round-trip byte-for-byte.
+  */
+  boardId: text("board_id"),
+  taskQuestionInterrupt: text("task_question_interrupt"),
+  columnDwellMs: jsonb("column_dwell_ms"),
+  workflowTransitionNotification: jsonb("workflow_transition_notification"),
+  plannerOversightLevel: text("planner_oversight_level"),
+  awaitingApprovalReason: text("awaiting_approval_reason"),
+  approvedPlanFingerprint: text("approved_plan_fingerprint"),
   executionStartedAt: text("execution_started_at"),
   executionCompletedAt: text("execution_completed_at"),
   dependencies: jsonb("dependencies").default([]),
@@ -513,6 +524,7 @@ export const workflows = projectSchema.table("workflows", {
   id: text("id").primaryKey(),
   name: text("name").notNull(),
   description: text("description").notNull().default(""),
+  icon: text("icon"),
   ir: jsonb("ir").notNull(),
   layout: jsonb("layout").notNull().default({}),
   kind: text("kind").notNull().default("workflow"),
@@ -1746,6 +1758,7 @@ export const missionContractAssertions = projectSchema.table("mission_contract_a
   type: text("type").notNull().default("static"),
   orderIndex: integer("order_index").notNull().default(0),
   sourceFeatureId: text("source_feature_id"),
+  scope: text("scope").notNull().default("feature"),
   createdAt: text("created_at").notNull(),
   updatedAt: text("updated_at").notNull(),
 }, (t) => [
