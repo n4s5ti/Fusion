@@ -271,8 +271,10 @@ workflow setting values for the active project's default workflow; they do not
 restore the old project settings keys. The global **Fallback Model** remains in
 Settings → General Models and includes its own inline Thinking Level selector for `fallbackThinkingLevel`; workflow-specific fallbacks are also editable from
 the workflow editor Values tab. Title summarization is separate: set it in
-**Settings → Project Models → Title and Git Commit Message Summarization Model**,
-with its project fallback selector and global baseline in Settings → General/Global Models.
+**Settings → Project Models → AI Title and Git Commit Message Summarization**,
+where the title-summarization lane and its project fallback selector are colocated
+with the title and merge-commit summarization controls; the global baseline remains in
+Settings → General/Global Models.
 
 <!--
 FNXC:WorkflowSettings 2026-06-17-09:13:

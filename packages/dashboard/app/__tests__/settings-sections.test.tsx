@@ -441,6 +441,66 @@ describe("ProjectModelsSection", () => {
     expect(screen.getByTestId("mock-model-dropdown-preset-validator-model")).toHaveAttribute("data-menu-width", "readable");
   });
 
+  it("colocates summarization model controls with AI summarization settings", () => {
+    render(
+      <ProjectModelsSection
+        scopeBanner={null}
+        form={{} as SettingsFormState}
+        setForm={vi.fn()}
+        models={{
+          ...models,
+          modelLanes: [
+            { laneId: "default", label: "Default", helperText: "Default", fallbackOrder: "global" },
+            { laneId: "merger", label: "Merger", helperText: "Merger", fallbackOrder: "global" },
+            { laneId: "summarization", label: "Summarization", helperText: "Summarization", fallbackOrder: "global" },
+          ] as never,
+          availableModels: [{ provider: "anthropic", id: "claude-sonnet-4-5", name: "Claude Sonnet 4.5" }],
+        }}
+        addToast={vi.fn()}
+      />,
+    );
+
+    const summarizationSection = screen.getByTestId("project-models-ai-summarization");
+    const heading = screen.getByRole("heading", { name: "AI Title and Git Commit Message Summarization" });
+    const autoSummarizeTitles = screen.getByRole("checkbox", { name: "Auto-summarize long descriptions as titles" });
+    const summarizationDropdown = screen.getByTestId("mock-model-dropdown-summarizationModel");
+    const fallbackDropdown = screen.getByTestId("mock-model-dropdown-titleSummarizerFallbackModel");
+    const defaultDropdown = screen.getByTestId("mock-model-dropdown-defaultModel");
+    const mergerDropdown = screen.getByTestId("mock-model-dropdown-mergerModel");
+
+    expect(summarizationSection).toContainElement(heading);
+    expect(summarizationSection).toContainElement(autoSummarizeTitles);
+    expect(summarizationSection).toContainElement(summarizationDropdown);
+    expect(summarizationSection).toContainElement(fallbackDropdown);
+    expect(defaultDropdown.compareDocumentPosition(heading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(mergerDropdown.compareDocumentPosition(heading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(heading.compareDocumentPosition(summarizationDropdown) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(heading.compareDocumentPosition(fallbackDropdown) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it("keeps summarization controls behind the available-models guard", () => {
+    render(
+      <ProjectModelsSection
+        scopeBanner={null}
+        form={{} as SettingsFormState}
+        setForm={vi.fn()}
+        models={{
+          ...models,
+          modelLanes: [
+            { laneId: "default", label: "Default", helperText: "Default", fallbackOrder: "global" },
+            { laneId: "summarization", label: "Summarization", helperText: "Summarization", fallbackOrder: "global" },
+          ] as never,
+        }}
+        addToast={vi.fn()}
+      />,
+    );
+
+    const summarizationSection = screen.getByTestId("project-models-ai-summarization");
+    expect(within(summarizationSection).getByText("No models available. Configure authentication first.")).toBeInTheDocument();
+    expect(within(summarizationSection).queryByTestId("mock-model-dropdown-summarizationModel")).not.toBeInTheDocument();
+    expect(within(summarizationSection).queryByTestId("mock-model-dropdown-titleSummarizerFallbackModel")).not.toBeInTheDocument();
+  });
+
   it("wires project model lane thinking overrides and reset", () => {
     const updateLaneThinkingValue = vi.fn();
     const resetLaneThinkingValue = vi.fn();
@@ -502,6 +562,7 @@ describe("ProjectModelsSection", () => {
     render(<ProjectTitleFallbackHost />);
 
     const dropdown = screen.getByTestId("mock-model-dropdown-titleSummarizerFallbackModel");
+    expect(screen.getByTestId("project-models-ai-summarization")).toContainElement(dropdown);
     expect(dropdown).toHaveAttribute("data-thinking-visible", "true");
     expect(dropdown).toHaveAttribute("data-thinking-value", "high");
     expect(dropdown).toHaveAttribute("data-default-thinking", "medium");

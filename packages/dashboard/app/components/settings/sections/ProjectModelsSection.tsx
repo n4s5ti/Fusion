@@ -276,7 +276,9 @@ export function ProjectModelsSection({ scopeBanner, form, setForm, models, proje
     // workflow settings below.
     // FNXC:Settings-MergerModel 2026-07-13-07:52: Merger is project-scoped (like summarization), not workflow-moved.
     // FNXC:GitHubImportTranslate 2026-07-15-09:30: The import-translate lane is project-scoped (like merger/summarization), so its project override must be editable here — otherwise the lane's projectProviderKey/projectModelKey would be unreachable and only the global lane could ever be set.
-    const projectModelLanes = modelLanes.filter((lane) => ["default", "merger", "summarization", "import-translate"].includes(lane.laneId));
+    // FNXC:SettingsModels 2026-07-15-12:00: Summarization is still project-scoped but is rendered with the AI summarization section below rather than the general Model Lanes list.
+    const projectModelLanes = modelLanes.filter((lane) => ["default", "merger", "import-translate"].includes(lane.laneId));
+    const summarizationLane = modelLanes.find((lane) => lane.laneId === "summarization");
     const getProjectLaneLabel = (lane: ModelLane) => {
         if (lane.laneId === "default") {
             return "Project Default Model";
@@ -332,6 +334,36 @@ export function ProjectModelsSection({ scopeBanner, form, setForm, models, proje
     const resetTitleSummarizerFallbackValue = () => {
         setForm((f) => ({ ...f, titleSummarizerFallbackProvider: undefined, titleSummarizerFallbackModelId: undefined, titleSummarizerFallbackThinkingLevel: undefined } as SettingsFormState));
     };
+    /*
+     * FNXC:SettingsModels 2026-07-15-12:00:
+     * Project Summarization and its title-summarizer fallback must be colocated
+     * with AI title and commit summarization settings, while keeping their shared
+     * lane UI, override behavior, and responsive layout identical to other project lanes.
+     */
+    const renderProjectLane = (lane: ModelLane) => {
+        const status = getLaneStatus(lane);
+        const value = getLaneValue(lane);
+        const thinkingValue = getLaneThinkingValue(lane);
+        const isOverridden = status === "overridden" || Boolean(thinkingValue);
+        const laneLabel = getProjectLaneLabel(lane);
+        return (<div className="form-group" key={lane.laneId}>
+        <div className="settings-model-lane-label-row">
+          <label htmlFor={`${lane.laneId}Model`}>{laneLabel}</label>
+          <span className={`settings-lane-badge ${isOverridden ? "settings-lane-badge--override" : "settings-lane-badge--inherited"}`} title={isOverridden ? "Explicitly set for this project" : "Inherited from global settings"}>
+            {isOverridden ? "Override (Project)" : "Inherited (Global)"}
+          </span>
+        </div>
+        <div className="settings-model-lane-control-row">
+          <div className="settings-model-lane-control-main">
+            <CustomModelDropdown id={`${lane.laneId}Model`} label={laneLabel} models={availableModels} value={value} onChange={(val) => updateLaneValue(lane, val)} placeholder={lane.laneId === "default" ? "Use global default" : "Use global"} favoriteProviders={favoriteProviders} onToggleFavorite={onToggleFavorite} favoriteModels={favoriteModels} onToggleModelFavorite={onToggleModelFavorite} menuWidth="readable" showThinkingLevel={Boolean(lane.projectThinkingKey)} thinkingLevel={thinkingValue} onThinkingLevelChange={(level) => updateLaneThinkingValue(lane, level)} defaultThinkingLevel={form.defaultThinkingLevel}/>
+          </div>
+          {isOverridden && (<button type="button" className="btn btn-ghost btn-sm" title={t("settings.projectModels.resetToInheritFromGlobal", "Reset to inherit from global")} onClick={() => { resetLaneValue(lane); resetLaneThinkingValue(lane); }} style={{ whiteSpace: "nowrap" }}>{t("settings.projectModels.reset", " Reset ")}</button>)}
+        </div>
+        <small>
+          {getProjectLaneHelperText(lane)}{t("settings.projectModels.fallsBackTo", " Falls back to: ")}{lane.fallbackOrder}.
+        </small>
+      </div>);
+    };
     const chatDefaultKind = form.chatDefaultKind ?? "model";
     const chatDefaultModelValue = form.chatDefaultModelProvider && form.chatDefaultModelId
         ? `${form.chatDefaultModelProvider}/${form.chatDefaultModelId}`
@@ -383,46 +415,7 @@ export function ProjectModelsSection({ scopeBanner, form, setForm, models, proje
       <h4 className="settings-section-heading settings-section-heading--spaced">{t("settings.projectModels.modelLanes", "Model Lanes")}</h4>
       <p className="settings-description">{t("settings.projectModels.overrideGlobalModelSettingsAtTheProjectLevel", " Override global model settings at the project level. Each lane controls a specific AI usage context. Unset lanes inherit from the corresponding global lane. The Project Default Model is the fallback for this project when a more specific lane is unset. ")}</p>
       {modelsLoading ? (<div className="settings-empty-state"><LoadingSpinner label={t("settings.projectModels.loadingAvailableModels", "Loading available models\u2026")} /></div>) : availableModels.length === 0 ? (<div className="settings-empty-state settings-muted">{t("settings.projectModels.noModelsAvailableConfigureAuthenticationFirst", " No models available. Configure authentication first. ")}</div>) : (<>
-          {projectModelLanes.map((lane) => {
-                const status = getLaneStatus(lane);
-                const value = getLaneValue(lane);
-                const thinkingValue = getLaneThinkingValue(lane);
-                const isOverridden = status === "overridden" || Boolean(thinkingValue);
-                const laneLabel = getProjectLaneLabel(lane);
-                return (<div className="form-group" key={lane.laneId}>
-                <div className="settings-model-lane-label-row">
-                  <label htmlFor={`${lane.laneId}Model`}>{laneLabel}</label>
-                  <span className={`settings-lane-badge ${isOverridden ? "settings-lane-badge--override" : "settings-lane-badge--inherited"}`} title={isOverridden ? "Explicitly set for this project" : "Inherited from global settings"}>
-                    {isOverridden ? "Override (Project)" : "Inherited (Global)"}
-                  </span>
-                </div>
-                <div className="settings-model-lane-control-row">
-                  <div className="settings-model-lane-control-main">
-                    <CustomModelDropdown id={`${lane.laneId}Model`} label={laneLabel} models={availableModels} value={value} onChange={(val) => updateLaneValue(lane, val)} placeholder={lane.laneId === "default" ? "Use global default" : "Use global"} favoriteProviders={favoriteProviders} onToggleFavorite={onToggleFavorite} favoriteModels={favoriteModels} onToggleModelFavorite={onToggleModelFavorite} menuWidth="readable" showThinkingLevel={Boolean(lane.projectThinkingKey)} thinkingLevel={thinkingValue} onThinkingLevelChange={(level) => updateLaneThinkingValue(lane, level)} defaultThinkingLevel={form.defaultThinkingLevel}/>
-                  </div>
-                  {isOverridden && (<button type="button" className="btn btn-ghost btn-sm" title={t("settings.projectModels.resetToInheritFromGlobal", "Reset to inherit from global")} onClick={() => { resetLaneValue(lane); resetLaneThinkingValue(lane); }} style={{ whiteSpace: "nowrap" }}>{t("settings.projectModels.reset", " Reset ")}</button>)}
-                </div>
-                <small>
-                  {getProjectLaneHelperText(lane)}{t("settings.projectModels.fallsBackTo", " Falls back to: ")}{lane.fallbackOrder}.
-                </small>
-              </div>);
-            })}
-          {/* FNXC:Settings-ThinkingLevel 2026-07-10-12:08: Title-summarizer fallback provider/model/thinking settings are project-scoped, not workflow-declared. Render this fallback beside the project summarization lane so saves use project null-as-delete semantics instead of the workflow-values API. */}
-          <div className="form-group" data-testid="project-model-lane-title-summarizer-fallback">
-            <div className="settings-model-lane-label-row">
-              <label htmlFor="titleSummarizerFallbackModel">{t("settings.projectModels.titleSummarizerFallbackModel", "Title Summarizer Fallback Model")}</label>
-              <span className={`settings-lane-badge ${titleSummarizerFallbackCustomized ? "settings-lane-badge--override" : "settings-lane-badge--inherited"}`} title={titleSummarizerFallbackCustomized ? "Explicitly set for this project" : "Inherited from global settings"}>
-                {titleSummarizerFallbackCustomized ? "Override (Project)" : "Inherited (Global)"}
-              </span>
-            </div>
-            <div className="settings-model-lane-control-row">
-              <div className="settings-model-lane-control-main">
-                <CustomModelDropdown id="titleSummarizerFallbackModel" label="Title Summarizer Fallback Model" models={availableModels} value={titleSummarizerFallbackValue} onChange={setTitleSummarizerFallbackValue} placeholder={t("settings.projectModels.useGlobal", "Use global")} favoriteProviders={favoriteProviders} onToggleFavorite={onToggleFavorite} favoriteModels={favoriteModels} onToggleModelFavorite={onToggleModelFavorite} menuWidth="readable" showThinkingLevel={true} thinkingLevel={titleSummarizerFallbackThinkingValue} onThinkingLevelChange={setTitleSummarizerFallbackThinkingValue} defaultThinkingLevel={form.defaultThinkingLevel}/>
-              </div>
-              {titleSummarizerFallbackCustomized && (<button type="button" className="btn btn-ghost btn-sm" title={t("settings.projectModels.resetToInheritFromGlobal", "Reset to inherit from global")} onClick={resetTitleSummarizerFallbackValue} style={{ whiteSpace: "nowrap" }}>{t("settings.projectModels.reset", " Reset ")}</button>)}
-            </div>
-            <small>{t("settings.projectModels.titleSummarizerFallbackHelp", "Fallback provider and model used when the primary Title Summarizer model cannot be used. Falls back to the global summarization lane and then the default model chain.")}</small>
-          </div>
+          {projectModelLanes.map(renderProjectLane)}
         </>)}
 
       {/* FNXC:ChatModels 2026-07-12-20:45: Project Models owns the Direct-chat default because New Chat needs a project-scoped model-or-agent target plus prompt-vs-direct creation mode without changing workflow or in-chat switcher settings. */}
@@ -640,23 +633,43 @@ export function ProjectModelsSection({ scopeBanner, form, setForm, models, proje
         </div>) : null}
 
       {/* --- AI Title and Git Commit Message Summarization --- */}
-      <h4 className="settings-section-heading settings-section-heading--spaced">{t("settings.projectModels.aITitleAndGitCommitMessageSummarization", " AI Title and Git Commit Message Summarization ")}</h4>
-      <p className="settings-description">{t("settings.projectModels.configuresTheModelUsedForTwoShortSummary", " Configures the model used for two short-summary jobs: auto-generating task titles from long descriptions, and generating merge commit summaries from step commits and diff stats. ")}</p>
-      <div className="form-group">
-        <label htmlFor="autoSummarizeTitles" className="checkbox-label">
-          <input id="autoSummarizeTitles" type="checkbox" checked={form.autoSummarizeTitles || false} onChange={(e) => setForm((f) => ({ ...f, autoSummarizeTitles: e.target.checked }))}/>{t("settings.projectModels.autoSummarizeLongDescriptionsAsTitles", " Auto-summarize long descriptions as titles ")}</label>
-        <small>{t("settings.projectModels.whenEnabledTasksCreatedWithoutATitleBut", " When enabled, tasks created without a title but with descriptions over 200 characters will automatically get an AI-generated title (max 60 characters). The same model is also used to generate fallback merge commit message bodies when the branch's commit log is empty (e.g. squash merges with no unique commits), and GitHub tracking issue titles when a tracked task has no title yet. Default: disabled. ")}</small>
-      </div>
+      <section data-testid="project-models-ai-summarization">
+        <h4 className="settings-section-heading settings-section-heading--spaced">{t("settings.projectModels.aITitleAndGitCommitMessageSummarization", " AI Title and Git Commit Message Summarization ")}</h4>
+        <p className="settings-description">{t("settings.projectModels.configuresTheModelUsedForTwoShortSummary", " Configures the model used for two short-summary jobs: auto-generating task titles from long descriptions, and generating merge commit summaries from step commits and diff stats. ")}</p>
+        {modelsLoading ? (<div className="settings-empty-state"><LoadingSpinner label={t("settings.projectModels.loadingAvailableModels", "Loading available models…")} /></div>) : availableModels.length === 0 ? (<div className="settings-empty-state settings-muted">{t("settings.projectModels.noModelsAvailableConfigureAuthenticationFirst", " No models available. Configure authentication first. ")}</div>) : (<>
+            {summarizationLane ? renderProjectLane(summarizationLane) : null}
+            {/* FNXC:Settings-ThinkingLevel 2026-07-10-12:08: Title-summarizer fallback provider/model/thinking settings are project-scoped, not workflow-declared. Render it with the summarization controls so saves use project null-as-delete semantics instead of the workflow-values API. */}
+            <div className="form-group" data-testid="project-model-lane-title-summarizer-fallback">
+              <div className="settings-model-lane-label-row">
+                <label htmlFor="titleSummarizerFallbackModel">{t("settings.projectModels.titleSummarizerFallbackModel", "Title Summarizer Fallback Model")}</label>
+                <span className={`settings-lane-badge ${titleSummarizerFallbackCustomized ? "settings-lane-badge--override" : "settings-lane-badge--inherited"}`} title={titleSummarizerFallbackCustomized ? "Explicitly set for this project" : "Inherited from global settings"}>
+                  {titleSummarizerFallbackCustomized ? "Override (Project)" : "Inherited (Global)"}
+                </span>
+              </div>
+              <div className="settings-model-lane-control-row">
+                <div className="settings-model-lane-control-main">
+                  <CustomModelDropdown id="titleSummarizerFallbackModel" label="Title Summarizer Fallback Model" models={availableModels} value={titleSummarizerFallbackValue} onChange={setTitleSummarizerFallbackValue} placeholder={t("settings.projectModels.useGlobal", "Use global")} favoriteProviders={favoriteProviders} onToggleFavorite={onToggleFavorite} favoriteModels={favoriteModels} onToggleModelFavorite={onToggleModelFavorite} menuWidth="readable" showThinkingLevel={true} thinkingLevel={titleSummarizerFallbackThinkingValue} onThinkingLevelChange={setTitleSummarizerFallbackThinkingValue} defaultThinkingLevel={form.defaultThinkingLevel}/>
+                </div>
+                {titleSummarizerFallbackCustomized && (<button type="button" className="btn btn-ghost btn-sm" title={t("settings.projectModels.resetToInheritFromGlobal", "Reset to inherit from global")} onClick={resetTitleSummarizerFallbackValue} style={{ whiteSpace: "nowrap" }}>{t("settings.projectModels.reset", " Reset ")}</button>)}
+              </div>
+              <small>{t("settings.projectModels.titleSummarizerFallbackHelp", "Fallback provider and model used when the primary Title Summarizer model cannot be used. Falls back to the global summarization lane and then the default model chain.")}</small>
+            </div>
+          </>)}
+        <div className="form-group">
+          <label htmlFor="autoSummarizeTitles" className="checkbox-label">
+            <input id="autoSummarizeTitles" type="checkbox" checked={form.autoSummarizeTitles || false} onChange={(e) => setForm((f) => ({ ...f, autoSummarizeTitles: e.target.checked }))}/>{t("settings.projectModels.autoSummarizeLongDescriptionsAsTitles", " Auto-summarize long descriptions as titles ")}</label>
+          <small>{t("settings.projectModels.whenEnabledTasksCreatedWithoutATitleBut", " When enabled, tasks created without a title but with descriptions over 200 characters will automatically get an AI-generated title (max 60 characters). The same model is also used to generate fallback merge commit message bodies when the branch's commit log is empty (e.g. squash merges with no unique commits), and GitHub tracking issue titles when a tracked task has no title yet. Default: disabled. ")}</small>
+        </div>
 
-      <div className="form-group">
-        <label htmlFor="useAiMergeCommitSummary" className="checkbox-label">
-          <input id="useAiMergeCommitSummary" type="checkbox" checked={form.useAiMergeCommitSummary || false} onChange={(e) => setForm((f) => ({ ...f, useAiMergeCommitSummary: e.target.checked }))}/>{t("settings.projectModels.aIMergeCommitSummaries", " AI merge commit summaries ")}</label>
-        <small>{t("settings.projectModels.whenEnabledMergeCommitMessagesIncludeAnAI", " When enabled, merge commit messages include an AI-generated subject plus body summary (narrative + bullets + diff-stat) instead of just listing step commit subjects. Uses the title summarization model. Default: enabled. ")}</small>
-      </div>
+        <div className="form-group">
+          <label htmlFor="useAiMergeCommitSummary" className="checkbox-label">
+            <input id="useAiMergeCommitSummary" type="checkbox" checked={form.useAiMergeCommitSummary || false} onChange={(e) => setForm((f) => ({ ...f, useAiMergeCommitSummary: e.target.checked }))}/>{t("settings.projectModels.aIMergeCommitSummaries", " AI merge commit summaries ")}</label>
+          <small>{t("settings.projectModels.whenEnabledMergeCommitMessagesIncludeAnAI", " When enabled, merge commit messages include an AI-generated subject plus body summary (narrative + bullets + diff-stat) instead of just listing step commit subjects. Uses the title summarization model. Default: enabled. ")}</small>
+        </div>
 
-      {(form.autoSummarizeTitles || form.useAiMergeCommitSummary || form.githubTrackingEnabledByDefault || false) && (<p className="settings-description">
-          {t("settings.movedStub.summarizerModelInline", "The summarization model lane above controls title auto-summarization, merge commit summaries, GitHub tracking titles, and PR metadata generation.")}
-        </p>)}
+        {(form.autoSummarizeTitles || form.useAiMergeCommitSummary || form.githubTrackingEnabledByDefault || false) && (<p className="settings-description">
+            {t("settings.movedStub.summarizerModelInline", "These summarization model controls govern title auto-summarization, merge commit summaries, GitHub tracking titles, and PR metadata generation.")}
+          </p>)}
 
       <div className="form-group">
         <label htmlFor="prTitlePromptInstructions">{t("settings.projectModels.prTitlePromptInstructions", "PR title prompt guidance")}</label>
@@ -669,6 +682,7 @@ export function ProjectModelsSection({ scopeBanner, form, setForm, models, proje
         <textarea id="prDescriptionPromptInstructions" value={form.prDescriptionPromptInstructions || ""} onChange={(e) => setForm((f) => ({ ...f, prDescriptionPromptInstructions: e.target.value }))} rows={4} placeholder={t("settings.projectModels.prDescriptionPromptInstructionsPlaceholder", "Example: Emphasize operator-facing behavior and list verification commands exactly.")}/>
         <small>{t("settings.projectModels.prDescriptionPromptInstructionsHelp", "Guides the AI-generated Create PR summary, changes, and testing sections. Leave blank to use the default PR metadata prompt. No default \u2014 unset.")}</small>
       </div>
+      </section>
     </>);
 }
 export default ProjectModelsSection;
