@@ -1,5 +1,5 @@
 import "./GitHubImportModal.css";
-import { useState, useEffect, useCallback, useRef, useMemo, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent } from "react";
+import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import { DEFAULT_LOCALE, getErrorMessage, isLocale, type Locale, type Task } from "@fusion/core";
 import {
@@ -26,7 +26,7 @@ import {
   type GitRemote,
   type GitLabImportItem,
 } from "../api";
-import { Loader2, RefreshCw, ArrowLeft, GitPullRequest, CircleDot, ChevronUp, ChevronDown, Bot, User } from "lucide-react";
+import { Loader2, RefreshCw, GitPullRequest, CircleDot, ChevronUp, ChevronDown, Bot, User } from "lucide-react";
 import { GithubIcon } from "./GithubIcon";
 import { MailboxMessageContent } from "./MailboxMessageContent";
 import {
@@ -38,8 +38,8 @@ import { useModalResizePersist } from "../hooks/useModalResizePersist";
 import { useMobileScrollLock } from "../hooks/useMobileScrollLock";
 import { useOverlayDismiss } from "../hooks/useOverlayDismiss";
 import { useEmbeddedPresentation, type ModalPresentation } from "../hooks/useEmbeddedPresentation";
-import { getScopedItem, setScopedItem } from "../utils/projectStorage";
 import { getGitHubImportState, saveGitHubImportState } from "../hooks/modalPersistence";
+import { FloatingWindow } from "./FloatingWindow";
 
 interface GitHubImportModalProps {
   isOpen: boolean;
@@ -55,38 +55,9 @@ interface GitHubImportModalProps {
   presentation?: ModalPresentation;
 }
 
-// Mobile and two-pane breakpoints in pixels
-const MOBILE_BREAKPOINT = 640;
-const TWO_PANE_BREAKPOINT = 860;
-/*
-FNXC:GitHubImport 2026-06-23-00:30:
-The Import Tasks two-pane split (Issues AND Pull Requests share the same workspace/list/preview structure) must let the user
-shrink the LEFT list far below its old fixed share so the RIGHT preview gets the freed space. Default the list narrow (256px),
-clamp to [160px, min(480px, 50% of container)] so the preview always keeps at least half. Width is user-resizable via a drag
-handle and persisted per-project through projectStorage (key `kb-dashboard-github-import-list-width`) so each repo context keeps
-its own split. The freed width flows to the preview because the preview is `flex: 1 1 auto; min-width: 0` (fills remainder).
-*/
-const GITHUB_IMPORT_LIST_PANE_MIN_WIDTH = 160;
-const GITHUB_IMPORT_LIST_PANE_MAX_WIDTH = 480;
-const GITHUB_IMPORT_LIST_PANE_MAX_RATIO = 0.5;
-const GITHUB_IMPORT_LIST_PANE_DEFAULT_WIDTH = 256;
-const GITHUB_IMPORT_LIST_PANE_KEYBOARD_STEP = 16;
-const GITHUB_IMPORT_LIST_WIDTH_STORAGE_KEY = "kb-dashboard-github-import-list-width";
-
 type TabType = "issues" | "pulls";
 type ImportProvider = "github" | "gitlab";
 type GitLabResourceTab = "project_issue" | "group_issue" | "merge_request";
-
-/**
- * Clamp the list-pane width to [MIN, min(MAX, container * MAX_RATIO)].
- * The container-relative cap guarantees the preview pane keeps at least half the workspace even on narrow screens.
- * `containerWidth <= 0` (e.g. unmeasured/test) falls back to the absolute MAX so the static bound still applies.
- */
-function clampListPaneWidth(width: number, containerWidth = 0) {
-  const ratioMax = containerWidth > 0 ? containerWidth * GITHUB_IMPORT_LIST_PANE_MAX_RATIO : Number.POSITIVE_INFINITY;
-  const maxWidth = Math.min(GITHUB_IMPORT_LIST_PANE_MAX_WIDTH, ratioMax);
-  return Math.max(GITHUB_IMPORT_LIST_PANE_MIN_WIDTH, Math.min(maxWidth, width));
-}
 
 /*
 FNXC:GitHubImport 2026-06-23-03:30:
@@ -435,32 +406,6 @@ export function GitHubImportModal({ isOpen, onClose, onImport, tasks, projectId,
   const modalRef = useRef<HTMLDivElement>(null);
   useModalResizePersist(modalRef, isOpen && resizePersistEnabled, "fusion:github-modal-size");
   const overlayDismissProps = useOverlayDismiss(onClose);
-
-  // Responsive view state
-  const [isMobile, setIsMobile] = useState(false);
-  const [canResizePanes, setCanResizePanes] = useState(false);
-  const [mobileView, setMobileView] = useState<"list" | "preview">("list");
-  // Workspace flex-row container; used to measure available width for the container-relative resize clamp.
-  const workspaceRef = useRef<HTMLDivElement>(null);
-  // Parks the active drag teardown (release capture + remove listeners) so it runs once on pointerup/cancel/unmount.
-  const listResizeTeardownRef = useRef<(() => void) | null>(null);
-  // rAF handle so pointermove width updates are batched to one state write per frame.
-  const listResizeFrameRef = useRef<number | null>(null);
-  const [listPaneWidth, setListPaneWidth] = useState(() => {
-    try {
-      const stored = getScopedItem(GITHUB_IMPORT_LIST_WIDTH_STORAGE_KEY, projectId);
-      if (!stored) {
-        return GITHUB_IMPORT_LIST_PANE_DEFAULT_WIDTH;
-      }
-      const parsed = Number.parseInt(stored, 10);
-      if (!Number.isFinite(parsed)) {
-        return GITHUB_IMPORT_LIST_PANE_DEFAULT_WIDTH;
-      }
-      return clampListPaneWidth(parsed);
-    } catch {
-      return GITHUB_IMPORT_LIST_PANE_DEFAULT_WIDTH;
-    }
-  });
 
   // Track which owner/repo we've already auto-loaded to prevent duplicate loads
   const autoLoadedRef = useRef<{ owner: string; repo: string; labels: string; tab: TabType } | null>(null);
@@ -837,13 +782,12 @@ export function GitHubImportModal({ isOpen, onClose, onImport, tasks, projectId,
         setOptimisticImportedUrls((previous) => new Set(previous).add(selectedGitlabItem.webUrl));
       }
       setSelectedGitlabKey(null);
-      if (isMobile && mobileView === "preview") setMobileView("list");
     } catch (err) {
       setError(getErrorMessage(err) || t("git.failedToImportGitlab", "Failed to import GitLab resource"));
     } finally {
       setImporting(false);
     }
-  }, [selectedGitlabItem, gitlabEnabled, gitlabResource, gitlabProject, gitlabGroup, projectId, onImport, isMobile, mobileView, t]);
+  }, [selectedGitlabItem, gitlabEnabled, gitlabResource, gitlabProject, gitlabGroup, projectId, onImport, t]);
 
   /*
   FNXC:GitHubImport 2026-07-07-00:00:
@@ -946,170 +890,12 @@ export function GitHubImportModal({ isOpen, onClose, onImport, tasks, projectId,
     return () => document.removeEventListener("keydown", handleKey);
   }, [isOpen, escapeEnabled, onClose]);
 
-  // Detect responsive viewport bands
-  useEffect(() => {
-    if (!isOpen) return;
-
-    const checkViewportBands = () => {
-      setIsMobile(window.innerWidth <= MOBILE_BREAKPOINT);
-      setCanResizePanes(window.innerWidth > TWO_PANE_BREAKPOINT);
-    };
-
-    // Check initially
-    checkViewportBands();
-
-    // Listen for resize
-    window.addEventListener("resize", checkViewportBands);
-    return () => window.removeEventListener("resize", checkViewportBands);
-  }, [isOpen]);
-
-  // Persist the (already clamped) width per-project; best-effort, scoped so each repo context keeps its own split.
-  useEffect(() => {
-    try {
-      setScopedItem(GITHUB_IMPORT_LIST_WIDTH_STORAGE_KEY, String(listPaneWidth), projectId);
-    } catch {
-      // Ignore storage write failures.
-    }
-  }, [listPaneWidth, projectId]);
-
-  /*
-  FNXC:GitHubImport 2026-06-23-00:30:
-  Mirror the proven MailboxView split drag. Pointer events + setPointerCapture keep the drag tracking even when the cursor
-  leaves the thin handle. Each move maps the pointer X to a list-pane width relative to the workspace's left edge, clamped to
-  [MIN, min(MAX, container * MAX_RATIO)] so the preview keeps at least half. Updates are rAF-batched (one state write per
-  frame). The teardown (release capture + remove listeners + cancel frame) runs once on pointerup/pointercancel and is parked
-  in listResizeTeardownRef for unmount safety. Resize only applies in the wide two-pane band (canResizePanes).
-  */
-  const handleListPaneResizeStart = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
-    if (!canResizePanes) {
-      return;
-    }
-    event.preventDefault();
-
-    listResizeTeardownRef.current?.();
-
-    const handle = event.currentTarget;
-    const pointerId = event.pointerId;
-    const workspaceRect = workspaceRef.current?.getBoundingClientRect();
-    // Fall back to pointer-relative delta math when the workspace is unmeasured (e.g. jsdom layout-less tests).
-    const startX = event.clientX;
-    const startWidth = listPaneWidth;
-
-    // Latest pointer X awaiting a frame; flushed on the next rAF or synchronously at teardown so the final drag position is never dropped.
-    let pendingClientX: number | null = null;
-
-    const applyWidth = (clientX: number) => {
-      const containerWidth = workspaceRect?.width ?? 0;
-      const proposed = workspaceRect ? clientX - workspaceRect.left : startWidth + (clientX - startX);
-      setListPaneWidth(clampListPaneWidth(proposed, containerWidth));
-    };
-
-    const flushPending = () => {
-      listResizeFrameRef.current = null;
-      if (pendingClientX !== null) {
-        const clientX = pendingClientX;
-        pendingClientX = null;
-        applyWidth(clientX);
-      }
-    };
-
-    const onPointerMove = (moveEvent: globalThis.PointerEvent) => {
-      if (moveEvent.pointerId !== pointerId) return;
-      pendingClientX = moveEvent.clientX;
-      if (listResizeFrameRef.current !== null) return;
-      const schedule = typeof window !== "undefined" && typeof window.requestAnimationFrame === "function"
-        ? window.requestAnimationFrame
-        : (cb: FrameRequestCallback) => { cb(0); return 0; };
-      listResizeFrameRef.current = schedule(flushPending);
-    };
-
-    const teardown = () => {
-      document.removeEventListener("pointermove", onPointerMove);
-      document.removeEventListener("pointerup", teardown);
-      document.removeEventListener("pointercancel", teardown);
-      if (listResizeFrameRef.current !== null && typeof window !== "undefined" && typeof window.cancelAnimationFrame === "function") {
-        window.cancelAnimationFrame(listResizeFrameRef.current);
-        listResizeFrameRef.current = null;
-      }
-      // Apply any width queued for a frame that never fired so the final drag position sticks (and tests stay deterministic).
-      flushPending();
-      try {
-        handle.releasePointerCapture(pointerId);
-      } catch {
-        // Pointer capture may already be released; ignore.
-      }
-      listResizeTeardownRef.current = null;
-    };
-
-    listResizeTeardownRef.current = teardown;
-
-    try {
-      handle.setPointerCapture(pointerId);
-    } catch {
-      // setPointerCapture can throw in non-DOM test environments; drag still works via listeners.
-    }
-    // Listen on document so the drag keeps tracking even when the pointer leaves the thin handle.
-    document.addEventListener("pointermove", onPointerMove);
-    document.addEventListener("pointerup", teardown);
-    document.addEventListener("pointercancel", teardown);
-  }, [canResizePanes, listPaneWidth]);
-
-  // Detach any in-flight drag on unmount.
-  useEffect(() => () => {
-    listResizeTeardownRef.current?.();
-  }, []);
-
-  const handleListPaneResizeKeyDown = useCallback((event: ReactKeyboardEvent<HTMLDivElement>) => {
-    if (!canResizePanes) {
-      return;
-    }
-
-    const containerWidth = workspaceRef.current?.clientWidth ?? 0;
-    const step = event.shiftKey ? GITHUB_IMPORT_LIST_PANE_KEYBOARD_STEP * 4 : GITHUB_IMPORT_LIST_PANE_KEYBOARD_STEP;
-
-    if (event.key === "ArrowLeft") {
-      event.preventDefault();
-      setListPaneWidth((current) => clampListPaneWidth(current - step, containerWidth));
-      return;
-    }
-
-    if (event.key === "ArrowRight") {
-      event.preventDefault();
-      setListPaneWidth((current) => clampListPaneWidth(current + step, containerWidth));
-      return;
-    }
-
-    if (event.key === "Home") {
-      event.preventDefault();
-      setListPaneWidth(GITHUB_IMPORT_LIST_PANE_MIN_WIDTH);
-      return;
-    }
-
-    if (event.key === "End") {
-      event.preventDefault();
-      setListPaneWidth(clampListPaneWidth(GITHUB_IMPORT_LIST_PANE_MAX_WIDTH, containerWidth));
-    }
-  }, [canResizePanes]);
-
-  // Handle issue selection - switch to preview view on mobile
   const handleIssueSelect = useCallback((issueNumber: number) => {
     setSelectedIssueNumber(issueNumber);
-    if (isMobile) {
-      setMobileView('preview');
-    }
-  }, [isMobile]);
+  }, []);
 
-  // Handle pull request selection - switch to preview view on mobile
   const handlePullSelect = useCallback((pullNumber: number) => {
     setSelectedPullNumber(pullNumber);
-    if (isMobile) {
-      setMobileView('preview');
-    }
-  }, [isMobile]);
-
-  // Handle back button - return to list view on mobile
-  const handleBackToList = useCallback(() => {
-    setMobileView('list');
   }, []);
 
   /**
@@ -1119,7 +905,6 @@ export function GitHubImportModal({ isOpen, onClose, onImport, tasks, projectId,
    */
   const returnToIssueListAfterSuccess = useCallback(() => {
     setSelectedIssueNumber(null);
-    setMobileView("list");
   }, []);
 
   const handleImport = useCallback(async () => {
@@ -1171,9 +956,6 @@ export function GitHubImportModal({ isOpen, onClose, onImport, tasks, projectId,
           setOptimisticImportedUrls((previous) => new Set(previous).add(importedPullUrl));
         }
         setSelectedPullNumber(null);
-        if (isMobile && mobileView === "preview") {
-          setMobileView("list");
-        }
       } catch (err) {
         const msg = getErrorMessage(err);
         if (msg?.includes("already imported")) {
@@ -1185,7 +967,7 @@ export function GitHubImportModal({ isOpen, onClose, onImport, tasks, projectId,
         setImporting(false);
       }
     }
-  }, [activeTab, selectedIssueNumber, selectedPullNumber, issues, pulls, owner, repo, projectId, onImport, isMobile, mobileView, returnToIssueListAfterSuccess]);
+  }, [activeTab, selectedIssueNumber, selectedPullNumber, issues, pulls, owner, repo, projectId, onImport, returnToIssueListAfterSuccess]);
 
   /*
   FNXC:GitHubImport 2026-06-23-01:00:
@@ -1273,8 +1055,8 @@ export function GitHubImportModal({ isOpen, onClose, onImport, tasks, projectId,
   }, []);
 
   /*
-  FNXC:GitHubImport 2026-06-23-03:15:
-  Close the selected issue: calls apiCloseGitHubIssue, marks the number closed locally (so the badge/button reflect it) WITHOUT dismissing the view, and shows a transient inline toast.
+  FNXC:GitHubImport 2026-07-15-17:10:
+  Closing an issue keeps its FloatingWindow open through the success toast so the confirmation is visible and the locally closed state can replace the Close action. The full-width list remains behind the draggable/resizable detail window.
   */
   const handleCloseIssue = useCallback(async () => {
     if (selectedIssueNumber === null || !owner.trim() || !repo.trim()) return;
@@ -1290,14 +1072,13 @@ export function GitHubImportModal({ isOpen, onClose, onImport, tasks, projectId,
         return next;
       });
       setCloseToast({ type: "success", message: t("git.issueClosedToast", "Issue #{{number}} closed", { number: issueNumber }) });
-      returnToIssueListAfterSuccess();
     } catch (err: unknown) {
       setCloseToast({ type: "error", message: getErrorMessage(err) });
     } finally {
       setClosingIssue(false);
       closeToastTimerRef.current = setTimeout(() => setCloseToast(null), 4000);
     }
-  }, [selectedIssueNumber, owner, repo, t, returnToIssueListAfterSuccess]);
+  }, [selectedIssueNumber, owner, repo, t]);
 
   const selectedIssue = issues.find((i) => i.number === selectedIssueNumber);
   const selectedPull = pulls.find((p) => p.number === selectedPullNumber);
@@ -1562,24 +1343,12 @@ export function GitHubImportModal({ isOpen, onClose, onImport, tasks, projectId,
             </div>
           )}
 
-          {/* Two-pane workspace */}
-          <div className="github-import-workspace" ref={workspaceRef}>
-            {/* Left pane: Issue/PR list */}
-            <section
-              className={`github-import-list-pane ${isMobile ? 'mobile' : ''} ${mobileView === 'list' ? 'active' : ''}`}
-              /*
-              FNXC:GitHubImport 2026-06-23-00:30:
-              Drive the wide two-pane width from a CSS var so the embedded layout's container query can apply it with the
-              precedence it needs (`flex-basis: var(--gh-import-list-width) !important`) WITHOUT the stacked/narrow rule's
-              own `!important` reset stomping it. `flex` is also set inline for the non-embedded (dialog) presentation, which
-              has no competing `!important`. Both surfaces (Issues + Pull Requests) share this single list pane.
-              */
-              style={canResizePanes
-                ? ({ flex: `0 0 ${listPaneWidth}px`, ["--gh-import-list-width" as string]: `${listPaneWidth}px` } as CSSProperties)
-                : undefined}
-              data-testid="github-import-list-pane"
-              aria-labelledby="github-import-results-heading"
-            >
+          {/*
+          FNXC:GitHubImport 2026-07-15-16:00:
+          Import candidates stay in one full-width list. Selecting an item opens its complete detail in FloatingWindow, which
+          supplies desktop drag/resize behavior and the scoped mobile full-screen sheet without bespoke split-pane geometry.
+          */}
+          <section className="github-import-list-pane" data-testid="github-import-list-pane" aria-labelledby="github-import-results-heading">
               <div className="github-import-pane-header">
                 <h4 id="github-import-results-heading">
                   {activeTab === "issues" ? t("git.tabIssues", "Issues") : t("git.tabPullRequests", "Pull Requests")}
@@ -1724,46 +1493,18 @@ export function GitHubImportModal({ isOpen, onClose, onImport, tasks, projectId,
               </div>
             </section>
 
-            {canResizePanes && (
-              <div
-                className="github-import-workspace__resize-handle github-import-resize-handle"
-                role="separator"
-                aria-orientation="vertical"
-                aria-label={t("git.resizeIssuesList", "Resize issues list")}
-                aria-valuemin={GITHUB_IMPORT_LIST_PANE_MIN_WIDTH}
-                aria-valuemax={GITHUB_IMPORT_LIST_PANE_MAX_WIDTH}
-                aria-valuenow={listPaneWidth}
-                tabIndex={0}
-                onPointerDown={handleListPaneResizeStart}
-                onKeyDown={handleListPaneResizeKeyDown}
-                data-testid="github-import-resize-handle"
-              />
-            )}
-
-            {/* Right pane: Preview */}
-            <section
-              className={`github-import-preview-pane ${isMobile ? 'mobile' : ''} ${mobileView === 'preview' ? 'active' : ''}`}
-              data-testid="github-import-preview-pane"
-              aria-labelledby="github-import-preview-heading"
+            {(selectedIssue || selectedPull) && (
+            <FloatingWindow
+              windowKey="github-import-detail"
+              title={selectedIssue ? `#${selectedIssue.number} — ${selectedIssue.title}` : selectedPull ? `#${selectedPull.number} — ${selectedPull.title}` : t("git.importFromGitHub", "Import from GitHub")}
+              onClose={() => { setSelectedIssueNumber(null); setSelectedPullNumber(null); }}
+              defaultSize={{ width: 760, height: 680 }}
+              minSize={{ width: 420, height: 360 }}
+              persistGeometryKey="floating-window:github-import-detail"
+              className="floating-window--github-import-detail"
             >
-              {/*
-              FNXC:GitHubImport 2026-06-23-02:00:
-              The Import action lives in a non-scrolling header row at the TOP of the preview pane (above the scrollable pane-content), acting on the currently-selected issue/PR.
-              This replaces the old bottom action bar for the embedded sidebar destination, which has no modal to cancel — so the embedded view drops the Cancel/footer entirely (the non-embedded modal keeps its bottom Cancel+Import bar below).
-              On narrow/mobile the same header stays reachable: selecting an item swaps to the preview view, the Back button and the top Import button both render in this header, and import works without any bottom bar.
-              */}
+              <div className="github-import-detail-panel">
               <div className="github-import-pane-header">
-                {isMobile && (
-                  <button
-                    className="github-import-back-button"
-                    onClick={handleBackToList}
-                    data-testid="github-import-back-button"
-                    aria-label={activeTab === "issues" ? t("git.backToIssuesList", "Back to issues list") : t("git.backToPullsList", "Back to pull requests list")}
-                  >
-                    <ArrowLeft size={16} />
-                    <span>{t("common.back", "Back")}</span>
-                  </button>
-                )}
                 <h4 id="github-import-preview-heading">{t("git.previewHeading", "Preview")}</h4>
                 {/*
                 FNXC:GitHubImport 2026-06-23-03:15:
@@ -1981,8 +1722,9 @@ export function GitHubImportModal({ isOpen, onClose, onImport, tasks, projectId,
                   </div>
                 ) : null}
               </div>
-            </section>
-          </div>
+              </div>
+            </FloatingWindow>
+            )}
           </>
           ) : (
             <div className="github-import-gitlab" data-testid="gitlab-import-panel">
@@ -2014,27 +1756,36 @@ export function GitHubImportModal({ isOpen, onClose, onImport, tasks, projectId,
                     const key = `${item.resourceKind}:${item.projectId ?? item.projectPath ?? ""}:${item.iid}`;
                     const imported = isUrlImported(item.webUrl);
                     return (
-                      <button key={key} type="button" className={`issue-item ${selectedGitlabKey === key ? "selected" : ""} ${imported ? "imported" : ""}`} onClick={() => { if (!imported) { setSelectedGitlabKey(key); if (isMobile) setMobileView("preview"); } }} disabled={imported}>
+                      <button key={key} type="button" className={`issue-item ${selectedGitlabKey === key ? "selected" : ""} ${imported ? "imported" : ""}`} onClick={() => { if (!imported) setSelectedGitlabKey(key); }} disabled={imported}>
                         <div className="issue-title">{item.resourceKind === "merge_request" ? "!" : "#"}{item.iid} {item.title}</div>
                         <div className="issue-meta"><span>{item.projectPath ?? item.projectId}</span><span>{item.state}</span>{imported && <span>{t("git.alreadyImported", "Imported")}</span>}</div>
                       </button>
                     );
                   })}
                 </div>
-                <div className="github-import-preview-pane">
-                  {selectedGitlabItem ? (
-                    <div className="issue-preview" data-testid="gitlab-import-preview-card">
-                      <h4>{selectedGitlabItem.resourceKind === "merge_request" ? "!" : "#"}{selectedGitlabItem.iid} {importTranslation.display.title}</h4>
-                      <div className="preview-meta-row"><span className={`preview-state-badge preview-state-badge--${selectedGitlabItem.state}`}>{selectedGitlabItem.state}</span><a href={selectedGitlabItem.webUrl} target="_blank" rel="noopener noreferrer">{t("git.openSource", "Open source")}</a></div>
-                      {/* FNXC:GitHubImportTranslate 2026-07-14-12:00: GitLab import preview reuses the same language-detect + translate controls as GitHub. */}
-                      {importTranslation.controls}
-                      <MailboxMessageContent className="preview-body preview-body--markdown" content={importTranslation.display.body?.trim() || t("git.noDescription", "(no description)")} testId="gitlab-import-preview-body" />
-                      <button type="button" className="btn btn-primary" onClick={handleImportGitLab} disabled={!gitlabEnabled || importing || isUrlImported(selectedGitlabItem.webUrl)}>{importing ? <Loader2 size={14} className="spin" /> : t("git.import", "Import")}</button>
+                {selectedGitlabItem && (
+                  <FloatingWindow
+                    windowKey="github-import-detail"
+                    title={`${selectedGitlabItem.resourceKind === "merge_request" ? "!" : "#"}${selectedGitlabItem.iid} — ${selectedGitlabItem.title}`}
+                    onClose={() => setSelectedGitlabKey(null)}
+                    defaultSize={{ width: 760, height: 680 }}
+                    minSize={{ width: 420, height: 360 }}
+                    persistGeometryKey="floating-window:github-import-detail"
+                    className="floating-window--github-import-detail"
+                  >
+                    <div className="github-import-detail-panel">
+                      <div className="issue-preview" data-testid="gitlab-import-preview-card">
+                        <h4>{selectedGitlabItem.resourceKind === "merge_request" ? "!" : "#"}{selectedGitlabItem.iid} {importTranslation.display.title}</h4>
+                        <div className="preview-meta-row"><span className={`preview-state-badge preview-state-badge--${selectedGitlabItem.state}`}>{selectedGitlabItem.state}</span><a href={selectedGitlabItem.webUrl} target="_blank" rel="noopener noreferrer">{t("git.openSource", "Open source")}</a></div>
+                        {importTranslation.controls}
+                        <MailboxMessageContent className="preview-body preview-body--markdown" content={importTranslation.display.body?.trim() || t("git.noDescription", "(no description)")} testId="gitlab-import-preview-body" />
+                        <button type="button" className="btn btn-primary" onClick={handleImportGitLab} disabled={!gitlabEnabled || importing || isUrlImported(selectedGitlabItem.webUrl)}>{importing ? <Loader2 size={14} className="spin" /> : t("git.import", "Import")}</button>
+                      </div>
                     </div>
-                  ) : <div className="github-import-state github-import-state--idle" data-testid="gitlab-import-preview-empty"><strong>{t("git.gitlabNoSelection", "No GitLab resource selected")}</strong><span>{t("git.gitlabNoSelectionHint", "Choose a resource from the list to preview it.")}</span></div>}
+                  </FloatingWindow>
+                )}
                 </div>
               </div>
-            </div>
           )}
         </div>
 

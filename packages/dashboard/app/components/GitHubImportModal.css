@@ -123,34 +123,14 @@
   font-size: 13px;
 }
 
-/* Two-pane layout */
-.github-import-workspace {
-  display: flex;
-  gap: var(--space-sm);
-  min-height: 0;
-  flex: 1;
-}
-
-.github-import-list-pane,
-.github-import-preview-pane {
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
-  /* FNXC:GitHubImport 2026-06-23-02:00: min-width:0 so neither pane's content can override its flex-basis and force horizontal overflow once GitHub data loads. */
-  min-width: 0;
-}
-
 .github-import-list-pane {
-  /* Desktop width is controlled by inline flex-basis from the resize handle. */
-  flex: 0 0 auto;
-  /* Keep separator ownership on the resize handle to avoid a doubled divider. */
-  padding-right: var(--space-md);
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
 }
 
-/*
-FNXC:GitHubImport 2026-06-23-02:00:
-List items must NOT dictate the list pane width. Paired with the pane's min-width:0, every item subtree gets min-width:0 and the title ellipsizes, so a long issue/PR title truncates inside the (resizable) pane instead of forcing it wide.
-*/
 .github-import-list-pane .issue-main,
 .github-import-list-pane .issue-heading-row {
   min-width: 0;
@@ -166,45 +146,13 @@ List items must NOT dictate the list pane width. Paired with the pane's min-widt
   overflow: hidden;
 }
 
-.github-import-workspace__resize-handle {
-  position: relative;
-  flex: 0 0 var(--space-sm);
-  align-self: stretch;
-  cursor: col-resize;
-  touch-action: none;
-  border-radius: var(--radius-sm);
-}
-
-.github-import-workspace__resize-handle::before {
-  content: "";
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  left: 50%;
-  width: var(--space-xs);
-  transform: translateX(-50%);
-  border-radius: var(--radius-sm);
-  background: color-mix(in srgb, var(--border) 35%, transparent);
-  transition: background var(--transition-fast);
-}
-
-.github-import-workspace__resize-handle:hover::before,
-.github-import-workspace__resize-handle:active::before {
-  background: color-mix(in srgb, var(--todo) 50%, transparent);
-}
-
-.github-import-workspace__resize-handle:focus-visible {
-  outline: var(--focus-ring-strong);
-  outline-offset: 0;
-}
-
-.github-import-workspace__resize-handle:focus-visible::before {
-  background: color-mix(in srgb, var(--todo) 60%, transparent);
-}
-
-.github-import-preview-pane {
+.github-import-detail-panel {
+  display: flex;
   flex: 1;
+  flex-direction: column;
   min-width: 0;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .github-import-pane-header {
@@ -1152,11 +1100,6 @@ Across the thread: a top filter (All/Human/Bot) and prev/next chevrons live in t
   color: var(--accent-text, #fff);
 }
 
-/* Back button - hidden on desktop by default */
-.github-import-back-button {
-  display: none;
-}
-
 /* Light theme overrides for GitHub import components */
 [data-theme="light"] .github-import-tabs {
   background: var(--bg-secondary);
@@ -1217,45 +1160,6 @@ Across the thread: a top filter (All/Human/Bot) and prev/next chevrons live in t
 }
 
 /* Responsive breakpoints */
-@media (max-width: 860px) {
-  /* FNXC:GitHubImport 2026-07-08-00:00: the ENTIRE tablet-band responsive
-     pane layout below (column-stack, resize-handle hiding, and the
-     flex:none/max-height:50% caps on the list/preview panes) is for the
-     dialog presentation only. All selectors are scoped with
-     :not(.github-import-modal--embedded) so the embedded Import Tasks
-     surface is governed solely by the base embedded rules + the
-     @container github-import-embedded blocks below — never by the
-     viewport. Previously only the width rule was scoped; the unscoped
-     `.github-import-preview-pane { max-height: 50% }` leaked into the
-     embedded view on tablet-width viewports (640–860px), clipping a tall
-     selected issue/PR preview with no way to reach the rest (FN-7694). */
-  .github-import-modal:not(.github-import-modal--embedded) {
-    width: calc(100vw - (var(--space-lg) * 2));
-  }
-
-  .github-import-modal:not(.github-import-modal--embedded) .github-import-workspace {
-    flex-direction: column;
-  }
-
-  .github-import-modal:not(.github-import-modal--embedded) .github-import-workspace__resize-handle {
-    display: none;
-  }
-
-  .github-import-modal:not(.github-import-modal--embedded) .github-import-list-pane {
-    flex: none;
-    border-right: none;
-    border-bottom: 1px solid var(--border);
-    padding-right: 0;
-    padding-bottom: var(--space-md);
-    max-height: 50%;
-  }
-
-  .github-import-modal:not(.github-import-modal--embedded) .github-import-preview-pane {
-    flex: none;
-    max-height: 50%;
-  }
-}
-
 @media (max-width: 640px) {
   /* Full-screen sheet on mobile — drop overlay padding so the modal
      actually fills the viewport instead of being pushed below it.
@@ -1356,120 +1260,7 @@ Across the thread: a top filter (All/Human/Bot) and prev/next chevrons live in t
     max-height: 50vh;
   }
 
-  .github-import-workspace {
-    flex: 1;
-    min-height: 0;
-    overflow: hidden;
-  }
 
-  /* Mobile pane visibility - show one at a time */
-  .github-import-list-pane.mobile {
-    display: none;
-  }
-
-  .github-import-list-pane.mobile.active {
-    display: flex;
-    flex: 1;
-    border-right: none;
-    padding-right: 0;
-    max-height: none;
-  }
-
-  .github-import-preview-pane.mobile {
-    display: none;
-  }
-
-  .github-import-preview-pane.mobile.active {
-    display: flex;
-    flex: 1;
-    min-height: 0;
-    max-height: none;
-    overflow: hidden;
-  }
-
-  .github-import-preview-pane.mobile.active .github-import-pane-content {
-    flex: 1;
-    min-height: 0;
-    overflow-y: auto;
-    overscroll-behavior: contain;
-  }
-
-  /*
-  FNXC:GitHubImport 2026-06-23-02:45:
-  Narrow-mobile (viewport <= 640px) EMBEDDED scroll fix. isMobile is viewport-derived, so at <= 640px the
-  embedded Import Tasks view also enters mobile single-pane mode and inherits the @640 nested-scroll design
-  intended for the dialog (workspace/pane `overflow: hidden`, pane-content `overflow-y: auto`). But the
-  embedded block (later in source) flips the preview pane + its content to natural height + `overflow-y: visible`
-  so the VIEW BODY is meant to be the scroll owner — leaving the @640 `overflow: hidden` on the workspace and
-  the active preview pane as orphaned clips with no inner scroll owner, so a tall preview (body, checks, comments)
-  was cut off with no way to reach it.
-  Fix: in narrow embedded mode make `.github-import-modal__body` the single scroll owner (flex:1; overflow-y:auto)
-  and give every ancestor in the chain (workspace, the active list/preview panes, pane-content) natural height with
-  `overflow: visible` so nothing traps or clips the growing content. The list keeps its own `.issues-list`
-  internal scroll. Wide (>=720px container) two-pane behavior and the dialog (non-embedded) path are untouched —
-  this rule is scoped to `.github-import-modal--embedded`.
-  */
-  .github-import-modal--embedded .github-import-modal__body {
-    flex: 1;
-    min-height: 0;
-    overflow-y: auto;
-    overflow-x: hidden;
-  }
-
-  .github-import-modal--embedded .github-import-workspace {
-    flex: 0 0 auto;
-    min-height: 0;
-    overflow: visible;
-  }
-
-  .github-import-modal--embedded .github-import-list-pane.mobile.active,
-  .github-import-modal--embedded .github-import-preview-pane.mobile.active {
-    flex: 0 0 auto;
-    max-height: none;
-    overflow: visible;
-  }
-
-  /* Single scroll owner: let the list grow with the page instead of owning a nested scroll. */
-  .github-import-modal--embedded .github-import-list-pane.mobile.active .issues-list {
-    max-height: none;
-    overflow-y: visible;
-  }
-
-  .github-import-modal--embedded .github-import-preview-pane.mobile.active .github-import-pane-content {
-    flex: 0 0 auto;
-    min-height: auto;
-    overflow-y: visible;
-    overscroll-behavior: auto;
-  }
-
-  /* Back button styles */
-  .github-import-back-button {
-    display: inline-flex;
-    align-items: center;
-    gap: var(--space-sm);
-    padding: var(--space-sm) var(--space-md);
-    background: transparent;
-    border: 1px solid var(--border);
-    border-radius: var(--radius-md);
-    color: var(--text);
-    font-size: 13px;
-    cursor: pointer;
-    transition: background var(--transition-fast);
-  }
-
-  .github-import-back-button:hover {
-    background: var(--card-hover);
-  }
-
-  .github-import-back-button:focus {
-    outline: none;
-    box-shadow: var(--focus-ring);
-  }
-
-  .github-import-pane-header:has(.github-import-back-button) {
-    justify-content: flex-start;
-    gap: var(--space-md);
-  }
 }
 
 @keyframes github-import-spinner-spin {
@@ -1557,136 +1348,6 @@ Import Tasks embedded header now adopts the canonical ViewHeader chrome — edge
   background: var(--bg);
 }
 
-/*
-FNXC:RightDockEmbedding 2026-06-22-12:30:
-Embedded "Import Tasks" main-content view must fit on screen and react to its OWN width, not the viewport.
-The shared two-pane code sets the list pane width via an inline flex-basis (default 360px) whenever the VIEWPORT is wide (canResizePanes => innerWidth > 860). In the embedded main area the host can be far narrower than the viewport, so that inline 360px list pane plus the preview overflowed horizontally.
-Fix (embedded variant only — modal path untouched): turn the embedded root into a query container (container-type: inline-size) and drive the layout off @container width.
-- Narrow container (default): stack list ABOVE preview in a single column; cap the list height and override the inline desktop flex-basis so nothing forces horizontal overflow. Long titles/repo names already truncate via .issue-title ellipsis / .issue-main min-width:0, and labels/branch info wrap.
-- Wide container (>= 720px): restore the two-pane row, but bound the list pane to a sane share of the container (clamp) instead of trusting the viewport-derived inline width.
-*/
-.github-import-embedded.right-dock-embedded-view {
-  container-type: inline-size;
-  container-name: github-import-embedded;
-}
-
-/*
-FNXC:RightDockEmbedding 2026-06-22-01:00:
-Embedded Import Tasks must scroll vertically so a long preview is fully reachable. The view body is the scroll container; in the stacked (narrow) layout the preview takes its natural (content) height and the body scrolls, so the preview can be much taller than the viewport. In the wide two-pane layout the preview keeps its own internal scroll.
-
-FNXC:GitHubImport 2026-06-28-00:00:
-Issues and Pull Requests share this embedded body/workspace chain, so the body must flex-fill the main-content pane at all widths. Keeping the fix scoped to `.github-import-modal--embedded` preserves the non-embedded dialog path byte-for-byte while eliminating blank space below short/idle workspaces.
-*/
-.github-import-modal--embedded .github-import-modal__body {
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
-}
-
-/*
-FNXC:RightDockEmbedding 2026-06-22-13:30:
-Default (narrow container): single stacked column. The workspace takes its natural (content) height
-(flex: 0 0 auto) rather than the shared `flex: 1`, so the tall preview can push the workspace past the
-body height and .github-import-modal__body scrolls to reveal it. The list pane stays internally capped.
-*/
-.github-import-modal--embedded .github-import-workspace {
-  flex-direction: column;
-  flex: 0 0 auto;
-}
-
-/* Override the inline viewport-derived flex-basis so the list never forces overflow when stacked. */
-.github-import-modal--embedded .github-import-list-pane {
-  flex: 0 0 auto !important;
-  width: 100%;
-  max-height: 40cqh;
-  padding-right: 0;
-}
-
-.github-import-modal--embedded .github-import-preview-pane {
-  flex: 0 0 auto;
-  width: 100%;
-  min-width: 0;
-}
-
-/*
-FNXC:RightDockEmbedding 2026-06-22-13:30:
-Stacked (narrow) embedded layout: the preview pane is natural-height (flex: 0 0 auto), so its inner
-.github-import-pane-content must NOT keep the side-by-side `flex: 1; min-height: 0; overflow-y: auto`
-treatment — under a natural-height parent that collapses the content to ~zero and clips the issue/PR
-body. Let the content take its full intrinsic height and hand vertical scrolling to .github-import-modal__body
-(the view scroll owner) so a long, tall preview is fully reachable by scrolling the whole view.
-*/
-.github-import-modal--embedded .github-import-preview-pane .github-import-pane-content {
-  flex: 0 0 auto;
-  min-height: auto;
-  overflow-y: visible;
-}
-
-/* Hide the col-resize handle when stacked; it only makes sense in the side-by-side layout. */
-.github-import-modal--embedded .github-import-workspace__resize-handle {
-  display: none;
-}
-
-@container github-import-embedded (min-width: 720px) {
-  .github-import-modal--embedded .github-import-workspace {
-    flex-direction: row;
-    /* Wide layout: fill the body height so the preview pane can scroll internally (not the whole view). */
-    flex: 1 1 auto;
-  }
-
-  /*
-  FNXC:GitHubImport 2026-06-23-00:30:
-  Wide (two-pane) embedded layout: the list pane must honor the user's inline `flex: 0 0 <listPaneWidth>px` from the resize
-  handle — the prior `flex: ... !important` clamp silently overrode it, which is why the embedded Import Tasks list "couldn't
-  be made smaller" and the preview stayed cramped. Reset only the stacked-mode overrides (width/max-height/padding) here and let
-  the inline flex win. The preview pane is `flex: 1 1 auto; min-width: 0` (below) so the freed width flows to the preview.
-  */
-  .github-import-modal--embedded .github-import-list-pane {
-    /*
-    FNXC:GitHubImport 2026-06-23-02:00:
-    min-width:0 is ESSENTIAL. Without it the flex item keeps min-width:auto, so once the GitHub data loads the wide issue/PR titles (large min-content width) override the 256px flex-basis and blow the pane out to ~978px, pushing the workspace into horizontal overflow — the user's "data loads → view too wide → can't make it smaller". With min-width:0 the inline flex-basis is honored and the list content truncates within the pane instead of dictating its width.
-    `!important` only neutralizes the stacked rule's own `!important`; the width comes from the inline CSS var.
-    */
-    flex: 0 0 var(--gh-import-list-width, clamp(160px, 30cqi, 480px)) !important;
-    min-width: 0 !important;
-    width: auto;
-    max-height: none;
-    padding-right: var(--space-md);
-  }
-
-  /*
-  FNXC:RightDockEmbedding 2026-06-22-13:30:
-  Wide (two-pane) embedded layout: the preview pane fills the available row height and scrolls
-  INTERNALLY so a long preview is reachable without moving the list. Restore the flex-fill pane and
-  let .github-import-pane-content own the vertical scroll (min-height:0 enables the overflow inside a
-  flex child). The list keeps its own internal scroll, so the two panes scroll independently.
-  */
-  .github-import-modal--embedded .github-import-preview-pane {
-    flex: 1 1 auto;
-    min-height: 0;
-  }
-
-  .github-import-modal--embedded .github-import-preview-pane .github-import-pane-content {
-    flex: 1 1 auto;
-    min-height: 0;
-    overflow-y: auto;
-  }
-
-  .github-import-modal--embedded .github-import-workspace__resize-handle {
-    display: block;
-  }
-}
-
-/*
-FNXC:GitLabImport 2026-07-02-00:00:
-FN-7424 keeps GitLab project issue, group issue, and merge request imports inside the existing Import Tasks surface. Use the established tab, toolbar, list, and preview classes so desktop and mobile affordances do not create a second navigation destination or hidden button shell.
-*/
-.github-import-provider {
-  display: flex;
-  gap: var(--spacing-2);
-  padding: var(--spacing-3) var(--spacing-4) 0;
-}
-
 .github-import-gitlab {
   display: flex;
   flex-direction: column;
@@ -1697,15 +1358,13 @@ FN-7424 keeps GitLab project issue, group issue, and merge request imports insid
 
 .github-import-gitlab__workspace {
   display: grid;
-  grid-template-columns: minmax(0, var(--import-list-width, 16rem)) minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr);
   gap: var(--spacing-3);
   min-height: 0;
   flex: 1;
 }
 
-.github-import-gitlab .github-import-preview-pane {
-  min-width: 0;
-}
+
 
 @media (max-width: 768px) {
   .github-import-provider,
