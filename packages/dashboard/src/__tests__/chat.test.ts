@@ -60,6 +60,25 @@ vi.mock("@fusion/engine", () => ({
   createWorkflowAuthoringTools: vi.fn(() => []),
   resolveMcpServersForStore: vi.fn(async () => ({ servers: [], errors: [] })),
   resolveExecutorThinkingLevel: vi.fn(() => undefined),
+  /*
+  FNXC:ChatToolset 2026-07-15-16:35:
+  FN-7987 exposed the shared fusion toolset to chat agents, adding these `@fusion/engine` imports to
+  chat.ts without extending this hardcoded factory — which red-lit the `check-mock-completeness` gate.
+  Shapes must match the call sites: the singular `create*Tool` factories are pushed as one tool each,
+  while the plural factories are spread (and `createMemoryTools(...)` is `.filter`ed by `tool.name`),
+  so they must return arrays.
+  */
+  createTaskCreateTool: vi.fn(() => ({})),
+  createTaskListTool: vi.fn(() => ({})),
+  createTaskShowTool: vi.fn(() => ({})),
+  createTaskSearchTool: vi.fn(() => ({})),
+  createListAgentsTool: vi.fn(() => ({})),
+  createDelegateTaskTool: vi.fn(() => ({})),
+  createGetAgentConfigTool: vi.fn(() => ({})),
+  createWebFetchTool: vi.fn(() => ({})),
+  createGoalRetrievalTools: vi.fn(() => []),
+  createMemoryTools: vi.fn(() => []),
+  createResearchTools: vi.fn(() => []),
 }));
 
 describe("resolveFileReferences", () => {
