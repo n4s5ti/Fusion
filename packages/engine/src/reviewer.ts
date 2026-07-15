@@ -795,6 +795,13 @@ function buildReviewRequest(
   ];
 
   if (reviewType === "spec") {
+    /*
+    FNXC:PlanReviewReplan 2026-07-15-11:15:
+    Spec/Plan Review REVISE loops burn planner+reviewer turns when feedback is vague or
+    when polish is treated as blocking. Prefer fix-and-APPROVE / Suggestions for non-
+    blocking nits; when REVISE is required, list concrete PROMPT.md edits the planner can
+    apply surgically so the next cycle converges.
+    */
     parts.push(
       "## What to review",
       "Evaluate this PROMPT.md specification for completeness and quality.",
@@ -806,6 +813,12 @@ function buildReviewRequest(
       "Read relevant source files to verify the spec references real files, functions, and patterns.",
       "Check that steps have concrete, verifiable outcomes — not vague instructions.",
       "Ensure testing requirements demand real automated tests with assertions.",
+      "",
+      "## Convergence rules (blocking REVISE budget)",
+      "- Prefer APPROVE or APPROVE_WITH_NOTES when the plan is executable; put polish and optional improvements under **Suggestions** only.",
+      "- Issue REVISE only for blocking defects that would cause the implementor to redo work or violate a hard gate (missing Surface Enumeration / Symptom Verification for bug-class tasks, dangling task-document refs, untestable steps, missing mission, user comments ignored, external-integration evidence gaps when required).",
+      "- When you REVISE, list each blocking fix as a concrete edit the planner can apply to this PROMPT.md (section + what to add/change). Do not request a full rewrite unless the approach is fundamentally wrong (RETHINK).",
+      "- If same-session PROMPT.md repair is available and a fix is local, apply it and APPROVE rather than bouncing to another replan cycle.",
     );
 
     // Add user comment coverage check for spec reviews

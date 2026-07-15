@@ -313,7 +313,9 @@ describe("buildSpecificationPrompt", () => {
     expect(prompt).toContain("Revise this task");
     expect(prompt).toContain("Revision Instructions");
     expect(prompt).toContain("Existing Specification");
-    expect(prompt).toContain("User Feedback");
+    expect(prompt).toContain("Revision Feedback");
+    expect(prompt).toContain("Converge — do not rewrite from scratch");
+    expect(prompt).toContain("surgical");
     expect(prompt).toContain(existingPrompt);
     expect(prompt).toContain(feedback);
     expect(prompt).toContain("revising an existing task specification");
@@ -334,9 +336,10 @@ describe("buildSpecificationPrompt", () => {
     expect(prompt).toContain("Re-specify this task");
     expect(prompt).toContain("Re-specification Instructions");
     expect(prompt).toContain("fresh replacement specification");
+    expect(prompt).toContain("Revision Feedback");
     expect(prompt).toContain(feedback);
     expect(prompt).not.toContain("Existing Specification");
-    expect(prompt).toContain("without carrying forward stale assumptions");
+    expect(prompt).toContain("no usable prior PROMPT.md draft");
     expect(prompt).toContain("Treat the current task title and description as required primary inputs");
   });
 
@@ -1496,7 +1499,7 @@ Planner rewrote mission without the raw request.
       "FN-PLAN-APPROVE",
       0,
       "PROMPT.md",
-      "plan",
+      "spec",
       expect.any(String),
       undefined,
       expect.objectContaining({ taskId: "FN-PLAN-APPROVE" }),
@@ -1664,7 +1667,7 @@ Planner rewrote mission without the raw request.
         taskId,
         0,
         "PROMPT.md",
-        "plan",
+        "spec",
         prompt,
         undefined,
         expect.objectContaining({ taskId }),
@@ -1742,7 +1745,7 @@ Planner rewrote mission without the raw request.
         taskId,
         0,
         "PROMPT.md",
-        "plan",
+        "spec",
         prompt,
         undefined,
         expect.objectContaining({ taskId }),
@@ -1945,7 +1948,7 @@ Planner rewrote mission without the raw request.
         taskId,
         0,
         "PROMPT.md",
-        "plan",
+        "spec",
         prompt,
         undefined,
         expect.objectContaining({ taskId }),
@@ -2117,7 +2120,7 @@ Planner rewrote mission without the raw request.
         taskId,
         0,
         "PROMPT.md",
-        "plan",
+        "spec",
         prompt,
         undefined,
         expect.objectContaining({ taskId }),
@@ -2438,7 +2441,7 @@ Planner rewrote mission without the raw request.
             elapsedTaskId,
             0,
             "PROMPT.md",
-            "plan",
+            "spec",
             prompt,
             undefined,
             expect.objectContaining({ taskId: elapsedTaskId }),

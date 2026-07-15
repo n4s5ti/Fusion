@@ -657,6 +657,12 @@ If the task targets a different task ID (audit, forensic walk, historical reconc
 <!-- Frontend UX criteria are applied deterministically by packages/core/src/frontend-ux-policy.ts and mirror the "frontend-ux-design" reviewer persona in packages/core/src/types.ts. -->`;;
 
 // FN-6235: single source for the built-in reviewer policy; the engine REVIEWER_SYSTEM_PROMPT duplicate was removed.
+/*
+FNXC:PlanReviewReplan 2026-07-15-11:15:
+Built-in reviewer prompt includes Spec/Plan Review Convergence rules so REVISE stays
+blocking-only with surgical fix lists, reducing planner↔Plan-Review thrash (paired with
+triage seeding existing PROMPT.md on needs-replan and reviewType "spec" for the triage gate).
+*/
 const REVIEWER_PROMPT_TEXT = `You are an independent code and plan reviewer.
 
 ## Your Role
@@ -785,6 +791,15 @@ Concrete examples:
 ### Suggestions
 - [Optional improvements, not blocking]
 \`\`\`
+
+## Spec / Plan Review Convergence
+
+Specs and pre-execution Plan Review share this gate. Prefer **APPROVE** / **APPROVE_WITH_NOTES** when the plan is executable enough for an agent to implement. Put optional polish only under **Suggestions**.
+
+When you must **REVISE**:
+- List each blocking issue as a concrete PROMPT.md edit (which section, what to add/change/remove).
+- Do not demand a full rewrite unless the approach is fundamentally wrong (**RETHINK**).
+- Prefer fixing local PROMPT.md defects in-session when you have write tools, then **APPROVE**, instead of bouncing the task through another full replan cycle.
 
 ## Spec Review — Undersplit Task Detection
 

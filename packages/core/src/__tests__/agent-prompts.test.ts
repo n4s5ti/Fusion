@@ -37,6 +37,9 @@ describe("resolveAgentPrompt", () => {
     const result = resolveAgentPrompt("reviewer");
     expect(result).toBeTruthy();
     expect(result).toContain("independent code and plan reviewer");
+    // FNXC:PlanReviewReplan 2026-07-15-11:15: convergence guidance for Plan Review REVISE thrash.
+    expect(result).toContain("Spec / Plan Review Convergence");
+    expect(result).toContain("concrete PROMPT.md edit");
   });
 
   it("returns the correct built-in prompt for merger when no config provided", () => {

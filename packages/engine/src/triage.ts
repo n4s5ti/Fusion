@@ -1305,16 +1305,28 @@ export class TriageProcessor {
               );
             feedback = feedbackLogEntry?.outcome;
 
-            if (feedbackLogEntry?.action === TRIAGE_STUCK_RESUME_LOG_ACTION) {
-              /*
-              FNXC:Triage 2026-06-27-16:18:
-              Stuck-resume replans must load the existing PROMPT.md draft, or the saved plan task document when PROMPT.md is absent, into buildSpecificationPrompt so `isRevision` is reachable for either persisted planning surface.
-              */
-              const planningDraft = await this.readNonEmptyPlanningDraft(task.id, "stuck-resume replan seed");
-              existingPrompt = planningDraft?.content;
-              if (!existingPrompt) {
-                feedback = undefined;
-              }
+            /*
+            FNXC:Triage 2026-06-27-16:18:
+            Stuck-resume replans must load the existing PROMPT.md draft, or the saved plan task document when PROMPT.md is absent, into buildSpecificationPrompt so `isRevision` is reachable for either persisted planning surface.
+
+            FNXC:PlanReviewReplan 2026-07-15-11:15:
+            Load the rejected plan on EVERY needs-replan path, not only stuck-resume.
+            Plan Review REVISE previously set feedback but left existingPrompt undefined, so
+            buildSpecificationPrompt took the fresh-respecification branch ("Do not reuse
+            stale PROMPT.md") and rewrote from title/description. That is the main
+            non-convergence loop: surgical REVISE feedback without the rejected plan body
+            causes the planner to invent a new spec, the reviewer finds new gaps, and the
+            cycle repeats until the replan cap. Seed the draft whenever it exists so
+            isRevision mode applies surgical edits against the actual PROMPT.md.
+            */
+            const replanSeedReason =
+              feedbackLogEntry?.action === TRIAGE_STUCK_RESUME_LOG_ACTION
+                ? "stuck-resume replan seed"
+                : "needs-replan revision seed";
+            const planningDraft = await this.readNonEmptyPlanningDraft(task.id, replanSeedReason);
+            existingPrompt = planningDraft?.content;
+            if (feedbackLogEntry?.action === TRIAGE_STUCK_RESUME_LOG_ACTION && !existingPrompt) {
+              feedback = undefined;
             }
 
             // Ensure the latest user feedback is always actionable for re-plans.
@@ -1348,7 +1360,8 @@ export class TriageProcessor {
             }
 
             planLog.log(
-              `${task.id} re-planning with feedback: ${feedback?.slice(0, 100)}...`,
+              `${task.id} re-planning with feedback: ${feedback?.slice(0, 100)}...`
+              + (existingPrompt ? " (seeded existing PROMPT.md for surgical revision)" : " (no existing draft — fresh respec)"),
             );
           }
 
@@ -2243,12 +2256,20 @@ export class TriageProcessor {
     FNXC:AgentSteering 2026-06-30-13:19:
     Plan Review receives the uncapped reviewer context so older task comments cannot be silently dropped before the mandatory execution gate evaluates operator requirements.
     */
+    /*
+    FNXC:PlanReviewReplan 2026-07-15-11:15:
+    Triage Plan Review gates the full PROMPT.md before execution. Use reviewType "spec"
+    (not per-step "plan") so buildReviewRequest injects the full spec quality checklist
+    (mission, steps, surface enumeration, symptom verification, dangling task docs, …)
+    instead of step-checkbox language that does not match this gate. Inline PROMPT.md
+    repair remains allowed so the reviewer can fix-and-APPROVE instead of REVISE-looping.
+    */
     const review = await reviewStep(
       this.rootDir,
       task.id,
       0,
       "PROMPT.md",
-      "plan",
+      "spec",
       promptContent,
       undefined,
       {
@@ -3065,31 +3086,44 @@ When writing PROMPT.md, add this as an explicit requirement under completion doc
 
   let revisionSection = "";
   if (isRevision) {
+    /*
+    FNXC:PlanReviewReplan 2026-07-15-11:15:
+    Plan Review REVISE and user re-spec feedback share this path. Label feedback generically
+    (not "User Feedback" only) and force surgical edits: wholesale rewrites from title alone
+    were the non-convergence failure mode (new plan → new reviewer findings → another REVISE).
+    RETHINK-class feedback may still require structural change; REVISE must fix listed issues
+    without inventing new scope.
+    */
     revisionSection = `
 
 ## Revision Instructions
-You are revising an existing task specification based on user feedback.
+You are revising an existing task specification based on Plan Review or user feedback.
 
-**Important:** Keep the same overall PROMPT.md structure (headings, sections, format) but improve the content to address the feedback below. Do not drastically change the file structure unless necessary.
+**Converge — do not rewrite from scratch.**
+- Keep the same overall PROMPT.md structure (headings, sections, format) unless the feedback explicitly requires a fundamental rethink (RETHINK).
+- Apply **surgical** edits that fully resolve every blocking issue in the revision feedback below.
+- Preserve wording, steps, file scope, and acceptance criteria the feedback does not criticize.
+- Do not expand scope, invent new deliverables, or churn File Scope to "improve" an otherwise approved plan.
+- After editing, re-check each blocking item so a subsequent Plan Review can APPROVE without a new round of objections.
 
 ## Existing Specification
 \`\`\`markdown
 ${existingPrompt}
 \`\`\`
 
-## User Feedback
+## Revision Feedback
 ${feedback}
 
-Please revise the specification above to address this feedback. Write the complete revised PROMPT.md to \`${promptPath}\`.`;
+Revise the specification above to address this feedback. Write the complete revised PROMPT.md to \`${promptPath}\`.`;
   } else if (isFreshRespecification) {
     revisionSection = `
 
 ## Re-specification Instructions
-You are creating a fresh replacement specification based on user feedback.
+You are creating a fresh replacement specification based on Plan Review or user feedback (no usable prior PROMPT.md draft is available).
 
-**Important:** Do not reuse stale PROMPT.md content. Treat the current task title and description as required primary inputs, inspect the codebase, and write a complete new specification that addresses the feedback below.
+**Important:** Treat the current task title and description as required primary inputs, inspect the codebase, and write a complete new specification that addresses the feedback below. Do not invent requirements beyond the feedback and task description.
 
-## User Feedback
+## Revision Feedback
 ${feedback}
 
 Please write the complete fresh PROMPT.md to \`${promptPath}\`.`;
@@ -3163,7 +3197,7 @@ ${task.breakIntoSubtasks ? "- **Break into subtasks:** Yes (user requested)" : "
 ${task.dependencies.length > 0 ? `- **Dependencies:** ${task.dependencies.join(", ")}` : ""}${revisionSection}${subtaskSection}
 
 ## Instructions
-${isRevision ? "1. Review the existing specification and user feedback carefully\n2. Revise the PROMPT.md to address the feedback while maintaining the structure\n3. Keep `## Original Description` at the top (after title/metadata) with the operator description **verbatim**\n4. Ensure the specification is detailed enough for an AI agent to execute" : isFreshRespecification ? "1. Read the project structure to understand context (package.json, source files, etc.)\n2. Treat the current task title and description as mandatory primary inputs for a new spec\n3. Write a fresh complete PROMPT.md specification to the given path following the format in your system prompt\n4. Include `## Original Description` near the top with the exact Description text above (verbatim)\n5. Address the user feedback without carrying forward stale assumptions from the old spec\n6. Name actual files, functions, and patterns from the codebase — be specific" : "1. Read the project structure to understand context (package.json, source files, etc.)\n2. Write a complete PROMPT.md specification to the given path following the format in your system prompt\n3. Include `## Original Description` immediately after title/`Created`/`Size` with the exact Description text above (verbatim — do not paraphrase)\n4. The specification must be detailed enough for an autonomous AI agent to implement without asking questions\n5. Name actual files, functions, and patterns from the codebase — be specific"}
+${isRevision ? "1. Read the existing specification and revision feedback carefully\n2. Apply surgical PROMPT.md edits that fully resolve every blocking feedback item — do not rewrite from title/description alone\n3. Keep structure stable unless feedback requires rethink; preserve uncriticized content\n4. Keep `## Original Description` at the top (after title/metadata) with the operator description **verbatim**\n5. Ensure the revised specification is still detailed enough for an AI agent to execute" : isFreshRespecification ? "1. Read the project structure to understand context (package.json, source files, etc.)\n2. Treat the current task title and description as mandatory primary inputs for a new spec\n3. Write a fresh complete PROMPT.md specification to the given path following the format in your system prompt\n4. Include `## Original Description` near the top with the exact Description text above (verbatim)\n5. Address the revision feedback without inventing extra scope\n6. Name actual files, functions, and patterns from the codebase — be specific" : "1. Read the project structure to understand context (package.json, source files, etc.)\n2. Write a complete PROMPT.md specification to the given path following the format in your system prompt\n3. Include `## Original Description` immediately after title/`Created`/`Size` with the exact Description text above (verbatim — do not paraphrase)\n4. The specification must be detailed enough for an autonomous AI agent to implement without asking questions\n5. Name actual files, functions, and patterns from the codebase — be specific"}
 
 Use the write tool to write the specification file.${commandsSection}${completionDocumentationSection}${memorySection}${attachmentsSection}${userCommentsSection}`;
 }
