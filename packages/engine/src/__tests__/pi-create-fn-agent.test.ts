@@ -42,6 +42,7 @@ const realpathSyncNativeMock = vi.fn((path: PathLike) => String(path));
 const readCustomProvidersMock = vi.fn(() => []);
 const packageManagerCwdCapture = vi.fn();
 const packageManagerSettingsCapture = vi.fn();
+const resourceLoaderOptionsCapture = vi.fn();
 
 // Route async `exec` through the `execSync` mock so the promisify bridge works.
 // Use Symbol.for("nodejs.util.promisify.custom") directly to avoid async imports
@@ -124,6 +125,9 @@ vi.mock("@earendil-works/pi-coding-agent", () => ({
   createReadTool: () => ({ name: "read" }),
   createWriteTool: () => ({ name: "write" }),
   DefaultResourceLoader: class {
+    constructor(options: any) {
+      resourceLoaderOptionsCapture(options);
+    }
     async reload() {
       await reloadMock();
     }
@@ -1233,6 +1237,50 @@ describe("createFnAgent", () => {
         setThinkingLevel: vi.fn(),
       },
     });
+  });
+
+  it("skips host extensions for merger sessions so dual-store fn_* tools cannot wedge merge", async () => {
+    /*
+    FNXC:MergeQueue 2026-07-15-11:08:
+    FN-7956 hung AI merge review on extension fn_task_show (second TaskStore boot, no tool timeout).
+    Merger sessions must not receive host @runfusion/fusion extension paths even with tools:coding.
+    */
+    const { createFnAgent, setHostExtensionPaths } = await import("../pi.js");
+    setHostExtensionPaths(["/mock/fusion-extension"]);
+
+    await createFnAgent({
+      cwd: "/project",
+      systemPrompt: "merge",
+      tools: "coding",
+      sessionPurpose: "merger",
+    });
+
+    expect(resourceLoaderOptionsCapture).toHaveBeenCalled();
+    const loaderOpts = resourceLoaderOptionsCapture.mock.calls.at(-1)?.[0] as {
+      additionalExtensionPaths?: string[];
+    };
+    expect(loaderOpts.additionalExtensionPaths).toBeUndefined();
+
+    setHostExtensionPaths([]);
+  });
+
+  it("still injects host extensions for coding non-merger sessions", async () => {
+    const { createFnAgent, setHostExtensionPaths } = await import("../pi.js");
+    setHostExtensionPaths(["/mock/fusion-extension"]);
+
+    await createFnAgent({
+      cwd: "/project",
+      systemPrompt: "execute",
+      tools: "coding",
+      sessionPurpose: "executor",
+    });
+
+    const loaderOpts = resourceLoaderOptionsCapture.mock.calls.at(-1)?.[0] as {
+      additionalExtensionPaths?: string[];
+    };
+    expect(loaderOpts.additionalExtensionPaths).toEqual(["/mock/fusion-extension"]);
+
+    setHostExtensionPaths([]);
   });
 
   it("passes task-scoped env into bash spawn hook when provided", async () => {

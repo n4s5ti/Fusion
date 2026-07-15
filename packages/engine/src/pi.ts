@@ -1012,6 +1012,12 @@ export interface AgentOptions {
   systemPromptLayers?: SystemPromptLayers;
   tools?: "coding" | "readonly";
   customTools?: ToolDefinition[];
+  /*
+  FNXC:MergeQueue 2026-07-15-11:08:
+  Merger sessions must not load host @runfusion/fusion extension tools. Extension fn_task_show boots a second PostgreSQL TaskStore (createTaskStoreForBackend) inside the engine process and can hang indefinitely without a tool timeout, wedging the single-flight merge pump (observed FN-7956).
+  */
+  /** Lane purpose for host-extension / tooling policy (e.g. "merger", "executor"). */
+  sessionPurpose?: string;
   /**
    * Optional resolved tool-name allowlist. Undefined preserves the selected tool mode; an empty array deliberately exposes no matched tools.
    *
@@ -2268,9 +2274,16 @@ export async function createFnAgent(options: AgentOptions): Promise<AgentResult>
   // since heartbeat/reviewer flows explicitly provide engine-owned tools.
   // This keeps summarizer/compaction sessions safe while retaining intended
   // delegation/memory tools for readonly engine sessions.
-  const effectiveExtensionPaths = isReadonly ? [] : hostExtensionPaths;
-  if (isReadonly && hostExtensionPaths.length > 0) {
-    piLog.log(`readonly session — host extensions (${hostExtensionPaths.length}) skipped`);
+  /*
+  FNXC:MergeQueue 2026-07-15-11:08:
+  Also skip host extensions for sessionPurpose "merger". Merge agents only need coding builtins (git/bash); host fn_* tools open a second store and can wedge the merge on hung fn_task_show. Engine-owned customTools (if ever supplied) still pass through.
+  */
+  const skipHostExtensions = isReadonly || options.sessionPurpose === "merger";
+  const effectiveExtensionPaths = skipHostExtensions ? [] : hostExtensionPaths;
+  if (skipHostExtensions && hostExtensionPaths.length > 0) {
+    piLog.log(
+      `${isReadonly ? "readonly" : "merger"} session — host extensions (${hostExtensionPaths.length}) skipped`,
+    );
   }
 
   const resourceLoader = new DefaultResourceLoader({

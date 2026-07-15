@@ -680,17 +680,25 @@ export async function createResolvedAgentSession(
   // FNXC:GrokAcp 2026-07-12-06:30:
   // Gate customTools for non-pi runtimes before createSession so ACP/CLI
   // bridges (e.g. Grok loopback MCP) execute already-gated closures.
+  /*
+  FNXC:MergeQueue 2026-07-15-11:08:
+  Always forward sessionPurpose into runtime.createSession so pi host-extension policy can suppress dual-store fn_* tools on merger sessions (FN-7956 hang: wedged fn_task_show).
+  */
   const sessionCreateOptions: AgentRuntimeOptions =
     shouldWrapCustomToolsForRuntime(resolved.runtimeId)
       ? {
           ...effectiveRuntimeOptionsWithModel,
+          sessionPurpose,
           customTools: wrapCustomToolsForPluginRuntime(
             effectiveRuntimeOptionsWithModel.customTools,
             effectiveRuntimeOptionsWithModel,
             { runtimeId: resolved.runtimeId, sessionPurpose },
           ),
         }
-      : effectiveRuntimeOptionsWithModel;
+      : {
+          ...effectiveRuntimeOptionsWithModel,
+          sessionPurpose,
+        };
   const result = await resolved.runtime.createSession(sessionCreateOptions);
 
   const testModeActive = settings ? isTestModeActive(settings) : false;

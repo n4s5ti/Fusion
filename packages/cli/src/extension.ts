@@ -76,6 +76,7 @@ import { resolve, relative, isAbsolute, sep, basename, extname, join } from "nod
 import { readFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { spawn, type ChildProcess } from "node:child_process";
+import { AsyncLocalStorage } from "node:async_hooks";
 
 // ── Helpers ────────────────────────────────────────────────────────
 
@@ -234,17 +235,164 @@ interface CachedStoreEntry {
 
 /** Cache stores per project root to avoid re-booting the backend on every tool call. */
 const storeCache = new Map<string, CachedStoreEntry>();
+/*
+FNXC:MergeQueue 2026-07-15-11:08:
+Concurrent first-call fn_* tools must share one boot promise. Without this, two parallel cache misses each call createTaskStoreForBackend and contend on fusion:schema-applier advisory locks / pool setup — the pattern behind wedged fn_task_show during AI merge.
+*/
+const storeBootInflight = new Map<string, Promise<TaskStore>>();
+/*
+FNXC:MergeQueue 2026-07-15-11:08:
+Propagate the active tool AbortSignal into getStore without rewriting every execute body. registerTool installs the signal here before invoking the real execute.
+*/
+const extensionToolSignal = new AsyncLocalStorage<AbortSignal | undefined>();
+/** Hard ceiling for extension TaskStore boot (second backend open inside a live dashboard/engine process). */
+const EXTENSION_STORE_BOOT_TIMEOUT_MS = 30_000;
+/*
+FNXC:MergeQueue 2026-07-15-11:15:
+Default wall-clock budget for every host-extension fn_* tool. Store/CRUD tools must not park an agent turn forever; long shell work belongs in coding builtins (bash), not extension tools.
+*/
+const EXTENSION_TOOL_TIMEOUT_MS = 60_000;
 
-async function getStore(cwd: string): Promise<TaskStore> {
+function isAbortError(error: unknown): boolean {
+  return (
+    (error instanceof Error && error.name === "AbortError") ||
+    (typeof DOMException !== "undefined" && error instanceof DOMException && error.name === "AbortError")
+  );
+}
+
+/**
+ * Race a promise against a wall-clock timeout and optional AbortSignal.
+ * Does not cancel the underlying work (Node has no structured cancel for store boot),
+ * but unblocks the tool caller so the agent session can fail closed instead of wedging forever.
+ *
+ * @internal Exported for unit tests of the hang-prevention budget.
+ */
+export async function raceWithTimeoutAndAbort<T>(
+  promise: Promise<T>,
+  timeoutMs: number,
+  signal: AbortSignal | undefined,
+  label: string,
+): Promise<T> {
+  if (signal?.aborted) {
+    throw new DOMException(`${label} aborted`, "AbortError");
+  }
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  let onAbort: (() => void) | undefined;
+  let settled = false;
+  try {
+    return await new Promise<T>((resolve, reject) => {
+      const settle = (fn: () => void) => {
+        if (settled) return;
+        settled = true;
+        if (timer !== undefined) clearTimeout(timer);
+        if (onAbort && signal) signal.removeEventListener("abort", onAbort);
+        fn();
+      };
+      // Swallow late rejections after timeout/abort so the orphaned work cannot surface as unhandledRejection.
+      promise.then(
+        (value) => settle(() => resolve(value)),
+        (error) => settle(() => reject(error)),
+      );
+      if (timeoutMs > 0 && Number.isFinite(timeoutMs)) {
+        timer = setTimeout(() => {
+          settle(() =>
+            reject(new Error(`${label} timed out after ${timeoutMs}ms`)),
+          );
+        }, timeoutMs);
+        if (typeof timer === "object" && timer && "unref" in timer && typeof timer.unref === "function") {
+          timer.unref();
+        }
+      }
+      if (signal) {
+        onAbort = () => settle(() => reject(new DOMException(`${label} aborted`, "AbortError")));
+        signal.addEventListener("abort", onAbort, { once: true });
+      }
+    });
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
+    if (onAbort && signal) signal.removeEventListener("abort", onAbort);
+  }
+}
+
+/**
+ * FNXC:MergeQueue 2026-07-15-11:15:
+ * Wrap every extension tool execute with timeout + AbortSignal so a wedged store call cannot park the agent forever (FN-7956 fn_task_show hang).
+ * Errors become isError tool results so the model can continue rather than leaving the turn blocked on an open tool call.
+ */
+export function wrapExtensionToolExecute<TArgs extends unknown[], TResult>(
+  toolName: string,
+  execute: (...args: TArgs) => TResult | Promise<TResult>,
+  timeoutMs: number = EXTENSION_TOOL_TIMEOUT_MS,
+): (...args: TArgs) => Promise<TResult | {
+  content: Array<{ type: "text"; text: string }>;
+  details: { error: string };
+  isError: true;
+}> {
+  return async (...args: TArgs) => {
+    // ExtensionAPI execute signature: (toolCallId, params, signal?, onUpdate?, ctx?)
+    const signal = (args[2] instanceof AbortSignal ? args[2] : undefined) as AbortSignal | undefined;
+    try {
+      return await extensionToolSignal.run(signal, () =>
+        raceWithTimeoutAndAbort(
+          Promise.resolve(execute(...args)),
+          timeoutMs,
+          signal,
+          toolName,
+        ),
+      );
+    } catch (error) {
+      if (isAbortError(error)) {
+        return {
+          content: [{ type: "text" as const, text: `${toolName} aborted.` }],
+          details: { error: "aborted" },
+          isError: true as const,
+        };
+      }
+      const message = error instanceof Error ? error.message : String(error);
+      return {
+        content: [{ type: "text" as const, text: `${toolName} failed: ${message}` }],
+        details: { error: message },
+        isError: true as const,
+      };
+    }
+  };
+}
+
+async function getStore(cwd: string, signal?: AbortSignal): Promise<TaskStore> {
   const projectRoot = resolveProjectRoot(cwd);
   const existing = storeCache.get(projectRoot);
   if (existing) return existing.store;
 
-  const boot = await createTaskStoreForBackend({ rootDir: projectRoot });
-  // FNXC:PostgresFinalCutover 2026-07-14-17:20: Agent tools cache only the
-  // PostgreSQL factory result; the removed SQLite opt-out is an explicit error.
-  storeCache.set(projectRoot, { store: boot.taskStore, shutdown: boot.shutdown });
-  return boot.taskStore;
+  const effectiveSignal = signal ?? extensionToolSignal.getStore();
+
+  let inflight = storeBootInflight.get(projectRoot);
+  if (!inflight) {
+    /*
+    FNXC:PostgresFinalCutover 2026-07-14-17:20: Agent tools cache only the
+    PostgreSQL factory result; the removed SQLite opt-out is an explicit error.
+
+    FNXC:MergeQueue 2026-07-15-11:08:
+    First extension tool call in a dashboard/engine process boots a second TaskStore.
+    Bound that boot and coalesce concurrent callers so a wedged boot cannot park every fn_* tool forever.
+    */
+    inflight = (async () => {
+      try {
+        const boot = await createTaskStoreForBackend({ rootDir: projectRoot });
+        storeCache.set(projectRoot, { store: boot.taskStore, shutdown: boot.shutdown });
+        return boot.taskStore;
+      } finally {
+        storeBootInflight.delete(projectRoot);
+      }
+    })();
+    storeBootInflight.set(projectRoot, inflight);
+  }
+
+  return raceWithTimeoutAndAbort(
+    inflight,
+    EXTENSION_STORE_BOOT_TIMEOUT_MS,
+    effectiveSignal,
+    "fn extension TaskStore boot",
+  );
 }
 
 /**
@@ -792,6 +940,23 @@ const workflowExtensionToolSpecs: Array<{
 // ── Extension entry point ──────────────────────────────────────────
 
 export default function kbExtension(pi: ExtensionAPI) {
+  /*
+  FNXC:MergeQueue 2026-07-15-11:15:
+  Intercept every registerTool so all fn_* executes share one timeout/abort budget.
+  Without this, only hand-wrapped tools fail closed; FN-7956 hung on an unwrapped secondary-store path during merge review.
+  */
+  const rawRegisterTool = pi.registerTool.bind(pi) as ExtensionAPI["registerTool"];
+  pi.registerTool = ((tool: Parameters<ExtensionAPI["registerTool"]>[0]) => {
+    if (!tool || typeof tool !== "object" || typeof (tool as { execute?: unknown }).execute !== "function") {
+      return rawRegisterTool(tool);
+    }
+    const original = tool as { name?: string; execute: (...args: unknown[]) => unknown };
+    return rawRegisterTool({
+      ...tool,
+      execute: wrapExtensionToolExecute(original.name ?? "fn_tool", original.execute as (...args: unknown[]) => unknown),
+    } as Parameters<ExtensionAPI["registerTool"]>[0]);
+  }) as ExtensionAPI["registerTool"];
+
   // Register GitHub tracking hook once per extension lifecycle so that
   // fn_task_create, fn_task_import_github*, fn_delegate_task, etc.
   // trigger tracking issue creation when settings enable it.
@@ -1262,6 +1427,11 @@ export default function kbExtension(pi: ExtensionAPI) {
       id: Type.String({ description: "Task ID (e.g. FN-001)" }),
     }),
 
+    /*
+    FNXC:MergeQueue 2026-07-15-11:15:
+    Timeout/abort come from the extension-wide registerTool wrapper + getStore ALS signal.
+    Keep this body lean; do not re-wrap (double budgets hide the real failure).
+    */
     async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
       const store = await getStore(ctx.cwd);
       const task = await store.getTask(params.id);
