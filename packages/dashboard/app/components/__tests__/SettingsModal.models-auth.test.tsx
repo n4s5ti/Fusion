@@ -482,6 +482,34 @@ describe("SettingsModal", () => {
       expect(onClose).toHaveBeenCalled();
     });
 
+    it("renders saved workflow model lane values as project overrides after reload", async () => {
+      const expectedPatch = { planningProvider: "openai", planningModelId: "gpt-4o" };
+      mockUpdateWorkflowSettingValues.mockResolvedValue({
+        stored: expectedPatch,
+        effective: expectedPatch,
+        orphaned: [],
+      });
+      await setupWorkflowModelLaneTest();
+
+      await settingsModalUser.click(screen.getByLabelText("Plan/Triage Model"));
+      await settingsModalUser.click(await screen.findByText("GPT-4o"));
+      await settingsModalUser.click(screen.getByRole("button", { name: "Save" }));
+      await waitFor(() => {
+        expect(mockUpdateWorkflowSettingValues).toHaveBeenCalledWith("workflow-custom", expectedPatch, "proj-1");
+      });
+
+      cleanup();
+      mockFetchWorkflow.mockClear();
+      mockFetchWorkflowSettingValues.mockClear();
+      mockUpdateWorkflowSettingValues.mockClear();
+      await setupWorkflowModelLaneTest({ stored: expectedPatch, effective: expectedPatch });
+
+      const lane = screen.getByTestId("workflow-model-lane-planning");
+      expect(within(lane).getByText("Override (Project)")).toBeInTheDocument();
+      expect(within(lane).getByText("GPT-4o")).toBeInTheDocument();
+      expect(screen.getByTestId("workflow-model-lane-execution")).toHaveTextContent("Inherited (Workflow)");
+    });
+
     it("renders fallback workflow model lanes only when the default workflow declares them", async () => {
       await setupWorkflowModelLaneTest();
 
@@ -564,6 +592,36 @@ describe("SettingsModal", () => {
         expect(onClose).toHaveBeenCalled();
       });
       expect(mockUpdateWorkflowSettingValues).not.toHaveBeenCalled();
+    });
+
+    it("preserves pending workflow lane edits when Project Models unmounts before primary Save", async () => {
+      const expectedPatch = { planningProvider: "openai", planningModelId: "gpt-4o" };
+      mockUpdateWorkflowSettingValues.mockResolvedValue({
+        stored: expectedPatch,
+        effective: expectedPatch,
+        orphaned: [],
+      });
+      const onClose = vi.fn();
+      await setupWorkflowModelLaneTest({ renderProps: { onClose } });
+
+      await settingsModalUser.click(screen.getByLabelText("Plan/Triage Model"));
+      await settingsModalUser.click(await screen.findByText("GPT-4o"));
+      expect(within(screen.getByTestId("workflow-model-lane-planning")).getByText("GPT-4o")).toBeInTheDocument();
+
+      await settingsModalUser.click(screen.getByRole("button", { name: "General" }));
+      await waitFor(() => {
+        expect(screen.queryByTestId("workflow-model-lane-planning")).not.toBeInTheDocument();
+      });
+      await settingsModalUser.click(screen.getByRole("button", { name: "Save" }));
+
+      await waitFor(() => {
+        expect(mockUpdateWorkflowSettingValues).toHaveBeenCalledWith(
+          "workflow-custom",
+          expectedPatch,
+          "proj-1",
+        );
+      });
+      expect(onClose).toHaveBeenCalled();
     });
 
     it("resets workflow model lanes by sending null patches from the primary Settings Save", async () => {

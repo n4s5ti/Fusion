@@ -999,7 +999,13 @@ export function SettingsModal({
   const settingsContentRef = useRef<HTMLDivElement>(null);
   const workflowLaneSaverRef = useRef<SectionSaveHandler | null>(null);
   const registerWorkflowLaneSaver = useCallback((saver: SectionSaveHandler | null) => {
-    workflowLaneSaverRef.current = saver;
+    /*
+    FNXC:ProjectModelsWorkflowLanes 2026-07-14-09:07:
+    Project Models workflow lane edits are workflow setting-values, not normal project settings. Keep the latest saver registered across section unmounts so the primary Settings Save still flushes project-scoped workflow overrides when operators navigate away before saving.
+    */
+    if (saver) {
+      workflowLaneSaverRef.current = saver;
+    }
   }, []);
   // Modal-only: persist user-resized dialog dimensions. Embedded view fills its host and is not resizable.
   useModalResizePersist(modalRef, resizePersistEnabled, "fusion:settings-modal-size");
