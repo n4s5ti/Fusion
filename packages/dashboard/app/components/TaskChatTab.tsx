@@ -367,9 +367,26 @@ function segmentGroupEntries(entries: AgentLogEntry[]): TaskChatSegment[] {
       continue;
     }
 
+    /*
+    FNXC:TaskChat-StatusEntries 2026-07-15-11:20:
+    A `status` row is a COMPLETE engine message, so it gets its own segment and is never merged with a neighbour. Merging is only correct for `text`, whose rows are streamed delta fragments that `TaskChatText` re-glues with `join("")`.
+
+    This is why a provider outage rendered as one run-on string: engine markers were written as `text`, so N standalone messages ("Reviewer using model: x/y" ×14) were glued edge-to-edge under a "14 entries" header. Fixing it with a separator in `TaskChatText` would corrupt legitimate streamed text (the FN-5787/5789/5803 regression lineage) — the split has to happen here, on the type.
+    */
+    if (entry.type === "status") {
+      segments.push({ kind: "text", entries: [entry], startIndex: index });
+      index += 1;
+      continue;
+    }
+
     const startIndex = index;
     const textEntries: AgentLogEntry[] = [];
-    while (index < entries.length && !isToolLikeEntry(entries[index]) && entries[index].type !== "thinking") {
+    while (
+      index < entries.length
+      && !isToolLikeEntry(entries[index])
+      && entries[index].type !== "thinking"
+      && entries[index].type !== "status"
+    ) {
       textEntries.push(entries[index]);
       index += 1;
     }

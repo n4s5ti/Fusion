@@ -1015,7 +1015,7 @@ export async function runAiMerge(
   // Surface progress on the task detail (status pill) + the task log stream.
   const log = async (message: string): Promise<void> => {
     await store.logEntry(taskId, message, "AiMerge").catch(() => undefined);
-    await store.appendAgentLog(taskId, message, "text", undefined, "merger").catch(() => undefined);
+    await store.appendAgentLog(taskId, message, "status", undefined, "merger").catch(() => undefined);
   };
   const setStatus = (status: string | null): Promise<unknown> =>
     store.updateTask(taskId, { status }).catch(() => undefined);
@@ -1418,7 +1418,7 @@ export async function landWorkspaceTask(
   });
   const log = async (message: string): Promise<void> => {
     await store.logEntry(taskId, message, "AiMerge").catch(() => undefined);
-    await store.appendAgentLog(taskId, message, "text", undefined, "merger").catch(() => undefined);
+    await store.appendAgentLog(taskId, message, "status", undefined, "merger").catch(() => undefined);
   };
   const setStatus = (status: string | null): Promise<unknown> =>
     store.updateTask(taskId, { status }).catch(() => undefined);

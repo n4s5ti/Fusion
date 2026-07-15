@@ -1275,8 +1275,15 @@ export interface ActivityLogEntry {
 /** The set of agent roles that produce log entries. */
 export type AgentRole = "triage" | "executor" | "reviewer" | "merger";
 
-/** The discriminator for agent log entry types. */
-export type AgentLogType = "text" | "tool" | "thinking" | "tool_result" | "tool_error";
+/*
+FNXC:AgentLog-EntryTypes 2026-07-15-11:20:
+`text` means a STREAMED DELTA FRAGMENT: renderers re-glue consecutive `text` rows with `join("")` and no separator, because that is the only way to reconstitute a streamed message (the FN-5787/5789/5803 streamed-spacing lineage). `AgentLogger` is the only producer of true deltas.
+
+`status` means a COMPLETE, SELF-CONTAINED engine message (e.g. "Reviewer using model: x/y", "Deterministic merge verification passed") written directly by an engine lane rather than streamed from a model. It exists because engine lanes previously wrote these as `text`, so N consecutive standalone messages were glued edge-to-edge into one run-on string under an accurate-but-misleading "N entries" header.
+
+Never emit `status` for model-streamed output, and never emit `text` for a whole standalone message. Renderers must render each `status` row as its own block and must never `join("")` them. Rows written before this type existed persist as `text`, so read paths that resolve engine markers out of the log must accept BOTH types (see dashboard effective-model-resolution.ts).
+*/
+export type AgentLogType = "text" | "status" | "tool" | "thinking" | "tool_result" | "tool_error";
 
 /** A single chunk of agent output persisted to disk (JSONL in agent.log). */
 export interface AgentLogEntry {
@@ -1284,9 +1291,9 @@ export interface AgentLogEntry {
   timestamp: string;
   /** The task this log entry belongs to. */
   taskId: string;
-  /** The text content (delta for "text"/"thinking", tool name for "tool"/"tool_result"/"tool_error"). */
+  /** The text content (delta for "text"/"thinking", complete message for "status", tool name for "tool"/"tool_result"/"tool_error"). */
   text: string;
-  /** The kind of entry — text delta, tool invocation marker, thinking block, tool result, or tool error. */
+  /** The kind of entry — streamed text delta, standalone engine status message, tool invocation marker, thinking block, tool result, or tool error. */
   type: AgentLogType;
   /** For tool entries: human-readable summary of tool args (e.g. file path, command).
    *  For tool_result/tool_error: summary of the result or error message. */

@@ -1608,7 +1608,7 @@ async function runDeterministicVerification(
       const msg = `Skipping deterministic verification — cached pass for tree ${sha7} (recorded at ${cacheHit.recordedAt}, by ${cacheHit.taskId ?? "unknown"})`;
       mergerLog.log(`${taskId}: ${msg}`);
       await store.logEntry(taskId, msg);
-      await store.appendAgentLog(taskId, msg, "text", undefined, "merger");
+      await store.appendAgentLog(taskId, msg, "status", undefined, "merger");
       const syntheticResult: VerificationCommandResult = {
         command: "",
         exitCode: 0,
@@ -1639,7 +1639,7 @@ async function runDeterministicVerification(
     (hasTestCommand ? ` (test${testSourceDisplayLabel}: ${normalizedTestCommand})` : "") +
     (hasBuildCommand ? ` (build${buildSource === "inferred" ? " [inferred]" : ""}: ${normalizedBuildCommand})` : "");
   await store.logEntry(taskId, deterministicVerificationMessage);
-  await store.appendAgentLog(taskId, deterministicVerificationMessage, "text", undefined, "merger");
+  await store.appendAgentLog(taskId, deterministicVerificationMessage, "status", undefined, "merger");
 
   const bootstrapScriptPath = join(rootDir, "scripts/ensure-test-artifacts.mjs");
   if (hasTestCommand || hasBuildCommand) {
@@ -1647,7 +1647,7 @@ async function runDeterministicVerification(
       const bootstrapMissingMessage = `${taskId}: [verification:bootstrap] script missing at scripts/ensure-test-artifacts.mjs — skipping preamble`;
       mergerLog.warn(bootstrapMissingMessage);
       await store.logEntry(taskId, bootstrapMissingMessage);
-      await store.appendAgentLog(taskId, bootstrapMissingMessage, "text", undefined, "merger");
+      await store.appendAgentLog(taskId, bootstrapMissingMessage, "status", undefined, "merger");
     } else {
       const bootstrapCommand = "node scripts/ensure-test-artifacts.mjs";
       await store.logEntry(taskId, `[verification:bootstrap] running: ${bootstrapCommand}`);
@@ -1827,7 +1827,7 @@ async function runDeterministicVerification(
 
   mergerLog.log(`${taskId}: deterministic verification passed`);
   await store.logEntry(taskId, "Deterministic merge verification passed");
-  await store.appendAgentLog(taskId, "Deterministic merge verification passed", "text", undefined, "merger");
+  await store.appendAgentLog(taskId, "Deterministic merge verification passed", "status", undefined, "merger");
 
   // ── Record cache pass ──────────────────────────────────────────────────
   if (treeSha) {
@@ -2013,7 +2013,7 @@ Do not refactor, rename broadly, or make opportunistic improvements.
     await store.appendAgentLog(
       taskId,
       `Fix agent started (model: ${describeModel(session)})`,
-      "text",
+      "status",
       undefined,
       "merger",
     );
@@ -2080,7 +2080,7 @@ ${failureContext.output.slice(0, VERIFICATION_LOG_MAX_CHARS)}
         await store.appendAgentLog(
           taskId,
           `Fix agent made no changes — skipping verification re-run`,
-          "text",
+          "status",
           undefined,
           "merger",
         );
@@ -2114,7 +2114,7 @@ ${failureContext.output.slice(0, VERIFICATION_LOG_MAX_CHARS)}
                   `Failing files: [${failingFiles.join(", ")}]. Branch diff files: [${branchFiles.slice(0, 10).join(", ")}${branchFiles.length > 10 ? ", ..." : ""}].`;
                 mergerLog.warn(`${taskId}: ${msg}`);
                 await store.logEntry(taskId, msg);
-                await store.appendAgentLog(taskId, "Out-of-scope verification failure detected — not retrying", "text", undefined, "merger");
+                await store.appendAgentLog(taskId, "Out-of-scope verification failure detected — not retrying", "status", undefined, "merger");
                 throw new OutOfScopeVerificationError(msg, failingFiles, branchFiles);
               }
             }
@@ -2132,7 +2132,7 @@ ${failureContext.output.slice(0, VERIFICATION_LOG_MAX_CHARS)}
       await store.appendAgentLog(
         taskId,
         `Re-running verification (attempt ${fixAttemptNumber ?? "unknown"})`,
-        "text",
+        "status",
         undefined,
         "merger",
       );
@@ -3201,7 +3201,7 @@ ${fileList}
     await store.appendAgentLog(
       taskId,
       `Autostash conflict agent started (model: ${describeModel(session)}, files: ${conflictedFiles.length})`,
-      "text",
+      "status",
       undefined,
       "merger",
     );
@@ -3621,7 +3621,7 @@ ${fileList}
     await store.appendAgentLog(
       taskId,
       `Autostash hard-fail recovery agent started (model: ${describeModel(session)}, files: ${stashFiles.length})`,
-      "text",
+      "status",
       undefined,
       "merger",
     );
@@ -4949,7 +4949,7 @@ export async function applyLayer3ConflictScopePartition(params: {
   const declaredScope = await store.parseFileScopeFromPrompt(taskId);
   if (task.scopeOverride === true) {
     const reasonSuffix = task.scopeOverrideReason?.trim() ? ` — reason: ${task.scopeOverrideReason.trim()}` : "";
-    await store.appendAgentLog(taskId, `Layer 3 arbiter scope partition bypassed via scopeOverride${reasonSuffix}`, "text", undefined, "merger");
+    await store.appendAgentLog(taskId, `Layer 3 arbiter scope partition bypassed via scopeOverride${reasonSuffix}`, "status", undefined, "merger");
     if (auditor) {
       await auditor.git({
         type: "merge:layer3:scope-override-bypass",
@@ -5014,7 +5014,7 @@ export async function applyLayer3ConflictScopePartition(params: {
           await store.appendAgentLog(
             taskId,
             `Layer 2.5 auto-widened File Scope: ${widenedFiles.join(", ")}`,
-            "text",
+            "status",
             undefined,
             "merger",
           );
@@ -5046,7 +5046,7 @@ export async function applyLayer3ConflictScopePartition(params: {
 
   if (outOfScope.length > 0) {
     const summary = `Layer 3 arbiter: skipped ${outOfScope.length} foreign file(s) — took main's version for: ${outOfScope.join(", ")}`;
-    await store.appendAgentLog(taskId, summary, "text", undefined, "merger");
+    await store.appendAgentLog(taskId, summary, "status", undefined, "merger");
     await store.logEntry(taskId, summary, "Layer3AIArbiterScopeSkip");
     if (auditor) {
       await auditor.git({
@@ -5128,7 +5128,7 @@ export async function assertSquashOverlapsFileScope(params: {
     await store.appendAgentLog(
       taskId,
       `file-scope invariant bypassed via scopeOverride${reasonSuffix}`,
-      "text",
+      "status",
       undefined,
       "merger",
     );
@@ -5244,7 +5244,7 @@ export async function enforceSquashFileScopeInvariant(params: {
     await params.store.appendAgentLog(
       params.taskId,
       warningMessage,
-      "text",
+      "status",
       formatFileScopeViolationAgentLog(error),
       "merger",
     );
@@ -6578,7 +6578,7 @@ export async function resolvePostMergeAuditInvocation(
 
     const infoMessage = `${opts.taskId}: post-merge audit using rebase range base from ${candidate.source} (${resolved.slice(0, 8)}..${opts.auditSha.slice(0, 8)})`;
     opts.mergerLog.log(infoMessage);
-    await opts.store.appendAgentLog(opts.taskId, infoMessage, "text", undefined, "merger");
+    await opts.store.appendAgentLog(opts.taskId, infoMessage, "status", undefined, "merger");
     return {
       rootDir: opts.rootDir,
       strategy: "rebase",
@@ -6608,7 +6608,7 @@ export async function resolvePostMergeAuditInvocation(
   if (mergeBaseSha) {
     const infoMessage = `${opts.taskId}: post-merge audit using rebase range base from merge-base (${mergeBaseSha.slice(0, 8)}..${opts.auditSha.slice(0, 8)})`;
     opts.mergerLog.log(infoMessage);
-    await opts.store.appendAgentLog(opts.taskId, infoMessage, "text", undefined, "merger");
+    await opts.store.appendAgentLog(opts.taskId, infoMessage, "status", undefined, "merger");
     return {
       rootDir: opts.rootDir,
       strategy: "rebase",
@@ -6619,7 +6619,7 @@ export async function resolvePostMergeAuditInvocation(
 
   const degradedMessage = `${opts.taskId}: post-merge audit degraded to single-commit squash fallback (multi-commit branch, no usable rangeBase)`;
   opts.mergerLog.warn(degradedMessage);
-  await opts.store.appendAgentLog(opts.taskId, degradedMessage, "text", undefined, "merger");
+  await opts.store.appendAgentLog(opts.taskId, degradedMessage, "status", undefined, "merger");
   return {
     rootDir: opts.rootDir,
     strategy: "squash",
@@ -6736,7 +6736,7 @@ export async function handleDirtyPostMergeAuditOutcome(opts: {
   await opts.store.appendAgentLog(
     opts.taskId,
     passLabel,
-    "text",
+    "status",
     formatSquashAuditAgentLog(opts.findings),
     "merger",
   );
@@ -9127,7 +9127,7 @@ export async function aiMergeTask(
             await store.appendAgentLog(
               taskId,
               `Pre-merge auto-prerebase: ${branch} → local HEAD ${mainHead.slice(0, 8)} (${prerebaseDecision.reason})`,
-              "text",
+              "status",
               undefined,
               "merger",
             );
@@ -9222,7 +9222,7 @@ export async function aiMergeTask(
       await store.appendAgentLog(
         taskId,
         `Pre-merge rebase: ${branch} → local HEAD ${localHead.slice(0, 8)}${label ? ` (${label})` : ""}`,
-        "text",
+        "status",
         undefined,
         "merger",
       );
@@ -9262,7 +9262,7 @@ export async function aiMergeTask(
           await store.appendAgentLog(
             taskId,
             `Pre-merge rebase: ${branch} → ${remoteRef}`,
-            "text",
+            "status",
             undefined,
             "merger",
           );
@@ -9595,7 +9595,7 @@ export async function aiMergeTask(
         `Overlap guard detected ${overlap.overlappingFiles.length} recent-main overlap file(s) ` +
         `for smart-prefer-main (${mergeStrategyOverlapBehavior}): ${overlapSummary}`;
       mergerLog.warn(`${taskId}: ${overlapMessage}`);
-      await store.appendAgentLog(taskId, overlapMessage, "text", undefined, "merger");
+      await store.appendAgentLog(taskId, overlapMessage, "status", undefined, "merger");
       await store.logEntry(taskId, overlapMessage);
 
       if (mergeStrategyOverlapBehavior === "flip-to-prefer-branch") {
@@ -9665,7 +9665,7 @@ export async function aiMergeTask(
       `Direct merge commit routing: ${selectedPostMergeAuditStrategy} ` +
       `(setting ${configuredRoute.strategy} from ${configuredRoute.source})${classificationSummary}`;
     mergerLog.log(`${taskId}: ${routeMessage}`);
-    await store.appendAgentLog(taskId, routeMessage, "text", undefined, "merger");
+    await store.appendAgentLog(taskId, routeMessage, "status", undefined, "merger");
   }
 
   const [aiMergeSummary, aiMergeBody, aiMergeSubject] = settings.useAiMergeCommitSummary
@@ -9746,7 +9746,7 @@ export async function aiMergeTask(
     await store.appendAgentLog(
       taskId,
       `Starting merge ${attemptLabel}`,
-      "text",
+      "status",
       undefined,
       "merger",
     );
@@ -9885,7 +9885,7 @@ export async function aiMergeTask(
           await store.appendAgentLog(
             taskId,
             `Verification failed — attempting in-merge fix (up to ${maxFixRetries} attempts)`,
-            "text",
+            "status",
             undefined,
             "merger",
           );
@@ -9910,7 +9910,7 @@ export async function aiMergeTask(
               await store.appendAgentLog(
                 taskId,
                 `In-merge verification fix attempt ${fixAttempt}/${maxFixRetries}`,
-                "text",
+                "status",
                 undefined,
                 "merger",
               );
@@ -10045,7 +10045,7 @@ export async function aiMergeTask(
           await store.appendAgentLog(
             taskId,
             "Build verification failed — attempting in-merge fix",
-            "text",
+            "status",
             undefined,
             "merger",
           );
@@ -10064,7 +10064,7 @@ export async function aiMergeTask(
             await store.appendAgentLog(
               taskId,
               `In-merge verification fix attempt ${fixAttempt}/${maxFixRetries}`,
-              "text",
+              "status",
               undefined,
               "merger",
             );
@@ -10419,13 +10419,13 @@ export async function aiMergeTask(
         await store.appendAgentLog(
           taskId,
           selectedPostMergeAuditStrategy === "rebase" ? "post-rebase range audit clean" : "post-squash audit clean",
-          "text",
+          "status",
           undefined,
           "merger",
         );
       }
     } else if (auditSha && postMergeAuditMode === "off") {
-      await store.appendAgentLog(taskId, "post-merge audit skipped (mode=off)", "text", undefined, "merger");
+      await store.appendAgentLog(taskId, "post-merge audit skipped (mode=off)", "status", undefined, "merger");
       mergerLog.log(`${taskId}: post-merge audit skipped (mode=off)`);
     }
     if (isEmptyCommit) {
@@ -10460,7 +10460,7 @@ export async function aiMergeTask(
               await store.appendAgentLog(
                 taskId,
                 `merger: landed-files attribution failed, falling back to full-range capture (${message})`,
-                "text",
+                "status",
                 undefined,
                 "merger",
               );
@@ -10605,7 +10605,7 @@ export async function aiMergeTask(
     await store.appendAgentLog(
       taskId,
       summaryParts.join(" · "),
-      "text",
+      "status",
       undefined,
       "merger",
     );

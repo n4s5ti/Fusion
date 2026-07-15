@@ -2889,3 +2889,71 @@ describe("TaskChatTab", () => {
     expect(css).toContain(".task-chat-entry--user");
   });
 });
+
+/*
+FNXC:TaskChat-StatusEntries 2026-07-15-11:20:
+Regression coverage for standalone engine messages rendering as one run-on string.
+
+## Symptom Verification
+Original symptom: a Reviewer card headed "14 entries" rendered as
+"Reviewer using model: umans/umans-kimi-k2.7Reviewer using model: umans/umans-kimi-k2.7..." —
+14 complete messages glued edge-to-edge with no separator.
+Exact reproduction: consecutive same-role standalone engine rows in one group.
+Assertion it is gone: each `status` row renders as its own block, and no rendered block contains
+two concatenated messages.
+
+## Surface Enumeration
+- `status` rows must never be glued to each other (the reported case).
+- `status` rows must never be glued to adjacent `text` rows either.
+- `text` rows MUST still be glued with no separator — they are streamed deltas, and inserting a
+  separator here is the FN-5787/5789/5803 streamed-spacing regression this must not reintroduce.
+- Model resolution reads markers out of the log and must accept `status` AND legacy `text` rows
+  (covered in effective-model-resolution.test.ts).
+*/
+describe("TaskChatTab — standalone status entries are not glued like streamed deltas", () => {
+  const marker = "Reviewer using model: umans/umans-kimi-k2.7";
+
+  it("renders repeated standalone status messages as separate blocks", () => {
+    mockLogs([
+      makeEntry({ agent: "reviewer", type: "status", text: marker }),
+      makeEntry({ agent: "reviewer", type: "status", text: marker }),
+      makeEntry({ agent: "reviewer", type: "status", text: marker }),
+    ]);
+
+    render(<TaskChatTab task={makeTask()} active addToast={vi.fn()} />);
+
+    const blocks = Array.from(document.querySelectorAll(".task-chat-markdown"));
+    const rendered = blocks.map((el) => el.textContent ?? "");
+    // The bug: one block containing the message repeated with no separator.
+    expect(rendered.some((text) => text.includes(`${marker}${marker}`))).toBe(false);
+    expect(rendered.filter((text) => text.trim() === marker)).toHaveLength(3);
+  });
+
+  it("does not glue a status message onto an adjacent streamed text block", () => {
+    mockLogs([
+      makeEntry({ agent: "reviewer", type: "status", text: marker }),
+      makeEntry({ agent: "reviewer", type: "text", text: "Verdict: " }),
+      makeEntry({ agent: "reviewer", type: "text", text: "APPROVE" }),
+    ]);
+
+    render(<TaskChatTab task={makeTask()} active addToast={vi.fn()} />);
+
+    const rendered = Array.from(document.querySelectorAll(".task-chat-markdown")).map((el) => el.textContent ?? "");
+    expect(rendered.some((text) => text.includes(`${marker}Verdict`))).toBe(false);
+    // Streamed deltas around it still re-glue with NO separator.
+    expect(rendered.some((text) => text.includes("Verdict: APPROVE"))).toBe(true);
+  });
+
+  it("still joins consecutive streamed text deltas with no separator", () => {
+    mockLogs([
+      makeEntry({ agent: "reviewer", type: "text", text: "review" }),
+      makeEntry({ agent: "reviewer", type: "text", text: "ing the" }),
+      makeEntry({ agent: "reviewer", type: "text", text: " diff" }),
+    ]);
+
+    render(<TaskChatTab task={makeTask()} active addToast={vi.fn()} />);
+
+    const rendered = Array.from(document.querySelectorAll(".task-chat-markdown")).map((el) => el.textContent ?? "");
+    expect(rendered.some((text) => text.includes("reviewing the diff"))).toBe(true);
+  });
+});

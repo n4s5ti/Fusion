@@ -96,7 +96,7 @@ import {
 import { buildSessionSkillContext } from "./session-skill-context.js";
 import type { SkillSelectionContext } from "./skill-resolver.js";
 import { assertMcpResolutionSucceeded, resolveMcpServersForStore } from "./mcp-resolution.js";
-import { reviewStep, proseSignalsClearApproval, extractJsonObjectCandidates, type ReviewVerdict, type ReviewResult } from "./reviewer.js";
+import { reviewStep, proseSignalsClearApproval, extractJsonObjectCandidates, ReviewerProviderError, type ReviewVerdict, type ReviewResult } from "./reviewer.js";
 import { buildUserCommentsPromptSection, selectUserCommentsForAgentContext } from "./agent-user-comments.js";
 import { resolveSandboxBackend } from "./sandbox/index.js";
 import type { SandboxBackend } from "./sandbox/types.js";
@@ -514,6 +514,31 @@ export const EXECUTE_REQUEUE_LOOP_VISIBLE_THRESHOLD = 3;
  */
 const MAX_TRANSIENT_GRAPH_RESUME_RETRIES = 2;
 const TRANSIENT_GRAPH_RESUME_RETRY_BACKOFF_MS = process.env.VITEST || process.env.NODE_ENV === "test" ? 0 : 1_000;
+/**
+ * FNXC:ReviewerUnavailableBudget 2026-07-15-11:20:
+ * Hard cap on how many times one step's CODE review may come back UNAVAILABLE before the tool
+ * stops inviting the model to retry. Mirrors the `planSpecUnavailableCounts` limiter's posture
+ * (and `STEP_REVIEW_UNAVAILABLE_RETRY_CAP` on the graph path) so both review paths bound repeats
+ * in code rather than in prompt text. See `createReviewStepTool`.
+ */
+const MAX_CODE_REVIEW_UNAVAILABLE_RETRIES = 3;
+
+/**
+ * FNXC:ReviewerProviderErrors 2026-07-15-11:20:
+ * Re-raise a provider failure that a `fn_review_step` tool handler recorded but could not throw
+ * (pi-agent-core turns tool throws into `tool_error` results the model just reads and retries).
+ * Called immediately after each `promptWithFallback`, alongside `checkSessionError`, so the error
+ * escapes `agentWork` and reaches `withRateLimitRetry` + the outer usage-limit/transient handlers.
+ * Clears the ref so a later successful prompt in the same run cannot re-throw a stale error.
+ */
+function throwDeferredReviewerFatal(ref: { current: Error | null }): void {
+  const deferred = ref.current;
+  if (deferred) {
+    ref.current = null;
+    throw deferred;
+  }
+}
+
 /** How long to wait before recovering a completed task still stuck in in-progress. */
 const COMPLETED_TASK_WATCHDOG_MS = 60_000;
 /** How long to wait before retrying a workflow rerun handoff that never reached in-progress. */
@@ -10988,6 +11013,15 @@ export class TaskExecutor {
       let wasPaused = false;
       // Mutable ref — populated after createFnAgent, tools access lazily via closure
       const sessionRef: { current: AgentSession | null } = { current: null };
+      /*
+      FNXC:ReviewerProviderErrors 2026-07-15-11:20:
+      Deferred re-raise channel for provider failures that surface INSIDE `fn_review_step`.
+
+      Why a ref instead of just throwing: pi-agent-core's `executePreparedToolCall` catches every throw from a tool handler and converts it into a `tool_error` result fed back to the model — a tool can NOT propagate an error out of `session.prompt()`. So throwing a rate-limit error from the review tool would just become more text for the model to read and retry against, which is exactly the loop this fixes (14 identical reviewer model markers hammering an already-limited provider).
+
+      Instead the tool records the fatal error here and returns a stop instruction; `agentWork` re-raises it right after `promptWithFallback` returns (next to `checkSessionError`, which exists for the same reason on the session's own errors). Once thrown from `agentWork` it reaches the machinery that already handles it: `withRateLimitRetry` backoff, then the outer catch's `UsageLimitPauser` global pause (usage-limit) or bounded `computeRecoveryDecision` requeue (transient).
+      */
+      const reviewerFatalRef: { current: Error | null } = { current: null };
       // Keyed by 0-indexed step (stepIndex) to match fn_review_step.
       const stepCheckpoints = new Map<number, string>();
 
@@ -11047,7 +11081,7 @@ export class TaskExecutor {
         Workflow-graph execution owns plan/code/browser review gates as nodes. Do not expose legacy in-session `fn_review_step` during graph-owned execute seams; otherwise default coding can duplicate Plan Review inside implementation steps after the workflow-level Plan Review has already passed.
         */
         ...(executionMode !== "fast" && !this.graphCompletionInterceptors.has(task.id) ? [
-          this.createReviewStepTool(task.id, worktreePath, detail.prompt, codeReviewVerdicts, sessionRef, stepCheckpoints, detail, stuckDetector),
+          this.createReviewStepTool(task.id, worktreePath, detail.prompt, codeReviewVerdicts, sessionRef, stepCheckpoints, detail, reviewerFatalRef, stuckDetector),
         ] : []),
         this.createSpawnAgentTool(task.id, worktreePath, settings, taskEnv),
         this.createTaskDocumentWriteTool(task.id),
@@ -11344,7 +11378,7 @@ export class TaskExecutor {
             await this.store.updateTask(task.id, { sessionFile });
           }
         }
-        await this.store.appendAgentLog(task.id, executorModelMarker, "text", undefined, "executor");
+        await this.store.appendAgentLog(task.id, executorModelMarker, "status", undefined, "executor");
 
         // Make session available to custom tools (fn_task_update checkpoint capture, fn_review_step rewind)
         sessionRef.current = session;
@@ -11421,6 +11455,9 @@ export class TaskExecutor {
           // session.prompt() resolves normally even when retries are exhausted —
           // the error is stored on session.state.error instead of being thrown.
           checkSessionError(session);
+          // FNXC:ReviewerProviderErrors 2026-07-15-11:20: same re-raise contract as
+          // checkSessionError above, for provider failures a tool handler could not throw.
+          throwDeferredReviewerFatal(reviewerFatalRef);
           await accumulateSessionTokenUsage(this.store, task.id, session, {
             agentId: task.assignedAgentId ?? undefined,
             role: "executor",
@@ -11482,6 +11519,9 @@ export class TaskExecutor {
 
             await promptWithFallback(session, resumePrompt);
             checkSessionError(session);
+            // FNXC:ReviewerProviderErrors 2026-07-15-11:20: a resumed session runs the same
+            // review tool, so it needs the same deferred provider-error re-raise.
+            throwDeferredReviewerFatal(reviewerFatalRef);
             await accumulateSessionTokenUsage(this.store, task.id, session, {
             agentId: task.assignedAgentId ?? undefined,
             role: "executor",
@@ -14288,11 +14328,21 @@ export class TaskExecutor {
     sessionRef: { current: AgentSession | null },
     stepCheckpoints: Map<number, string>,
     detail: TaskDetail,
+    reviewerFatalRef: { current: Error | null },
     stuckDetector?: StuckTaskDetector,
   ): ToolDefinition {
     const store = this.store;
     const options = this.options;
     const planSpecUnavailableCounts = new Map<string, number>();
+    /*
+    FNXC:ReviewerUnavailableBudget 2026-07-15-11:20:
+    Code review needs the same hard UNAVAILABLE bound plan/spec reviews already have.
+
+    Plan/spec reviews cap repeats via `planSpecUnavailableCounts` and tell the model "Do NOT re-call". Code review had NO counter and instead told the model "retry once or escalate" — but "retry once" is a SUGGESTION TO AN LLM, not a bound. A model that ignores it re-calls the tool indefinitely, and each call spawns reviewer sessions against a provider that is already failing. Prompt text is not a control-flow mechanism; this counter is.
+
+    Code review stays BLOCKING on exhaustion (unlike advisory plan/spec, which proceed) — an unreviewed code change must not pass as approved. The step simply stops being retried and the operator is pointed at the dashboard.
+    */
+    const codeUnavailableCounts = new Map<string, number>();
 
     return {
       name: "fn_review_step",
@@ -14526,10 +14576,15 @@ export class TaskExecutor {
                 }
                 text = `UNAVAILABLE (advisory) — reviewer could not produce a verdict after fallback retry. ${advisoryType === "plan" ? "Plan" : "Spec"} reviews are advisory; proceed with implementation. Do NOT re-call fn_review_step for the ${advisoryType} of Step ${step}.`;
               } else {
-                const blockingMessage = `code review Step ${step}: UNAVAILABLE — blocking until reviewer returns a usable verdict`;
+                const key = `code:${step}`;
+                const count = (codeUnavailableCounts.get(key) ?? 0) + 1;
+                codeUnavailableCounts.set(key, count);
+                const blockingMessage = `code review Step ${step}: UNAVAILABLE (${count}/${MAX_CODE_REVIEW_UNAVAILABLE_RETRIES}) — blocking until reviewer returns a usable verdict`;
                 await store.logEntry(taskId, blockingMessage);
                 reviewerLog.warn(`${taskId}: ${blockingMessage}`);
-                text = "UNAVAILABLE — reviewer did not produce a usable verdict. Code review remains blocking; retry once or escalate via dashboard.";
+                text = count >= MAX_CODE_REVIEW_UNAVAILABLE_RETRIES
+                  ? `UNAVAILABLE — the reviewer failed to produce a usable verdict ${count} times for Step ${step}. Do NOT re-call fn_review_step for the code review of Step ${step}; retrying is not working. Code review is blocking, so this step cannot be marked done — stop working on it and report that the code review is stuck so an operator can inspect the reviewer logs in the dashboard.`
+                  : "UNAVAILABLE — reviewer did not produce a usable verdict. Code review remains blocking; retry once or escalate via dashboard.";
               }
               break;
             }
@@ -14540,6 +14595,28 @@ export class TaskExecutor {
           const errorMessage = err instanceof Error ? err.message : String(err);
           reviewerLog.error(`${taskId}: review failed: ${errorMessage}`);
           await store.logEntry(taskId, `${reviewType} review failed: ${errorMessage}`);
+
+          /*
+          FNXC:ReviewerProviderErrors 2026-07-15-11:20:
+          This catch used to swallow EVERY reviewer failure into an in-band "UNAVAILABLE" string handed back to the model. That is what neutralized the engine's existing protections: because the error became tool OUTPUT rather than a thrown exception, `withRateLimitRetry` never backed off, `UsageLimitPauser` never paused, and `RetryStormError` never reached its terminalizer — while the model, told code review was still blocking, simply called the tool again against a failing provider.
+
+          Two classes must escape instead of becoming model-visible text:
+            - `ReviewerProviderError` — a rate limit or a network outage that survived the reviewer's own bounded backoff. Not a verdict; the engine must back off or pause, not re-ask.
+            - `RetryStormError` — the deliberate "budget exhausted, stop" signal from `recordRetry`. Answering it with a retry instruction is precisely backwards.
+
+          They cannot be re-thrown here (pi-agent-core converts tool throws into `tool_error` results — see `reviewerFatalRef`), so record them for `agentWork` to re-raise after the prompt and return a STOP instruction so the model stops calling in the meantime. Everything else keeps the existing in-band UNAVAILABLE behavior: a genuinely unparseable review is a review problem, and the model can legitimately act on it.
+          */
+          if (err instanceof ReviewerProviderError || err instanceof RetryStormError) {
+            reviewerFatalRef.current ??= err;
+            return {
+              content: [{
+                type: "text" as const,
+                text: `UNAVAILABLE — the review could not run and this task is being handed back to the engine to retry: ${errorMessage}. Do NOT call fn_review_step again. Stop working and end your turn now.`,
+              }],
+              details: {},
+            };
+          }
+
           return {
             content: [{ type: "text" as const, text: `UNAVAILABLE — reviewer error: ${errorMessage}` }],
             details: {},
@@ -14835,7 +14912,7 @@ Do not refactor, rename broadly, or make opportunistic improvements.
       await this.store.appendAgentLog(
         task.id,
         `Fix agent started (model: ${describeModel(session)}, attempt ${retryNumber}/${maxRetries})`,
-        "text",
+        "status",
         undefined,
         "executor",
       );
@@ -14883,7 +14960,7 @@ ${failureContext.output.slice(0, VERIFICATION_LOG_MAX_CHARS)}
         await this.store.appendAgentLog(
           task.id,
           `Re-running verification (attempt ${retryNumber}/${maxRetries})`,
-          "text",
+          "status",
           undefined,
           "executor",
         );
@@ -15843,7 +15920,7 @@ You have access to the file system to review changes.${inlineFixBlock}${verdictB
       const additionalSkillPaths = mergeAdditionalSkillPaths(skillContext.additionalSkillPaths, ceSkillsDir ? [ceSkillsDir] : undefined);
       const logBrowserVerificationActivity = async (message: string) => {
         await this.store.logEntry(task.id, message);
-        await this.store.appendAgentLog(task.id, message, "text", undefined, "reviewer");
+        await this.store.appendAgentLog(task.id, message, "status", undefined, "reviewer");
       };
       if (workflowStep.requiresBrowser === true) {
         effectiveSkillSelection = augmentSessionSkillsForBrowserStep(effectiveSkillSelection, this.rootDir);
@@ -16253,7 +16330,7 @@ You have access to the file system to review changes.${inlineFixBlock}${verdictB
     }
     const message = `[recovery] reclaimed existing worktree for ${task.id} at ${livePath} (${count} commits preserved, tip ${tipSha.slice(0, 12)})`;
     await this.store.logEntry(task.id, message, undefined, this.getRunContextFor(task.id));
-    await this.store.appendAgentLog(task.id, "Branch conflict auto-recovery", "text", message, "executor");
+    await this.store.appendAgentLog(task.id, "Branch conflict auto-recovery", "status", message, "executor");
   }
 
   private async handleBranchConflict(task: Task, error: BranchConflictError): Promise<"retry" | "reclaimed" | "sticky"> {
@@ -16284,7 +16361,7 @@ You have access to the file system to review changes.${inlineFixBlock}${verdictB
       await this.store.updateTask(task.id, { worktree: null, branch: null, baseCommitSha: null });
       const message = `[recovery] ${task.id} stage-A: pruned stale admin entry for ${error.branchName}`;
       await this.store.logEntry(task.id, message, undefined, this.getRunContextFor(task.id));
-      await this.store.appendAgentLog(task.id, "Branch conflict auto-recovery", "text", message, "executor");
+      await this.store.appendAgentLog(task.id, "Branch conflict auto-recovery", "status", message, "executor");
       return "retry";
     }
 
@@ -16313,7 +16390,7 @@ You have access to the file system to review changes.${inlineFixBlock}${verdictB
       await this.store.updateTask(task.id, { worktree: null, branch: null, baseCommitSha: null });
       const message = `[recovery] ${task.id} stage-A: tip-already-merged cleanup for ${error.branchName} (${inspection.tipSha.slice(0, 12)} on ${inspection.integrationRef})`;
       await this.store.logEntry(task.id, message, undefined, this.getRunContextFor(task.id));
-      await this.store.appendAgentLog(task.id, "Branch conflict auto-recovery", "text", message, "executor");
+      await this.store.appendAgentLog(task.id, "Branch conflict auto-recovery", "status", message, "executor");
       return "retry";
     }
 

@@ -895,7 +895,7 @@ describe("aiMergeTask — deterministic merge verification", () => {
     expect(store.appendAgentLog).toHaveBeenCalledWith(
       "FN-050",
       "Running deterministic merge verification (test: vitest run)",
-      "text",
+      "status",
       undefined,
       "merger",
     );
@@ -920,7 +920,7 @@ describe("aiMergeTask — deterministic merge verification", () => {
     expect(store.appendAgentLog).toHaveBeenCalledWith(
       "FN-050",
       "Deterministic merge verification passed",
-      "text",
+      "status",
       undefined,
       "merger",
     );

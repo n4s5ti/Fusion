@@ -1466,7 +1466,7 @@ export function createTaskFileScopeAddTool(store: TaskStore, taskId: string, run
           .appendAgentLog(
             taskId,
             `Added to File Scope: ${toAdd.join(", ")}${params.reason ? ` — ${params.reason}` : ""}`,
-            "text",
+            "status",
           )
           .catch(() => {});
 

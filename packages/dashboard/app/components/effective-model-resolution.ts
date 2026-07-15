@@ -34,6 +34,14 @@ Runtime "using model" markers may append parenthesized diagnostics such as think
 */
 const MODEL_MARKER_PATTERN = /^(Triage|Executor|Reviewer) using model: ([^/\s]+)\/(.+?)(?:\s+\([^)]*\))*$/;
 
+/*
+FNXC:TaskLogModelThinking 2026-07-15-11:20:
+Engine lanes now write standalone messages (including the "using model" markers) as `status` rather than `text`, so complete messages are never glued together like streamed deltas. Model resolution must accept BOTH: `status` for markers written after that change, `text` for the rows already persisted in every existing task's log. Dropping `text` here would silently blank the provider icons and effective-model headers on historical tasks.
+*/
+function isEngineMarkerEntryType(type: AgentLogEntry["type"]): boolean {
+  return type === "status" || type === "text";
+}
+
 export function parseRuntimeModelMarker(text: string, role: "Triage" | "Executor" | "Reviewer"): { provider: string; modelId: string } | null {
   const match = text.match(MODEL_MARKER_PATTERN);
   if (!match || match[1] !== role) return null;
@@ -43,7 +51,7 @@ export function parseRuntimeModelMarker(text: string, role: "Triage" | "Executor
 export function extractExecutorModelFromLog(entries: AgentLogEntry[]): { provider: string; modelId: string } | null {
   let result: { provider: string; modelId: string } | null = null;
   entries.forEach((entry) => {
-    if (entry.agent !== "executor" || entry.type !== "text") return;
+    if (entry.agent !== "executor" || !isEngineMarkerEntryType(entry.type)) return;
     const match = parseRuntimeModelMarker(entry.text, "Executor");
     if (match) {
       result = match;
@@ -55,7 +63,7 @@ export function extractExecutorModelFromLog(entries: AgentLogEntry[]): { provide
 export function extractReviewerModelFromLog(entries: AgentLogEntry[]): { provider: string; modelId: string } | null {
   let result: { provider: string; modelId: string } | null = null;
   entries.forEach((entry) => {
-    if (entry.agent !== "reviewer" || entry.type !== "text") return;
+    if (entry.agent !== "reviewer" || !isEngineMarkerEntryType(entry.type)) return;
     const match = parseRuntimeModelMarker(entry.text, "Reviewer");
     if (match) {
       result = match;
@@ -143,7 +151,7 @@ export function resolveEffectiveValidator(
 export function extractPlanningModelFromLog(entries: AgentLogEntry[]): { provider: string; modelId: string } | null {
   let result: { provider: string; modelId: string } | null = null;
   entries.forEach((entry) => {
-    if (entry.agent !== "triage" || entry.type !== "text") return;
+    if (entry.agent !== "triage" || !isEngineMarkerEntryType(entry.type)) return;
     const match = parseRuntimeModelMarker(entry.text, "Triage");
     if (match) {
       result = match;

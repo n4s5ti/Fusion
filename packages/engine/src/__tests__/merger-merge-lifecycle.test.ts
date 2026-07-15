@@ -2231,7 +2231,7 @@ describe("aiMergeTask — retry logic with escalating strategies", () => {
     expect(store.appendAgentLog).toHaveBeenCalledWith(
       "FN-050",
       expect.stringContaining("Overlap guard detected 1 recent-main overlap file(s) for smart-prefer-main (warn-only)"),
-      "text",
+      "status",
       undefined,
       "merger",
     );
@@ -3125,7 +3125,7 @@ describe("aiMergeTask post-squash audit gate", () => {
       strategy: "squash",
       squashSha: "mergedcommit123",
     });
-    expect(store.appendAgentLog).toHaveBeenCalledWith("FN-050", "post-squash audit clean", "text", undefined, "merger");
+    expect(store.appendAgentLog).toHaveBeenCalledWith("FN-050", "post-squash audit clean", "status", undefined, "merger");
     expect(store.moveTask).toHaveBeenCalledWith("FN-050", "done");
   });
 
@@ -3157,7 +3157,7 @@ describe("aiMergeTask post-squash audit gate", () => {
       rangeBaseSha: "basehead123",
       rangeHeadSha: "landedcommit002",
     });
-    expect(store.appendAgentLog).toHaveBeenCalledWith("FN-050", "post-rebase range audit clean", "text", undefined, "merger");
+    expect(store.appendAgentLog).toHaveBeenCalledWith("FN-050", "post-rebase range audit clean", "status", undefined, "merger");
   });
 
   it("degrades to squash fallback when no usable base can be resolved on the rebase route", async () => {
@@ -3200,7 +3200,7 @@ describe("aiMergeTask post-squash audit gate", () => {
     expect(store.appendAgentLog).toHaveBeenCalledWith(
       "FN-050",
       expect.stringContaining("post-merge audit degraded to single-commit squash fallback"),
-      "text",
+      "status",
       undefined,
       "merger",
     );
@@ -3246,7 +3246,7 @@ describe("aiMergeTask post-squash audit gate", () => {
     expect(store.appendAgentLog).toHaveBeenCalledWith(
       "FN-050",
       expect.stringContaining("post-merge audit degraded to single-commit squash fallback"),
-      "text",
+      "status",
       undefined,
       "merger",
     );
@@ -3336,7 +3336,7 @@ describe("aiMergeTask post-squash audit gate", () => {
     expect(store.appendAgentLog).toHaveBeenCalledWith(
       "FN-050",
       expect.stringContaining("post-rebase audit overlap cleared by deterministic verification"),
-      "text",
+      "status",
       expect.any(String),
       "merger",
     );

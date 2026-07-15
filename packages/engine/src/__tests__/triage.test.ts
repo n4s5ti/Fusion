@@ -4359,7 +4359,7 @@ describe("taskCreate tool model inheritance", () => {
       expect(store.appendAgentLog).toHaveBeenCalledWith(
         "FN-7437",
         "Triage using model: mock-model (thinking effort: low)",
-        "text",
+        "status",
         undefined,
         "triage",
       );
@@ -5137,7 +5137,7 @@ describe("taskCreate tool model inheritance", () => {
       expect(store.appendAgentLog).toHaveBeenCalledWith(
         "FN-300",
         "Triage using model: mock-model (thinking effort: high)",
-        "text",
+        "status",
         undefined,
         "triage",
       );

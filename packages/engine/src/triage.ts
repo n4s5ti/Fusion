@@ -1270,7 +1270,7 @@ export class TriageProcessor {
         await this.store.appendAgentLog(
           task.id,
           `Triage using model: ${modelDesc}`,
-          "text",
+          "status",
           undefined,
           "triage",
         );

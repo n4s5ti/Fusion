@@ -1499,7 +1499,7 @@ Follow instructions precisely and avoid unrelated changes.`,
               await this.store.appendAgentLog(
                 taskDetail.id,
                 `[step-exec] Reduced-prompt recovery succeeded for step ${stepIndex}`,
-                "text",
+                "status",
               );
               const result: StepResult = {
                 stepIndex,
