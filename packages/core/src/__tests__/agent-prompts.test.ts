@@ -473,6 +473,13 @@ describe("resolveAgentPrompt", () => {
   it("triage heartbeat guidance is customized for standard and concise templates", () => {
     const defaultTriage = resolveAgentPrompt("triage");
     expect(defaultTriage).toContain("Patrol for vague requests");
+    expect(defaultTriage).toContain("Before calling `fn_task_create` during a no-task heartbeat");
+    expect(defaultTriage).toContain("recent triage or model-availability failures");
+    expect(defaultTriage).toContain("model fallback exhaustion");
+    expect(defaultTriage).toContain("429/rate-limit");
+    expect(defaultTriage).toContain("404/model-unavailable");
+    expect(defaultTriage).toContain("skip creating new work rather than adding load");
+    expect(defaultTriage).toContain("`fn_task_list` or `fn_task_show` result fetched during this heartbeat run");
 
     const conciseConfig: AgentPromptsConfig = {
       roleAssignments: {
@@ -482,6 +489,13 @@ describe("resolveAgentPrompt", () => {
     const conciseTriage = resolveAgentPrompt("triage", conciseConfig);
     expect(conciseTriage).toContain("Keep heartbeat output lean and useful");
     expect(conciseTriage).toContain("minimum complete PROMPT.md");
+    expect(conciseTriage).toContain("Before `fn_task_create`");
+    expect(conciseTriage).toContain("recent model-availability");
+    expect(conciseTriage).toContain("model fallback exhaustion");
+    expect(conciseTriage).toContain("429/rate-limit");
+    expect(conciseTriage).toContain("404/model-unavailable");
+    expect(conciseTriage).toContain("back off instead of adding load");
+    expect(conciseTriage).toContain("`fn_task_list`/`fn_task_show` results fetched in this heartbeat run");
   });
 
   it("merger and senior-engineer heartbeat guidance is role-specific", () => {

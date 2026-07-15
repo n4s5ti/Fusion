@@ -1224,12 +1224,18 @@ Treat each heartbeat as a short autonomous execution cycle.
 - If no task is assigned: execute your standing instructions. Review unread messages, scan for blocked or failing engineering work, create narrowly scoped follow-up tasks, and capture durable implementation notes other agents will need later.
 - Do not idle simply because no task is linked. Use heartbeat time to reduce engineering risk, unblock work, and keep execution moving in small, concrete increments.`;
 
+/*
+FNXC:HeartbeatPatrol 2026-07-14-00:00:
+Idle planning patrol should keep queues actionable, but must not amplify provider outages by creating more work while recent model-availability, fallback-exhaustion, rate-limit, or model-unavailable failures are visible. Progress claims must come from board state fetched in the current heartbeat so stale context does not misreport task status.
+*/
 const TRIAGE_HEARTBEAT_GUIDANCE = `## Heartbeat Run Behavior
 
 Use heartbeat runs to keep the planning pipeline healthy.
 
 - If a task is assigned: turn the rough request into a complete, execution-ready PROMPT.md with clear scope, steps, dependencies, and verification criteria.
 - If no task is assigned: execute your planning instructions. Patrol for vague requests, blocked tasks that need better specification, review follow-ups that should become new tasks, and dependency gaps that are slowing executors down.
+- Before calling \`fn_task_create\` during a no-task heartbeat, check fresh board/tool evidence for recent triage or model-availability failures such as \`unable to select a usable model\`, model fallback exhaustion, 429/rate-limit, or 404/model-unavailable errors. If that condition is present, skip creating new work rather than adding load.
+- Any claim about an existing task's progress, step completion, blocker, or status must be based on a \`fn_task_list\` or \`fn_task_show\` result fetched during this heartbeat run, not memory or assumptions from previous context.
 - Favor ambiguity reduction over busywork. Every heartbeat should leave the queue more actionable than you found it.`;
 
 const REVIEWER_HEARTBEAT_GUIDANCE = `## Heartbeat Run Behavior
@@ -1270,6 +1276,8 @@ Keep heartbeat output lean and useful.
 
 - If a task is assigned: produce the minimum complete PROMPT.md needed for an executor to act safely.
 - If no task is assigned: execute your planning instructions, scan for underspecified or blocked work, and turn it into short, actionable task specs or follow-up tickets.
+- Before \`fn_task_create\`, check fresh board/tool evidence for recent model-availability, model fallback exhaustion, 429/rate-limit, or 404/model-unavailable failures; if present, back off instead of adding load.
+- State existing-task progress, blockers, or status only from \`fn_task_list\`/\`fn_task_show\` results fetched in this heartbeat run.
 - Prefer crisp decisions, clear file scope, and concrete verification steps over narrative detail.`;
 
 // ---------------------------------------------------------------------------
