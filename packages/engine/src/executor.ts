@@ -46,6 +46,7 @@ import {
 } from "./workflow-node-handlers.js";
 import { MERGE_REGION_KINDS, WORKFLOW_NODE_ENGINE_PAUSE_ABORT_KIND, WORKFLOW_OPTIONAL_GROUP_CONTEXT_KEY } from "./workflow-graph-executor.js";
 import type { WorkflowNodePreparationRequirement, WorkflowNodeResult } from "./workflow-graph-executor.js";
+import { workflowNodeRequiresWorktree } from "./workflow-node-execution-needs.js";
 import type {
   AuditPrimitiveInput,
   PreparedWorktree,
@@ -7687,34 +7688,23 @@ export class TaskExecutor {
     const rawCliCommand = executorKind === "cli" && typeof cfg.cliCommand === "string" && cfg.cliCommand.trim()
       ? cfg.cliCommand.trim()
       : undefined;
-    const nodeNameForReviewDetection = typeof cfg.name === "string" && cfg.name.trim() ? cfg.name.trim() : node.id;
-    const isPlanReviewNode =
-      node.id === "plan-review-step"
-      || nodeNameForReviewDetection === "Plan Review"
-      || optionalGroupId === "plan-review";
-    const inlineFixesEnabledForNode = (settings as Settings & { reviewerInlineFixes?: boolean }).reviewerInlineFixes !== false;
-    const reviewTypeNode =
-      isPlanReviewNode
-      || cfg.reviewCanFixInline === true
-      || /(?:^|\b)(?:review|verification)(?:\b|$)/i.test(nodeNameForReviewDetection)
-      || optionalGroupId === "code-review"
-      || optionalGroupId === "browser-verification";
-    const inlineFixesMakeNodeWriteCapable =
-      inlineFixesEnabledForNode
-      && executorKind !== "cli"
-      && reviewTypeNode
-      && !isPlanReviewNode;
-
     // Isolation guard: write-capable nodes must run inside a task worktree, not
     // the shared repo root. Before the execute seam runs, live.worktree is unset
     // — a coding/script/CLI node falling back to this.rootDir would mutate the
     // main checkout and cross-contaminate other tasks. Reject such nodes until a
     // worktree exists. Read-only nodes (default toolMode) are safe against root.
     /*
-    FNXC:WorkflowReviewers 2026-07-01-13:28:
-    Inline-fix Code Review, Browser Verification, and custom review nodes become write-capable even when the workflow definition says `toolMode: readonly`, so the isolation guard must see that before selecting a worktree. Plan Review is excluded because it uses the narrow PROMPT.md writer instead of source-file write tools.
+    FNXC:WorkflowReviewers 2026-07-15-00:00:
+    Inline-fix Code Review, Browser Verification, and custom review nodes become
+    write-capable even when their workflow definition says `toolMode: readonly`.
+    Use the shared classifier consumed by graph preparation so issue #2075 cannot
+    leave runtime requiring a worktree that preparation declined to acquire.
+    Plan Review remains excluded because it uses the narrow PROMPT.md writer.
     */
-    const writeCapable = cfg.toolMode === "coding" || inlineFixesMakeNodeWriteCapable || node.kind === "script" || Boolean(scriptName) || Boolean(rawCliCommand);
+    const writeCapable = workflowNodeRequiresWorktree(node, {
+      optionalGroupId,
+      reviewerInlineFixes: (settings as Settings & { reviewerInlineFixes?: boolean }).reviewerInlineFixes,
+    });
     const executionTarget = writeCapable ? await this.store.getTask(live.id) : live;
     if (writeCapable && !executionTarget.worktree && !this.workspaceConfig) {
       return { outcome: "failure", value: "no-worktree-for-write-node" };

@@ -41,8 +41,13 @@ import {
 } from "./workflow-graph-foreach.js";
 import { runLoop, runOptionalGroup } from "./workflow-graph-loop.js";
 import type { WorkflowNodeRunnerRegistry } from "./workflow-node-runner.js";
+import { workflowNodeRequiresWorktree } from "./workflow-node-execution-needs.js";
 
 export type WorkflowNodeOutcome = "success" | "failure";
+
+type WorkflowNodeSettings = Pick<Settings, "experimentalFeatures"> & {
+  reviewerInlineFixes?: boolean;
+};
 
 export type WorkflowNodeAbortKind = "engine-pause";
 
@@ -79,7 +84,7 @@ export interface WorkflowTaskProjection {
 
 export interface WorkflowNodeExecutionContext {
   task: TaskDetail;
-  settings: Pick<Settings, "experimentalFeatures"> | undefined;
+  settings: WorkflowNodeSettings | undefined;
   context: Record<string, unknown>;
   /** Set during concurrent branch execution; fail-fast aborts via this signal.
    *  Undefined on the sequential path (zero behavior change for linear graphs). */
@@ -339,7 +344,7 @@ export class WorkflowGraphExecutor {
 
   public async run(
     task: TaskDetail,
-    settings: (Pick<Settings, "experimentalFeatures"> & Partial<Pick<Settings, "autoMerge">>) | undefined,
+    settings: (WorkflowNodeSettings & Partial<Pick<Settings, "autoMerge">>) | undefined,
     ir: WorkflowIr = BUILTIN_CODING_WORKFLOW_IR,
   ): Promise<WorkflowGraphExecutorResult> {
     const startNode = ir.nodes.find((node) => node.kind === "start");
@@ -1236,7 +1241,7 @@ export class WorkflowGraphExecutor {
   private async executeNodeWithRetries(
     node: WorkflowIrNode,
     task: TaskDetail,
-    settings: Pick<Settings, "experimentalFeatures"> | undefined,
+    settings: WorkflowNodeSettings | undefined,
     context: Record<string, unknown>,
     workflow: WorkflowIr,
     signal?: AbortSignal,
@@ -1255,7 +1260,7 @@ export class WorkflowGraphExecutor {
       // Fail-fast cancellation: a branch or top-level graph abort mid-retry stops re-trying.
       if (signal?.aborted) return this.withEnginePauseAbortContext(node, { outcome: "failure", value: "aborted" });
       try {
-        await this.prepareNodeExecution(node, task);
+        await this.prepareNodeExecution(node, task, context, settings);
         const progressRecord = recordProgress && this.shouldRecordNodeProgress(node)
           ? await this.recordNodeProgressStart(task.id, node)
           : null;
@@ -1395,23 +1400,36 @@ export class WorkflowGraphExecutor {
     });
   }
 
-  private async prepareNodeExecution(node: WorkflowIrNode, task: TaskDetail): Promise<void> {
-    const requirement = this.classifyNodePreparation(node);
+  private async prepareNodeExecution(
+    node: WorkflowIrNode,
+    task: TaskDetail,
+    context: Record<string, unknown>,
+    settings: WorkflowNodeSettings | undefined,
+  ): Promise<void> {
+    const requirement = this.classifyNodePreparation(node, context, settings);
     if (!requirement.requiresWorktree) return;
     await this.deps.prepareNodeExecution?.(node, task, requirement);
   }
 
-  private classifyNodePreparation(node: WorkflowIrNode): WorkflowNodePreparationRequirement {
-    const cfg = node.config ?? {};
-    const executorKind = typeof cfg.executor === "string" ? cfg.executor : "model";
-    const hasScriptName = typeof cfg.scriptName === "string" && cfg.scriptName.trim().length > 0;
-    const hasCliCommand = executorKind === "cli" && typeof cfg.cliCommand === "string" && cfg.cliCommand.trim().length > 0;
-    const requiresWorktree =
-      cfg.toolMode === "coding"
-      || node.kind === "script"
-      || executorKind === "cli-agent"
-      || hasScriptName
-      || hasCliCommand;
+  private classifyNodePreparation(
+    node: WorkflowIrNode,
+    context: Record<string, unknown>,
+    settings: WorkflowNodeSettings | undefined,
+  ): WorkflowNodePreparationRequirement {
+    const optionalGroupId = typeof context[WORKFLOW_OPTIONAL_GROUP_CONTEXT_KEY] === "string"
+      ? context[WORKFLOW_OPTIONAL_GROUP_CONTEXT_KEY]
+      : undefined;
+    /*
+     * FNXC:WorkflowExecution 2026-07-15-00:00:
+     * Graph preparation receives the optional-group context and effective inline-fix
+     * setting so it applies the same classifier as runtime. Only an explicit false
+     * disables inline fixes, preserving the default-enabled review worktree contract
+     * that prevents issue #2075's pre-review no-worktree failure.
+     */
+    const requiresWorktree = workflowNodeRequiresWorktree(node, {
+      optionalGroupId,
+      reviewerInlineFixes: settings?.reviewerInlineFixes,
+    });
     return {
       requiresWorktree,
       reason: requiresWorktree ? "write-capable-node" : undefined,
