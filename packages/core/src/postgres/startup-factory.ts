@@ -211,7 +211,12 @@ async function bootSchemaBackend(
     }
   }
 
-  log.log(describeBackendForLog(resolvedBackend));
+  // FNXC:PostgresTuiLogging 2026-07-15-14:52: Do not repeat routine embedded
+  // backend resolution in the TUI; external backend details remain useful
+  // operator diagnostics and are logged with credentials redacted.
+  if (resolvedBackend.mode === "external") {
+    log.log(describeBackendForLog(resolvedBackend));
+  }
   let connections: PostgresConnections | undefined;
   try {
     connections = resolvedBackend.mode === "external"
