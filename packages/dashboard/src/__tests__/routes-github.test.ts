@@ -183,6 +183,7 @@ function createMockStore(overrides: Partial<TaskStore> = {}): TaskStore {
     unarchiveTask: vi.fn(),
     getSettings: vi.fn().mockResolvedValue({}),
     getSettingsFast: vi.fn().mockResolvedValue({}),
+    getImportTranslation: vi.fn().mockResolvedValue(null),
     updateSettings: vi.fn(),
     updateGlobalSettings: vi.fn(),
     getSettingsByScope: vi.fn().mockResolvedValue({ global: {}, project: {} }),
@@ -557,6 +558,10 @@ describe("POST /github/issues/fetch", () => {
   });
 });
 
+/*
+FNXC:GitHubImportTranslate 2026-07-15-10:00:
+These route regressions lock the operator-facing invariant that GitHub-imported tasks carry cached translated prose, with the source URL appended afterward. CLI and GitLab imports are intentionally excluded: neither is a GitHub dashboard translation surface backed by this durable cache.
+*/
 describe("POST /github/issues/import", () => {
   let store: TaskStore;
   let getIssueSpy: ReturnType<typeof vi.fn>;
@@ -627,7 +632,7 @@ describe("POST /github/issues/import", () => {
   });
 
   it("marks a single imported issue as tracked when tracking defaults are on", async () => {
-    (store.getSettings as ReturnType<typeof vi.fn>).mockResolvedValueOnce({ githubTrackingEnabledByDefault: true });
+    (store.getSettings as ReturnType<typeof vi.fn>).mockResolvedValue({ githubTrackingEnabledByDefault: true });
     getIssueSpy.mockResolvedValueOnce(mockGitHubIssue);
 
     const res = await REQUEST(buildApp(), "POST", "/api/github/issues/import", JSON.stringify({ owner: "owner", repo: "repo", issueNumber: 1 }), {
@@ -642,7 +647,7 @@ describe("POST /github/issues/import", () => {
   });
 
   it("marks a single imported issue as tracked when import linking is on and new-task defaults are off", async () => {
-    (store.getSettings as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+    (store.getSettings as ReturnType<typeof vi.fn>).mockResolvedValue({
       githubTrackingEnabledByDefault: false,
       githubLinkImportedIssuesToTracking: true,
     });
@@ -775,6 +780,114 @@ describe("POST /github/issues/import", () => {
     expect(store.createTask).not.toHaveBeenCalled();
   });
 
+  it("imports cached translated prose and appends the source URL", async () => {
+    const translatedTitle = "Translated issue title";
+    const translatedBody = "Translated issue body";
+    (store.getSettings as ReturnType<typeof vi.fn>).mockResolvedValue({
+      githubImportAutoTranslate: true,
+      importTranslateTargetLocale: "en",
+    });
+    (store.getImportTranslation as ReturnType<typeof vi.fn>).mockResolvedValue({
+      translatedTitle,
+      translatedBody,
+      detectedLocale: null,
+    });
+    getIssueSpy.mockResolvedValueOnce(mockGitHubIssue);
+
+    const res = await REQUEST(buildApp(), "POST", "/api/github/issues/import", JSON.stringify({ owner: "owner", repo: "repo", issueNumber: 1 }), {
+      "Content-Type": "application/json",
+    });
+
+    expect(res.status).toBe(201);
+    expect(store.createTask).toHaveBeenCalledWith(expect.objectContaining({
+      title: translatedTitle.slice(0, 200),
+      description: `${translatedBody}\n\nSource: ${mockGitHubIssue.html_url}`,
+    }));
+  });
+
+  it("uses the global dashboard language for cached translated prose", async () => {
+    const translatedTitle = "Global-language translated title";
+    const translatedBody = "Global-language translated body";
+    (store.getSettings as ReturnType<typeof vi.fn>).mockResolvedValue({
+      githubImportAutoTranslate: true,
+      language: "en",
+    });
+    (store.getImportTranslation as ReturnType<typeof vi.fn>).mockResolvedValue({
+      translatedTitle,
+      translatedBody,
+      detectedLocale: null,
+    });
+    getIssueSpy.mockResolvedValueOnce(mockGitHubIssue);
+
+    await REQUEST(buildApp(), "POST", "/api/github/issues/import", JSON.stringify({ owner: "owner", repo: "repo", issueNumber: 1 }), {
+      "Content-Type": "application/json",
+    });
+
+    expect(store.createTask).toHaveBeenCalledWith(expect.objectContaining({
+      title: translatedTitle,
+      description: `${translatedBody}\n\nSource: ${mockGitHubIssue.html_url}`,
+    }));
+  });
+
+  it("fails open to original prose without reading the cache when auto-translate is off", async () => {
+    (store.getImportTranslation as ReturnType<typeof vi.fn>).mockResolvedValue({
+      translatedTitle: "Cached title that must not be used",
+      translatedBody: "Cached body that must not be used",
+      detectedLocale: null,
+    });
+    getIssueSpy.mockResolvedValueOnce(mockGitHubIssue);
+
+    await REQUEST(buildApp(), "POST", "/api/github/issues/import", JSON.stringify({ owner: "owner", repo: "repo", issueNumber: 1 }), {
+      "Content-Type": "application/json",
+    });
+
+    expect(store.getImportTranslation).not.toHaveBeenCalled();
+    expect(store.createTask).toHaveBeenCalledWith(expect.objectContaining({
+      title: mockGitHubIssue.title,
+      description: `${mockGitHubIssue.body}\n\nSource: ${mockGitHubIssue.html_url}`,
+    }));
+  });
+
+  it("fails open to original prose when the translation cache misses", async () => {
+    (store.getSettings as ReturnType<typeof vi.fn>).mockResolvedValue({
+      githubImportAutoTranslate: true,
+      importTranslateTargetLocale: "en",
+    });
+    getIssueSpy.mockResolvedValueOnce(mockGitHubIssue);
+
+    await REQUEST(buildApp(), "POST", "/api/github/issues/import", JSON.stringify({ owner: "owner", repo: "repo", issueNumber: 1 }), {
+      "Content-Type": "application/json",
+    });
+
+    expect(store.createTask).toHaveBeenCalledWith(expect.objectContaining({
+      title: mockGitHubIssue.title,
+      description: `${mockGitHubIssue.body}\n\nSource: ${mockGitHubIssue.html_url}`,
+    }));
+  });
+
+  it("fails open to original prose for closed issues", async () => {
+    (store.getSettings as ReturnType<typeof vi.fn>).mockResolvedValue({
+      githubImportAutoTranslate: true,
+      importTranslateTargetLocale: "en",
+    });
+    (store.getImportTranslation as ReturnType<typeof vi.fn>).mockResolvedValue({
+      translatedTitle: "Closed cached title that must not be used",
+      translatedBody: "Closed cached body that must not be used",
+      detectedLocale: null,
+    });
+    const closedIssue = { ...mockGitHubIssue, state: "closed" as const };
+    getIssueSpy.mockResolvedValueOnce(closedIssue);
+
+    await REQUEST(buildApp(), "POST", "/api/github/issues/import", JSON.stringify({ owner: "owner", repo: "repo", issueNumber: 1 }), {
+      "Content-Type": "application/json",
+    });
+
+    expect(store.createTask).toHaveBeenCalledWith(expect.objectContaining({
+      title: closedIssue.title,
+      description: `${closedIssue.body}\n\nSource: ${closedIssue.html_url}`,
+    }));
+  });
+
   it("truncates long titles to 200 chars", async () => {
     const longTitleIssue = {
       ...mockGitHubIssue,
@@ -851,6 +964,105 @@ describe("POST /github/issues/batch-import", () => {
     body: `Body for issue ${number}`,
     html_url: `https://github.com/owner/repo/issues/${number}`,
     labels: [{ name: "bug" }],
+  });
+
+  it("imports cached translated prose and appends the source URL", async () => {
+    const issue = mockGitHubIssue(1, "Original batch title");
+    const translatedTitle = "Translated batch title";
+    const translatedBody = "Translated batch body";
+    (store.getSettings as ReturnType<typeof vi.fn>).mockResolvedValue({
+      githubImportAutoTranslate: true,
+      importTranslateTargetLocale: "en",
+    });
+    (store.getImportTranslation as ReturnType<typeof vi.fn>).mockResolvedValue({
+      translatedTitle,
+      translatedBody,
+      detectedLocale: null,
+    });
+    vi.spyOn(GitHubClient.prototype, "fetchThrottled").mockResolvedValueOnce({
+      success: true,
+      data: issue,
+    } as Awaited<ReturnType<GitHubClient["fetchThrottled"]>>);
+
+    const res = await REQUEST(buildApp(), "POST", "/api/github/issues/batch-import", JSON.stringify({ owner: "owner", repo: "repo", issueNumbers: [1], delayMs: 1 }), {
+      "Content-Type": "application/json",
+    });
+
+    expect(res.status).toBe(200);
+    expect(store.createTask).toHaveBeenCalledWith(expect.objectContaining({
+      title: translatedTitle.slice(0, 200),
+      description: `${translatedBody}\n\nSource: ${issue.html_url}`,
+    }));
+  });
+
+  it("fails open to original prose without reading the cache when auto-translate is off", async () => {
+    const issue = mockGitHubIssue(1, "Original batch title");
+    (store.getImportTranslation as ReturnType<typeof vi.fn>).mockResolvedValue({
+      translatedTitle: "Cached batch title that must not be used",
+      translatedBody: "Cached batch body that must not be used",
+      detectedLocale: null,
+    });
+    vi.spyOn(GitHubClient.prototype, "fetchThrottled").mockResolvedValueOnce({
+      success: true,
+      data: issue,
+    } as Awaited<ReturnType<GitHubClient["fetchThrottled"]>>);
+
+    await REQUEST(buildApp(), "POST", "/api/github/issues/batch-import", JSON.stringify({ owner: "owner", repo: "repo", issueNumbers: [1], delayMs: 1 }), {
+      "Content-Type": "application/json",
+    });
+
+    expect(store.getImportTranslation).not.toHaveBeenCalled();
+    expect(store.createTask).toHaveBeenCalledWith(expect.objectContaining({
+      title: issue.title,
+      description: `${issue.body}\n\nSource: ${issue.html_url}`,
+    }));
+  });
+
+  it("fails open to original prose when the translation cache misses", async () => {
+    const issue = mockGitHubIssue(1, "Original batch title");
+    (store.getSettings as ReturnType<typeof vi.fn>).mockResolvedValue({
+      githubImportAutoTranslate: true,
+      importTranslateTargetLocale: "en",
+    });
+    vi.spyOn(GitHubClient.prototype, "fetchThrottled").mockResolvedValueOnce({
+      success: true,
+      data: issue,
+    } as Awaited<ReturnType<GitHubClient["fetchThrottled"]>>);
+
+    await REQUEST(buildApp(), "POST", "/api/github/issues/batch-import", JSON.stringify({ owner: "owner", repo: "repo", issueNumbers: [1], delayMs: 1 }), {
+      "Content-Type": "application/json",
+    });
+
+    expect(store.createTask).toHaveBeenCalledWith(expect.objectContaining({
+      title: issue.title,
+      description: `${issue.body}\n\nSource: ${issue.html_url}`,
+    }));
+  });
+
+  it("fails open to original prose for closed issues", async () => {
+    const issue = { ...mockGitHubIssue(1, "Closed batch title"), state: "closed" as const };
+    (store.getSettings as ReturnType<typeof vi.fn>).mockResolvedValue({
+      githubImportAutoTranslate: true,
+      importTranslateTargetLocale: "en",
+    });
+    (store.getImportTranslation as ReturnType<typeof vi.fn>).mockResolvedValue({
+      translatedTitle: "Closed cached batch title that must not be used",
+      translatedBody: "Closed cached batch body that must not be used",
+      detectedLocale: null,
+    });
+    vi.spyOn(GitHubClient.prototype, "fetchThrottled").mockResolvedValueOnce({
+      success: true,
+      data: issue,
+    } as Awaited<ReturnType<GitHubClient["fetchThrottled"]>>);
+
+    await REQUEST(buildApp(), "POST", "/api/github/issues/batch-import", JSON.stringify({ owner: "owner", repo: "repo", issueNumbers: [1], delayMs: 1 }), {
+      "Content-Type": "application/json",
+    });
+
+    expect(store.createTask).toHaveBeenCalledWith(expect.objectContaining({
+      title: issue.title,
+      description: `${issue.body}\n\nSource: ${issue.html_url}`,
+    }));
   });
 
   it("imports multiple issues successfully", async () => {
