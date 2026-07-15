@@ -3122,6 +3122,143 @@ describe("requirePlanApproval setting", () => {
       expect(store.moveTask).not.toHaveBeenCalled();
     });
 
+    /*
+    FNXC:PlanApproval 2026-07-15-15:10:
+    Legacy approvals — recorded before the `## Original Description` hygiene injection existed —
+    must still auto-approve. approve-plan hashes the on-disk PROMPT.md, so those tasks carry a
+    fingerprint over PRE-injection content; once the injection ships it rewrites the prompt, the
+    fingerprint moves, and the operator gets re-asked to approve a plan they already approved and
+    that has not changed.
+
+    ## Surface Enumeration
+    - Legacy fingerprint + unchanged plan -> auto-approve (the reported symptom).
+    - Legacy fingerprint + unchanged plan -> stored fingerprint migrated forward, so the
+      reconciliation happens once per task rather than on every pass.
+    - Legacy fingerprint + CHANGED plan -> must still park. This is the safety edge: the
+      tolerance must not become "any prior approval approves any later plan".
+    - Current (post-injection) fingerprint -> unchanged behavior, no spurious migration write.
+    - Both finalizeApprovedTask callers (direct + recoverApprovedTask) share this gate.
+    */
+    it("auto-approves a plan whose fingerprint predates the prompt-hygiene injection", async () => {
+      // A pre-injection approval: the operator approved the raw plan, before the hygiene
+      // injection existed, so the recorded hash is over PRE-injection content.
+      const legacyFingerprint = computePlanApprovalFingerprint(planText);
+      const task = createTriageTask({
+        id: "FN-LEGACY-FP",
+        status: "planning",
+        approvedPlanFingerprint: legacyFingerprint,
+      } as Partial<Task>);
+      const store = createMockStore({
+        getTask: vi.fn().mockResolvedValue(task),
+      } as Partial<TaskStore>);
+      await mkdir(join(rootDir, ".fusion", "tasks", "FN-LEGACY-FP"), { recursive: true });
+      await writeFile(join(rootDir, ".fusion", "tasks", "FN-LEGACY-FP", "PROMPT.md"), planText);
+      const processor = new TriageProcessor(store, rootDir);
+
+      await (processor as unknown as {
+        finalizeApprovedTask(task: Task, writtenInput: string, settings: Settings): Promise<void>;
+      }).finalizeApprovedTask(
+        task,
+        planText,
+        { requirePlanApproval: true, planApprovalMode: "require-all" } as Settings,
+      );
+
+      expect(store.moveTask).toHaveBeenCalledWith("FN-LEGACY-FP", "todo");
+      expect(store.updateTask).not.toHaveBeenCalledWith("FN-LEGACY-FP", expect.objectContaining({ status: "awaiting-approval" }));
+      // Migrated forward to the post-injection hash, so this is a one-time reconciliation.
+      const migratedFingerprint = computePlanApprovalFingerprint(approvedOnDisk(planText, "Triage task"));
+      expect(store.updateTask).toHaveBeenCalledWith("FN-LEGACY-FP", { approvedPlanFingerprint: migratedFingerprint });
+      expect(migratedFingerprint).not.toBe(legacyFingerprint);
+    });
+
+    it("still re-asks approval for a CHANGED plan when the prior approval predates prompt hygiene", async () => {
+      // The safety edge: legacy tolerance must not approve a plan the operator never saw.
+      const legacyFingerprint = computePlanApprovalFingerprint(planText);
+      const task = createTriageTask({
+        id: "FN-LEGACY-FP-CHANGED",
+        status: "planning",
+        approvedPlanFingerprint: legacyFingerprint,
+      } as Partial<Task>);
+      const store = createMockStore({
+        getTask: vi.fn().mockResolvedValue(task),
+      } as Partial<TaskStore>);
+      await mkdir(join(rootDir, ".fusion", "tasks", "FN-LEGACY-FP-CHANGED"), { recursive: true });
+      await writeFile(join(rootDir, ".fusion", "tasks", "FN-LEGACY-FP-CHANGED", "PROMPT.md"), changedPlanText);
+      const processor = new TriageProcessor(store, rootDir);
+
+      await (processor as unknown as {
+        finalizeApprovedTask(task: Task, writtenInput: string, settings: Settings): Promise<void>;
+      }).finalizeApprovedTask(
+        task,
+        changedPlanText,
+        { requirePlanApproval: true, planApprovalMode: "require-all" } as Settings,
+      );
+
+      expect(store.updateTask).toHaveBeenCalledWith("FN-LEGACY-FP-CHANGED", expect.objectContaining({ status: "awaiting-approval" }));
+      expect(store.moveTask).not.toHaveBeenCalled();
+      expect(store.updateTask).not.toHaveBeenCalledWith("FN-LEGACY-FP-CHANGED", expect.objectContaining({ approvedPlanFingerprint: expect.anything() }));
+    });
+
+    it("recoverApprovedTask auto-approves a legacy pre-hygiene fingerprint too", async () => {
+      const legacyFingerprint = computePlanApprovalFingerprint(planText);
+      await mkdir(join(rootDir, ".fusion", "tasks", "FN-LEGACY-RECOVER"), { recursive: true });
+      await writeFile(join(rootDir, ".fusion", "tasks", "FN-LEGACY-RECOVER", "PROMPT.md"), planText);
+      const store = createMockStore({
+        getSettings: vi.fn().mockResolvedValue({
+          maxConcurrent: 2,
+          maxWorktrees: 4,
+          pollIntervalMs: 10000,
+          groupOverlappingFiles: false,
+          autoMerge: true,
+          requirePlanApproval: true,
+        } as Settings),
+      });
+      const processor = new TriageProcessor(store, rootDir);
+
+      const recovered = await processor.recoverApprovedTask({
+        id: "FN-LEGACY-RECOVER",
+        description: "Recovered triage task",
+        column: "triage",
+        status: "planning",
+        approvedPlanFingerprint: legacyFingerprint,
+        dependencies: [],
+        steps: [],
+        currentStep: 0,
+        log: [{ timestamp: "2026-01-01T00:00:00.000Z", action: "Spec review: APPROVE" }],
+        createdAt: "2026-01-01T00:00:00.000Z",
+        updatedAt: "2026-01-01T00:02:00.000Z",
+      });
+
+      expect(recovered).toBe(true);
+      expect(store.moveTask).toHaveBeenCalledWith("FN-LEGACY-RECOVER", "todo");
+      expect(store.updateTask).not.toHaveBeenCalledWith("FN-LEGACY-RECOVER", expect.objectContaining({ status: "awaiting-approval" }));
+    });
+
+    it("does not write a fingerprint migration when the approval is already post-hygiene", async () => {
+      const approvedPlan = approvedOnDisk(planText, "Triage task");
+      const task = createTriageTask({
+        id: "FN-FP-NO-MIGRATE",
+        status: "planning",
+        approvedPlanFingerprint: computePlanApprovalFingerprint(approvedPlan),
+      } as Partial<Task>);
+      const store = createMockStore({
+        getTask: vi.fn().mockResolvedValue(task),
+      } as Partial<TaskStore>);
+      const processor = new TriageProcessor(store, rootDir);
+
+      await (processor as unknown as {
+        finalizeApprovedTask(task: Task, writtenInput: string, settings: Settings): Promise<void>;
+      }).finalizeApprovedTask(
+        task,
+        approvedPlan,
+        { requirePlanApproval: true, planApprovalMode: "require-all" } as Settings,
+      );
+
+      expect(store.moveTask).toHaveBeenCalledWith("FN-FP-NO-MIGRATE", "todo");
+      // Already current — no redundant fingerprint write on every pass.
+      expect(store.updateTask).not.toHaveBeenCalledWith("FN-FP-NO-MIGRATE", expect.objectContaining({ approvedPlanFingerprint: expect.anything() }));
+    });
+
     it("never-approved task (no fingerprint) still parks at awaiting-approval on first specify", async () => {
       const task = createTriageTask({
         id: "FN-NEVER-APPROVED",
