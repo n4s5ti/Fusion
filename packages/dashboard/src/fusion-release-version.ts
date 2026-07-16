@@ -8,16 +8,25 @@ import { isUnresolvedCliPackageVersion } from "./cli-package-version.js";
  * next-minor release that will ship the fix. Comments on every other linked repository stay
  * byte-for-byte identical to the base template output.
  *
- * FNXC:GitHubIssueComment 2026-07-15-09:40:
- * These helpers live in a shared module because TWO independent services can post a done
- * comment on a linked GitHub issue, and the original FN-7575 fix only covered one of them:
- *   - GitHubIssueCommentService (github-issue-comment.ts) — gated on the `githubCommentOnDone`
- *     setting, which defaults to false and has no Settings UI, so it effectively never fires.
- *   - GitHubTrackingCommentService (github-tracking-comments.ts) — gated on per-task
- *     `githubTracking.enabled`, and the service that actually posts the "✅ Done —" comments.
- * The version lines were invisible in production for ~10 days because they existed only on the
- * first surface. Any NEW done-comment surface (e.g. the GitLab equivalents, which do not carry
- * release lines today) must import from here rather than re-deriving the version logic.
+ * FNXC:GitHubIssueComment 2026-07-15-10:40:
+ * These helpers live in a shared module because FOUR services can post a done comment, and the
+ * original FN-7575 fix only covered one. They gate on DIFFERENT, non-interchangeable linkages —
+ * neither is redundant, and neither may be deleted as a "duplicate":
+ *   - {GitHub,GitLab}IssueCommentService — gate on `task.sourceIssue` (the IMPORT linkage, set
+ *     unconditionally by buildGitHubIssueSource/the GitLab equivalent) plus the documented
+ *     `githubCommentOnDone`/`gitlabCommentOnDone` settings. No Settings UI, but reachable via the
+ *     settings API/file; see docs/settings-reference.md.
+ *   - {GitHub,GitLab}TrackingCommentService — gate on per-task `githubTracking.enabled` /
+ *     `gitlabTracking.item` (the explicit TRACKING linkage), and post the "✅ Done —" comments.
+ * An imported issue has sourceIssue but NO tracking linkage unless `githubLinkImportedIssuesToTracking`
+ * or the tracking defaults resolve on (resolveImportedIssueGithubTracking), so with tracking off the
+ * issue-comment service is the ONLY surface that comments. FN-7575 covered only that surface while
+ * users saw the tracking surface, so the version lines were invisible in production for ~10 days.
+ *
+ * Known overlap: a task carrying BOTH linkages with comment-on-done enabled gets two comments from
+ * the two services. Pre-existing, orthogonal to release lines, not deduped here.
+ *
+ * Any NEW done-comment surface must import from here rather than re-deriving the version logic.
  */
 export const FUSION_SELF_REPO = "runfusion/fusion";
 

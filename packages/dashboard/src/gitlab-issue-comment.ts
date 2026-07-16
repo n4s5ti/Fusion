@@ -11,11 +11,15 @@ interface TaskMovedEvent {
 export const DEFAULT_GITLAB_COMMENT_TEMPLATE = "✅ Task {taskId} ({taskTitle}) has been completed and resolved.";
 
 /*
- * FNXC:GitLabIssueComment 2026-07-15-10:05:
+ * FNXC:GitLabIssueComment 2026-07-15-10:40:
  * Mirrors the GitHub self-repo release lines (issue #1916) via the shared fusion-release-version
- * helper. NOTE: gated on `settings.gitlabCommentOnDone` (default false, no Settings UI), so this is
- * NOT the surface that normally posts — GitLabTrackingCommentService is. Kept in sync so the two
- * cannot drift the way github-issue-comment.ts drifted from github-tracking-comments.ts.
+ * helper, so the two cannot drift the way github-issue-comment.ts drifted from
+ * github-tracking-comments.ts.
+ *
+ * NOT redundant with GitLabTrackingCommentService: this service covers the `sourceIssue` IMPORT
+ * linkage (documented `gitlabCommentOnDone`; docs/settings-reference.md), while that one covers the
+ * `gitlabTracking.item` linkage. An issue imported with tracking off has sourceIssue and no
+ * tracking, so THIS is the only surface that comments. Do not delete it as a duplicate.
  */
 export class GitLabIssueCommentService {
   private readonly store: TaskStore;

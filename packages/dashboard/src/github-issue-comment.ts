@@ -24,12 +24,15 @@ interface TaskMovedEvent {
 const DEFAULT_COMMENT_TEMPLATE = "✅ Task {taskId} ({taskTitle}) has been completed and resolved.";
 
 /*
- * FNXC:GitHubIssueComment 2026-07-15-09:40:
- * The self-repo detection and next-minor computation moved to `fusion-release-version.ts` so the
- * GitHubTrackingCommentService done comment — the surface that actually posts on linked issues —
- * shares one implementation. See that module for the full requirement and the FN-7575 miss.
- * NOTE: this service is gated on `settings.githubCommentOnDone`, which defaults to false and has
- * no Settings UI, so it rarely fires; do not treat it as the primary done-comment surface.
+ * FNXC:GitHubIssueComment 2026-07-15-10:40:
+ * Self-repo detection and next-minor computation live in `fusion-release-version.ts` so this
+ * service and GitHubTrackingCommentService share one implementation. See that module for the
+ * requirement and the FN-7575 miss.
+ *
+ * NOT redundant with GitHubTrackingCommentService: this service covers the `sourceIssue` IMPORT
+ * linkage (documented `githubCommentOnDone`; docs/settings-reference.md), while that one covers the
+ * `githubTracking.enabled` linkage. An issue imported with tracking defaults off has sourceIssue and
+ * no tracking, so THIS is the only surface that comments. Do not delete it as a duplicate.
  */
 
 export class GitHubIssueCommentService {
