@@ -5173,6 +5173,87 @@ describe("taskCreate tool model inheritance", () => {
       }));
     });
 
+    /*
+    FNXC:TriageFallbackTitle 2026-07-16-00:00:
+    Still-retrying deterministic and transient branches must preserve retry scheduling and never backfill a blank title; only terminal failures backfill.
+    */
+    it("does not backfill blank titles while deterministic validation retries remain", async () => {
+      const task = {
+        id: "FN-8155-DETERMINISTIC-RETRY",
+        title: "",
+        description: "Keep blank titles while deterministic validation retries remain",
+        column: "triage",
+        status: "planning",
+        recoveryRetryCount: 1,
+        dependencies: [],
+        steps: [],
+        currentStep: 0,
+        log: [],
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      } as unknown as Task;
+      const store = createMockStore({
+        getTask: vi.fn().mockResolvedValue({ ...task, attachments: [] }),
+      });
+      mockCreateFnAgent.mockResolvedValue({
+        session: {
+          state: {},
+          sessionManager: {},
+          prompt: vi.fn().mockResolvedValue(undefined),
+          dispose: vi.fn(),
+          navigateTree: vi.fn(),
+        },
+      });
+
+      const processor = new TriageProcessor(store, "/test/root", { pollIntervalMs: 100_000 });
+      await processor.specifyTask(task);
+
+      expect(store.updateTask).toHaveBeenCalledWith("FN-8155-DETERMINISTIC-RETRY", expect.objectContaining({
+        status: null,
+        error: null,
+        recoveryRetryCount: 2,
+        nextRecoveryAt: expect.any(String),
+      }));
+      expect(store.updateTask).not.toHaveBeenCalledWith("FN-8155-DETERMINISTIC-RETRY", expect.objectContaining({ status: "failed" }));
+      expect(store.updateTask).not.toHaveBeenCalledWith("FN-8155-DETERMINISTIC-RETRY", expect.objectContaining({
+        title: expect.any(String),
+      }));
+    });
+
+    it("does not backfill blank titles while transient retries remain", async () => {
+      const task = {
+        id: "FN-8155-TRANSIENT-RETRY",
+        title: "",
+        description: "Keep blank titles while transient connection retries remain",
+        column: "triage",
+        status: "planning",
+        recoveryRetryCount: 1,
+        dependencies: [],
+        steps: [],
+        currentStep: 0,
+        log: [],
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      } as unknown as Task;
+      const store = createMockStore({
+        getTask: vi.fn().mockResolvedValue({ ...task, attachments: [] }),
+      });
+      mockCreateFnAgent.mockRejectedValue(new Error("connection reset"));
+
+      const processor = new TriageProcessor(store, "/test/root", { pollIntervalMs: 100_000 });
+      await processor.specifyTask(task);
+
+      expect(store.updateTask).toHaveBeenCalledWith("FN-8155-TRANSIENT-RETRY", expect.objectContaining({
+        status: null,
+        recoveryRetryCount: 2,
+        nextRecoveryAt: expect.any(String),
+      }));
+      expect(store.updateTask).not.toHaveBeenCalledWith("FN-8155-TRANSIENT-RETRY", expect.objectContaining({ status: "failed" }));
+      expect(store.updateTask).not.toHaveBeenCalledWith("FN-8155-TRANSIENT-RETRY", expect.objectContaining({
+        title: expect.any(String),
+      }));
+    });
+
     it("backfills blank titles when deterministic validation retries are exhausted", async () => {
       const task = {
         id: "FN-7961-DETERMINISTIC",
