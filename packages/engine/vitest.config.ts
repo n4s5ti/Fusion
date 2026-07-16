@@ -379,7 +379,6 @@ export default defineConfig({
             // (now PG-backed) but fail on sync SQLite APIs (getRunAuditEvents, getDatabase) that
             // return [] / throw in backend mode, or on mock drift from the async-satellite cutover.
             // Quarantined on sight per AGENTS.md; mirrored in scripts/lib/test-quarantine.json.
-            "src/__tests__/reliability-interactions/in-review-handoff-atomic.test.ts",
             "src/__tests__/reliability-interactions/multi-node-claim-mutex-interactions.test.ts",
             "src/__tests__/reliability-interactions/owning-node-unavailable-interactions.test.ts",
             "src/__tests__/reliability-interactions/integration-worktree-state.test.ts",

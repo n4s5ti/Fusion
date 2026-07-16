@@ -335,6 +335,15 @@ export class TaskStore extends EventEmitter<TaskStoreEvents> {
   public readonly asyncLayer: AsyncDataLayer | null = null;
   private pluginPostgresSchemaExecutor: ((contracts: readonly LoadedPluginSchemaContract[]) => Promise<void>) | null = null;
 
+  /*
+  FNXC:HandoffFailureInjection 2026-07-15-12:00:
+  PostgreSQL handoffs call enqueueMergeQueueInTransaction directly, bypassing the
+  legacy enqueueMergeQueueSyncInternal spy. Keep this test-only hook dormant in
+  production so VAL-DATA-013 can inject a late transaction failure and prove every
+  handoff sub-write rolls back without adding queries or runtime behavior.
+  */
+  private handoffMergeQueueFailureInjectorForTesting: ((taskId: string) => void | Promise<void>) | null = null;
+
   /** True when the mandatory production AsyncDataLayer was injected. */
   /** @internal TaskStore decomposition: accessible to extracted modules */
   public get backendMode(): boolean {
@@ -1111,6 +1120,21 @@ export class TaskStore extends EventEmitter<TaskStoreEvents> {
   }
   async handoffToReview(taskId: string, opts: HandoffToReviewOptions): Promise<Task> {
     return handoffToReviewImpl(this, taskId, opts);
+  }
+  /**
+   * FNXC:HandoffFailureInjection 2026-07-15-12:00:
+   * Test-only PostgreSQL handoff seam. Tests arm it after the transaction's
+   * column, merge-queue, workflow-work, and audit writes so VAL-DATA-013 proves
+   * they roll back together; null is the strict production no-op.
+   */
+  public __setHandoffMergeQueueFailureInjectorForTesting(
+    injector: ((taskId: string) => void | Promise<void>) | null,
+  ): void {
+    this.handoffMergeQueueFailureInjectorForTesting = injector;
+  }
+  /** @internal Invoked only from the late backend handoff transaction seam. */
+  public async __invokeHandoffMergeQueueFailureInjectorForTesting(taskId: string): Promise<void> {
+    await this.handoffMergeQueueFailureInjectorForTesting?.(taskId);
   }
   public resolveWorkflowMoveActor( moveSource: NonNullable<MoveTaskOptions["moveSource"]>, internal: MoveTaskInternalOptions, options?: MoveTaskOptions, ): WorkflowMovePolicyInput["actor"] {    return resolveWorkflowMoveActorImpl(this, moveSource, internal, options);
   }
