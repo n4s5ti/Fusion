@@ -997,15 +997,38 @@ FN-8003 keeps Copy prompt in the question progress header so an interview can be
   gap: var(--space-lg);
 }
 
+/*
+FNXC:PlanningInterview 2026-07-16-00:00:
+Interview questions now use MailboxMessageContent for sanitized GFM. Keep the
+existing title and muted-description hierarchy while normalizing markdown block
+margins so paragraphs and lists do not create unintended gaps.
+*/
 .planning-question-text {
-  font-size: 16px;
+  font-size: var(--font-size-base);
   font-weight: 600;
 }
 
 .planning-question-desc {
-  font-size: 14px;
+  font-size: var(--font-size-sm);
   color: var(--text-muted);
   line-height: 1.4;
+}
+
+.planning-question-text > *,
+.planning-question-desc > * {
+  margin: 0;
+}
+
+.planning-question-text > * + *,
+.planning-question-desc > * + * {
+  margin-top: var(--space-sm);
+}
+
+.planning-question-text ul,
+.planning-question-text ol,
+.planning-question-desc ul,
+.planning-question-desc ol {
+  padding-left: var(--space-lg);
 }
 
 /* Options */

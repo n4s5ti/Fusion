@@ -54,6 +54,7 @@ import { getRelativeTimeBucket } from "../utils/relativeTimeAgo";
 import { Lightbulb, X, Loader2, CheckCircle, ArrowLeft, ArrowRight, Sparkles, ListTree, GripVertical, ArrowUp, ArrowDown, Plus, Trash2, RefreshCw, ChevronLeft, MessageSquarePlus, AlertCircle, Clock, HelpCircle, StopCircle, Archive, ArchiveRestore, Copy } from "lucide-react";
 import { CustomModelDropdown } from "./CustomModelDropdown";
 import { ConversationHistory } from "./ConversationHistory";
+import { MailboxMessageContent } from "./MailboxMessageContent";
 import { OnboardingDisclosure } from "./OnboardingDisclosure";
 import { useViewportMode } from "../hooks/useViewportMode";
 import { useMobileKeyboard } from "../hooks/useMobileKeyboard";
@@ -2741,9 +2742,22 @@ function QuestionForm({ question: rawQuestion, progress, historyEntries, onSubmi
           </div>
 
           <div className="planning-question-content">
-            <h4 className="planning-question-text">{question.question}</h4>
+            {/*
+            FNXC:PlanningInterview 2026-07-16-00:00:
+            GitHub #2152 requires AI-authored interview questions and descriptions to use the
+            sanitized GFM renderer, so bold text, hard line breaks, and lists remain readable
+            without trusting generated HTML.
+            */}
+            <MailboxMessageContent
+              className="planning-question-text markdown-body"
+              content={question.question}
+              testId="planning-question-text"
+            />
             {question.description && (
-              <p className="planning-question-desc">{question.description}</p>
+              <MailboxMessageContent
+                className="planning-question-desc markdown-body"
+                content={question.description}
+              />
             )}
 
             <div className="planning-options">
