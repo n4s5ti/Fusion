@@ -5621,6 +5621,17 @@ export interface PlanningQuestion {
   question: string;
   description?: string;
   options?: Array<{ id: string; label: string; description?: string }>;
+  /**
+   * FNXC:PlanningMode 2026-07-16-00:00:
+   * FN-8065 / GitHub #2150 requires the deepening checkpoint to carry a read-only preview
+   * of its withheld pendingSummary. Keeping this optional preserves legacy persisted
+   * currentQuestion rows and leaves ordinary interview questions unchanged.
+   */
+  planPreview?: {
+    title: string;
+    description: string;
+    keyDeliverables: string[];
+  };
 }
 
 /** The final summary generated after planning conversation completes */

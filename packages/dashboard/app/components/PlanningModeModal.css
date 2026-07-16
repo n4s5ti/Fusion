@@ -998,6 +998,62 @@ FN-8003 keeps Copy prompt in the question progress header so an interview can be
 }
 
 /*
+FNXC:PlanningMode 2026-07-16-00:00:
+FN-8065 / GitHub #2150 adds a read-only plan preview before the deepening choices.
+It remains in the outer planning view's scroll flow so desktop and mobile users can
+read the complete plan without introducing a competing nested scrollbar.
+*/
+.planning-checkpoint-plan-preview {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+  padding: var(--space-lg);
+  background: color-mix(in srgb, var(--todo) 8%, var(--surface));
+  border: solid color-mix(in srgb, var(--todo) 35%, var(--border));
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+}
+
+.planning-checkpoint-plan-preview-header {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+}
+
+.planning-checkpoint-plan-preview-header h4,
+.planning-checkpoint-plan-preview-title,
+.planning-checkpoint-plan-preview-deliverables h5 {
+  margin: 0;
+}
+
+.planning-checkpoint-plan-preview-title {
+  font-size: var(--font-size-lg);
+}
+
+.planning-checkpoint-plan-preview-description > :first-child,
+.planning-checkpoint-plan-preview-deliverables ul {
+  margin-top: 0;
+}
+
+.planning-checkpoint-plan-preview-description > :last-child,
+.planning-checkpoint-plan-preview-deliverables ul {
+  margin-bottom: 0;
+}
+
+.planning-checkpoint-plan-preview-deliverables {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+}
+
+.planning-checkpoint-plan-preview-deliverables ul {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+  padding-inline-start: var(--space-lg);
+}
+
+/*
 FNXC:PlanningInterview 2026-07-16-00:00:
 Interview questions now use MailboxMessageContent for sanitized GFM. Keep the
 existing title and muted-description hierarchy while normalizing markdown block
@@ -1633,6 +1689,10 @@ Tablet embedded Planning keeps the desktop two-pane shell, so the summary footer
   .planning-question-scroll {
     padding-top: var(--space-sm);
     gap: var(--space-md);
+  }
+
+  .planning-checkpoint-plan-preview {
+    padding: var(--space-md);
   }
 
   .planning-view-footer,
