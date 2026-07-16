@@ -2951,6 +2951,14 @@ export class TriageProcessor {
        * already made their independent decisions, so it never weakens either of those gates
        * or auto-approve-all (which never reaches this branch at all).
        */
+      /*
+       * FNXC:PlanApproval 2026-07-15-21:05:
+       * FN-7569 / FN-8009 — compare the normalized as-approved fingerprint after deterministic
+       * Original Description or Frontend UX hygiene. approve-plan fingerprints the on-disk
+       * PROMPT.md, while recovery can receive pre-injection text; the shared hasher removes only
+       * those generated sections so an unchanged plan does not re-park. A genuinely changed plan
+       * still produces a different fingerprint and requires approval.
+       */
       const priorFingerprint = latestTransitionTask?.approvedPlanFingerprint ?? task.approvedPlanFingerprint;
       // FNXC:PlanApproval 2026-07-15-20:45: The shared hasher strips deterministic
       // Original Description / Frontend UX hygiene, so approve-plan's on-disk fingerprint and
