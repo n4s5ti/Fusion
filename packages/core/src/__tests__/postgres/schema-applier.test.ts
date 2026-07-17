@@ -26,6 +26,8 @@ import postgres from "postgres";
 import { drizzle } from "drizzle-orm/postgres-js";
 import { sql } from "drizzle-orm";
 import { execSync } from "node:child_process";
+import { readdirSync, readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import {
   applySchemaBaseline,
   getAppliedMigrations,
@@ -53,6 +55,8 @@ import {
   EXECUTOR_TOOL_FAILURE_RETRY_VERSION,
   EXECUTOR_ESCALATION_ATTEMPT_VERSION,
   GLOBAL_ROUTINES_SCHEMA_VERSION,
+  TASK_MERGER_MODEL_LANE_VERSION,
+  BULK_COMPLETION_REFUSAL_AT_VERSION,
   PROJECT_OWNERSHIP_SCHEMA_VERSION,
   SESSION_ADVISOR_ENABLED_SCHEMA_VERSION,
   SQLITE_SCHEMA_PARITY_VERSION,
@@ -135,7 +139,55 @@ describe("schema-applier: immutable migration identities", () => {
 
   it("keeps the import translation scope fix assigned to version 0016", () => {
     expect(IMPORT_TRANSLATION_CACHE_SCOPE_FIX_VERSION).toBe("0016");
-    expect(SCHEMA_BASELINE_VERSION).toBe(IMPORT_TRANSLATION_CACHE_SCOPE_FIX_VERSION);
+    // FNXC:PostgresMigrationIdentity 2026-07-16-22:40: the baseline marker advanced
+    // past 0016 (0017 merger lane, 0018 bulk-completion-refusal). 0016 keeps its
+    // immutable identity and remains applied at-or-before the latest marker.
+    expect(Number(SCHEMA_BASELINE_VERSION)).toBeGreaterThanOrEqual(Number(IMPORT_TRANSLATION_CACHE_SCOPE_FIX_VERSION));
+  });
+
+  it("keeps the per-task merger model lane assigned to version 0017", () => {
+    expect(TASK_MERGER_MODEL_LANE_VERSION).toBe("0017");
+    expect(Number(SCHEMA_BASELINE_VERSION)).toBeGreaterThanOrEqual(Number(TASK_MERGER_MODEL_LANE_VERSION));
+  });
+
+  it("keeps the bulk-completion-refusal marker assigned to version 0018", () => {
+    expect(BULK_COMPLETION_REFUSAL_AT_VERSION).toBe("0018");
+    expect(Number(SCHEMA_BASELINE_VERSION)).toBeGreaterThanOrEqual(Number(BULK_COMPLETION_REFUSAL_AT_VERSION));
+  });
+});
+
+/*
+FNXC:Lifecycle 2026-07-16-22:40:
+Migration wiring integrity — the class guard for the FN-8141 crash. Migrations are
+registered EXPLICITLY in schema-applier.ts (not auto-discovered), so a new .sql
+file that is not wired through a version constant + bookkeeping check silently
+never runs (documented hazard). PR #2260 tripped the adjacent trap: it added a
+column to the model + 0000 baseline and bumped nothing, so existing DBs never got
+it. These pure (no-PostgreSQL) assertions run in the merge gate and fail fast when
+the baseline marker and the on-disk migration set drift out of sync.
+*/
+describe("schema-applier: migration wiring integrity", () => {
+  const migrationsDir = fileURLToPath(new URL("../../postgres/migrations", import.meta.url));
+  const applierSource = readFileSync(
+    fileURLToPath(new URL("../../postgres/schema-applier.ts", import.meta.url)),
+    "utf8",
+  );
+  const migrationFiles = readdirSync(migrationsDir)
+    .filter((f) => /^\d{4}_.*\.sql$/.test(f))
+    .sort();
+
+  it("advances SCHEMA_BASELINE_VERSION to the highest-numbered migration file", () => {
+    const highest = migrationFiles[migrationFiles.length - 1]!.slice(0, 4);
+    // A new column that ships a migration file must also bump the baseline marker
+    // (else the "all markers recorded" fast-path and upgrade bookkeeping drift).
+    expect(SCHEMA_BASELINE_VERSION).toBe(highest);
+  });
+
+  it("wires every migration .sql file into the applier so none silently never runs", () => {
+    // The applier references each migration by its exact basename in a path
+    // constant. A file present on disk but absent from the source is unwired.
+    const unwired = migrationFiles.filter((f) => !applierSource.includes(f));
+    expect(unwired).toEqual([]);
   });
 });
 
@@ -556,6 +608,36 @@ pgDescribe("schema-applier: VAL-SCHEMA-001 final-schema parity (table counts)", 
     `)) as unknown as Array<{ column_name: string }>;
     expect(columns).toEqual([{ column_name: "session_advisor_enabled" }]);
     expect(await getAppliedMigrations(ctx.db)).toContain(SESSION_ADVISOR_ENABLED_SCHEMA_VERSION);
+  });
+
+  /*
+  FNXC:Lifecycle 2026-07-16-22:40:
+  Regression for the FN-8141 crash: PR #2260 added project.tasks.bulk_completion_refusal_at
+  to the Drizzle model + 0000 baseline but shipped NO forward migration, so every
+  database created before #2260 (already carrying the 0000 marker, thus skipping the
+  baseline) never gained the column and crashed on the first TaskStore SELECT
+  ("column bulk_completion_refusal_at does not exist"). Migration 0018 lands it on
+  existing clusters. Simulate that exact existing-DB shape: drop the column + its
+  0018 marker, then prove re-applying restores it.
+  */
+  it("upgrades an existing DB missing bulk_completion_refusal_at (0018)", async () => {
+    ctx = await setupFreshDb();
+    await applySchemaBaseline(ctx.db, { pluginHooks: [] });
+    await ctx.db.execute(sql.raw(`
+      DELETE FROM public.fusion_schema_migrations WHERE version = '0018';
+      ALTER TABLE project.tasks DROP COLUMN bulk_completion_refusal_at;
+    `));
+
+    expect((await applySchemaBaseline(ctx.db, { pluginHooks: [] })).applied).toBe(true);
+    const columns = (await ctx.db.execute(sql`
+      SELECT column_name
+      FROM information_schema.columns
+      WHERE table_schema = 'project'
+        AND table_name = 'tasks'
+        AND column_name = 'bulk_completion_refusal_at'
+    `)) as unknown as Array<{ column_name: string }>;
+    expect(columns).toEqual([{ column_name: "bulk_completion_refusal_at" }]);
+    expect(await getAppliedMigrations(ctx.db)).toContain(BULK_COMPLETION_REFUSAL_AT_VERSION);
   });
 
 
@@ -1051,6 +1133,8 @@ pgDescribe("schema-applier: automation project-isolation upgrade", () => {
       EXECUTOR_ESCALATION_ATTEMPT_VERSION,
       GLOBAL_ROUTINES_SCHEMA_VERSION,
       IMPORT_TRANSLATION_CACHE_SCOPE_FIX_VERSION,
+      TASK_MERGER_MODEL_LANE_VERSION,
+      BULK_COMPLETION_REFUSAL_AT_VERSION,
     ]);
     expect((await applySchemaBaseline(ctx.db, { pluginHooks: [] })).applied).toBe(false);
   });
@@ -1093,6 +1177,8 @@ pgDescribe("schema-applier: automation project-isolation upgrade", () => {
       EXECUTOR_ESCALATION_ATTEMPT_VERSION,
       GLOBAL_ROUTINES_SCHEMA_VERSION,
       IMPORT_TRANSLATION_CACHE_SCOPE_FIX_VERSION,
+      TASK_MERGER_MODEL_LANE_VERSION,
+      BULK_COMPLETION_REFUSAL_AT_VERSION,
     ]);
   });
 
@@ -1188,6 +1274,8 @@ pgDescribe("schema-applier: automation project-isolation upgrade", () => {
       EXECUTOR_ESCALATION_ATTEMPT_VERSION,
       GLOBAL_ROUTINES_SCHEMA_VERSION,
       IMPORT_TRANSLATION_CACHE_SCOPE_FIX_VERSION,
+      TASK_MERGER_MODEL_LANE_VERSION,
+      BULK_COMPLETION_REFUSAL_AT_VERSION,
     ]);
   });
 
@@ -1244,6 +1332,8 @@ pgDescribe("schema-applier: automation project-isolation upgrade", () => {
       EXECUTOR_ESCALATION_ATTEMPT_VERSION,
       GLOBAL_ROUTINES_SCHEMA_VERSION,
       IMPORT_TRANSLATION_CACHE_SCOPE_FIX_VERSION,
+      TASK_MERGER_MODEL_LANE_VERSION,
+      BULK_COMPLETION_REFUSAL_AT_VERSION,
     ]);
   });
 
@@ -1300,6 +1390,8 @@ pgDescribe("schema-applier: automation project-isolation upgrade", () => {
       EXECUTOR_ESCALATION_ATTEMPT_VERSION,
       GLOBAL_ROUTINES_SCHEMA_VERSION,
       IMPORT_TRANSLATION_CACHE_SCOPE_FIX_VERSION,
+      TASK_MERGER_MODEL_LANE_VERSION,
+      BULK_COMPLETION_REFUSAL_AT_VERSION,
     ]);
   });
 });

@@ -31,7 +31,7 @@ import { runPluginSchemaInitHooks, DEFAULT_PLUGIN_SCHEMA_INIT_HOOKS, type Plugin
 FNXC:MultiProjectIsolation 2026-07-15-23:40:
 Advances to 0012 after the owner_project_id domain/partition split and chat pin timestamp. Per-migration identities above stay fixed; only this latest-version marker moves.
 */
-export const SCHEMA_BASELINE_VERSION = "0017";
+export const SCHEMA_BASELINE_VERSION = "0018";
 const INITIAL_SCHEMA_VERSION = "0000";
 const AUTOMATION_ISOLATION_SCHEMA_VERSION = "0001";
 const ANALYTICS_ISOLATION_SCHEMA_VERSION = "0002";
@@ -86,6 +86,14 @@ export const EXECUTOR_ESCALATION_ATTEMPT_VERSION = "0014";
 export const GLOBAL_ROUTINES_SCHEMA_VERSION = "0015";
 /** FNXC:Settings-MergerModel 2026-07-16-12:00: per-task merger lane is an additive upgrade. */
 export const TASK_MERGER_MODEL_LANE_VERSION = "0017";
+/**
+ * FNXC:Lifecycle 2026-07-16-22:35:
+ * Version 0018 lands project.tasks.bulk_completion_refusal_at (FN-8141) on
+ * existing clusters. PR #2260 added the column to the model + 0000 baseline but
+ * forgot the forward migration, so every pre-#2260 database crashed on its first
+ * TaskStore SELECT. Keep this identity fixed when SCHEMA_BASELINE_VERSION advances.
+ */
+export const BULK_COMPLETION_REFUSAL_AT_VERSION = "0018";
 
 /** Bookkeeping table for the fresh Drizzle migration history. */
 export const MIGRATION_BOOKKEEPING_TABLE = "fusion_schema_migrations";
@@ -173,6 +181,7 @@ const GLOBAL_ROUTINES_MIGRATION_PATH = join(
   "0015_global_routines.sql",
 );
 const TASK_MERGER_MODEL_LANE_MIGRATION_PATH = join(__dirname, "migrations", "0017_task_merger_model_lane.sql");
+const BULK_COMPLETION_REFUSAL_AT_MIGRATION_PATH = join(__dirname, "migrations", "0018_bulk_completion_refusal_at.sql");
 
 /**
  * Ensure the migration bookkeeping table exists. Lives in the public schema so
@@ -259,6 +268,7 @@ export async function applySchemaBaseline(
     const executorEscalationAttemptAlreadyApplied = applied.includes(EXECUTOR_ESCALATION_ATTEMPT_VERSION);
     const globalRoutinesAlreadyApplied = applied.includes(GLOBAL_ROUTINES_SCHEMA_VERSION);
     const taskMergerModelLaneAlreadyApplied = applied.includes(TASK_MERGER_MODEL_LANE_VERSION);
+    const bulkCompletionRefusalAtAlreadyApplied = applied.includes(BULK_COMPLETION_REFUSAL_AT_VERSION);
     let schemaChanged = false;
 
     if (!baselineAlreadyApplied) {
@@ -556,6 +566,21 @@ export async function applySchemaBaseline(
       await tx.execute(sql.raw(migrationSql));
       await tx.execute(
         sql`INSERT INTO public.${sql.identifier(MIGRATION_BOOKKEEPING_TABLE)} (version) VALUES (${TASK_MERGER_MODEL_LANE_VERSION}) ON CONFLICT (version) DO NOTHING`,
+      );
+      schemaChanged = true;
+    }
+    /*
+    FNXC:Lifecycle 2026-07-16-22:35:
+    FN-8141 bulk-completion-refusal taint marker. PR #2260 added the column to
+    the model + 0000 baseline but no forward migration, so existing clusters
+    (baseline marker already present) never gained it and crashed on the first
+    TaskStore SELECT. Apply it as a forward migration so those clusters recover.
+    */
+    if (!bulkCompletionRefusalAtAlreadyApplied) {
+      const migrationSql = await readFile(BULK_COMPLETION_REFUSAL_AT_MIGRATION_PATH, "utf8");
+      await tx.execute(sql.raw(migrationSql));
+      await tx.execute(
+        sql`INSERT INTO public.${sql.identifier(MIGRATION_BOOKKEEPING_TABLE)} (version) VALUES (${BULK_COMPLETION_REFUSAL_AT_VERSION}) ON CONFLICT (version) DO NOTHING`,
       );
       schemaChanged = true;
     }
