@@ -953,7 +953,7 @@ export function registerTaskWorkflowRoutes(ctx: ApiRoutesContext, deps: TaskWork
       try {
         const settings = await scopedStore.getSettingsFast();
         if (isWorkflowColumnsEnabled(settings) && tasks.length > 0) {
-          const byTask = scopedStore.getBranchProgressByTask(tasks.map((t) => t.id));
+          const byTask = await scopedStore.getBranchProgressByTask(tasks.map((t) => t.id));
           if (byTask.size > 0) {
             tasks = tasks.map((task) => {
               const branchProgress = byTask.get(task.id);

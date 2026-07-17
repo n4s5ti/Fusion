@@ -5596,15 +5596,18 @@ export class TaskExecutor {
    * mixed/partial store never throws into the run.
    */
   private buildBranchPersistence(): WorkflowBranchPersistence | undefined {
+    // FNXC:PostgresOnlyDataAccess 2026-07-16-12:40: the store methods are now
+    // async (PostgreSQL routing); the persistence interfaces already accept
+    // Promise-returning impls and await them.
     const store = this.store as unknown as {
-      saveWorkflowRunBranch?: (state: WorkflowBranchRunState) => void;
-      loadWorkflowRunBranches?: (taskId: string, runId: string) => WorkflowBranchRunState[];
-      clearWorkflowRunBranches?: (taskId: string, keepRunId: string) => void;
+      saveWorkflowRunBranch?: (state: WorkflowBranchRunState) => void | Promise<void>;
+      loadWorkflowRunBranches?: (taskId: string, runId: string) => WorkflowBranchRunState[] | Promise<WorkflowBranchRunState[]>;
+      clearWorkflowRunBranches?: (taskId: string, keepRunId: string) => void | Promise<void>;
     };
     if (typeof store.saveWorkflowRunBranch !== "function") return undefined;
     return {
       saveBranchState: (state) => store.saveWorkflowRunBranch?.(state),
-      loadBranchStates: (taskId, runId) => store.loadWorkflowRunBranches?.(taskId, runId) ?? [],
+      loadBranchStates: async (taskId, runId) => (await store.loadWorkflowRunBranches?.(taskId, runId)) ?? [],
       clearStaleBranchStates: (taskId, keepRunId) => store.clearWorkflowRunBranches?.(taskId, keepRunId),
     };
   }
@@ -5616,6 +5619,8 @@ export class TaskExecutor {
    * fully in-memory — purely additive, same posture as buildBranchPersistence.
    */
   private buildStepInstancePersistence(): WorkflowStepInstancePersistence | undefined {
+    // FNXC:PostgresOnlyDataAccess 2026-07-16-12:40: async store methods; the
+    // persistence interface awaits Promise-returning impls.
     const store = this.store as unknown as {
       saveWorkflowRunStepInstanceAsync?: (state: WorkflowStepInstanceState) => Promise<void>;
       loadWorkflowRunStepInstancesAsync?: (taskId: string, runId: string) => Promise<WorkflowStepInstanceState[]>;
